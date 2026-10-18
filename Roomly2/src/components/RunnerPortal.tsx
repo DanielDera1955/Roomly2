@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { OrderChat } from './OrderChat';
 import {
   Truck,
   Package,
@@ -26,7 +27,7 @@ import {
   HelpCircle,
   ExternalLink,
 } from 'lucide-react';
-import { OrderRecord, DeliveryRunner, CartItem } from '../types';
+import { OrderRecord, DeliveryRunner, CartItem, locationText, shortLocation, roomText } from '../types';
 import {
   getOrders,
   getRunners,
@@ -322,7 +323,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
             <div className="flex items-center gap-1.5 text-xs font-black text-slate-900 dark:text-white pt-0.5">
               <Building className="w-4 h-4 text-[#0e9f55] shrink-0" />
               <span className="text-sm">
-                {ord.building}, Room {ord.room} ({ord.area})
+                {locationText(ord)}
               </span>
             </div>
           </div>
@@ -364,7 +365,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
                 <span className="underline decoration-amber-500 font-extrabold">
                   ₦{ord.totalAmount.toLocaleString()}
                 </span>{' '}
-                in cash or bank transfer before handing over the goods at Room {ord.room}.
+                in cash or bank transfer before handing over the goods at {roomText(ord)}.
               </p>
               <p className="text-[11px] text-amber-800 dark:text-amber-300">
                 • Total includes ₦{ord.subtotal.toLocaleString()} for goods + ₦{ord.deliveryFee.toLocaleString()} runner transport fee.
@@ -571,7 +572,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
               className="w-full py-3 bg-slate-900 hover:bg-black dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 rounded-2xl text-xs font-black transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
             >
               <CheckCircle className="w-4 h-4 text-emerald-500" />
-              <span>Order Handed Over & Delivered to Room {ord.room}</span>
+              <span>Order Handed Over & Delivered to {roomText(ord)}</span>
             </button>
           )}
 
@@ -587,6 +588,10 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
               <span>Accept & Start Packaging as {activeRunner?.name}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
+          )}
+
+          {isAssignedToMe && (
+            <OrderChat orderId={ord.id} role="runner" senderName={activeRunner?.name || 'Runner'} closed={ord.status === 'Delivered'} />
           )}
         </div>
       </div>
@@ -876,7 +881,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
                       <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
                         <Building className="w-3.5 h-3.5 text-[#0e9f55]" />
                         <span>
-                          {ord.building}, Room {ord.room} ({ord.area})
+                          {locationText(ord)}
                         </span>
                       </div>
 

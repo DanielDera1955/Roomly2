@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { OrderChat } from './OrderChat';
 import {
   X,
   CheckCircle2,
@@ -19,7 +20,7 @@ import {
   AlertTriangle,
   Zap,
 } from 'lucide-react';
-import { OrderRecord } from '../types';
+import { OrderRecord, locationText, shortLocation, roomText } from '../types';
 import { STORE_CONFIG } from '../config';
 import { markPaymentSent } from '../api.js';
 
@@ -255,7 +256,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                   <div className="flex items-center gap-1.5">
                     <Building className="w-3.5 h-3.5 text-[#0e9f55]" />
                     <span>
-                      {currentOrder.building}, Room {currentOrder.room} ({currentOrder.area})
+                      {locationText(currentOrder)}
                     </span>
                   </div>
                   <span className="font-mono font-bold text-slate-900 dark:text-white">
@@ -385,7 +386,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                     </div>
 
                     <p className="text-xs text-amber-900 dark:text-amber-300 leading-snug">
-                      Your items are currently being gathered and packaged at the campus kitchen / store. Once complete, your runner will head directly to {currentOrder.building}, Room {currentOrder.room}.
+                      Your items are currently being gathered and packaged at the campus kitchen / store. Once complete, your runner will head directly to {shortLocation(currentOrder)}.
                     </p>
                   </div>
                 ) : currentOrder.status === 'On the way' ? (
@@ -417,7 +418,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                     </div>
 
                     <p className="text-xs text-blue-900 dark:text-blue-300 leading-snug">
-                      Your order has been packaged and is en route to <strong>{currentOrder.building}, Room {currentOrder.room}</strong> ({currentOrder.area}). Please listen for your runner!
+                      Your order has been packaged and is en route to <strong>{shortLocation(currentOrder)}</strong>. Please listen for your runner!
                     </p>
                   </div>
                 ) : currentOrder.status === 'Delivered' ? (
@@ -430,7 +431,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                         Order Delivered & Handed Over!
                       </h4>
                       <p className="text-[11px] text-emerald-800 dark:text-emerald-400">
-                        Delivered to {currentOrder.building}, Room {currentOrder.room}. Enjoy your order!
+                        Delivered to {shortLocation(currentOrder)}. Enjoy your order!
                       </p>
                     </div>
                   </div>
@@ -503,6 +504,15 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                   })}
                 </div>
               </div>
+
+              {currentOrder && (
+                <OrderChat
+                  orderId={currentOrder.id}
+                  role="customer"
+                  senderName={currentOrder.name}
+                  closed={currentOrder.status === 'Delivered'}
+                />
+              )}
 
               {/* Order Items Breakdown with Recognizable Product Photos */}
               <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 space-y-2.5">

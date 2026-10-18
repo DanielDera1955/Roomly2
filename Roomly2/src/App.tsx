@@ -10,6 +10,7 @@ import {
   getCustomerByPhone,
   createOrder,
   getOrderById,
+  getMyOrders,
   subscribeOrder,
   advanceOrderStatus,
   getStoreStatus,
@@ -18,6 +19,7 @@ import {
 } from './api.js';
 import { Product } from './config';
 import { StaffGate } from './components/StaffGate';
+import { AdminSwitcher } from './components/AdminSwitcher';
 import { CartItem, CustomerProfile, OrderRecord, CategoryDefinition } from './types';
 import { Header, PortalMode } from './components/Header';
 import { PhoneLookupBar } from './components/PhoneLookupBar';
@@ -30,6 +32,7 @@ import { RequestTab } from './components/RequestTab';
 import { FloatingCartBar } from './components/FloatingCartBar';
 import { CartSheet } from './components/CartSheet';
 import { OrderTrackerModal } from './components/OrderTrackerModal';
+import { OrderHistoryModal } from './components/OrderHistoryModal';
 import { RunnerPortal } from './components/RunnerPortal';
 import { AdminView } from './components/AdminView';
 
@@ -67,8 +70,19 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
 
   // Customer & Phone Lookup
-  const [phone, setPhone] = useState<string>('');
-  const [pin, setPin] = useState<string>('');
+  // Remember the customer on this device until they press Sign out
+  const savedSession = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('roomly_customer') || '{}');
+    } catch (e) {
+      return {};
+    }
+  })();
+  const [phone, setPhone] = useState<string>(savedSession.phone || '');
+  const [pin, setPin] = useState<string>(savedSession.pin || '');
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyOrders, setHistoryOrders] = useState<OrderRecord[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [customer, setCustomer] = useState<CustomerProfile | null>(null);
 
   // Cart State
@@ -133,6 +147,36 @@ export default function App() {
       setCustomer(null);
     }
   }, [phone, pin]);
+
+  // Save the login on this device once the PIN is confirmed
+  useEffect(() => {
+    if (customer && !customer.wrongPin && /^\d{6}$/.test(pin) && phone) {
+      try {
+        localStorage.setItem('roomly_customer', JSON.stringify({ phone, pin }));
+      } catch (e) {
+        /* ignore */
+      }
+    }
+  }, [customer, pin, phone]);
+
+  const handleSignOut = () => {
+    try {
+      localStorage.removeItem('roomly_customer');
+    } catch (e) {
+      /* ignore */
+    }
+    setPhone('');
+    setPin('');
+    setCustomer(null);
+    setHistoryOrders([]);
+  };
+
+  const handleOpenHistory = async () => {
+    setHistoryOpen(true);
+    setHistoryLoading(true);
+    setHistoryOrders(await getMyOrders(phone, pin));
+    setHistoryLoading(false);
+  };
 
   // Live updates for the order the customer is tracking
   useEffect(() => {
@@ -239,6 +283,10 @@ export default function App() {
 
   // Place Order flow
   const handlePlaceOrder = async (orderPayload: any) => {
+    if (customer?.wrongPin) {
+      window.alert('This phone number is already registered. Enter the correct PIN at the top, or ask Roomly to reset it.');
+      return;
+    }
     if (!/^\d{6}$/.test(pin)) {
       window.alert('Please enter a 6-digit PIN at the top of the page. It saves your details for next time.');
       return;
@@ -334,6 +382,7 @@ export default function App() {
   if (currentPortal === 'runner') {
     return (
       <StaffGate role="runner" onBack={() => handleSelectPortal('customer')}>
+      <AdminSwitcher current="runner" onSelect={handleSelectPortal} />
       <RunnerPortal
         onBackToCustomer={() => handleSelectPortal('customer')}
         onOrderUpdated={async () => {
@@ -351,6 +400,7 @@ export default function App() {
   if (currentPortal === 'admin') {
     return (
       <StaffGate role="admin" onBack={() => handleSelectPortal('customer')}>
+      <AdminSwitcher current="admin" onSelect={handleSelectPortal} />
       <AdminView
         onBackToStore={() => {
           handleSelectPortal('customer');
@@ -372,7 +422,8 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 flex justify-center selection:bg-[#0e9f55]/20">
       <div className="w-full max-w-[480px] bg-slate-50 dark:bg-slate-900 min-h-screen flex flex-col relative shadow-2xl border-x border-slate-200/60 dark:border-slate-800/60 pb-24">
-        {/* Header with Portal Switcher */}
+        <AdminSwitcher current="customer" onSelect={handleSelectPortal} />
+        {/* Header */}
         <Header
           currentPortal={currentPortal}
           onSelectPortal={handleSelectPortal}
@@ -406,7 +457,8 @@ export default function App() {
             pin={pin}
             onPinChange={setPin}
             customer={customer}
-            onQuickReorder={handleQuickReorder}
+            onOpenHistory={handleOpenHistory}
+            onSignOut={handleSignOut}
           />
 
           {/* Delivery Promise Banner */}
@@ -511,6 +563,18 @@ export default function App() {
         />
 
         {/* Order Status & Live Runner Tracker Modal */}
+        <OrderHistoryModal
+          isOpen={historyOpen}
+          onClose={() => setHistoryOpen(false)}
+          orders={historyOrders}
+          loading={historyLoading}
+          onSelect={(o) => {
+            setActiveOrder(o);
+            setHistoryOpen(false);
+            setIsTrackerOpen(true);
+          }}
+        />
+
         <OrderTrackerModal
           isOpen={isTrackerOpen}
           onClose={() => setIsTrackerOpen(false)}

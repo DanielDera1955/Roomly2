@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { OrderChat } from './OrderChat';
 import {
   ArrowLeft,
   Lock,
@@ -22,7 +23,7 @@ import {
   TrendingUp,
   BarChart3,
 } from 'lucide-react';
-import { OrderRecord, CategoryDefinition, DeliveryRunner } from '../types';
+import { OrderRecord, CategoryDefinition, DeliveryRunner, locationText, shortLocation, roomText } from '../types';
 import { Product, PRESET_PRODUCT_IMAGES } from '../config';
 import { OrderHistorySection } from './SpendingHistorySection';
 import {
@@ -32,6 +33,7 @@ import {
   verifyAdminPin,
   subscribeOrders,
   logoutStaff,
+  resetCustomerPhone,
   getCategories,
   addCategory,
   addSubcategory,
@@ -605,7 +607,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                         <div className="flex items-center gap-1 text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5">
                           <Building className="w-3.5 h-3.5 text-[#0e9f55]" />
                           <span>
-                            {ord.building}, Room {ord.room} ({ord.area})
+                            {locationText(ord)}
                           </span>
                         </div>
 
@@ -757,6 +759,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
+
+                    <OrderChat orderId={ord.id} role="admin" senderName="Admin" closed={ord.status === 'Delivered'} />
                   </div>
                 ))
               )}
@@ -1439,8 +1443,20 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                     Phone: <span className="font-mono text-slate-700 dark:text-slate-300">{c.phone}</span>
                   </p>
                   <p className="text-[11px] text-slate-500">
-                    Room: {c.building}, Room {c.room} ({c.area})
+                    Room: {locationText(c)}
                   </p>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (window.confirm('Reset this customer? The phone number can then be registered again with a new PIN. Their saved details and order list are removed.')) {
+                        await resetCustomerPhone(c.phone);
+                        fetchAllData();
+                      }
+                    }}
+                    className="mt-1 text-[10px] font-bold text-rose-500 hover:underline cursor-pointer"
+                  >
+                    Reset PIN / free this number
+                  </button>
                 </div>
 
                 <div className="text-right">

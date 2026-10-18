@@ -31,6 +31,8 @@ import {
   limit,
   writeBatch,
   increment,
+  addDoc,
+  where,
 } from 'firebase/firestore';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 
@@ -498,6 +500,14 @@ export async function createOrder(orderPayload) {
   const known = ps.exists() ? ps.data() : null;
   const isRepeatCustomer = Boolean(known && known.ordersCount > 0);
 
+  // One phone number belongs to one customer: a used number needs its original PIN
+  const profileRef = doc(db, 'customers', prk);
+  const profSnap = await getDoc(profileRef);
+  const existingProfile = profSnap.exists() ? profSnap.data() : null;
+  if (known && !existingProfile) {
+    throw new Error('This phone number is already registered. Enter the correct PIN, or ask Roomly to reset it.');
+  }
+
   const suffix = (Math.random().toString(36) + '0000').slice(2, 6).toUpperCase();
   const orderId = `RM-${Math.floor(1000 + Math.random() * 9000)}-${suffix}`;
 
@@ -555,15 +565,18 @@ export async function createOrder(orderPayload) {
 
   const batch = writeBatch(db);
   batch.set(doc(db, 'orders', orderId), slim(newOrder));
+  // A one-off custom delivery spot must not overwrite the saved room
+  const savedLoc =
+    orderPayload.isCustomLocation && existingProfile
+      ? { area: existingProfile.area, building: existingProfile.building, room: existingProfile.room }
+      : { area: orderPayload.area, building: orderPayload.building, room: orderPayload.room };
   batch.set(
-    doc(db, 'customers', prk),
+    profileRef,
     slim({
       phone,
       name: orderPayload.name,
-      area: orderPayload.area,
-      building: orderPayload.building,
-      room: orderPayload.room,
-      lastOrder: newOrder,
+      ...savedLoc,
+      orderIds: [orderId, ...(existingProfile?.orderIds || [])].slice(0, 40),
       updatedAt: createdAtIso,
     })
   );
@@ -752,4 +765,63 @@ export async function deleteOrder(orderId) {
   } catch (e) {
     return false;
   }
+}
+
+/* ---------------------- customer order history ---------------------- */
+
+/** @returns {Promise<any[]>} */
+export async function getMyOrders(phone, pin) {
+  const p = normalizePhone(phone);
+  if (!isValidNigerianPhone(p) || !/^\d{6}$/.test(pin || '')) return [];
+  try {
+    const cs = await getDoc(doc(db, 'customers', await profileKey(p, pin)));
+    if (!cs.exists()) return [];
+    const d = cs.data();
+    let ids = (d.orderIds || []).slice(0, 20);
+    if (!ids.length && d.lastOrder && d.lastOrder.id) ids = [d.lastOrder.id];
+    const snaps = await Promise.all(ids.map((id) => getDoc(doc(db, 'orders', id))));
+    return snaps
+      .filter((x) => x.exists())
+      .map((x) => ({ ...x.data(), id: x.id }))
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  } catch (e) {
+    console.error(e);
+    return [];
+  }
+}
+
+/* ---------------------------- order chat ---------------------------- */
+
+/** @returns {() => void} */
+export function subscribeMessages(orderId, cb) {
+  const q = query(collection(db, 'orders', orderId, 'messages'), orderBy('createdAt', 'asc'), limit(100));
+  return onSnapshot(
+    q,
+    (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id }))),
+    () => cb([])
+  );
+}
+
+/** @returns {Promise<any>} */
+export async function sendMessage(orderId, sender, name, text) {
+  const t = String(text || '').trim().slice(0, 500);
+  if (!t) return null;
+  return addDoc(collection(db, 'orders', orderId, 'messages'), {
+    sender,
+    name: String(name || '').slice(0, 60),
+    text: t,
+    createdAt: new Date().toISOString(),
+  });
+}
+
+/** Admin only: free a phone number so the owner can register it again with a new PIN */
+/** @returns {Promise<boolean>} */
+export async function resetCustomerPhone(phone) {
+  const p = normalizePhone(phone);
+  const snap = await getDocs(query(collection(db, 'customers'), where('phone', '==', p)));
+  const batch = writeBatch(db);
+  snap.docs.forEach((d) => batch.delete(d.ref));
+  batch.delete(doc(db, 'phones', await phoneKey(p)));
+  await batch.commit();
+  return true;
 }

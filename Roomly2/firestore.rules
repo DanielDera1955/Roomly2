@@ -51,6 +51,7 @@ service cloud.firestore {
     match /phones/{id} {
       allow get: if true;
       allow list: if isAdmin();
+      allow delete: if isAdmin();
       allow create: if request.resource.data.ordersCount == 1
                     && request.resource.data.deliveredCount == 0;
       allow update: if isStaff() ||
@@ -79,6 +80,18 @@ service cloud.firestore {
          && request.resource.data.paymentStatus == 'payment_sent');
 
       allow delete: if isAdmin();
+
+      // Chat thread for this order (customer, runner, admin)
+      match /messages/{msgId} {
+        allow read: if true;
+        allow create: if request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 500
+          && (request.resource.data.sender == 'customer'
+              || (isStaff() && request.resource.data.sender in ['runner', 'admin']));
+        allow update: if false;
+        allow delete: if isAdmin();
+      }
     }
   }
 }

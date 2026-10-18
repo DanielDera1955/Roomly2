@@ -9,7 +9,8 @@ interface PhoneLookupBarProps {
   pin: string;
   onPinChange: (pin: string) => void;
   customer: CustomerProfile | null;
-  onQuickReorder: (items: CartItem[]) => void;
+  onOpenHistory: () => void;
+  onSignOut: () => void;
 }
 
 export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
@@ -18,7 +19,8 @@ export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
   pin,
   onPinChange,
   customer,
-  onQuickReorder,
+  onOpenHistory,
+  onSignOut,
 }) => {
   const [inputValue, setInputValue] = useState(phone || '');
   const isValid = isValidNigerianPhone(inputValue);
@@ -74,7 +76,7 @@ export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
         {isValid && (
           <div className="mt-2">
             <label htmlFor="pin-input" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              6-digit PIN (keeps your saved details private)
+              6-digit PIN (new here? choose one)
             </label>
             <input
               id="pin-input"
@@ -90,68 +92,33 @@ export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
           </div>
         )}
 
-        {/* Customer recognition banner */}
-        {isValid && (
-          <div className="mt-2 text-xs">
-            {customer && customer.wrongPin ? (
-              <div className="text-amber-600 dark:text-amber-400 font-medium">
-                {pin.length < 6
-                  ? 'Welcome back! Enter your 6-digit PIN to load your saved details.'
-                  : 'That PIN does not match. You can still order, but Pay Now is required.'}
-              </div>
-            ) : customer && customer.isReturning ? (
-              <div className="flex items-center gap-1.5 text-[#0e9f55] font-medium">
-                <UserCheck className="w-3.5 h-3.5 shrink-0" />
-                <span>
-                  Welcome back, <strong className="font-semibold">{customer.name}</strong>! Room delivery to{' '}
-                  <span className="underline">{customer.building}, Room {customer.room}</span>
-                </span>
-              </div>
-            ) : (
-              <div className="text-slate-600 dark:text-slate-400">
-                <span className="font-medium text-slate-800 dark:text-slate-200">Welcome!</span>{' '}
-                Choose a 6-digit PIN above and your details will be remembered for 1-tap reordering.
-              </div>
-            )}
+        {isValid && customer && customer.wrongPin && (
+          <div className="mt-2 text-xs text-amber-600 dark:text-amber-400 font-medium">
+            {pin.length < 6
+              ? 'Enter your 6-digit PIN to continue.'
+              : 'That PIN does not match this phone number. Enter the correct PIN, or ask Roomly to reset it.'}
+          </div>
+        )}
+
+        {isValid && customer && !customer.wrongPin && (
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onOpenHistory}
+              className="px-3 py-1.5 rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer"
+            >
+              My orders
+            </button>
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer"
+            >
+              Sign out
+            </button>
           </div>
         )}
       </div>
-
-      {/* Recognized returning customer's previous order listing */}
-      {customer && customer.lastOrder && customer.lastOrder.items?.length > 0 && (
-        <div className="p-3.5 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent dark:from-emerald-950/40 dark:via-emerald-950/20 rounded-2xl border border-emerald-500/30 dark:border-emerald-500/20 shadow-xs space-y-2">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-white">
-                <RotateCcw className="w-3.5 h-3.5 text-[#0e9f55]" />
-                <span>Previous Order Found</span>
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">
-                  ({customer.lastOrder.id})
-                </span>
-              </div>
-              <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 line-clamp-1">
-                {customer.lastOrder.items.map((i) => `${i.quantity}x ${i.name}`).join(', ')}
-              </p>
-              <p className="text-xs font-semibold text-[#0e9f55] mt-0.5">
-                ₦{customer.lastOrder.subtotal?.toLocaleString()} subtotal
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => onQuickReorder(customer.lastOrder!.items)}
-              className="shrink-0 px-3 py-2 bg-[#0e9f55] hover:bg-[#0b8044] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
-            >
-              <ShoppingBag className="w-3.5 h-3.5" />
-              <span>Load & Edit</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 italic">
-            Loads items into your cart so you can add, remove, or customize as you like.
-          </p>
-        </div>
-      )}
     </div>
   );
 };

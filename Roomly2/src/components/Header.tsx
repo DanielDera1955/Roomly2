@@ -48,11 +48,8 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-white">
                 Roomly
               </span>
-              <button
-                type="button"
-                onClick={onToggleStoreHoursOverride}
-                title="Tap to toggle test store hours"
-                className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 transition-colors cursor-pointer ${
+              <span
+                className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 transition-colors ${
                   storeStatus.isOpen
                     ? 'bg-emerald-50 text-[#0e9f55] dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/40'
                     : 'bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-200/60 dark:border-rose-800/40'
@@ -64,7 +61,7 @@ export const Header: React.FC<HeaderProps> = ({
                   }`}
                 />
                 {storeStatus.isOpen ? 'Open' : 'Closed'}
-              </button>
+              </span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate">
               {greetingName} · <span className="text-slate-400">6am - 11pm</span>
@@ -99,48 +96,6 @@ export const Header: React.FC<HeaderProps> = ({
             {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
           </button>
         </div>
-      </div>
-
-      {/* Row 2: 3 Sections Navigation Switcher (Customer | Delivery Runner | Admin) */}
-      <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-1 p-0.5 bg-slate-100 dark:bg-slate-800/80 rounded-xl">
-        <button
-          type="button"
-          onClick={() => onSelectPortal('customer')}
-          className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-            currentPortal === 'customer'
-              ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
-        >
-          <ShoppingBag className="w-3.5 h-3.5 text-[#0e9f55]" />
-          <span>Customer</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onSelectPortal('runner')}
-          className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-            currentPortal === 'runner'
-              ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
-        >
-          <Truck className="w-3.5 h-3.5 text-blue-500" />
-          <span>Runners</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onSelectPortal('admin')}
-          className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-            currentPortal === 'admin'
-              ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-          }`}
-        >
-          <Shield className="w-3.5 h-3.5 text-amber-500" />
-          <span>Admin</span>
-        </button>
       </div>
     </header>
   );

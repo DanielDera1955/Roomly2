@@ -92,3 +92,11 @@ export interface CategoryDefinition {
   emoji: string;
   subcategories: string[];
 }
+
+// Location helpers (customers may deliver to a custom spot instead of their room)
+export const locationText = (o: { area?: string; building?: string; room?: string }) =>
+  o.area === 'Custom' ? `${o.building}` : `${o.building}, Room ${o.room} (${o.area})`;
+export const shortLocation = (o: { area?: string; building?: string; room?: string }) =>
+  o.area === 'Custom' ? `${o.building}` : `${o.building}, Room ${o.room}`;
+export const roomText = (o: { area?: string; building?: string; room?: string }) =>
+  o.area === 'Custom' ? `${o.building}` : `Room ${o.room}`;

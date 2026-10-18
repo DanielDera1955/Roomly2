@@ -36,6 +36,7 @@ interface CartSheetProps {
     area: string;
     building: string;
     room: string;
+    isCustomLocation?: boolean;
     items: CartItem[];
     customRequest: string;
     deliveryBatch: DeliveryBatchId;
@@ -67,6 +68,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const [area, setArea] = useState<'Hostels' | 'Lodge'>((customer?.area as any) || 'Hostels');
   const [building, setBuilding] = useState(customer?.building || CAMPUS_LOCATIONS['Hostels'][0]);
   const [room, setRoom] = useState(customer?.room || '');
+  const [customMode, setCustomMode] = useState(false);
+  const [customLocation, setCustomLocation] = useState('');
 
   // 4 Delivery Options: 1 Premium (₦1,500) + 3 Batches (₦1,000 each)
   const [deliveryBatch, setDeliveryBatch] = useState<DeliveryBatchId>('premium');
@@ -129,7 +132,12 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       return;
     }
 
-    if (!room.trim()) {
+    if (customMode && !customLocation.trim()) {
+      setErrorMessage('Please tell us where to deliver (for example: Faculty of Science gate)');
+      return;
+    }
+
+    if (!customMode && !room.trim()) {
       setErrorMessage('Please enter your exact room number/floor for delivery');
       return;
     }
@@ -159,9 +167,10 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       onPlaceOrder({
         phone: normalizePhone(phone),
         name: name.trim(),
-        area,
-        building,
-        room: room.trim(),
+        area: customMode ? 'Custom' : area,
+        building: customMode ? customLocation.trim() : building,
+        room: customMode ? '-' : room.trim(),
+        isCustomLocation: customMode,
         items,
         customRequest: customRequest.trim(),
         deliveryBatch,
@@ -208,29 +217,6 @@ export const CartSheet: React.FC<CartSheetProps> = ({
 
         {/* Scrollable Checkout Content */}
         <form onSubmit={handleSubmit} className="overflow-y-auto p-5 space-y-5 flex-1">
-          {/* Customer Status Banner */}
-          {isPhoneValid && (
-            <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/40 text-xs space-y-1">
-              {isRepeatCustomer ? (
-                <div>
-                  <div className="flex items-center gap-1.5 text-[#0e9f55] font-bold">
-                    <CheckCircle2 className="w-4 h-4 shrink-0" />
-                    <span>Repeat Customer Verified: {customer?.name}</span>
-                  </div>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
-                    Welcome back! To ensure fast runner packaging, repeat orders require completing bank transfer within 15 minutes.
-                  </p>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-200">
-                  <Sparkles className="w-4 h-4 text-[#0e9f55] shrink-0" />
-                  <span>
-                    <strong>First-time Student:</strong> You can pay on delivery or by bank transfer.
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Cart Items Summary */}
           <div className="space-y-2.5">
@@ -386,6 +372,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                 />
               </div>
 
+              {!customMode && (
+              <>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
@@ -431,6 +419,31 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                   className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55]"
                 />
               </div>
+              </>
+              )}
+
+              {customMode && (
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Where should we deliver?
+                  </label>
+                  <input
+                    type="text"
+                    value={customLocation}
+                    onChange={(e) => setCustomLocation(e.target.value)}
+                    placeholder="e.g. Library entrance, Science Faculty gate"
+                    className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55]"
+                  />
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setCustomMode(!customMode)}
+                className="text-left text-[11px] font-bold text-[#0e9f55] hover:underline cursor-pointer"
+              >
+                {customMode ? 'Deliver to my room instead' : 'Not in your room? Deliver somewhere else'}
+              </button>
             </div>
           </div>
 
