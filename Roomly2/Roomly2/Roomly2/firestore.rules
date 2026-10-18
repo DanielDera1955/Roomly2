@@ -1,0 +1,97 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- helpers ----------
+    function signedIn() { return request.auth != null; }
+    function isAdmin() {
+      return signedIn() && request.auth.token.email == 'chideraugwu75@gmail.com';
+    }
+    // A runner is any signed-in user whose email has a document in /staff
+    function isRunner() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/staff/$(request.auth.token.email));
+    }
+    function isStaff() { return isAdmin() || isRunner(); }
+
+    // ---------- staff (runners) ----------
+    match /staff/{email} {
+      allow read: if isStaff();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() ||
+        (signedIn() && request.auth.token.email == email &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isOnline', 'currentZone']));
+    }
+
+    // ---------- catalog (categories + products in one document) ----------
+    match /catalog/{doc} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ---------- store settings (open/closed override) ----------
+    match /settings/{doc} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    // ---------- customers (no accounts) ----------
+    // Document id = hash(phone + PIN). You can only fetch a profile if you know both.
+    // Listing every customer is staff only.
+    match /customers/{id} {
+      allow get: if true;
+      allow list: if isStaff();
+      allow create, update: if request.resource.data.phone is string
+                            && request.resource.data.phone.size() == 11;
+      allow delete: if isAdmin();
+    }
+
+    // Document id = hash(phone). Only counters, used to detect repeat customers.
+    match /phones/{id} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow delete: if isAdmin();
+      allow create: if request.resource.data.ordersCount == 1
+                    && request.resource.data.deliveredCount == 0;
+      allow update: if isStaff() ||
+        (request.resource.data.ordersCount >= resource.data.ordersCount &&
+         request.resource.data.deliveredCount == resource.data.deliveredCount);
+    }
+
+    // ---------- orders ----------
+    // Order ids are long and random (RM-1234-AB12), so a customer can only open
+    // an order they were given the id for. Listing all orders is staff only.
+    match /orders/{orderId} {
+      allow get: if true;
+      allow list: if isStaff();
+
+      allow create: if request.resource.data.status == 'Received'
+        && request.resource.data.runnerId == ''
+        && request.resource.data.paymentStatus in ['unpaid', 'pay_on_delivery']
+        && request.resource.data.deliveryFee in [1000, 1500]
+        && request.resource.data.totalAmount == request.resource.data.subtotal + request.resource.data.deliveryFee
+        && request.resource.data.items.size() <= 60;
+
+      // Customers may only press "I have made payment". Staff can update anything.
+      allow update: if isStaff() ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'paymentSentAt', 'history'])
+         && resource.data.paymentStatus == 'unpaid'
+         && request.resource.data.paymentStatus == 'payment_sent');
+
+      allow delete: if isAdmin();
+
+      // Chat thread for this order (customer, runner, admin)
+      match /messages/{msgId} {
+        allow read: if true;
+        allow create: if request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 500
+          && (request.resource.data.sender == 'customer'
+              || (isStaff() && request.resource.data.sender in ['runner', 'admin']));
+        allow update: if false;
+        allow delete: if isAdmin();
+      }
+    }
+  }
+}
