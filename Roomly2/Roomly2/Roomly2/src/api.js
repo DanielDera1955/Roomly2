@@ -17,6 +17,7 @@ import {
   calculateDeliveryFee,
 } from './config.ts';
 import { db, auth } from './firebase.ts';
+import { CLOUDINARY } from './cloudinary.ts';
 import {
   collection,
   doc,
@@ -208,7 +209,9 @@ async function readCatalog(force = false) {
 async function writeCatalog(cat) {
   const data = slim(cat);
   if (JSON.stringify(data).length > 900000) {
-    throw new Error('Catalog is too large. Use smaller product photos or image links.');
+    const msg = 'The catalog is too big to save. Use photo links or connect Cloudinary for photos (see src/cloudinary.ts).';
+    window.alert(msg);
+    throw new Error(msg);
   }
   await setDoc(doc(db, 'catalog', 'main'), data);
   catalogCache = data;
@@ -824,4 +827,49 @@ export async function resetCustomerPhone(phone) {
   batch.delete(doc(db, 'phones', await phoneKey(p)));
   await batch.commit();
   return true;
+}
+
+/* ---------------------------- product photos ---------------------------- */
+
+function compressToDataUrl(file, maxSide = 320, quality = 0.6) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Could not read that image.'));
+    };
+    img.src = url;
+  });
+}
+
+/**
+ * Uploads a product photo and returns its address.
+ * With Cloudinary set up (src/cloudinary.ts) the photo is hosted for free and only a link is saved.
+ * Without it, a tiny compressed copy is stored in the database (works, but only for a few photos).
+ * @returns {Promise<string>}
+ */
+export async function uploadProductImage(file) {
+  if (CLOUDINARY.cloudName && CLOUDINARY.uploadPreset) {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('upload_preset', CLOUDINARY.uploadPreset);
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY.cloudName}/image/upload`, {
+      method: 'POST',
+      body: fd,
+    });
+    if (!res.ok) throw new Error('Photo upload failed. Check the Cloudinary cloud name and preset.');
+    const data = await res.json();
+    return String(data.secure_url).replace('/upload/', '/upload/w_500,c_limit,q_auto,f_auto/');
+  }
+  return compressToDataUrl(file);
 }

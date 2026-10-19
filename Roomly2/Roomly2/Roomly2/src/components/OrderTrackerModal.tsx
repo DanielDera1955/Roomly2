@@ -276,7 +276,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
 
                     {currentOrder.paymentStatus === 'payment_confirmed' ? (
                       <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-[#0e9f55]">
-                        ✓ Confirmed Received
+                        Confirmed Received
                       </span>
                     ) : (
                       <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-md bg-amber-200 dark:bg-amber-900/60 text-amber-950 dark:text-amber-100">
@@ -287,7 +287,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
 
                   {currentOrder.paymentStatus === 'payment_confirmed' ? (
                     <div className="text-xs text-[#0e9f55] dark:text-emerald-400 font-medium">
-                      ✓ Payment confirmed! Order attended to and packaging for delivery.
+                      Payment confirmed! Order attended to and packaging for delivery.
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -538,7 +538,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                             }}
                           />
                         ) : (
-                          <span className="text-xl select-none">{item.emoji || '🛍️'}</span>
+                          <span className="text-xl select-none">{item.emoji || ''}</span>
                         )}
                       </div>
 

@@ -94,9 +94,10 @@ export interface CategoryDefinition {
 }
 
 // Location helpers (customers may deliver to a custom spot instead of their room)
+const cleanRoom = (room?: string) => String(room || '').replace(/^\s*room\s*/i, '').trim();
 export const locationText = (o: { area?: string; building?: string; room?: string }) =>
-  o.area === 'Custom' ? `${o.building}` : `${o.building}, Room ${o.room} (${o.area})`;
+  o.area === 'Custom' ? `${o.building}` : `${o.building}, Room ${cleanRoom(o.room)} (${o.area})`;
 export const shortLocation = (o: { area?: string; building?: string; room?: string }) =>
-  o.area === 'Custom' ? `${o.building}` : `${o.building}, Room ${o.room}`;
+  o.area === 'Custom' ? `${o.building}` : `${o.building}, Room ${cleanRoom(o.room)}`;
 export const roomText = (o: { area?: string; building?: string; room?: string }) =>
-  o.area === 'Custom' ? `${o.building}` : `Room ${o.room}`;
+  o.area === 'Custom' ? `${o.building}` : `Room ${cleanRoom(o.room)}`;

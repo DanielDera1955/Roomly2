@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ShoppingBag, Truck, Shield } from 'lucide-react';
 import { subscribeStaff } from '../api.js';
+import { ThemeToggle } from './ThemeToggle';
 
 type Mode = 'customer' | 'runner' | 'admin';
 
@@ -39,6 +40,7 @@ export const AdminSwitcher: React.FC<AdminSwitcherProps> = ({ current, onSelect 
           {label}
         </button>
       ))}
+      <ThemeToggle className="ml-1 !p-1.5 bg-slate-800 text-slate-300" />
     </div>
   );
 };

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { OrderChat } from './OrderChat';
+import { ThemeToggle } from './ThemeToggle';
 import {
   Truck,
   Package,
@@ -61,7 +62,7 @@ const OrderItemRow: React.FC<{ item: CartItem }> = ({ item }) => {
             className="w-full h-full object-cover"
           />
         ) : (
-          <span className="text-2xl select-none">{item.emoji || '📦'}</span>
+          <span className="text-2xl select-none">{item.emoji || ''}</span>
         )}
         <span className="absolute bottom-0 right-0 bg-[#0e9f55] text-white text-[9px] font-black px-1.5 py-0.2 rounded-tl-lg shadow-xs">
           {item.quantity}x
@@ -84,11 +85,11 @@ const OrderItemRow: React.FC<{ item: CartItem }> = ({ item }) => {
           <div className="flex items-center gap-1.5">
             {item.plates === 0 ? (
               <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.2 rounded-md bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300">
-                🥣 0 Plates (Proteins/Item Only)
+                0 Plates (Proteins/Item Only)
               </span>
             ) : (
               <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.2 rounded-md bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">
-                🍽️ {item.plates} {item.plates === 1 ? 'Plate' : 'Plates'}
+                {item.plates} {item.plates === 1 ? 'Plate' : 'Plates'}
               </span>
             )}
           </div>
@@ -292,9 +293,9 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
                 }`}
               >
                 {ord.status === 'Packing'
-                  ? '📦 Being Packaged'
+                  ? 'Being Packaged'
                   : ord.status === 'On the way'
-                  ? '🛵 Packaged & En Route'
+                  ? 'Packaged & En Route'
                   : ord.status}
               </span>
 
@@ -361,7 +362,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
 
             <div className="text-xs text-amber-950 dark:text-amber-200 space-y-1">
               <p className="font-bold leading-snug">
-                🚨 First-time student is paying upon arrival. You MUST collect{' '}
+                First-time student is paying upon arrival. You MUST collect{' '}
                 <span className="underline decoration-amber-500 font-extrabold">
                   ₦{ord.totalAmount.toLocaleString()}
                 </span>{' '}
@@ -533,7 +534,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
               <span className="font-mono">₦{ord.subtotal.toLocaleString()}</span>
             </div>
             <div className="flex justify-between text-slate-500 dark:text-slate-400">
-              <span>Runner Delivery Fee ({ord.deliveryBatch === 'premium' ? '⚡ Premium Instant' : 'Batch'}):</span>
+              <span>Runner Delivery Fee ({ord.deliveryBatch === 'premium' ? 'Premium Instant' : 'Batch'}):</span>
               <span className="font-mono font-bold text-[#0e9f55]">
                 ₦{ord.deliveryFee.toLocaleString()}
               </span>
@@ -616,7 +617,6 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
                   Live
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500">Pick orders, verify POD & complete delivery runs</p>
             </div>
           </div>
 
@@ -629,17 +629,11 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
-            <button
-              type="button"
-              onClick={onBackToCustomer}
-              className="text-xs font-bold text-[#0e9f55] hover:underline px-2.5 py-1.5 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
-            >
-              Storefront
-            </button>
+            <ThemeToggle className="text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" />
             <button
               type="button"
               onClick={() => logoutStaff()}
-              className="text-xs font-bold text-slate-500 hover:text-rose-500 px-2.5 py-1.5 cursor-pointer"
+              className="text-xs font-bold text-slate-500 hover:text-rose-500 px-2.5 py-1.5 cursor-pointer whitespace-nowrap"
             >
               Sign out
             </button>
@@ -787,7 +781,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
                 }`}
               >
                 <Zap className="w-3 h-3" />
-                <span>⚡ Premium (₦1.5k)</span>
+                <span>Premium (₦1.5k)</span>
               </button>
             </div>
 
@@ -873,7 +867,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
                         </span>
                         {ord.deliveryBatch === 'premium' && (
                           <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-700">
-                            ⚡ Premium Instant
+                            Premium Instant
                           </span>
                         )}
                       </div>

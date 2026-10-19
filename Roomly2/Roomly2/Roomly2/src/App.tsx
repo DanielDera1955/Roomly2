@@ -109,6 +109,13 @@ export default function App() {
     }
   }, [darkMode]);
 
+  // Keep the theme state in step with toggles made on other screens
+  useEffect(() => {
+    const sync = () => setDarkMode(document.documentElement.classList.contains('dark'));
+    window.addEventListener('roomly-theme', sync);
+    return () => window.removeEventListener('roomly-theme', sync);
+  }, []);
+
   // Sync hash routing
   useEffect(() => {
     const handleHashChange = () => {

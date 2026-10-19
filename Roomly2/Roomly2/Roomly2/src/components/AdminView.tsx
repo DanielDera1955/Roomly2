@@ -34,6 +34,7 @@ import {
   subscribeOrders,
   logoutStaff,
   resetCustomerPhone,
+  uploadProductImage,
   getCategories,
   addCategory,
   addSubcategory,
@@ -76,7 +77,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
   // Categories & Subcategories State
   const [categories, setCategories] = useState<CategoryDefinition[]>([]);
   const [newCatName, setNewCatName] = useState('');
-  const [newCatEmoji, setNewCatEmoji] = useState('📦');
+  const [newCatEmoji, setNewCatEmoji] = useState('');
   const [newSubcatName, setNewSubcatName] = useState<Record<string, string>>({});
 
   // Products State
@@ -92,7 +93,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
   const [newProdSubcategory, setNewProdSubcategory] = useState('Bread');
   const [newProdPrice, setNewProdPrice] = useState<number>(1000);
   const [newProdUnit, setNewProdUnit] = useState('');
-  const [newProdEmoji, setNewProdEmoji] = useState('🛍️');
+  const [newProdEmoji, setNewProdEmoji] = useState('');
   const [newProdImageUrl, setNewProdImageUrl] = useState('');
   const [newProdIsFood, setNewProdIsFood] = useState(false);
 
@@ -182,7 +183,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCatName.trim()) return;
-    const updated = await addCategory(newCatName.trim(), newCatEmoji.trim() || '📦');
+    const updated = await addCategory(newCatName.trim(), newCatEmoji.trim() || '');
     setCategories(updated);
     setNewCatName('');
   };
@@ -225,7 +226,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
       subcategory: newProdSubcategory || 'All',
       price: Number(newProdPrice),
       unit: newProdUnit.trim() || '1 item',
-      emoji: newProdEmoji.trim() || '🛍️',
+      emoji: newProdEmoji.trim() || '',
       imageUrl: newProdImageUrl.trim() || undefined,
       gradient: 'from-emerald-500/20 to-teal-500/20',
       isFood: newProdIsFood,
@@ -258,21 +259,23 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
   };
 
   // Helper to handle local file upload to base64 Data URL
-  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>, isEdit: boolean) => {
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>, isEdit: boolean) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (uploadEvent) => {
-      const result = uploadEvent.target?.result as string;
-      if (result) {
-        if (isEdit && editingProduct) {
-          setEditingProduct({ ...editingProduct, imageUrl: result });
-        } else {
-          setNewProdImageUrl(result);
-        }
+    setUploadingImage(true);
+    try {
+      const result = await uploadProductImage(file);
+      if (isEdit && editingProduct) {
+        setEditingProduct({ ...editingProduct, imageUrl: result });
+      } else {
+        setNewProdImageUrl(result);
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err: any) {
+      window.alert(err?.message || 'Could not upload that photo.');
+    }
+    setUploadingImage(false);
   };
 
   // Filtered orders
@@ -578,10 +581,10 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                     className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3"
                   >
                     {/* Header */}
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-extrabold text-sm text-slate-900 dark:text-white">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="font-extrabold text-sm text-slate-900 dark:text-white whitespace-nowrap">
                             {ord.id}
                           </span>
                           <span
@@ -599,7 +602,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                           </span>
                           {ord.deliveryBatch === 'premium' && (
                             <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-700">
-                              ⚡ Premium
+                              Premium
                             </span>
                           )}
                         </div>
@@ -616,8 +619,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                         </p>
                       </div>
 
-                      <div className="text-right">
-                        <span className="font-mono font-bold text-sm text-[#0e9f55]">
+                      <div className="text-right shrink-0">
+                        <span className="font-bold text-sm text-[#0e9f55] whitespace-nowrap">
                           ₦{ord.totalAmount.toLocaleString()}
                         </span>
                         <span className="block text-[10px] text-slate-400">
@@ -627,17 +630,17 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                     </div>
 
                     {/* Payment Status & Actions */}
-                    <div className="flex items-center justify-between text-xs p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
-                      <div className="flex items-center gap-1.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <CreditCard className="w-3.5 h-3.5 text-slate-400" />
                         <span className="font-semibold text-slate-600 dark:text-slate-300">
                           Payment:
                         </span>
                         {ord.paymentStatus === 'payment_confirmed' ? (
-                          <span className="text-[#0e9f55] font-bold">✓ Confirmed Paid</span>
+                          <span className="text-[#0e9f55] font-bold">Confirmed Paid</span>
                         ) : ord.paymentStatus === 'payment_sent' ? (
                           <span className="text-amber-600 font-bold animate-pulse">
-                            ⚠️ Student Sent Payment!
+                            Student Sent Payment!
                           </span>
                         ) : ord.paymentStatus === 'pay_on_delivery' ? (
                           <span className="text-blue-600 font-bold">Pay on Delivery</span>
@@ -663,8 +666,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                     </div>
 
                     {/* Assigned Runner Selector */}
-                    <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700 text-xs">
-                      <div className="flex items-center gap-1.5">
+                    <div className="flex flex-col gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700 text-xs">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <User className="w-3.5 h-3.5 text-[#0e9f55]" />
                         <span className="font-semibold text-slate-700 dark:text-slate-300">
                           Assigned Runner:
@@ -677,7 +680,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                       <select
                         value={ord.runnerId || ''}
                         onChange={(e) => handleAssignRunner(ord.id, e.target.value)}
-                        className="bg-white dark:bg-slate-800 rounded-lg px-2 py-1 border border-slate-200 dark:border-slate-700 text-xs font-bold cursor-pointer"
+                        className="w-full bg-white dark:bg-slate-800 rounded-lg px-2 py-2 border border-slate-200 dark:border-slate-700 text-xs font-bold cursor-pointer"
                       >
                         <option value="">Assign Runner...</option>
                         {runners.map((r) => (
@@ -707,7 +710,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                                   }}
                                 />
                               ) : (
-                                <span className="text-base">{item.emoji || '📦'}</span>
+                                <span className="text-base">{item.emoji || ''}</span>
                               )}
                             </div>
                             <span className="text-slate-700 dark:text-slate-300 truncate">
@@ -926,7 +929,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                       {/* File upload from device */}
                       <label className="inline-flex items-center gap-1 px-2.5 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-[#0e9f55] rounded-lg text-[10px] font-semibold text-slate-700 dark:text-slate-300 cursor-pointer transition-colors">
                         <Upload className="w-3 h-3" />
-                        <span>Upload photo from device</span>
+                        <span>{uploadingImage ? 'Uploading…' : 'Upload photo from device'}</span>
                         <input
                           type="file"
                           accept="image/*"
@@ -1252,7 +1255,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
                           <label className="inline-flex items-center gap-1 px-2 py-0.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-[9px] font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
                             <Upload className="w-2.5 h-2.5" />
-                            <span>Upload from device</span>
+                            <span>{uploadingImage ? 'Uploading…' : 'Upload from device'}</span>
                             <input
                               type="file"
                               accept="image/*"

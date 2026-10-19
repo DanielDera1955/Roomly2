@@ -250,7 +250,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                             }}
                           />
                         ) : (
-                          <span className="text-xl select-none">{item.emoji || '🛍️'}</span>
+                          <span className="text-xl select-none">{item.emoji || ''}</span>
                         )}
                       </div>
                       <div className="min-w-0">
