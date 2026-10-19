@@ -1,7 +1,0 @@
-{
-  "name": "Roomly - Campus Delivery",
-  "description": "Campus delivery service for university students in hostels and lodges. Get food, drinks, and everyday essentials delivered directly to your room in 30-60 minutes.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
-
