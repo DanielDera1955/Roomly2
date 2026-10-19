@@ -7,6 +7,7 @@ export interface CartItem {
   totalPrice: number;
   imageUrl?: string;
   emoji: string;
+  source?: 'school' | 'outside';
   isFood?: boolean;
   plates?: number;
   extras?: {

@@ -23,6 +23,7 @@ import {
   TrendingUp,
   BarChart3,
 } from 'lucide-react';
+import { sellingPrice } from '../config';
 import { OrderRecord, CategoryDefinition, DeliveryRunner, locationText, shortLocation, roomText } from '../types';
 import { Product, PRESET_PRODUCT_IMAGES } from '../config';
 import { OrderHistorySection } from './SpendingHistorySection';
@@ -93,6 +94,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
   const [newProdSubcategory, setNewProdSubcategory] = useState('Bread');
   const [newProdPrice, setNewProdPrice] = useState<number>(1000);
   const [newProdUnit, setNewProdUnit] = useState('');
+  const [newProdCost, setNewProdCost] = useState<number>(0);
+  const [newProdSource, setNewProdSource] = useState<'school' | 'outside'>('school');
   const [newProdEmoji, setNewProdEmoji] = useState('');
   const [newProdImageUrl, setNewProdImageUrl] = useState('');
   const [newProdIsFood, setNewProdIsFood] = useState(false);
@@ -225,6 +228,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
       category: newProdCategory,
       subcategory: newProdSubcategory || 'All',
       price: Number(newProdPrice),
+      costPrice: newProdCost > 0 ? newProdCost : undefined,
+      source: newProdSource,
       unit: newProdUnit.trim() || '1 item',
       emoji: newProdEmoji.trim() || '',
       imageUrl: newProdImageUrl.trim() || undefined,
@@ -838,6 +843,44 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                   </div>
                 </div>
 
+                <div className="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 block mb-0.5">Cost price you pay (₦)</label>
+                    <input
+                      type="number"
+                      value={newProdCost || ''}
+                      onChange={(e) => {
+                        const c = Number(e.target.value);
+                        setNewProdCost(c);
+                        if (c > 0) setNewProdPrice(sellingPrice(c, newProdSource));
+                      }}
+                      placeholder="e.g. 1000"
+                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 block mb-0.5">Sold from</label>
+                    <select
+                      value={newProdSource}
+                      onChange={(e) => {
+                        const s = e.target.value as 'school' | 'outside';
+                        setNewProdSource(s);
+                        if (newProdCost > 0) setNewProdPrice(sellingPrice(newProdCost, s));
+                      }}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
+                    >
+                      <option value="school">Inside school (16%)</option>
+                      <option value="outside">Outside school (18% / 12%)</option>
+                    </select>
+                  </div>
+                  {newProdCost > 0 && (
+                    <p className="col-span-2 text-[11px] text-slate-600 dark:text-slate-300">
+                      Customer pays ₦{Number(newProdPrice).toLocaleString()} · your profit ₦
+                      {(Number(newProdPrice) - newProdCost).toLocaleString()} per item
+                    </p>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-[10px] font-bold text-slate-400 block mb-0.5">
@@ -1174,6 +1217,52 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                         className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-bold"
                         required
                       />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 block mb-0.5">Cost price you pay (₦)</label>
+                        <input
+                          type="number"
+                          value={editingProduct.costPrice || ''}
+                          onChange={(e) => {
+                            const c = Number(e.target.value);
+                            setEditingProduct({
+                              ...editingProduct,
+                              costPrice: c > 0 ? c : undefined,
+                              price: c > 0 ? sellingPrice(c, editingProduct.source || 'school') : editingProduct.price,
+                            });
+                          }}
+                          placeholder="e.g. 1000"
+                          className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 block mb-0.5">Sold from</label>
+                        <select
+                          value={editingProduct.source || 'school'}
+                          onChange={(e) => {
+                            const src = e.target.value as 'school' | 'outside';
+                            setEditingProduct({
+                              ...editingProduct,
+                              source: src,
+                              price: editingProduct.costPrice ? sellingPrice(editingProduct.costPrice, src) : editingProduct.price,
+                            });
+                          }}
+                          className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
+                        >
+                          <option value="school">Inside school (16%)</option>
+                          <option value="outside">Outside school (18% / 12%)</option>
+                        </select>
+                      </div>
+                      {editingProduct.costPrice ? (
+                        <p className="col-span-2 text-[11px] text-slate-600 dark:text-slate-300">
+                          Customer pays ₦{Number(editingProduct.price).toLocaleString()} · your profit ₦
+                          {(Number(editingProduct.price) - editingProduct.costPrice).toLocaleString()} per item
+                        </p>
+                      ) : (
+                        <p className="col-span-2 text-[11px] text-slate-500">Enter the cost to price this item automatically.</p>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">

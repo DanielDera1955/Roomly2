@@ -15,6 +15,7 @@ import {
   STORE_CONFIG,
   DELIVERY_BATCHES,
   calculateDeliveryFee,
+  OUTSIDE_DELIVERY_FEE,
 } from './config.ts';
 import { db, auth } from './firebase.ts';
 import { CLOUDINARY } from './cloudinary.ts';
@@ -516,7 +517,8 @@ export async function createOrder(orderPayload) {
 
   const subtotal = Number(orderPayload.subtotal || 0);
   const batchId = orderPayload.deliveryBatch || 'premium';
-  const deliveryFee = calculateDeliveryFee(batchId);
+  const hasOutside = (orderPayload.items || []).some((i) => i.source === 'outside');
+  const deliveryFee = hasOutside ? OUTSIDE_DELIVERY_FEE : calculateDeliveryFee(batchId);
   const totalAmount = subtotal + deliveryFee;
 
   let paymentMethod = orderPayload.paymentMethod;

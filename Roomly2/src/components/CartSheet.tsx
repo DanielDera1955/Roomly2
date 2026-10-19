@@ -16,7 +16,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
-import { CAMPUS_LOCATIONS, DELIVERY_BATCHES, STORE_CONFIG, calculateDeliveryFee } from '../config';
+import { CAMPUS_LOCATIONS, DELIVERY_BATCHES, STORE_CONFIG, calculateDeliveryFee, OUTSIDE_DELIVERY_FEE } from '../config';
 import { isValidNigerianPhone, normalizePhone } from '../api.js';
 
 interface CartSheetProps {
@@ -112,8 +112,14 @@ export const CartSheet: React.FC<CartSheetProps> = ({
 
   // Financial calculations
   const itemTotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
-  const deliveryFee = calculateDeliveryFee(deliveryBatch);
+  const hasOutside = items.some((i) => i.source === 'outside');
+  const deliveryFee = hasOutside ? OUTSIDE_DELIVERY_FEE : calculateDeliveryFee(deliveryBatch);
   const grandTotal = itemTotal + deliveryFee;
+
+  // Outside-school items arrive in batches, so instant delivery is not offered for them
+  useEffect(() => {
+    if (hasOutside && deliveryBatch === 'premium') setDeliveryBatch('evening');
+  }, [hasOutside, deliveryBatch]);
 
   const hasCustomRequest = Boolean(customRequest && customRequest.trim().length > 0);
   const isPhoneValid = isValidNigerianPhone(phone);
@@ -457,7 +463,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             </div>
 
             <div className="grid grid-cols-1 gap-2">
-              {DELIVERY_BATCHES.map((batch) => {
+              {DELIVERY_BATCHES.filter((b) => !(hasOutside && b.id === 'premium')).map((batch) => {
                 const isSelected = deliveryBatch === batch.id;
                 const isPremium = batch.id === 'premium';
 
@@ -622,7 +628,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             </div>
             <div className="flex justify-between text-slate-600 dark:text-slate-400">
               <span>
-                Delivery Transport ({deliveryBatch === 'premium' ? 'Premium 30-60m' : 'Campus Batch'})
+                Delivery Transport ({hasOutside ? 'Outside-school order' : deliveryBatch === 'premium' ? 'Premium 30-60m' : 'Campus Batch'})
               </span>
               <span className="font-mono tabular-nums">₦{deliveryFee.toLocaleString()}</span>
             </div>

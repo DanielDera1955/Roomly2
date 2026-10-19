@@ -225,6 +225,7 @@ export default function App() {
         totalPrice: product.price,
         imageUrl: product.imageUrl,
         emoji: product.emoji,
+        source: product.source,
         isFood: false,
       };
       return [...prev, newItem];

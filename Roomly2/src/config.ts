@@ -18,6 +18,8 @@ export interface Product {
   gradient: string;
   description?: string;
   isAvailable?: boolean;
+  costPrice?: number; // what you pay (admin only)
+  source?: 'school' | 'outside'; // where the item is bought from
 }
 
 export interface FoodExtraOption {
@@ -111,6 +113,32 @@ export const DELIVERY_BATCHES: DeliveryBatchOption[] = [
  * Calculate delivery fee based on selected batch option:
  * Premium delivery = ₦1,500; Morning/Afternoon/Evening batches = ₦1,000
  */
+// ---------- Pricing engine ----------
+export type ProductSource = 'school' | 'outside';
+
+export const PRICING = {
+  schoolMargin: 0.16, // every item bought inside school
+  outsideMargin: 0.18, // outside-school items costing under outsideBigFrom
+  outsideBigMargin: 0.12, // outside-school items costing outsideBigFrom or more
+  outsideBigFrom: 10000,
+};
+
+/** Delivery for any order that contains outside-school items (runner gets 600, 200 is yours) */
+export const OUTSIDE_DELIVERY_FEE = 800;
+
+const roundUp10 = (n: number) => Math.ceil((n - 0.000001) / 10) * 10;
+
+/** Customer price for one item from the price you pay, rounded up to the next 10 naira */
+export function sellingPrice(cost: number, source: ProductSource = 'school'): number {
+  if (!cost || cost <= 0) return 0;
+  if (source !== 'outside') return roundUp10(cost * (1 + PRICING.schoolMargin));
+  if (cost >= PRICING.outsideBigFrom) return roundUp10(cost * (1 + PRICING.outsideBigMargin));
+  // Under the big-item line: 18%, but never more than the price of a big item,
+  // so an item costing 9,999 can't sell for more than one costing 10,000.
+  const capped = Math.min(cost * (1 + PRICING.outsideMargin), PRICING.outsideBigFrom * (1 + PRICING.outsideBigMargin));
+  return roundUp10(capped);
+}
+
 export function calculateDeliveryFee(batchId: string = 'premium'): number {
   if (batchId === 'premium') {
     return STORE_CONFIG.deliveryFeePremium;
