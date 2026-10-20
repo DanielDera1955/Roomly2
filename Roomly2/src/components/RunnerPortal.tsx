@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { OrderChat } from './OrderChat';
 import { ThemeToggle } from './ThemeToggle';
 import { SoundToggle } from './SoundToggle';
+import { BatchSwitches } from './BatchSwitches';
 import { playChime } from '../sound';
 import { ChevronDown as ChevronDownIcon, Phone as PhoneIcon } from 'lucide-react';
 import {
@@ -31,7 +32,7 @@ import {
   HelpCircle,
   ExternalLink,
 } from 'lucide-react';
-import { OrderRecord, DeliveryRunner, CartItem, locationText, shortLocation, roomText } from '../types';
+import { OrderRecord, DeliveryRunner, CartItem, locationText, shortLocation, roomText, partLabel } from '../types';
 import {
   getOrders,
   getRunners,
@@ -441,6 +442,24 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
           </div>
         ) : null}
 
+        {(ord.hasStore || ord.hasFood) && (
+          <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs space-y-1.5">
+            <p className="font-bold text-slate-700 dark:text-slate-200">Outside-school items</p>
+            {ord.hasStore && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Store items</span>
+                <span className="font-bold">{partLabel(ord.storeStatus)}</span>
+              </div>
+            )}
+            {ord.hasFood && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Food</span>
+                <span className="font-bold">{partLabel(ord.foodStatus)}</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ================= FULL ORDER ITEMS BREAKDOWN WITH PHOTOS ================= */}
         <div className="space-y-2 p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200/60 dark:border-slate-800">
           <div className="flex items-center justify-between">
@@ -614,6 +633,8 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
             <span className="text-base font-extrabold text-slate-900 dark:text-white">₦{totalEarnings.toLocaleString()}</span>
           </div>
         </div>
+
+        <BatchSwitches />
 
         {/* Filters */}
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">

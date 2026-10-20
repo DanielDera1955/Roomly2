@@ -16,6 +16,7 @@ import {
   DELIVERY_BATCHES,
   deliveryFeeFor,
   nextBatchId,
+  getBookableSlots,
 } from './config.ts';
 import { db, auth } from './firebase.ts';
 import { CLOUDINARY } from './cloudinary.ts';
@@ -90,7 +91,13 @@ onAuthStateChanged(auth, async (user) => {
       const d = snap.data();
       pushStaff({
         ready: true,
-        staff: { id: email, email, role: 'runner', name: d.name || 'Runner', phone: d.phone || '' },
+        staff: {
+          id: email,
+          email,
+          role: d.role === 'store' || d.role === 'food' ? d.role : 'runner',
+          name: d.name || 'Runner',
+          phone: d.phone || '',
+        },
         denied: false,
       });
       return;
@@ -182,6 +189,45 @@ export function setStoreOverride(isOpen) {
   // Only staff can write this; for anyone else the write is rejected and ignored
   setDoc(doc(db, 'settings', 'store'), { override: storeOverride }).catch(() => {});
   return getStoreStatus();
+}
+
+/* ---------------- delivery batches switched off for a day ---------------- */
+
+let batchOff = new Set();
+try {
+  onSnapshot(
+    doc(db, 'settings', 'batches'),
+    (s) => {
+      batchOff = new Set(s.exists() ? s.data().off || [] : []);
+      window.dispatchEvent(new Event('roomly-batches'));
+    },
+    () => {}
+  );
+} catch (e) {
+  /* ignore */
+}
+
+export function getBatchOff() {
+  return batchOff;
+}
+
+/** Batches students can still order into right now (respects runner and admin switches) */
+export function getBookableBatches(hasOutside = false) {
+  return getBookableSlots(new Date(), hasOutside, batchOff);
+}
+
+/** Staff only: switch a batch (key like "2026-10-20|afternoon") on or off */
+/** @returns {Promise<void>} */
+export async function setBatchOff(key, off) {
+  const next = new Set(batchOff);
+  if (off) next.add(key);
+  else next.delete(key);
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const keep = [...next].filter((k) => String(k).split('|')[0] >= todayKey);
+  batchOff = new Set(keep);
+  window.dispatchEvent(new Event('roomly-batches'));
+  await setDoc(doc(db, 'settings', 'batches'), { off: keep });
 }
 
 /* ---------- catalog (one document: categories + products) ---------- */
@@ -380,7 +426,9 @@ export async function getAllCustomers() {
 export async function getRunners() {
   try {
     const snap = await getDocs(collection(db, 'staff'));
-    return snap.docs.map((d) => ({ isOnline: true, currentZone: 'Campus Runner', ...d.data(), id: d.id }));
+    return snap.docs
+      .map((d) => ({ isOnline: true, currentZone: 'Campus Runner', ...d.data(), id: d.id }))
+      .filter((r) => !r.role || r.role === 'runner');
   } catch (e) {
     return [];
   }
@@ -517,12 +565,14 @@ export async function createOrder(orderPayload) {
 
   const subtotal = Number(orderPayload.subtotal || 0);
   const batchId = orderPayload.deliveryBatch && orderPayload.deliveryBatch !== 'premium' ? orderPayload.deliveryBatch : nextBatchId();
-  const hasOutside = (orderPayload.items || []).some((i) => i.source === 'outside');
+  const hasStore = (orderPayload.items || []).some((i) => i.source === 'outside');
+  const hasFood = (orderPayload.items || []).some((i) => i.source === 'food');
+  const hasOutside = hasStore || hasFood;
   const deliveryFee = deliveryFeeFor(subtotal, hasOutside);
   const totalAmount = subtotal + deliveryFee;
 
   let paymentMethod = orderPayload.paymentMethod;
-  if (isRepeatCustomer && paymentMethod === 'pay_on_delivery') paymentMethod = 'pay_now';
+  if ((isRepeatCustomer || hasOutside) && paymentMethod === 'pay_on_delivery') paymentMethod = 'pay_now';
 
   const now = new Date();
   const createdAtIso = now.toISOString();
@@ -537,12 +587,18 @@ export async function createOrder(orderPayload) {
     room: orderPayload.room,
     items: orderPayload.items || [],
     customRequest: orderPayload.customRequest || '',
+    hasStore,
+    hasFood,
+    payReady: false,
+    storeStatus: hasStore ? 'pending' : '',
+    foodStatus: hasFood ? 'pending' : '',
     paymentMethod,
     paymentStatus: paymentMethod === 'pay_on_delivery' ? 'pay_on_delivery' : 'unpaid',
     paymentDeadline: new Date(now.getTime() + 15 * 60 * 1000).toISOString(),
     isFirstTimeCustomer: !isRepeatCustomer,
     deliveryBatch: batchId,
-    deliveryTime: batchMeta ? `${batchMeta.name} (${batchMeta.timeWindow})` : 'Next delivery batch',
+    deliveryTime: orderPayload.deliveryTime || (batchMeta ? `${batchMeta.name} (${batchMeta.timeWindow})` : 'Next delivery batch'),
+    deliveryDate: orderPayload.deliveryDate || '',
     subtotal,
     deliveryFee,
     totalAmount,
@@ -607,6 +663,7 @@ export async function markPaymentSent(orderId) {
       const now = new Date().toISOString();
       o.paymentStatus = 'payment_sent';
       o.paymentSentAt = now;
+      o.payReady = true; // store and food operators only see the order from this point
       o.history.push({
         status: o.status,
         timestamp: now,
@@ -874,4 +931,46 @@ export async function uploadProductImage(file) {
     return String(data.secure_url).replace('/upload/', '/upload/w_500,c_limit,q_auto,f_auto/');
   }
   return compressToDataUrl(file);
+}
+
+/* ------------------- store and food operators ------------------- */
+
+/** Live list of PAID orders (payment marked as sent) that contain this operator's items. kind: 'store' | 'food' */
+export function subscribeOperatorOrders(kind, cb) {
+  const field = kind === 'food' ? 'hasFood' : 'hasStore';
+  const q = query(collection(db, 'orders'), where(field, '==', true), where('payReady', '==', true), limit(100));
+  return onSnapshot(
+    q,
+    (snap) =>
+      cb(
+        snap.docs
+          .map((d) => ({ ...d.data(), id: d.id }))
+          .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      ),
+    (err) => {
+      console.error('Operator orders error:', err);
+      cb([]);
+    }
+  );
+}
+
+/** Operator marks their part of an order as 'packed' or 'sent' */
+/** @returns {Promise<any>} */
+export async function updatePartStatus(orderId, kind, status, who = 'Operator') {
+  const field = kind === 'food' ? 'foodStatus' : 'storeStatus';
+  const label = kind === 'food' ? 'Food' : 'Store';
+  try {
+    return await patchOrder(orderId, (o) => {
+      o[field] = status;
+      o.history.push({
+        status: o.status,
+        timestamp: new Date().toISOString(),
+        note: `${label} items ${status === 'sent' ? 'sent to the school gate' : 'packed'} by ${who}`,
+        updatedBy: who,
+      });
+    });
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
 }

@@ -19,3 +19,13 @@
 
 ## 3. First admin login
 Open yoursite/#admin, sign in with the admin email and password. Open yoursite/#runner for runners.
+
+## Store and food operators
+1. Firebase > Authentication > Users > Add user (email, or phone@roomly.app, plus a password).
+2. Firestore > staff > Add document. Document ID = that login email in lowercase.
+   Fields: name (string), phone (string), role (string) = store   (or food for the food operator).
+   Runners have no role field or role = runner.
+3. The operator signs in at yoursite/#operator. They only see paid orders (after the student taps
+   "I have made payment") and only the items for their own kind.
+4. In Admin > Products, set "Sold from" to "Outside: trusted store" or "Outside: food operator".
+5. Republish firestore.rules whenever it changes.

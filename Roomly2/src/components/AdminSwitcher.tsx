@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { ShoppingBag, Truck, Shield } from 'lucide-react';
+import { ShoppingBag, Truck, Shield, Store } from 'lucide-react';
 import { subscribeStaff } from '../api.js';
 import { ThemeToggle } from './ThemeToggle';
 import { SoundToggle } from './SoundToggle';
 
-type Mode = 'customer' | 'runner' | 'admin';
+type Mode = 'customer' | 'runner' | 'operator' | 'admin';
 
 interface AdminSwitcherProps {
   current: Mode;
@@ -22,6 +22,7 @@ export const AdminSwitcher: React.FC<AdminSwitcherProps> = ({ current, onSelect 
   const items: { id: Mode; label: string; Icon: React.ElementType }[] = [
     { id: 'customer', label: 'Customer', Icon: ShoppingBag },
     { id: 'runner', label: 'Runner', Icon: Truck },
+    { id: 'operator', label: 'Operator', Icon: Store },
     { id: 'admin', label: 'Admin', Icon: Shield },
   ];
 

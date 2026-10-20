@@ -21,7 +21,7 @@ import {
   AlertTriangle,
   Zap,
 } from 'lucide-react';
-import { OrderRecord, locationText, shortLocation, roomText } from '../types';
+import { OrderRecord, locationText, shortLocation, roomText, partLabel } from '../types';
 import { STORE_CONFIG } from '../config';
 import { markPaymentSent } from '../api.js';
 
@@ -420,6 +420,24 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                   })}
                 </div>
               </div>
+
+              {(currentOrder.hasStore || currentOrder.hasFood) && (
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs space-y-1.5">
+                  <p className="font-bold text-slate-700 dark:text-slate-200">Outside-school items</p>
+                  {currentOrder.hasStore && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Store items</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-100">{partLabel(currentOrder.storeStatus)}</span>
+                    </div>
+                  )}
+                  {currentOrder.hasFood && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Food</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-100">{partLabel(currentOrder.foodStatus)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Order Items Breakdown with Recognizable Product Photos */}
               <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 space-y-2.5">

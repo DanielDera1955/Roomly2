@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { OrderChat } from './OrderChat';
+import { BatchSwitches } from './BatchSwitches';
 import { playChime } from '../sound';
 import { Phone as PhoneIcon, ChevronDown as ChevronDownIcon } from 'lucide-react';
 import {
@@ -97,7 +98,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
   const [newProdPrice, setNewProdPrice] = useState<number>(1000);
   const [newProdUnit, setNewProdUnit] = useState('');
   const [newProdCost, setNewProdCost] = useState<number>(0);
-  const [newProdSource, setNewProdSource] = useState<'school' | 'outside'>('school');
+  const [newProdSource, setNewProdSource] = useState<'school' | 'outside' | 'food'>('school');
   const [newProdEmoji, setNewProdEmoji] = useState('');
   const [newProdImageUrl, setNewProdImageUrl] = useState('');
   const [newProdIsFood, setNewProdIsFood] = useState(false);
@@ -548,6 +549,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
         {/* ================= TAB 1: ORDERS & RUNNERS ================= */}
         {currentTab === 'orders' && (
           <div className="space-y-4">
+            <BatchSwitches />
+
             {/* Search & Filter */}
             <div className="space-y-2">
               <div className="relative">
@@ -872,14 +875,15 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                     <select
                       value={newProdSource}
                       onChange={(e) => {
-                        const s = e.target.value as 'school' | 'outside';
+                        const s = e.target.value as 'school' | 'outside' | 'food';
                         setNewProdSource(s);
                         if (newProdCost > 0) setNewProdPrice(sellingPrice(newProdCost, s));
                       }}
                       className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
                     >
                       <option value="school">Inside school (16%)</option>
-                      <option value="outside">Outside school (18% / 12%)</option>
+                      <option value="outside">Outside: trusted store (18% / 12%)</option>
+                      <option value="food">Outside: food operator (18% / 12%)</option>
                     </select>
                   </div>
                   {newProdCost > 0 && (
@@ -1251,7 +1255,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                         <select
                           value={editingProduct.source || 'school'}
                           onChange={(e) => {
-                            const src = e.target.value as 'school' | 'outside';
+                            const src = e.target.value as 'school' | 'outside' | 'food';
                             setEditingProduct({
                               ...editingProduct,
                               source: src,
@@ -1261,7 +1265,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                           className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
                         >
                           <option value="school">Inside school (16%)</option>
-                          <option value="outside">Outside school (18% / 12%)</option>
+                          <option value="outside">Outside: trusted store (18% / 12%)</option>
+                      <option value="food">Outside: food operator (18% / 12%)</option>
                         </select>
                       </div>
                       {editingProduct.costPrice ? (

@@ -17,10 +17,11 @@ import {
   setStoreOverride,
   isValidNigerianPhone,
 } from './api.js';
-import { Product } from './config';
+import { Product, isOutsideSource } from './config';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
 import { AdminSwitcher } from './components/AdminSwitcher';
+import { OperatorPortal } from './components/OperatorPortal';
 import { CartItem, CustomerProfile, OrderRecord, CategoryDefinition } from './types';
 import { Header, PortalMode } from './components/Header';
 import { PhoneLookupBar } from './components/PhoneLookupBar';
@@ -53,6 +54,7 @@ export default function App() {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash.toLowerCase();
       if (hash.includes('admin')) return 'admin';
+      if (hash.includes('operator')) return 'operator';
       if (hash.includes('runner')) return 'runner';
       if (window.location.pathname.includes('/admin')) return 'admin';
       if (window.location.pathname.includes('/runner')) return 'runner';
@@ -69,6 +71,7 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState<string>('Everyday');
   const [selectedSubcategory, setSelectedSubcategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sourceMode, setSourceMode] = useState<'inside' | 'outside'>('inside');
 
   // Customer & Phone Lookup
   // Remember the customer on this device until they press Sign out
@@ -122,6 +125,7 @@ export default function App() {
     const handleHashChange = () => {
       const hash = window.location.hash.toLowerCase();
       if (hash.includes('admin')) setCurrentPortal('admin');
+      else if (hash.includes('operator')) setCurrentPortal('operator');
       else if (hash.includes('runner')) setCurrentPortal('runner');
       else setCurrentPortal('customer');
     };
@@ -364,7 +368,7 @@ export default function App() {
 
   // Filter products by search, main category, and subcategory
   const filteredProducts = useMemo(() => {
-    let list = products;
+    let list = products.filter((p) => (sourceMode === 'outside' ? isOutsideSource(p.source) : !isOutsideSource(p.source)));
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       return list.filter(
@@ -382,7 +386,7 @@ export default function App() {
       }
     }
     return list;
-  }, [products, selectedCategory, selectedSubcategory, searchQuery]);
+  }, [products, selectedCategory, selectedSubcategory, searchQuery, sourceMode]);
 
   const handleToggleStoreHoursOverride = () => {
     const current = storeStatus.isOpen;
@@ -404,6 +408,16 @@ export default function App() {
           }
         }}
       />
+      </StaffGate>
+    );
+  }
+
+  // RENDER OPERATOR PORTAL (store and food operators)
+  if (currentPortal === 'operator') {
+    return (
+      <StaffGate role="operator" onBack={() => handleSelectPortal('customer')}>
+        <AdminSwitcher current="operator" onSelect={handleSelectPortal} />
+        <OperatorPortal onBack={() => handleSelectPortal('customer')} />
       </StaffGate>
     );
   }
@@ -456,13 +470,22 @@ export default function App() {
               <div>
                 <strong className="font-bold">Store is currently closed.</strong>
                 <p className="text-[11px] text-rose-600 dark:text-rose-400">
-                  Open daily 6am - 11pm. You can pre-order for tomorrow morning!
+                  You can still order for the next delivery batch.
                 </p>
               </div>
             </div>
           )}
 
           {/* Phone Number Input & Customer Recognition */}
+          <div className="pt-1">
+            <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-snug">
+              Order Food and Other Items Within and Outside School
+            </h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Delivered to your hostel or lodge room in scheduled batches.
+            </p>
+          </div>
+
           <PhoneLookupBar
             phone={phone}
             onPhoneChange={setPhone}
@@ -475,6 +498,32 @@ export default function App() {
 
           {/* Delivery Promise Banner */}
           <DeliveryPromiseBanner />
+
+          {/* Inside school or outside school */}
+          <div>
+            <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/70">
+              {(['inside', 'outside'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setSourceMode(m)}
+                  className={`py-2.5 rounded-xl text-sm font-bold cursor-pointer transition-all ${
+                    sourceMode === m
+                      ? 'bg-white dark:bg-slate-900 text-[#0e9f55] shadow-xs'
+                      : 'text-slate-500 dark:text-slate-400'
+                  }`}
+                >
+                  {m === 'inside' ? 'Inside school' : 'Outside school'}
+                </button>
+              ))}
+            </div>
+            {sourceMode === 'outside' && (
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-snug">
+                From our trusted stores and food partner, brought to the school gate and then to your room. Delivery is
+                ₦800, and these items are paid for first.
+              </p>
+            )}
+          </div>
 
           {/* Search Bar */}
           <SearchBar query={searchQuery} onChange={setSearchQuery} />

@@ -3,7 +3,7 @@ import { SoundToggle } from './SoundToggle';
 import { Moon, Sun, Shield, Compass, Truck, ShoppingBag } from 'lucide-react';
 import { CustomerProfile } from '../types';
 
-export type PortalMode = 'customer' | 'runner' | 'admin';
+export type PortalMode = 'customer' | 'runner' | 'admin' | 'operator';
 
 interface HeaderProps {
   currentPortal: PortalMode;

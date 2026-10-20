@@ -3,7 +3,7 @@
  * Easy to edit categories, subcategories, products, prices, locations, and rules.
  */
 
-import { CategoryDefinition, DeliveryRunner } from './types';
+import { CategoryDefinition, DeliveryRunner, DeliveryBatchId } from './types';
 
 export interface Product {
   id: string;
@@ -19,7 +19,7 @@ export interface Product {
   description?: string;
   isAvailable?: boolean;
   costPrice?: number; // what you pay (admin only)
-  source?: 'school' | 'outside'; // where the item is bought from
+  source?: 'school' | 'outside' | 'food'; // school = canteen, outside = store, food = food operator
 }
 
 export interface FoodExtraOption {
@@ -66,7 +66,7 @@ export const STORE_CONFIG = {
 };
 
 export interface DeliveryBatchOption {
-  id: 'premium' | 'morning' | 'afternoon' | 'evening';
+  id: DeliveryBatchId;
   name: string;
   timeWindow: string;
   price: number;
@@ -74,31 +74,13 @@ export interface DeliveryBatchOption {
   description: string;
 }
 
+// Labels for every batch that can appear (used by the cart and the admin charts)
 export const DELIVERY_BATCHES: DeliveryBatchOption[] = [
-  {
-    id: 'morning',
-    name: 'Morning Batch',
-    timeWindow: '8:00 AM – 9:00 AM',
-    price: 1000,
-    badge: 'Morning Run',
-    description: 'Packaged & dispatched during 8-9am campus delivery batch',
-  },
-  {
-    id: 'afternoon',
-    name: 'Afternoon Batch',
-    timeWindow: '1:00 PM – 2:00 PM',
-    price: 1000,
-    badge: 'Afternoon Run',
-    description: 'Packaged & dispatched during 1-2pm campus lunchtime batch',
-  },
-  {
-    id: 'evening',
-    name: 'Evening / Night Batch',
-    timeWindow: '7:00 PM – 8:00 PM',
-    price: 1000,
-    badge: 'Night Run',
-    description: 'Packaged & dispatched during 7-8pm dinner & hostel study batch',
-  },
+  { id: 'morning', name: 'Morning Batch', timeWindow: 'Saturday morning', price: 0, badge: '', description: 'Free-day morning delivery' },
+  { id: 'midday', name: 'Midday Batch', timeWindow: 'Midday', price: 0, badge: '', description: 'Midday delivery' },
+  { id: 'afternoon', name: 'Afternoon Batch', timeWindow: '2 to 3pm', price: 0, badge: '', description: 'Afternoon delivery' },
+  { id: 'late', name: 'Late Afternoon Batch', timeWindow: 'Late afternoon', price: 0, badge: '', description: 'Late afternoon delivery' },
+  { id: 'evening', name: 'Evening Batch', timeWindow: '8 to 9pm', price: 0, badge: '', description: 'Evening delivery' },
 ];
 
 /**
@@ -106,7 +88,10 @@ export const DELIVERY_BATCHES: DeliveryBatchOption[] = [
  * Premium delivery = ₦1,500; Morning/Afternoon/Evening batches = ₦1,000
  */
 // ---------- Pricing engine ----------
-export type ProductSource = 'school' | 'outside';
+export type ProductSource = 'school' | 'outside' | 'food';
+
+/** Outside-school items: 'outside' = trusted store, 'food' = food operator */
+export const isOutsideSource = (s?: string) => s === 'outside' || s === 'food';
 
 export const PRICING = {
   schoolMargin: 0.16, // every item bought inside school
@@ -123,12 +108,130 @@ const roundUp10 = (n: number) => Math.ceil((n - 0.000001) / 10) * 10;
 /** Customer price for one item from the price you pay, rounded up to the next 10 naira */
 export function sellingPrice(cost: number, source: ProductSource = 'school'): number {
   if (!cost || cost <= 0) return 0;
-  if (source !== 'outside') return roundUp10(cost * (1 + PRICING.schoolMargin));
+  if (!isOutsideSource(source)) return roundUp10(cost * (1 + PRICING.schoolMargin));
   if (cost >= PRICING.outsideBigFrom) return roundUp10(cost * (1 + PRICING.outsideBigMargin));
   // Under the big-item line: 18%, but never more than the price of a big item,
   // so an item costing 9,999 can't sell for more than one costing 10,000.
   const capped = Math.min(cost * (1 + PRICING.outsideMargin), PRICING.outsideBigFrom * (1 + PRICING.outsideBigMargin));
   return roundUp10(capped);
+}
+
+// ---------- Weekly delivery schedule (inside school) ----------
+export interface BatchSlotDef {
+  id: DeliveryBatchId;
+  name: string;
+  startMin: number; // minutes after midnight
+  endMin: number;
+  orderByMin: number;
+}
+const T = (h: number, m: number = 0) => h * 60 + m;
+const SLOT_NAMES: Record<string, string> = {
+  morning: 'Morning Batch',
+  midday: 'Midday Batch',
+  afternoon: 'Afternoon Batch',
+  late: 'Late Afternoon Batch',
+  evening: 'Evening Batch',
+};
+const slot = (id: DeliveryBatchId, start: number, end: number, orderBy: number): BatchSlotDef => ({
+  id,
+  name: SLOT_NAMES[id],
+  startMin: start,
+  endMin: end,
+  orderByMin: orderBy,
+});
+const SCHOOL_DAY = [slot('afternoon', T(14), T(15), T(12, 30)), slot('late', T(17), T(18), T(15, 30)), slot('evening', T(20), T(21), T(18, 30))];
+/** 0 = Sunday ... 6 = Saturday. Runners and admin can switch any batch off for a day. */
+export const WEEKLY_BATCHES: Record<number, BatchSlotDef[]> = {
+  0: [slot('midday', T(12), T(12, 30), T(11)), slot('evening', T(20), T(21), T(19))],
+  1: SCHOOL_DAY,
+  2: SCHOOL_DAY,
+  3: SCHOOL_DAY,
+  4: SCHOOL_DAY,
+  5: SCHOOL_DAY,
+  6: [
+    slot('morning', T(10), T(11), T(9)),
+    slot('midday', T(13), T(14), T(11, 30)),
+    slot('late', T(16), T(17), T(14, 30)),
+    slot('evening', T(20), T(21), T(18, 30)),
+  ],
+};
+
+export interface BatchOption {
+  key: string; // "2026-10-20|afternoon"
+  id: DeliveryBatchId;
+  name: string;
+  date: string;
+  dayLabel: string;
+  window: string; // "2 to 3pm"
+  label: string; // "Today, Afternoon Batch (2 to 3pm)"
+  orderBy: Date;
+}
+
+export const timeLabel = (min: number): string => {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  const suffix = h >= 12 ? 'pm' : 'am';
+  const h12 = h % 12 || 12;
+  return m ? `${h12}:${String(m).padStart(2, '0')}${suffix}` : `${h12}${suffix}`;
+};
+const windowLabel = (a: number, b: number): string => {
+  const same = (a >= 720) === (b >= 720);
+  const start = timeLabel(a);
+  return same ? `${start.replace(/(am|pm)$/, '')} to ${timeLabel(b)}` : `${start} to ${timeLabel(b)}`;
+};
+const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+function buildOption(day: Date, dayOffset: number, s: BatchSlotDef): BatchOption {
+  const date = ymd(day);
+  const dayLabel = dayOffset === 0 ? 'Today' : dayOffset === 1 ? 'Tomorrow' : DAY_NAMES[day.getDay()];
+  const window = windowLabel(s.startMin, s.endMin);
+  return {
+    key: `${date}|${s.id}`,
+    id: s.id,
+    name: s.name,
+    date,
+    dayLabel,
+    window,
+    label: `${dayLabel}, ${s.name} (${window})`,
+    orderBy: new Date(day.getTime() + s.orderByMin * 60000),
+  };
+}
+
+/** Every batch on a day (for the runner and admin switches), whether or not orders are still open */
+export function listDaySlots(base: Date, dayOffset: number): BatchOption[] {
+  const day = new Date(base);
+  day.setHours(0, 0, 0, 0);
+  day.setDate(day.getDate() + dayOffset);
+  return (WEEKLY_BATCHES[day.getDay()] || []).map((s) => buildOption(day, dayOffset, s));
+}
+
+/** Batches a student can still order into, soonest first. Outside-school orders stop at 7pm delivery. */
+export function getBookableSlots(now: Date = new Date(), hasOutside: boolean = false, off: Iterable<string> = []): BatchOption[] {
+  const offSet = new Set(off);
+  const out: BatchOption[] = [];
+  for (let d = 0; d < 3; d++) {
+    const day = new Date(now);
+    day.setHours(0, 0, 0, 0);
+    day.setDate(day.getDate() + d);
+    for (const s of WEEKLY_BATCHES[day.getDay()] || []) {
+      if (hasOutside && s.endMin > T(19)) continue;
+      const opt = buildOption(day, d, s);
+      if (opt.orderBy.getTime() <= now.getTime()) continue;
+      if (offSet.has(opt.key)) continue;
+      out.push(opt);
+    }
+  }
+  return out.slice(0, 8);
+}
+
+export function formatRemaining(ms: number): string {
+  const totalMin = Math.max(0, Math.floor(ms / 60000));
+  if (totalMin < 1) return 'under 1 minute';
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h >= 24) return `${Math.floor(h / 24)}d ${h % 24}h`;
+  return h ? `${h}h ${m}m` : `${m}m`;
 }
 
 /** Inside school: ₦300 when the items come to under ₦1,600, ₦500 from ₦1,600 up. Outside-school items: ₦800. */
@@ -138,13 +241,8 @@ export function deliveryFeeFor(itemTotal: number, hasOutside: boolean = false): 
   return itemTotal < DELIVERY_FEES.threshold ? DELIVERY_FEES.small : DELIVERY_FEES.large;
 }
 
-/** The next batch a new order can still join (orders must come in before the batch window starts) */
-export function nextBatchId(now: Date = new Date()): 'morning' | 'afternoon' | 'evening' {
-  const h = now.getHours();
-  if (h < 8) return 'morning';
-  if (h < 13) return 'afternoon';
-  if (h < 19) return 'evening';
-  return 'morning';
+export function nextBatchId(now: Date = new Date()): DeliveryBatchId {
+  return getBookableSlots(now)[0]?.id || 'afternoon';
 }
 
 export function calculateDeliveryFee(batchId: string = 'morning'): number {

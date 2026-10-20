@@ -16,7 +16,8 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
-import { CAMPUS_LOCATIONS, DELIVERY_BATCHES, STORE_CONFIG, deliveryFeeFor, nextBatchId } from '../config';
+import { CAMPUS_LOCATIONS, STORE_CONFIG, deliveryFeeFor, isOutsideSource } from '../config';
+import { getBookableBatches } from '../api.js';
 import { isValidNigerianPhone, normalizePhone } from '../api.js';
 
 interface CartSheetProps {
@@ -41,6 +42,7 @@ interface CartSheetProps {
     customRequest: string;
     deliveryBatch: DeliveryBatchId;
     deliveryTime: string;
+    deliveryDate?: string;
     paymentMethod: 'pay_now' | 'pay_on_delivery';
     subtotal: number;
     deliveryFee: number;
@@ -72,7 +74,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const [customLocation, setCustomLocation] = useState('');
 
   // 4 Delivery Options: 1 Premium (₦1,500) + 3 Batches (₦1,000 each)
-  const [deliveryBatch, setDeliveryBatch] = useState<DeliveryBatchId>(nextBatchId());
+  const [slotKey, setSlotKey] = useState('');
+  const [batchTick, setBatchTick] = useState(0);
   const [paymentChoice, setPaymentChoice] = useState<'pay_now' | 'pay_on_delivery'>('pay_now');
   const [acknowledgedNoCancel, setAcknowledgedNoCancel] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -96,10 +99,10 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   // Repeat customer payment rule enforcement:
   // "phone number will be used to detect a reap customer who won't be able to order without making payment and clicking they have made the payment."
   useEffect(() => {
-    if (isRepeatCustomer) {
+    if (isRepeatCustomer || items.some((i) => isOutsideSource(i.source))) {
       setPaymentChoice('pay_now');
     }
-  }, [isRepeatCustomer]);
+  }, [isRepeatCustomer, items]);
 
   // Adjust building options when area toggles
   const handleAreaChange = (newArea: 'Hostels' | 'Lodge') => {
@@ -112,14 +115,23 @@ export const CartSheet: React.FC<CartSheetProps> = ({
 
   // Financial calculations
   const itemTotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
-  const hasOutside = items.some((i) => i.source === 'outside');
+  const hasOutside = items.some((i) => isOutsideSource(i.source));
+  const mustPrepay = isRepeatCustomer || hasOutside;
   const deliveryFee = deliveryFeeFor(itemTotal, hasOutside);
   const grandTotal = itemTotal + deliveryFee;
 
-  // Outside-school items arrive in batches, so instant delivery is not offered for them
+  // Batches that are still open, refreshed when a runner switches one on or off
   useEffect(() => {
-    if (deliveryBatch === 'premium') setDeliveryBatch(nextBatchId());
-  }, [deliveryBatch]);
+    const h = () => setBatchTick((n) => n + 1);
+    window.addEventListener('roomly-batches', h);
+    const id = window.setInterval(h, 60000);
+    return () => {
+      window.removeEventListener('roomly-batches', h);
+      window.clearInterval(id);
+    };
+  }, []);
+  const batchOptions = getBookableBatches(hasOutside);
+  const selectedBatch = batchOptions.find((o) => o.key === slotKey) || batchOptions[0];
 
   const hasCustomRequest = Boolean(customRequest && customRequest.trim().length > 0);
   const isPhoneValid = isValidNigerianPhone(phone);
@@ -135,6 +147,11 @@ export const CartSheet: React.FC<CartSheetProps> = ({
 
     if (!name.trim()) {
       setErrorMessage('Please enter your student name');
+      return;
+    }
+
+    if (!selectedBatch) {
+      setErrorMessage('No delivery batch is open right now. Please check back soon.');
       return;
     }
 
@@ -154,7 +171,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
     }
 
     // Repeat customer validation
-    if (isRepeatCustomer && paymentChoice === 'pay_on_delivery') {
+    if ((isRepeatCustomer || hasOutside) && paymentChoice === 'pay_on_delivery') {
       setErrorMessage('Repeat customers must select Pay Now (Bank Transfer) before orders can be packaged.');
       setPaymentChoice('pay_now');
       return;
@@ -165,8 +182,6 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       return;
     }
 
-    const selectedBatchMeta = DELIVERY_BATCHES.find((b) => b.id === deliveryBatch);
-    const deliveryTimeLabel = selectedBatchMeta ? `${selectedBatchMeta.name} (${selectedBatchMeta.timeWindow})` : 'Within 30 – 60 mins';
 
     setSubmitting(true);
     try {
@@ -179,8 +194,9 @@ export const CartSheet: React.FC<CartSheetProps> = ({
         isCustomLocation: customMode,
         items,
         customRequest: customRequest.trim(),
-        deliveryBatch,
-        deliveryTime: deliveryTimeLabel,
+        deliveryBatch: (selectedBatch?.id || 'afternoon') as DeliveryBatchId,
+        deliveryTime: selectedBatch?.label || '',
+        deliveryDate: selectedBatch?.date,
         paymentMethod: paymentChoice,
         subtotal: itemTotal,
         deliveryFee,
@@ -463,56 +479,37 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             </div>
 
             <div className="grid grid-cols-1 gap-2">
-              {DELIVERY_BATCHES.map((batch) => {
-                const isSelected = deliveryBatch === batch.id;
-                const isPremium = batch.id === 'premium';
-
+              {batchOptions.length === 0 && (
+                <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200">
+                  No delivery batch is open right now. Please check back soon.
+                </div>
+              )}
+              {batchOptions.map((opt) => {
+                const isSelected = selectedBatch?.key === opt.key;
                 return (
                   <button
-                    key={batch.id}
+                    key={opt.key}
                     type="button"
-                    onClick={() => setDeliveryBatch(batch.id)}
+                    onClick={() => setSlotKey(opt.key)}
                     className={`w-full p-3 rounded-2xl border text-left transition-all cursor-pointer ${
                       isSelected
-                        ? isPremium
-                          ? 'border-[#0e9f55] bg-emerald-500/10 dark:bg-emerald-950/40 ring-1 ring-[#0e9f55]'
-                          : 'border-slate-900 dark:border-white bg-slate-50 dark:bg-slate-800/60 ring-1 ring-slate-900 dark:ring-white'
+                        ? 'border-slate-900 dark:border-white bg-slate-50 dark:bg-slate-800/60 ring-1 ring-slate-900 dark:ring-white'
                         : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        {isPremium ? (
-                          <div className="w-5 h-5 rounded-lg bg-[#0e9f55] text-white flex items-center justify-center">
-                            <Zap className="w-3 h-3 fill-current text-yellow-300" />
-                          </div>
-                        ) : (
-                          <div className="w-5 h-5 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 flex items-center justify-center">
-                            <Clock className="w-3 h-3" />
-                          </div>
-                        )}
-                        <div>
-                          <span className="text-xs font-extrabold text-slate-900 dark:text-white">
-                            {batch.name}
-                          </span>
-                          <span className="text-[11px] text-slate-500 dark:text-slate-400 ml-1.5 font-medium">
-                            ({batch.timeWindow})
-                          </span>
-                        </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <span className="text-xs font-extrabold text-slate-900 dark:text-white">
+                          {opt.dayLabel}, {opt.window}
+                        </span>
+                        <span className="block text-[11px] text-slate-500 dark:text-slate-400">
+                          {opt.name} · order by {opt.orderBy.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                        </span>
                       </div>
-
-                      <span
-                        className={`text-xs font-mono font-bold ${
-                          isPremium ? 'text-[#0e9f55]' : 'text-slate-700 dark:text-slate-300'
-                        }`}
-                      >
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
                         ₦{deliveryFee.toLocaleString()}
                       </span>
                     </div>
-
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 pl-7">
-                      {batch.description}
-                    </p>
                   </button>
                 );
               })}
@@ -565,10 +562,10 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             {/* Option 2: Pay on Delivery (ONLY ALLOWED FOR FIRST-TIME CUSTOMERS!) */}
             <div
               onClick={() => {
-                if (!isRepeatCustomer) setPaymentChoice('pay_on_delivery');
+                if (!mustPrepay) setPaymentChoice('pay_on_delivery');
               }}
               className={`p-3.5 rounded-2xl border transition-all ${
-                isRepeatCustomer
+                mustPrepay
                   ? 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 opacity-60 cursor-not-allowed'
                   : paymentChoice === 'pay_on_delivery'
                   ? 'border-[#0e9f55] bg-emerald-50/60 dark:bg-emerald-950/40 shadow-xs cursor-pointer'
@@ -593,10 +590,10 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                     <span>Pay on Delivery</span>
                   </span>
                 </div>
-                {isRepeatCustomer ? (
+                {mustPrepay ? (
                   <span className="text-[10px] font-bold text-rose-500 flex items-center gap-1">
                     <Lock className="w-3 h-3" />
-                    <span>First-timers only</span>
+                    <span>{hasOutside ? 'Not for outside items' : 'First-timers only'}</span>
                   </span>
                 ) : (
                   <span className="text-xs font-mono font-bold text-slate-600 dark:text-slate-300">
@@ -605,11 +602,13 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                 )}
               </div>
 
-              {isRepeatCustomer ? (
+              {mustPrepay ? (
                 <div className="mt-2 pl-6 text-[11px] text-rose-600 dark:text-rose-400 flex items-start gap-1">
                   <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                   <span>
-                    Repeat customer detected: You won't be able to order without making payment and clicking payment has been made.
+                    {hasOutside
+                      ? 'Outside-school items are paid for first, then packed and sent.'
+                      : "Repeat customer detected: You won't be able to order without making payment and clicking payment has been made."}
                   </span>
                 </div>
               ) : (

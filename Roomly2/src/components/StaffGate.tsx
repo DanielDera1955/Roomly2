@@ -3,7 +3,7 @@ import { Lock, LogOut } from 'lucide-react';
 import { subscribeStaff, loginStaff, logoutStaff } from '../api.js';
 
 interface StaffGateProps {
-  role: 'admin' | 'runner';
+  role: 'admin' | 'runner' | 'operator';
   onBack: () => void;
   children: React.ReactNode;
 }
@@ -22,7 +22,11 @@ export const StaffGate: React.FC<StaffGateProps> = ({ role, onBack, children }) 
   useEffect(() => subscribeStaff(setState), []);
 
   const staff = state.staff;
-  const allowed = staff && (staff.role === role || (role === 'runner' && staff.role === 'admin'));
+  const allowed =
+    staff &&
+    (staff.role === role ||
+      staff.role === 'admin' && role !== 'admin' ||
+      (role === 'operator' && (staff.role === 'store' || staff.role === 'food')));
 
   if (allowed) {
     // Tell the existing admin screen that the real login has succeeded
@@ -47,7 +51,7 @@ export const StaffGate: React.FC<StaffGateProps> = ({ role, onBack, children }) 
         </div>
         <div>
           <h1 className="text-lg font-extrabold text-slate-900 dark:text-white">
-            {role === 'admin' ? 'Roomly Admin Login' : 'Roomly Runner Login'}
+            {role === 'admin' ? 'Roomly Admin Login' : role === 'operator' ? 'Roomly Operator Login' : 'Roomly Runner Login'}
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             {role === 'admin' ? 'Sign in with your admin email and password' : 'Sign in with your phone number or email and password'}

@@ -7,7 +7,7 @@ export interface CartItem {
   totalPrice: number;
   imageUrl?: string;
   emoji: string;
-  source?: 'school' | 'outside';
+  source?: 'school' | 'outside' | 'food';
   isFood?: boolean;
   plates?: number;
   extras?: {
@@ -40,10 +40,15 @@ export interface OrderStatusHistory {
 }
 
 export type PaymentStatus = 'unpaid' | 'payment_sent' | 'payment_confirmed' | 'pay_on_delivery';
-export type DeliveryBatchId = 'premium' | 'morning' | 'afternoon' | 'evening';
+export type DeliveryBatchId = 'premium' | 'morning' | 'midday' | 'afternoon' | 'late' | 'evening';
 
 export interface OrderRecord {
   id: string;
+  hasStore?: boolean;
+  hasFood?: boolean;
+  payReady?: boolean;
+  storeStatus?: string;
+  foodStatus?: string;
   phone: string;
   name: string;
   area: string;
@@ -102,3 +107,7 @@ export const shortLocation = (o: { area?: string; building?: string; room?: stri
   o.area === 'Custom' ? `${o.building}` : `${o.building}, Room ${cleanRoom(o.room)}`;
 export const roomText = (o: { area?: string; building?: string; room?: string }) =>
   o.area === 'Custom' ? `${o.building}` : `Room ${cleanRoom(o.room)}`;
+
+/** Status of the outside-school part of an order, as the student and runners see it */
+export const partLabel = (s?: string) =>
+  s === 'sent' ? 'On the way to school' : s === 'packed' ? 'Packed' : 'Waiting for the operator';

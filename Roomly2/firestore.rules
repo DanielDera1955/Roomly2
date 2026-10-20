@@ -8,16 +8,22 @@ service cloud.firestore {
     function isAdmin() {
       return signedIn() && request.auth.token.email == 'chideraugwu75@gmail.com';
     }
-    // A runner is any signed-in user whose email has a document in /staff
-    function isRunner() {
+    // Staff documents are keyed by login email. Role: runner (default), store or food.
+    function hasStaffDoc() {
       return signedIn() &&
         exists(/databases/$(database)/documents/staff/$(request.auth.token.email));
     }
+    function staffRole() {
+      return get(/databases/$(database)/documents/staff/$(request.auth.token.email)).data.get('role', 'runner');
+    }
+    function isRunner() { return hasStaffDoc() && staffRole() == 'runner'; }
+    function isOperator(kind) { return hasStaffDoc() && staffRole() == kind; }
     function isStaff() { return isAdmin() || isRunner(); }
 
     // ---------- staff (runners) ----------
     match /staff/{email} {
-      allow read: if isStaff();
+      allow get: if isAdmin() || (signedIn() && request.auth.token.email == email);
+      allow list: if isStaff();
       allow create, delete: if isAdmin();
       allow update: if isAdmin() ||
         (signedIn() && request.auth.token.email == email &&
@@ -64,7 +70,10 @@ service cloud.firestore {
     // an order they were given the id for. Listing all orders is staff only.
     match /orders/{orderId} {
       allow get: if true;
-      allow list: if isStaff();
+      // Runners and admin see every order. Operators only see PAID orders that contain their items.
+      allow list: if isStaff()
+        || (isOperator('store') && resource.data.hasStore == true && resource.data.payReady == true)
+        || (isOperator('food') && resource.data.hasFood == true && resource.data.payReady == true);
 
       allow create: if request.resource.data.status == 'Received'
         && request.resource.data.runnerId == ''
@@ -73,11 +82,17 @@ service cloud.firestore {
         && request.resource.data.totalAmount == request.resource.data.subtotal + request.resource.data.deliveryFee
         && request.resource.data.items.size() <= 60;
 
-      // Customers may only press "I have made payment". Staff can update anything.
+      // Customers may only press "I have made payment". Runners and admin can update anything.
+      // Operators may only change the status of their own part, on paid orders.
       allow update: if isStaff() ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'paymentSentAt', 'history'])
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'paymentSentAt', 'history', 'payReady'])
          && resource.data.paymentStatus == 'unpaid'
-         && request.resource.data.paymentStatus == 'payment_sent');
+         && request.resource.data.paymentStatus == 'payment_sent'
+         && request.resource.data.payReady == true) ||
+        (isOperator('store') && resource.data.hasStore == true && resource.data.payReady == true
+         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['storeStatus', 'history'])) ||
+        (isOperator('food') && resource.data.hasFood == true && resource.data.payReady == true
+         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['foodStatus', 'history']));
 
       allow delete: if isAdmin();
 
