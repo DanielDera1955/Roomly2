@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { OrderChat } from './OrderChat';
+import { Phone as PhoneIcon } from 'lucide-react';
 import {
   X,
   CheckCircle2,
@@ -185,171 +186,86 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
 
         {/* Content Body */}
         <div className="overflow-y-auto p-5 space-y-4 flex-1">
-          {/* Order ID lookup box */}
-          <form onSubmit={handleSearch} className="flex gap-2">
-            <div className="relative flex-1">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value.toUpperCase())}
-                placeholder="Lookup Order ID (e.g. RM-4821)"
-                className="w-full pl-3 pr-3 py-2 text-xs font-mono uppercase bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55]"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={isSearching || !searchQuery.trim()}
-              className="px-3.5 py-2 bg-[#0e9f55] hover:bg-[#0b8044] text-white rounded-xl text-xs font-bold disabled:opacity-50 transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
-            >
-              <Search className="w-3.5 h-3.5" />
-              <span>Search</span>
-            </button>
-          </form>
-
-          {errorSearch && (
-            <div className="text-xs text-rose-500 bg-rose-50 dark:bg-rose-950/40 p-2.5 rounded-xl border border-rose-200 dark:border-rose-900/40">
-              {errorSearch}
-            </div>
-          )}
-
           {/* Active Order Card */}
           {currentOrder ? (
             <div className="space-y-4">
-              {/* Order Overview Header Card */}
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
-                      Order Reference
-                    </span>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-lg font-extrabold font-mono text-slate-900 dark:text-white">
-                        {currentOrder.id}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => copyToClipboard(currentOrder.id, 'orderId')}
-                        className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-                        title="Copy Order ID"
-                      >
-                        {copiedField === 'orderId' ? (
-                          <Check className="w-3.5 h-3.5 text-[#0e9f55]" />
-                        ) : (
-                          <Copy className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="text-right">
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
-                      Batch Window
-                    </span>
-                    <p className="text-xs font-bold text-[#0e9f55] flex items-center justify-end gap-1">
-                      {currentOrder.deliveryBatch === 'premium' && <Zap className="w-3 h-3 fill-current" />}
-                      <span>{currentOrder.deliveryTime}</span>
-                    </p>
-                  </div>
+              {/* Delivery window and location */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 space-y-3">
+                <div>
+                  <span className="text-[11px] uppercase font-bold tracking-wider text-slate-400">Delivery window</span>
+                  <p className="text-sm font-extrabold text-[#0e9f55] mt-0.5">{currentOrder.deliveryTime}</p>
                 </div>
-
-                <div className="mt-3 pt-3 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between text-xs text-slate-600 dark:text-slate-300">
-                  <div className="flex items-center gap-1.5">
-                    <Building className="w-3.5 h-3.5 text-[#0e9f55]" />
-                    <span>
-                      {locationText(currentOrder)}
-                    </span>
-                  </div>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">
-                    ₦{currentOrder.totalAmount.toLocaleString()}
-                  </span>
+                <div className="flex items-start gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  <Building className="w-4 h-4 text-[#0e9f55] shrink-0 mt-0.5" />
+                  <span>{locationText(currentOrder)}</span>
                 </div>
               </div>
 
-              {/* PAYMENT CONFIRMATION & 15-MINUTE COUNTDOWN SECTION (User prompt requirement) */}
+              {/* PAYMENT: bank details until the student taps "payment made", then a short note, then nothing once confirmed */}
               {currentOrder.paymentMethod === 'pay_now' ? (
-                <div className="p-4 rounded-2xl bg-amber-500/10 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-xs font-extrabold text-amber-900 dark:text-amber-200">
-                      <CreditCard className="w-4 h-4 text-amber-600" />
-                      <span>Bank Transfer Payment</span>
-                    </div>
-
-                    {currentOrder.paymentStatus === 'payment_confirmed' ? (
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-[#0e9f55]">
-                        Confirmed Received
-                      </span>
-                    ) : (
-                      <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-md bg-amber-200 dark:bg-amber-900/60 text-amber-950 dark:text-amber-100">
-                        {timeRemaining ? `⏳ ${timeRemaining}` : '15-min window'}
-                      </span>
-                    )}
+                currentOrder.paymentStatus === 'payment_confirmed' ? null : currentOrder.paymentStatus === 'payment_sent' ? (
+                  <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 text-xs text-emerald-900 dark:text-emerald-200 font-medium flex items-start gap-2">
+                    <Check className="w-4 h-4 text-[#0e9f55] stroke-[3] shrink-0 mt-0.5" />
+                    <span>
+                      Payment sent. Once your payment is confirmed, your order will be attended to and start being packaged.
+                    </span>
                   </div>
-
-                  {currentOrder.paymentStatus === 'payment_confirmed' ? (
-                    <div className="text-xs text-[#0e9f55] dark:text-emerald-400 font-medium">
-                      Payment confirmed! Order attended to and packaging for delivery.
+                ) : (
+                  <div className="p-4 rounded-2xl bg-amber-500/10 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-extrabold text-amber-900 dark:text-amber-200">
+                        <CreditCard className="w-4 h-4 text-amber-600" />
+                        <span>Bank Transfer Payment</span>
+                      </div>
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-amber-200 dark:bg-amber-900/60 text-amber-950 dark:text-amber-100">
+                        {timeRemaining ? timeRemaining : '15-min window'}
+                      </span>
                     </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <p className="text-xs text-amber-900 dark:text-amber-200 leading-snug">
-                        Orders are attended to once payment is confirmed. Please transfer <strong>₦{currentOrder.totalAmount.toLocaleString()}</strong> to:
-                      </p>
-
-                      <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/40 text-xs space-y-1">
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Bank:</span>
-                          <span className="font-bold">{STORE_CONFIG.bankDetails.bankName}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-slate-400">Account:</span>
-                          <div className="flex items-center gap-1">
-                            <span className="font-mono font-bold">{STORE_CONFIG.bankDetails.accountNumber}</span>
-                            <button
-                              type="button"
-                              onClick={() => copyToClipboard(STORE_CONFIG.bankDetails.accountNumber, 'acc')}
-                              className="p-1 text-slate-400 hover:text-slate-700"
-                            >
-                              <Copy className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Account Name:</span>
-                          <span className="font-semibold">{STORE_CONFIG.bankDetails.accountName}</span>
-                        </div>
-                        <div className="flex justify-between text-[#0e9f55]">
-                          <span>Reference / Narration:</span>
-                          <span className="font-mono font-bold">{currentOrder.id}</span>
+                    <p className="text-xs text-amber-900 dark:text-amber-200 leading-snug">
+                      Orders are attended to once payment is confirmed. Please transfer{' '}
+                      <strong>₦{currentOrder.totalAmount.toLocaleString()}</strong> to:
+                    </p>
+                    <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/40 text-xs space-y-1.5">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Bank</span>
+                        <span className="font-bold">{STORE_CONFIG.bankDetails.bankName}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-400">Account number</span>
+                        <div className="flex items-center gap-1">
+                          <span className="font-bold">{STORE_CONFIG.bankDetails.accountNumber}</span>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(STORE_CONFIG.bankDetails.accountNumber, 'acc')}
+                            className="p-1 text-slate-400 hover:text-slate-700"
+                          >
+                            <Copy className="w-3 h-3" />
+                          </button>
                         </div>
                       </div>
-
-                      {/* BUTTON: I HAVE MADE PAYMENT */}
-                      {currentOrder.paymentStatus === 'payment_sent' ? (
-                        <div className="p-2.5 rounded-xl bg-amber-100 dark:bg-amber-900/40 text-xs text-amber-950 dark:text-amber-200 font-semibold flex items-center gap-2">
-                          <Check className="w-4 h-4 text-[#0e9f55] stroke-[3]" />
-                          <span>Notification sent to runner! Awaiting verification...</span>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={handleStudentClickPaymentMade}
-                          disabled={markingPayment}
-                          className="w-full py-2.5 bg-[#0e9f55] hover:bg-[#0b8044] text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          <Send className="w-3.5 h-3.5" />
-                          <span>I Have Made Payment (Notify Runner to Pack)</span>
-                        </button>
-                      )}
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Account name</span>
+                        <span className="font-semibold">{STORE_CONFIG.bankDetails.accountName}</span>
+                      </div>
                     </div>
-                  )}
-                </div>
+                    <button
+                      type="button"
+                      onClick={handleStudentClickPaymentMade}
+                      disabled={markingPayment}
+                      className="w-full py-2.5 bg-[#0e9f55] hover:bg-[#0b8044] text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>I have made payment</span>
+                    </button>
+                  </div>
+                )
               ) : (
                 <div className="p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 text-xs flex items-center justify-between">
                   <div className="flex items-center gap-2 text-blue-900 dark:text-blue-200">
                     <Banknote className="w-4 h-4 text-blue-600" />
-                    <span>Pay on Delivery (First-time customer)</span>
+                    <span>Pay on delivery</span>
                   </div>
-                  <span className="font-mono font-bold text-blue-900 dark:text-blue-200">
+                  <span className="font-bold text-blue-900 dark:text-blue-200">
                     ₦{currentOrder.totalAmount.toLocaleString()}
                   </span>
                 </div>
@@ -505,15 +421,6 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                 </div>
               </div>
 
-              {currentOrder && (
-                <OrderChat
-                  orderId={currentOrder.id}
-                  role="customer"
-                  senderName={currentOrder.name}
-                  closed={currentOrder.status === 'Delivered'}
-                />
-              )}
-
               {/* Order Items Breakdown with Recognizable Product Photos */}
               <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 space-y-2.5">
                 <div className="flex items-center justify-between">
@@ -570,20 +477,49 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                     </div>
                   )}
 
-                  <div className="pt-2 border-t border-slate-200 dark:border-slate-700 flex justify-between font-bold text-slate-900 dark:text-white">
-                    <span>Total (incl. delivery)</span>
-                    <span className="font-mono text-[#0e9f55]">
-                      ₦{currentOrder.totalAmount.toLocaleString()}
-                    </span>
+                  <div className="pt-2 border-t border-slate-200 dark:border-slate-700 space-y-1 text-xs">
+                    <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                      <span>Items</span>
+                      <span>₦{(currentOrder.subtotal || 0).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                      <span>Delivery</span>
+                      <span>₦{(currentOrder.deliveryFee || 0).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-sm font-bold text-slate-900 dark:text-white pt-1">
+                      <span>Total</span>
+                      <span className="text-[#0e9f55]">₦{currentOrder.totalAmount.toLocaleString()}</span>
+                    </div>
                   </div>
                 </div>
+              </div>
+
+              {/* Chat and call, under the items and total */}
+              <div className="space-y-2">
+                {currentOrder.runnerPhone && (
+                  <a
+                    href={`tel:${currentOrder.runnerPhone}`}
+                    className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#0e9f55] hover:bg-[#0b8044] text-white text-xs font-bold"
+                  >
+                    <PhoneIcon className="w-3.5 h-3.5" />
+                    <span>Call {currentOrder.runnerName || 'your runner'}</span>
+                  </a>
+                )}
+                <OrderChat
+                  orderId={currentOrder.id}
+                  role="customer"
+                  senderName={currentOrder.name}
+                  closed={currentOrder.status === 'Delivered'}
+                  defaultOpen
+                  title="Order taking long? Message your runner"
+                />
               </div>
             </div>
           ) : (
             <div className="text-center py-10 space-y-3">
               <Package className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto" />
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Enter an Order ID above to track your delivery status.
+                No order selected. Use My orders to open one.
               </p>
             </div>
           )}

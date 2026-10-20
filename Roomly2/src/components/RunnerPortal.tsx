@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { OrderChat } from './OrderChat';
 import { ThemeToggle } from './ThemeToggle';
+import { SoundToggle } from './SoundToggle';
+import { playChime } from '../sound';
+import { ChevronDown as ChevronDownIcon, Phone as PhoneIcon } from 'lucide-react';
 import {
   Truck,
   Package,
@@ -137,7 +140,10 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
   const [runnerTab, setRunnerTab] = useState<'active' | 'history'>('active');
 
   // Filter Sub-tabs for Active Orders
-  const [activeFilter, setActiveFilter] = useState<'all' | 'pending_first_time' | 'confirmed' | 'premium'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'packing' | 'on_the_way' | 'delivered'>('all');
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const toggleOpen = (id: string) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  const seenOrderIds = React.useRef<Set<string> | null>(null);
 
   const activeRunner = runners.find((r) => r.id === activeRunnerId) || runners[0];
 
@@ -158,7 +164,13 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
 
   // Live updates: refresh whenever any order changes
   useEffect(() => {
-    return subscribeOrders(() => {
+    return subscribeOrders((list: any[]) => {
+      const ids = new Set<string>((list || []).map((o) => o.id));
+      if (seenOrderIds.current) {
+        const fresh = (list || []).some((o) => !seenOrderIds.current!.has(o.id) && !o.runnerId && o.status === 'Received');
+        if (fresh) playChime('order');
+      }
+      seenOrderIds.current = ids;
       fetchOrdersAndRunners();
     });
   }, []);
@@ -230,28 +242,8 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
       (o.isFirstTimeCustomer && o.paymentStatus === 'unpaid')
   ).length;
 
-  // Filter Active orders based on chosen filter sub-tab
-  const filterOrderList = (list: OrderRecord[]) => {
-    if (activeFilter === 'all') return list;
-    if (activeFilter === 'pending_first_time') {
-      return list.filter(
-        (o) =>
-          (o.isFirstTimeCustomer && o.paymentStatus === 'pay_on_delivery') ||
-          o.paymentStatus === 'payment_sent' ||
-          (o.isFirstTimeCustomer && o.paymentStatus === 'unpaid')
-      );
-    }
-    if (activeFilter === 'confirmed') {
-      return list.filter((o) => o.paymentStatus === 'payment_confirmed');
-    }
-    if (activeFilter === 'premium') {
-      return list.filter((o) => o.deliveryBatch === 'premium');
-    }
-    return list;
-  };
-
-  const filteredMyActive = filterOrderList(myActiveOrders);
-  const filteredUnassigned = filterOrderList(unassignedOrders);
+  const packingOrders = myActiveOrders.filter((o) => o.status === 'Packing');
+  const onTheWayOrders = myActiveOrders.filter((o) => o.status === 'On the way');
 
   // Render Order Card Helper
   const renderOrderCard = (ord: OrderRecord, isAssignedToMe: boolean) => {
@@ -260,6 +252,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
     const isPaymentSent = ord.paymentStatus === 'payment_sent';
     const isPaidConfirmed = ord.paymentStatus === 'payment_confirmed';
     const isUnpaid = ord.paymentStatus === 'unpaid';
+    const isOpen = !!expanded[ord.id];
 
     return (
       <div
@@ -272,74 +265,51 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
             : 'border-slate-200/80 dark:border-slate-800'
         }`}
       >
-        {/* CARD HEADER: ID, STATUS, BADGES */}
-        <div className="flex items-start justify-between gap-2">
-          <div className="space-y-1">
+        {/* CARD HEADER: tap to open or close */}
+        <button
+          type="button"
+          onClick={() => toggleOpen(ord.id)}
+          className="w-full flex items-start justify-between gap-3 text-left cursor-pointer"
+        >
+          <div className="min-w-0 flex-1 space-y-1">
             <div className="flex items-center flex-wrap gap-1.5">
-              <span className="font-extrabold font-mono text-base text-slate-900 dark:text-white">
-                #{ord.id}
-              </span>
-
-              {/* Status Badge */}
+              <span className="font-extrabold text-base text-slate-900 dark:text-white">{ord.name}</span>
               <span
                 className={`text-[11px] font-black px-2.5 py-0.5 rounded-full ${
                   ord.status === 'Packing'
-                    ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 ring-1 ring-amber-300 dark:ring-amber-800'
+                    ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300'
                     : ord.status === 'On the way'
-                    ? 'bg-blue-100 dark:bg-blue-950/70 text-blue-800 dark:text-blue-300 ring-1 ring-blue-300 dark:ring-blue-800'
+                    ? 'bg-blue-100 dark:bg-blue-950/70 text-blue-800 dark:text-blue-300'
                     : ord.status === 'Delivered'
                     ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                 }`}
               >
-                {ord.status === 'Packing'
-                  ? 'Being Packaged'
-                  : ord.status === 'On the way'
-                  ? 'Packaged & En Route'
-                  : ord.status}
+                {ord.status === 'Received' ? 'New' : ord.status}
               </span>
-
-              {/* FIRST-TIME CUSTOMER BADGE (Highlighted Requirement) */}
-              {isFirstTime ? (
-                <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-xs">
-                  <BadgeAlert className="w-3 h-3 stroke-[2.5]" />
-                  <span>First-Time Customer</span>
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                  <span>Repeat Student</span>
-                </span>
+              {isPaymentSent && (
+                <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-amber-500 text-white">Payment sent</span>
               )}
-
-              {/* Premium instant badge */}
-              {ord.deliveryBatch === 'premium' && (
-                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 flex items-center gap-0.5">
-                  <Zap className="w-3 h-3 fill-current" />
-                  <span>Premium 30–60m (₦1,500)</span>
+              {isPOD && !isPaidConfirmed && (
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">
+                  Pay on delivery
                 </span>
               )}
             </div>
-
-            {/* Room, Floor & Building Location */}
-            <div className="flex items-center gap-1.5 text-xs font-black text-slate-900 dark:text-white pt-0.5">
+            <div className="flex items-center gap-1.5 text-sm font-bold text-slate-800 dark:text-slate-100">
               <Building className="w-4 h-4 text-[#0e9f55] shrink-0" />
-              <span className="text-sm">
-                {locationText(ord)}
-              </span>
+              <span>{shortLocation(ord)}</span>
             </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{ord.deliveryTime}</p>
           </div>
-
-          {/* Pricing Header */}
-          <div className="text-right shrink-0">
-            <span className="font-mono font-extrabold text-base text-[#0e9f55] block">
-              ₦{ord.totalAmount.toLocaleString()}
-            </span>
-            <span className="block text-[10px] font-semibold text-slate-400">
-              Transport Fee: ₦{ord.deliveryFee.toLocaleString()}
-            </span>
+          <div className="shrink-0 flex flex-col items-end gap-1.5">
+            <span className="font-extrabold text-base text-[#0e9f55] whitespace-nowrap">₦{ord.totalAmount.toLocaleString()}</span>
+            <ChevronDownIcon className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
           </div>
-        </div>
+        </button>
 
+        {isOpen && (
+        <div className="space-y-4">
         {/* ================= HIGHLIGHTED PENDING PAYMENT CALLOUT ================= */}
         {/* Requirement: Improve RunnerPortal to highlight pending payments for first-time customers */}
         {isFirstTime && isPOD && (
@@ -451,41 +421,6 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
           </div>
         )}
 
-        {/* ================= CUSTOMER DETAILS & DIRECT CONTACT ================= */}
-        <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 space-y-2">
-          <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
-            <div>
-              <span className="font-bold text-slate-800 dark:text-slate-200 block">
-                Student: {ord.name}
-              </span>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                Scheduled: {ord.deliveryTime}
-              </span>
-            </div>
-
-            {/* Direct Phone & SMS Actions */}
-            <div className="flex items-center gap-1.5">
-              <a
-                href={`tel:${ord.phone}`}
-                className="flex items-center gap-1 px-3 py-1.5 bg-[#0e9f55] hover:bg-[#0b8044] text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer transition-colors"
-                title={`Call ${ord.phone}`}
-              >
-                <Phone className="w-3.5 h-3.5" />
-                <span>Call {ord.phone}</span>
-              </a>
-
-              <a
-                href={`sms:${ord.phone}?body=Hello%20${encodeURIComponent(ord.name)},%20this%20is%20your%20Roomly%20delivery%20runner.`}
-                className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
-                title="Send SMS to student"
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>SMS</span>
-              </a>
-            </div>
-          </div>
-        </div>
-
         {/* ================= CUSTOMER DELIVERY NOTES & INSTRUCTIONS ================= */}
         {/* Requirement: Ensure runners can see full order details and customer delivery notes clearly */}
         {ord.customRequest ? (
@@ -504,12 +439,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
               "{ord.customRequest}"
             </div>
           </div>
-        ) : (
-          <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/30 text-[11px] text-slate-400 dark:text-slate-500 italic flex items-center gap-1.5">
-            <FileText className="w-3.5 h-3.5 text-slate-400" />
-            <span>Customer did not leave special delivery notes.</span>
-          </div>
-        )}
+        ) : null}
 
         {/* ================= FULL ORDER ITEMS BREAKDOWN WITH PHOTOS ================= */}
         <div className="space-y-2 p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200/60 dark:border-slate-800">
@@ -534,7 +464,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
               <span className="font-mono">₦{ord.subtotal.toLocaleString()}</span>
             </div>
             <div className="flex justify-between text-slate-500 dark:text-slate-400">
-              <span>Runner Delivery Fee ({ord.deliveryBatch === 'premium' ? 'Premium Instant' : 'Batch'}):</span>
+              <span>Delivery:</span>
               <span className="font-mono font-bold text-[#0e9f55]">
                 ₦{ord.deliveryFee.toLocaleString()}
               </span>
@@ -591,10 +521,23 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
             </button>
           )}
 
+        </div>
+
+        {/* Chat and call, under the items and total */}
+        <div className="space-y-2">
+          <a
+            href={`tel:${ord.phone}`}
+            className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#0e9f55] hover:bg-[#0b8044] text-white text-xs font-bold"
+          >
+            <PhoneIcon className="w-3.5 h-3.5" />
+            <span>Call {ord.name} · {ord.phone}</span>
+          </a>
           {isAssignedToMe && (
             <OrderChat orderId={ord.id} role="runner" senderName={activeRunner?.name || 'Runner'} closed={ord.status === 'Delivered'} />
           )}
         </div>
+        </div>
+        )}
       </div>
     );
   };
@@ -629,6 +572,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
+            <SoundToggle className="hover:bg-slate-100 dark:hover:bg-slate-800" />
             <ThemeToggle className="text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" />
             <button
               type="button"
@@ -648,11 +592,8 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
           <div className="flex items-center justify-between">
             <label className="text-xs font-black text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
               <User className="w-4 h-4 text-[#0e9f55]" />
-              <span>Select Your Runner Name:</span>
+              <span>Runner</span>
             </label>
-            <span className="text-xs font-mono font-bold text-[#0e9f55]">
-              {myActiveOrders.length} active · {myCompletedOrders.length} delivered
-            </span>
           </div>
 
           <select
@@ -663,279 +604,75 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
           >
             {runners.map((r) => (
               <option key={r.id} value={r.id}>
-                {r.name} · {r.phone} ({r.currentZone || 'Campus Runner'})
+                {r.name} · {r.phone}
               </option>
             ))}
           </select>
 
-          {/* Quick Metrics for Chosen Runner */}
-          <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-100 dark:border-slate-800 text-center">
-            <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-2.5 border border-slate-100 dark:border-slate-800">
-              <span className="text-[10px] text-slate-400 block font-bold uppercase tracking-wider">
-                Active Runs
-              </span>
-              <span className="text-base font-extrabold text-amber-600 dark:text-amber-400 font-mono">
-                {myActiveOrders.length}
-              </span>
-            </div>
-
-            <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-2.5 border border-slate-100 dark:border-slate-800">
-              <span className="text-[10px] text-slate-400 block font-bold uppercase tracking-wider">
-                Delivered
-              </span>
-              <span className="text-base font-extrabold text-[#0e9f55] font-mono">
-                {myCompletedOrders.length}
-              </span>
-            </div>
-
-            <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-2.5 border border-slate-100 dark:border-slate-800">
-              <span className="text-[10px] text-slate-400 block font-bold uppercase tracking-wider">
-                My Earnings
-              </span>
-              <span className="text-base font-extrabold text-slate-900 dark:text-white font-mono">
-                ₦{totalEarnings.toLocaleString()}
-              </span>
-            </div>
+          <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">My earnings</span>
+            <span className="text-base font-extrabold text-slate-900 dark:text-white">₦{totalEarnings.toLocaleString()}</span>
           </div>
         </div>
 
-        {/* Mode Navigation Tabs: Active Orders vs Order History */}
-        <div className="grid grid-cols-2 gap-2 p-1 bg-slate-200/80 dark:bg-slate-800/80 rounded-2xl">
-          <button
-            type="button"
-            onClick={() => setRunnerTab('active')}
-            className={`py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-              runnerTab === 'active'
-                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <Inbox className="w-3.5 h-3.5" />
-            <span>Active & To Accept ({unassignedOrders.length + myActiveOrders.length})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setRunnerTab('history')}
-            className={`py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-              runnerTab === 'history'
-                ? 'bg-white dark:bg-slate-900 text-[#0e9f55] shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <History className="w-3.5 h-3.5" />
-            <span>My Delivery History ({myCompletedOrders.length})</span>
-          </button>
+        {/* Filters */}
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+          {([
+            ['all', `All orders (${allActiveOrders.length})`],
+            ['packing', `Packing (${packingOrders.length})`],
+            ['on_the_way', `On the way (${onTheWayOrders.length})`],
+            ['delivered', `Delivered (${myCompletedOrders.length})`],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setActiveFilter(key)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer ${
+                activeFilter === key
+                  ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs'
+                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-800'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
-        {/* ================= TAB 1: ACTIVE ORDERS & DISPATCH ================= */}
-        {runnerTab === 'active' && (
-          <div className="space-y-4">
-            {/* Filter Pills for Active Orders */}
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-              <button
-                type="button"
-                onClick={() => setActiveFilter('all')}
-                className={`px-3 py-1 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer ${
-                  activeFilter === 'all'
-                    ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs'
-                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-800'
-                }`}
-              >
-                All Orders ({allActiveOrders.length})
-              </button>
+        {loading && orders.length === 0 && <p className="text-xs text-center text-slate-400 py-6">Loading orders…</p>}
 
-              <button
-                type="button"
-                onClick={() => setActiveFilter('pending_first_time')}
-                className={`px-3 py-1 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1 ${
-                  activeFilter === 'pending_first_time'
-                    ? 'bg-amber-500 text-white shadow-xs'
-                    : 'bg-white dark:bg-slate-900 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-900/60'
-                }`}
-              >
-                <AlertTriangle className="w-3 h-3" />
-                <span>Pending / POD ({pendingPaymentOrdersCount})</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveFilter('confirmed')}
-                className={`px-3 py-1 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1 ${
-                  activeFilter === 'confirmed'
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 border border-slate-200/80 dark:border-slate-800'
-                }`}
-              >
-                <CheckCircle className="w-3 h-3" />
-                <span>Paid Confirmed</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveFilter('premium')}
-                className={`px-3 py-1 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1 ${
-                  activeFilter === 'premium'
-                    ? 'bg-amber-600 text-white shadow-xs'
-                    : 'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 border border-slate-200/80 dark:border-slate-800'
-                }`}
-              >
-                <Zap className="w-3 h-3" />
-                <span>Premium (₦1.5k)</span>
-              </button>
-            </div>
-
-            {/* SUB-SECTION A: ORDERS CURRENTLY PACKAGING / DELIVERING BY ACTIVE RUNNER */}
-            {filteredMyActive.length > 0 && (
+        {activeFilter === 'all' && (
+          <div className="space-y-5">
+            {myActiveOrders.length > 0 && (
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                    <Truck className="w-4 h-4 text-[#0e9f55]" />
-                    <span>My In-Progress Packaging & Deliveries ({filteredMyActive.length})</span>
-                  </h2>
-                </div>
-
-                {filteredMyActive.map((ord) => renderOrderCard(ord, true))}
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-500">My orders ({myActiveOrders.length})</h3>
+                {myActiveOrders.map((ord) => renderOrderCard(ord, true))}
               </div>
             )}
-
-            {/* SUB-SECTION B: ACTIVE ORDERS WAITING FOR A RUNNER TO ACCEPT */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                  <Package className="w-4 h-4 text-amber-500" />
-                  <span>Available Orders to Accept ({filteredUnassigned.length})</span>
-                </h2>
-              </div>
-
-              {filteredUnassigned.length === 0 ? (
-                <div className="text-center py-8 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 text-slate-400 text-xs space-y-1">
-                  <Inbox className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-1" />
-                  <p className="font-bold text-slate-600 dark:text-slate-300">
-                    No matching unassigned orders right now.
-                  </p>
-                  <p className="text-[11px] text-slate-400">
-                    New student orders will appear here automatically as they are submitted!
-                  </p>
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-500">
+                Waiting for a runner ({unassignedOrders.length})
+              </h3>
+              {unassignedOrders.length === 0 ? (
+                <div className="text-center py-8 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs text-slate-400">
+                  No new orders right now.
                 </div>
               ) : (
-                filteredUnassigned.map((ord) => renderOrderCard(ord, false))
+                unassignedOrders.map((ord) => renderOrderCard(ord, false))
               )}
             </div>
           </div>
         )}
 
-        {/* ================= TAB 2: MY DELIVERY HISTORY ================= */}
-        {runnerTab === 'history' && (
+        {activeFilter !== 'all' && (
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                <History className="w-4 h-4 text-[#0e9f55]" />
-                <span>Orders Delivered by {activeRunner?.name} ({myCompletedOrders.length})</span>
-              </h2>
-
-              <span className="text-xs font-mono font-black text-[#0e9f55]">
-                Total Earned: ₦{totalEarnings.toLocaleString()}
-              </span>
-            </div>
-
-            {myCompletedOrders.length === 0 ? (
-              <div className="text-center py-12 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 text-slate-400 text-xs space-y-2">
-                <History className="w-9 h-9 text-slate-300 dark:text-slate-600 mx-auto" />
-                <p className="font-bold text-slate-700 dark:text-slate-300">
-                  No past completed deliveries for {activeRunner?.name} yet.
-                </p>
-                <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
-                  Accept an order from the active tab and complete the run to room doors to build your delivery history!
-                </p>
+            {(activeFilter === 'packing' ? packingOrders : activeFilter === 'on_the_way' ? onTheWayOrders : myCompletedOrders).length === 0 ? (
+              <div className="text-center py-8 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs text-slate-400">
+                Nothing here yet.
               </div>
             ) : (
-              myCompletedOrders.map((ord) => (
-                <div
-                  key={ord.id}
-                  className="bg-white dark:bg-slate-900 rounded-3xl p-4 sm:p-5 border border-emerald-200/80 dark:border-emerald-900/50 shadow-xs space-y-3.5"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-mono font-black text-sm text-slate-900 dark:text-white">
-                          #{ord.id}
-                        </span>
-                        <span className="text-xs font-black px-2 py-0.5 rounded-full bg-emerald-100 text-[#0e9f55] dark:bg-emerald-950/60 flex items-center gap-1">
-                          <Check className="w-3 h-3 stroke-[3]" />
-                          <span>Delivered</span>
-                        </span>
-                        {ord.deliveryBatch === 'premium' && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-700">
-                            Premium Instant
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
-                        <Building className="w-3.5 h-3.5 text-[#0e9f55]" />
-                        <span>
-                          {locationText(ord)}
-                        </span>
-                      </div>
-
-                      <p className="text-[11px] text-slate-400">
-                        Student: {ord.name} ({ord.phone}) · {ord.deliveryTime}
-                      </p>
-                    </div>
-
-                    <div className="text-right">
-                      <span className="text-xs font-black px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-[#0e9f55] border border-emerald-200/60 font-mono shadow-2xs">
-                        +₦{ord.deliveryFee.toLocaleString()} Earned
-                      </span>
-                      <span className="block text-[10px] text-slate-400 mt-1">
-                        Total Order: ₦{ord.totalAmount.toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Customer Delivery Notes if any */}
-                  {ord.customRequest && (
-                    <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-800 text-xs italic space-y-0.5">
-                      <span className="font-bold text-slate-500 text-[10px] uppercase tracking-wider block">
-                        Customer Note:
-                      </span>
-                      <p className="text-slate-700 dark:text-slate-300">"{ord.customRequest}"</p>
-                    </div>
-                  )}
-
-                  {/* Delivered Timestamp & Payment Status */}
-                  <div className="flex items-center justify-between text-xs p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-slate-500">
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-[#0e9f55]" />
-                      <span>
-                        Delivered on:{' '}
-                        {ord.deliveredAt
-                          ? new Date(ord.deliveredAt).toLocaleDateString([], {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })
-                          : 'Recently'}
-                      </span>
-                    </span>
-                    <span className="font-bold text-slate-700 dark:text-slate-300">
-                      Payment:{' '}
-                      {ord.paymentMethod === 'pay_on_delivery'
-                        ? 'POD (Collected at Room)'
-                        : 'Bank Transfer'}
-                    </span>
-                  </div>
-
-                  {/* Delivered Items Summary with Photos */}
-                  <div className="space-y-1.5">
-                    {ord.items.map((i, idx) => (
-                      <OrderItemRow key={idx} item={i} />
-                    ))}
-                  </div>
-                </div>
-              ))
+              (activeFilter === 'packing' ? packingOrders : activeFilter === 'on_the_way' ? onTheWayOrders : myCompletedOrders).map((ord) =>
+                renderOrderCard(ord, true)
+              )
             )}
           </div>
         )}

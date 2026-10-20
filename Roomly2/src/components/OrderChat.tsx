@@ -1,30 +1,58 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MessageCircle, Send, ChevronUp } from 'lucide-react';
 import { subscribeMessages, sendMessage } from '../api.js';
+import { playChime } from '../sound';
 
 interface OrderChatProps {
   orderId: string;
   role: 'customer' | 'runner' | 'admin';
   senderName: string;
   closed?: boolean;
+  defaultOpen?: boolean;
+  title?: string;
 }
 
-/** Simple chat thread attached to one order (customer, runner and admin can all post). */
-export const OrderChat: React.FC<OrderChatProps> = ({ orderId, role, senderName, closed = false }) => {
-  const [open, setOpen] = useState(false);
+/** Chat thread attached to one order (customer, runner and admin can all post). */
+export const OrderChat: React.FC<OrderChatProps> = ({
+  orderId,
+  role,
+  senderName,
+  closed = false,
+  defaultOpen = false,
+  title,
+}) => {
+  const [open, setOpen] = useState(defaultOpen);
   const [messages, setMessages] = useState<any[]>([]);
+  const [unread, setUnread] = useState(false);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
+  const openRef = useRef(open);
+  const countRef = useRef<number | null>(null);
+  openRef.current = open;
+
+  // Listen even while collapsed so a new message can ring and show a dot
+  useEffect(() => {
+    countRef.current = null;
+    return subscribeMessages(orderId, (list: any[]) => {
+      if (countRef.current !== null && list.length > countRef.current) {
+        const last = list[list.length - 1];
+        if (last && last.sender !== role) {
+          playChime('chat');
+          if (!openRef.current) setUnread(true);
+        }
+      }
+      countRef.current = list.length;
+      setMessages(list);
+    });
+  }, [orderId, role]);
 
   useEffect(() => {
-    if (!open) return;
-    return subscribeMessages(orderId, setMessages);
-  }, [open, orderId]);
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (open) {
+      setUnread(false);
+      endRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages, open]);
 
   const send = async (e: React.FormEvent) => {
@@ -51,7 +79,8 @@ export const OrderChat: React.FC<OrderChatProps> = ({ orderId, role, senderName,
       >
         <span className="flex items-center gap-1.5">
           <MessageCircle className="w-4 h-4 text-[#0e9f55]" />
-          {role === 'customer' ? 'Chat with your runner' : 'Chat with customer'}
+          {title || (role === 'customer' ? 'Chat with your runner' : 'Chat with customer')}
+          {unread && <span className="w-2 h-2 rounded-full bg-rose-500" />}
         </span>
         <ChevronUp className={`w-4 h-4 transition-transform ${open ? '' : 'rotate-180'}`} />
       </button>
@@ -60,7 +89,7 @@ export const OrderChat: React.FC<OrderChatProps> = ({ orderId, role, senderName,
         <div className="border-t border-slate-100 dark:border-slate-800">
           <div className="max-h-56 overflow-y-auto p-3 space-y-2 bg-slate-50 dark:bg-slate-950/40">
             {messages.length === 0 && (
-              <p className="text-[11px] text-center text-slate-400 py-3">No messages yet. Say hello!</p>
+              <p className="text-[11px] text-center text-slate-400 py-3">No messages yet.</p>
             )}
             {messages.map((m) => {
               const mine = m.sender === role;

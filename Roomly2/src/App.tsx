@@ -19,6 +19,7 @@ import {
 } from './api.js';
 import { Product } from './config';
 import { StaffGate } from './components/StaffGate';
+import { playChime } from './sound';
 import { AdminSwitcher } from './components/AdminSwitcher';
 import { CartItem, CustomerProfile, OrderRecord, CategoryDefinition } from './types';
 import { Header, PortalMode } from './components/Header';
@@ -188,7 +189,10 @@ export default function App() {
   // Live updates for the order the customer is tracking
   useEffect(() => {
     if (!activeOrder?.id) return;
+    let prevStatus: string | null = null;
     return subscribeOrder(activeOrder.id, (o: any) => {
+      if (prevStatus && prevStatus !== o.status) playChime('chat');
+      prevStatus = o.status;
       setActiveOrder(o as OrderRecord);
       setRecentOrders((prev) => prev.map((r) => (r.id === o.id ? (o as OrderRecord) : r)));
     });

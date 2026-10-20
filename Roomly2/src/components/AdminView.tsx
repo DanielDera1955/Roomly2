@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { OrderChat } from './OrderChat';
+import { playChime } from '../sound';
+import { Phone as PhoneIcon, ChevronDown as ChevronDownIcon } from 'lucide-react';
 import {
   ArrowLeft,
   Lock,
@@ -137,7 +139,10 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
   // Live updates: refresh whenever any order changes
   useEffect(() => {
     if (!isAuthenticated) return;
-    return subscribeOrders(() => {
+    return subscribeOrders((list: any[]) => {
+      const ids = new Set<string>((list || []).map((o) => o.id));
+      if (seenIds.current && (list || []).some((o) => !seenIds.current!.has(o.id))) playChime('order');
+      seenIds.current = ids;
       fetchAllData();
     });
   }, [isAuthenticated]);
@@ -265,6 +270,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
   // Helper to handle local file upload to base64 Data URL
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [adminOpen, setAdminOpen] = useState<Record<string, boolean>>({});
+  const seenIds = React.useRef<Set<string> | null>(null);
   const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>, isEdit: boolean) => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -585,13 +592,15 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                     key={ord.id}
                     className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3"
                   >
-                    {/* Header */}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
+                    {/* Header: tap to open or close */}
+                    <button
+                      type="button"
+                      onClick={() => setAdminOpen((prev) => ({ ...prev, [ord.id]: !prev[ord.id] }))}
+                      className="w-full flex items-start justify-between gap-3 text-left cursor-pointer"
+                    >
+                      <div className="min-w-0 flex-1 space-y-1">
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="font-extrabold text-sm text-slate-900 dark:text-white whitespace-nowrap">
-                            {ord.id}
-                          </span>
+                          <span className="font-extrabold text-sm text-slate-900 dark:text-white">{ord.name}</span>
                           <span
                             className={`text-xs font-bold px-2 py-0.5 rounded-full ${
                               ord.status === 'Delivered'
@@ -603,37 +612,28 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                                 : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
                             }`}
                           >
-                            {ord.status === 'Packing' ? 'Being Packaged' : ord.status}
+                            {ord.status === 'Received' ? 'New' : ord.status}
                           </span>
-                          {ord.deliveryBatch === 'premium' && (
-                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-700">
-                              Premium
-                            </span>
+                          {ord.paymentStatus === 'payment_sent' && (
+                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-500 text-white">Payment sent</span>
                           )}
                         </div>
-
-                        <div className="flex items-center gap-1 text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5">
-                          <Building className="w-3.5 h-3.5 text-[#0e9f55]" />
-                          <span>
-                            {locationText(ord)}
-                          </span>
+                        <div className="flex items-center gap-1 text-xs font-bold text-slate-800 dark:text-slate-200">
+                          <Building className="w-3.5 h-3.5 text-[#0e9f55] shrink-0" />
+                          <span>{shortLocation(ord)}</span>
                         </div>
-
-                        <p className="text-[11px] text-slate-400">
-                          {ord.name} ({ord.phone}) · {ord.deliveryTime}
-                        </p>
+                        <p className="text-xs text-slate-400">{ord.deliveryTime} · Runner: {ord.runnerName || 'none yet'}</p>
                       </div>
-
-                      <div className="text-right shrink-0">
+                      <div className="text-right shrink-0 flex flex-col items-end gap-1">
                         <span className="font-bold text-sm text-[#0e9f55] whitespace-nowrap">
                           ₦{ord.totalAmount.toLocaleString()}
                         </span>
-                        <span className="block text-[10px] text-slate-400">
-                          Transport: ₦{ord.deliveryFee.toLocaleString()}
-                        </span>
+                        <ChevronDownIcon className={`w-4 h-4 text-slate-400 transition-transform ${adminOpen[ord.id] ? 'rotate-180' : ''}`} />
                       </div>
-                    </div>
+                    </button>
 
+                    {adminOpen[ord.id] && (
+                    <div className="space-y-3">
                     {/* Payment Status & Actions */}
                     <div className="flex flex-wrap items-center justify-between gap-2 text-xs p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
                       <div className="flex flex-wrap items-center gap-1.5">
@@ -768,7 +768,16 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                       </button>
                     </div>
 
+                    <a
+                      href={`tel:${ord.phone}`}
+                      className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#0e9f55] hover:bg-[#0b8044] text-white text-xs font-bold"
+                    >
+                      <PhoneIcon className="w-3.5 h-3.5" />
+                      <span>Call {ord.name} · {ord.phone}</span>
+                    </a>
                     <OrderChat orderId={ord.id} role="admin" senderName="Admin" closed={ord.status === 'Delivered'} />
+                    </div>
+                    )}
                   </div>
                 ))
               )}

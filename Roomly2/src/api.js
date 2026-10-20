@@ -14,8 +14,8 @@ import {
   INITIAL_CATEGORIES,
   STORE_CONFIG,
   DELIVERY_BATCHES,
-  calculateDeliveryFee,
-  OUTSIDE_DELIVERY_FEE,
+  deliveryFeeFor,
+  nextBatchId,
 } from './config.ts';
 import { db, auth } from './firebase.ts';
 import { CLOUDINARY } from './cloudinary.ts';
@@ -516,9 +516,9 @@ export async function createOrder(orderPayload) {
   const orderId = `RM-${Math.floor(1000 + Math.random() * 9000)}-${suffix}`;
 
   const subtotal = Number(orderPayload.subtotal || 0);
-  const batchId = orderPayload.deliveryBatch || 'premium';
+  const batchId = orderPayload.deliveryBatch && orderPayload.deliveryBatch !== 'premium' ? orderPayload.deliveryBatch : nextBatchId();
   const hasOutside = (orderPayload.items || []).some((i) => i.source === 'outside');
-  const deliveryFee = hasOutside ? OUTSIDE_DELIVERY_FEE : calculateDeliveryFee(batchId);
+  const deliveryFee = deliveryFeeFor(subtotal, hasOutside);
   const totalAmount = subtotal + deliveryFee;
 
   let paymentMethod = orderPayload.paymentMethod;
@@ -542,13 +542,13 @@ export async function createOrder(orderPayload) {
     paymentDeadline: new Date(now.getTime() + 15 * 60 * 1000).toISOString(),
     isFirstTimeCustomer: !isRepeatCustomer,
     deliveryBatch: batchId,
-    deliveryTime: batchMeta ? `${batchMeta.name} (${batchMeta.timeWindow})` : 'Within 30 – 60 mins',
+    deliveryTime: batchMeta ? `${batchMeta.name} (${batchMeta.timeWindow})` : 'Next delivery batch',
     subtotal,
     deliveryFee,
     totalAmount,
     status: 'Received',
     createdAt: createdAtIso,
-    estimatedDeliveryTime: batchMeta?.timeWindow || '30 to 60 mins',
+    estimatedDeliveryTime: batchMeta?.timeWindow || 'Next delivery batch',
     runnerId: '',
     runnerName: '',
     runnerPhone: '',

@@ -16,7 +16,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
-import { CAMPUS_LOCATIONS, DELIVERY_BATCHES, STORE_CONFIG, calculateDeliveryFee, OUTSIDE_DELIVERY_FEE } from '../config';
+import { CAMPUS_LOCATIONS, DELIVERY_BATCHES, STORE_CONFIG, deliveryFeeFor, nextBatchId } from '../config';
 import { isValidNigerianPhone, normalizePhone } from '../api.js';
 
 interface CartSheetProps {
@@ -72,7 +72,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const [customLocation, setCustomLocation] = useState('');
 
   // 4 Delivery Options: 1 Premium (₦1,500) + 3 Batches (₦1,000 each)
-  const [deliveryBatch, setDeliveryBatch] = useState<DeliveryBatchId>('premium');
+  const [deliveryBatch, setDeliveryBatch] = useState<DeliveryBatchId>(nextBatchId());
   const [paymentChoice, setPaymentChoice] = useState<'pay_now' | 'pay_on_delivery'>('pay_now');
   const [acknowledgedNoCancel, setAcknowledgedNoCancel] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -113,13 +113,13 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   // Financial calculations
   const itemTotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
   const hasOutside = items.some((i) => i.source === 'outside');
-  const deliveryFee = hasOutside ? OUTSIDE_DELIVERY_FEE : calculateDeliveryFee(deliveryBatch);
+  const deliveryFee = deliveryFeeFor(itemTotal, hasOutside);
   const grandTotal = itemTotal + deliveryFee;
 
   // Outside-school items arrive in batches, so instant delivery is not offered for them
   useEffect(() => {
-    if (hasOutside && deliveryBatch === 'premium') setDeliveryBatch('evening');
-  }, [hasOutside, deliveryBatch]);
+    if (deliveryBatch === 'premium') setDeliveryBatch(nextBatchId());
+  }, [deliveryBatch]);
 
   const hasCustomRequest = Boolean(customRequest && customRequest.trim().length > 0);
   const isPhoneValid = isValidNigerianPhone(phone);
@@ -458,12 +458,12 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-[#0e9f55]" />
-                <span>Delivery Option (3 Batches + 1 Premium)</span>
+                <span>Choose a delivery batch</span>
               </h3>
             </div>
 
             <div className="grid grid-cols-1 gap-2">
-              {DELIVERY_BATCHES.filter((b) => !(hasOutside && b.id === 'premium')).map((batch) => {
+              {DELIVERY_BATCHES.map((batch) => {
                 const isSelected = deliveryBatch === batch.id;
                 const isPremium = batch.id === 'premium';
 
@@ -506,7 +506,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                           isPremium ? 'text-[#0e9f55]' : 'text-slate-700 dark:text-slate-300'
                         }`}
                       >
-                        ₦{batch.price.toLocaleString()}
+                        ₦{deliveryFee.toLocaleString()}
                       </span>
                     </div>
 
@@ -628,7 +628,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             </div>
             <div className="flex justify-between text-slate-600 dark:text-slate-400">
               <span>
-                Delivery Transport ({hasOutside ? 'Outside-school order' : deliveryBatch === 'premium' ? 'Premium 30-60m' : 'Campus Batch'})
+                Delivery
               </span>
               <span className="font-mono tabular-nums">₦{deliveryFee.toLocaleString()}</span>
             </div>

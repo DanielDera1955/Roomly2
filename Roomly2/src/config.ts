@@ -76,14 +76,6 @@ export interface DeliveryBatchOption {
 
 export const DELIVERY_BATCHES: DeliveryBatchOption[] = [
   {
-    id: 'premium',
-    name: 'Premium Instant Delivery',
-    timeWindow: 'Within 30 – 60 mins',
-    price: 1500,
-    badge: '30-60m Instant',
-    description: 'Immediate runner dispatch direct to your room door for any item',
-  },
-  {
     id: 'morning',
     name: 'Morning Batch',
     timeWindow: '8:00 AM – 9:00 AM',
@@ -139,7 +131,23 @@ export function sellingPrice(cost: number, source: ProductSource = 'school'): nu
   return roundUp10(capped);
 }
 
-export function calculateDeliveryFee(batchId: string = 'premium'): number {
+/** Inside school: ₦300 when the items come to under ₦1,600, ₦500 from ₦1,600 up. Outside-school items: ₦800. */
+export const DELIVERY_FEES = { small: 300, large: 500, threshold: 1600 };
+export function deliveryFeeFor(itemTotal: number, hasOutside: boolean = false): number {
+  if (hasOutside) return OUTSIDE_DELIVERY_FEE;
+  return itemTotal < DELIVERY_FEES.threshold ? DELIVERY_FEES.small : DELIVERY_FEES.large;
+}
+
+/** The next batch a new order can still join (orders must come in before the batch window starts) */
+export function nextBatchId(now: Date = new Date()): 'morning' | 'afternoon' | 'evening' {
+  const h = now.getHours();
+  if (h < 8) return 'morning';
+  if (h < 13) return 'afternoon';
+  if (h < 19) return 'evening';
+  return 'morning';
+}
+
+export function calculateDeliveryFee(batchId: string = 'morning'): number {
   if (batchId === 'premium') {
     return STORE_CONFIG.deliveryFeePremium;
   }
