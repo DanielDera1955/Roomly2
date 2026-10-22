@@ -44,6 +44,8 @@ import {
   subscribeOrders,
   getCurrentStaff,
   logoutStaff,
+  setOrderHelper,
+  syncMyHelpCredits,
 } from '../api.js';
 
 interface RunnerPortalProps {
@@ -149,6 +151,21 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
   const seenOrderIds = React.useRef<Set<string> | null>(null);
 
   const activeRunner = runners.find((r) => r.id === activeRunnerId) || runners[0];
+
+  // Shared delivery: who helped on each order (picked per card), and crediting deliveries I helped with
+  const [helperPick, setHelperPick] = useState<Record<string, string>>({});
+  useEffect(() => syncMyHelpCredits(), []);
+  const recordHelper = async (ord: OrderRecord, email: string) => {
+    const r = runners.find((x) => x.id === email);
+    setUpdatingId(ord.id);
+    try {
+      await setOrderHelper(ord.id, r ? { email: r.id, name: r.name } : null);
+      await fetchOrdersAndRunners();
+    } catch (e: any) {
+      window.alert(e?.message || 'Could not save.');
+    }
+    setUpdatingId(null);
+  };
 
   const fetchOrdersAndRunners = async () => {
     setLoading(true);
@@ -295,6 +312,11 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
               </span>
               {isPaymentSent && (
                 <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-amber-500 text-white">Payment sent</span>
+              )}
+              {(ord as any).helperName && (
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300">
+                  {(ord as any).helperEmail === activeRunner?.id ? 'You helped' : `Shared with ${(ord as any).helperName}`}
+                </span>
               )}
               {isPOD && !isPaidConfirmed && (
                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">
@@ -553,6 +575,69 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
           )}
 
         </div>
+
+        {/* ================= SHARED DELIVERY (max two runners) ================= */}
+        {isAssignedToMe && ord.status !== 'Received' && (() => {
+          const helperEmail = (ord as any).helperEmail as string | undefined;
+          const helperName = (ord as any).helperName as string | undefined;
+          const delivered = ord.status === 'Delivered';
+          const others = runners.filter((r) => r.id !== ord.runnerId);
+          if (helperEmail) {
+            return (
+              <div className="p-3 rounded-2xl bg-violet-50 dark:bg-violet-950/30 text-xs flex items-center justify-between gap-2">
+                <span>
+                  Helped by <strong>{helperName}</strong>. Your 30% is split 50/50 with them; Roomly's 70% does not change.
+                </span>
+                {!delivered && (
+                  <button
+                    type="button"
+                    disabled={updatingId === ord.id}
+                    onClick={() => recordHelper(ord, '')}
+                    className="shrink-0 text-[11px] font-bold text-rose-600 cursor-pointer"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            );
+          }
+          if (others.length === 0) return null;
+          return (
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 text-xs space-y-2">
+              <p className="font-bold">Did another runner help with this delivery?</p>
+              <div className="flex gap-2">
+                <select
+                  value={helperPick[ord.id] || ''}
+                  onChange={(e) => setHelperPick((p) => ({ ...p, [ord.id]: e.target.value }))}
+                  className="flex-1 min-w-0 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs"
+                >
+                  <option value="">Choose runner</option>
+                  {others.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  disabled={!helperPick[ord.id] || updatingId === ord.id}
+                  onClick={() => {
+                    const r = runners.find((x) => x.id === helperPick[ord.id]);
+                    if (window.confirm(`Record ${r?.name} as your helper? Your 30% share on this delivery will be split 50/50 with them.`)) {
+                      recordHelper(ord, helperPick[ord.id]);
+                    }
+                  }}
+                  className="shrink-0 px-3 py-1.5 rounded-lg bg-violet-600 text-white font-bold disabled:opacity-40 cursor-pointer"
+                >
+                  Record help
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Agree it between yourselves first. {delivered ? 'After delivery this can be recorded once and not changed.' : ''}
+              </p>
+            </div>
+          );
+        })()}
 
         {/* Chat and call, under the items and total */}
         <div className="space-y-2">

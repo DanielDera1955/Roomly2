@@ -121,7 +121,13 @@ export const ProviderSettlement: React.FC<{ kind: 'runner' | 'operator' }> = ({ 
             <span className="block text-base font-extrabold text-[#0e9f55]">{naira(today?.keep)}</span>
             <span className="block text-[10px] text-slate-400">
               items + {Math.round(RUNNER_SHARE * 100)}% of profit{today?.gateFees ? ` + ${naira(today.gateFees)} gate` : ''}
+              {today?.helpShare ? ` + ${naira(today.helpShare)} for helping` : ''}
             </span>
+            {today?.owedToHelpers > 0 && (
+              <span className="block text-[10px] font-bold text-violet-700 dark:text-violet-300">
+                Hand {naira(today.owedToHelpers)} to your helper(s)
+              </span>
+            )}
           </div>
           <div className="rounded-2xl bg-amber-50 dark:bg-amber-950/30 p-2.5">
             <span className="block text-[10px] font-bold uppercase text-amber-700 dark:text-amber-300">Owed today</span>
@@ -257,6 +263,7 @@ export const AdminSettlementsPanel: React.FC = () => {
                 <p className="text-[11px] text-slate-500">
                   {dayText(d.date)}
                   {d.date === ymd ? ' (today, still open)' : ''} · {d.orders || 0} order(s)
+                  {d.sharedOrders ? ` · ${d.sharedOrders} shared` : ''}
                   {overdue ? ' · OVERDUE, hidden from checkout' : ''}
                 </p>
               </div>
