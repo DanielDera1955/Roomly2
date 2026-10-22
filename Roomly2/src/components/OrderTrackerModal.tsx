@@ -22,8 +22,8 @@ import {
   Zap,
 } from 'lucide-react';
 import { OrderRecord, locationText, shortLocation, roomText, partLabel } from '../types';
-import { STORE_CONFIG } from '../config';
-import { markPaymentSent } from '../api.js';
+import { STORE_CONFIG, OUT_OF_STOCK_LABEL } from '../config';
+import { markPaymentSent, paymentState } from '../api.js';
 
 interface OrderTrackerModalProps {
   isOpen: boolean;
@@ -134,6 +134,8 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
       if (updated) {
         setCurrentOrder(updated);
         if (onPaymentSent) onPaymentSent(updated);
+      } else {
+        window.alert('Could not record your payment. If this order has expired, please place a new order.');
       }
     } finally {
       setMarkingPayment(false);
@@ -212,10 +214,44 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                   <Building className="w-4 h-4 text-[#0e9f55] shrink-0 mt-0.5" />
                   <span>{locationText(currentOrder)}</span>
                 </div>
+                {(currentOrder.operatorName || currentOrder.turnRunner || currentOrder.outOfStock) && (
+                  <div className="text-xs text-slate-600 dark:text-slate-300 space-y-0.5 pt-1 border-t border-slate-200 dark:border-slate-700">
+                    {currentOrder.operatorName && <p>From: <strong>{currentOrder.operatorName}</strong> (delivered to the school gate)</p>}
+                    {!currentOrder.operatorName && currentOrder.turnRunner && <p>Runner: <strong>{currentOrder.turnRunner}</strong></p>}
+                    {currentOrder.outOfStock && <p>If out of stock: {OUT_OF_STOCK_LABEL[currentOrder.outOfStock]}</p>}
+                  </div>
+                )}
               </div>
 
+              {/* GATE PICKUP: separate request to an inside runner */}
+              {currentOrder.gatePickup && (
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs space-y-1">
+                  <p className="font-bold text-slate-800 dark:text-slate-100">Gate to room pickup</p>
+                  <p className="text-slate-600 dark:text-slate-300">
+                    {currentOrder.gatePickup.status === 'pending'
+                      ? 'Waiting for an inside runner to accept.'
+                      : currentOrder.gatePickup.status === 'accepted'
+                      ? `${currentOrder.gatePickup.runnerName || 'A runner'} will bring it to your room. Pay them ₦${currentOrder.gatePickup.fee.toLocaleString()}${currentOrder.gatePickup.heavy ? ' (heavy parcel)' : ''} directly.`
+                      : currentOrder.gatePickup.status === 'delivered'
+                      ? 'Brought to your room.'
+                      : currentOrder.gatePickup.status === 'refunded'
+                      ? 'The runner refunded this pickup. Please collect at the gate.'
+                      : 'No runner could take this one. Please collect at the school gate.'}
+                  </p>
+                  {currentOrder.gatePickup.runnerPhone && currentOrder.gatePickup.status === 'accepted' && (
+                    <a href={`tel:${currentOrder.gatePickup.runnerPhone}`} className="inline-block font-bold text-[#0e9f55]">
+                      Call {currentOrder.gatePickup.runnerName}
+                    </a>
+                  )}
+                </div>
+              )}
+
               {/* PAYMENT: bank details until the student taps "payment made", then a short note, then nothing once confirmed */}
-              {currentOrder.paymentMethod === 'pay_now' ? (
+              {currentOrder.paymentMethod === 'pay_now' && paymentState(currentOrder) === 'expired' ? (
+                <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-xs text-rose-800 dark:text-rose-200 font-medium">
+                  This order was not paid for and expired at the end of the day. Please place a new order.
+                </div>
+              ) : currentOrder.paymentMethod === 'pay_now' ? (
                 currentOrder.paymentStatus === 'payment_confirmed' ? null : currentOrder.paymentStatus === 'payment_sent' ? (
                   <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 text-xs text-emerald-900 dark:text-emerald-200 font-medium flex items-start gap-2">
                     <Check className="w-4 h-4 text-[#0e9f55] stroke-[3] shrink-0 mt-0.5" />
@@ -235,7 +271,12 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                       </span>
                     </div>
                     <p className="text-xs text-amber-900 dark:text-amber-200 leading-snug">
-                      {currentOrder.paymentDeadline && (
+                      {paymentState(currentOrder) === 'missed' && (
+                        <strong className="block mb-1 text-rose-700 dark:text-rose-300">
+                          You missed this batch. If you pay now, your order joins the next batch. Unpaid orders expire at the end of the day.
+                        </strong>
+                      )}
+                      {paymentState(currentOrder) === 'open' && currentOrder.paymentDeadline && (
                         <strong className="block mb-1">
                           Pay before{' '}
                           {new Date(currentOrder.paymentDeadline).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} to
@@ -367,7 +408,11 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                         Order Delivered & Handed Over!
                       </h4>
                       <p className="text-[11px] text-emerald-800 dark:text-emerald-400">
-                        Delivered to {shortLocation(currentOrder)}. Enjoy your order!
+                        {currentOrder.cart === 'store' || currentOrder.cart === 'food'
+                          ? currentOrder.gatePickup && currentOrder.gatePickup.status !== 'refused' && currentOrder.gatePickup.status !== 'refunded'
+                            ? 'Your items are at the school gate, and the runner is bringing them to your room.'
+                            : 'Your items are at the school gate. Please collect them.'
+                          : `Delivered to ${shortLocation(currentOrder)}. Enjoy your order!`}
                       </p>
                     </div>
                   </div>
@@ -385,7 +430,8 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                 )}
               </div>
 
-              {/* 4-Step Progress Tracker */}
+              {/* 4-Step Progress Tracker (inside orders; outside carts show the store/food status below) */}
+              {currentOrder.cart !== 'store' && currentOrder.cart !== 'food' && (
               <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -440,6 +486,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                   })}
                 </div>
               </div>
+              )}
 
               {(currentOrder.hasStore || currentOrder.hasFood) && (
                 <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs space-y-1.5">

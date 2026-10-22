@@ -626,7 +626,18 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                           <Building className="w-3.5 h-3.5 text-[#0e9f55] shrink-0" />
                           <span>{shortLocation(ord)}</span>
                         </div>
-                        <p className="text-xs text-slate-400">{ord.deliveryTime} · Runner: {ord.runnerName || 'none yet'}</p>
+                        <p className="text-xs text-slate-400">
+                          {ord.deliveryTime} ·{' '}
+                          {ord.cart === 'store' || ord.cart === 'food'
+                            ? `${ord.cart === 'food' ? 'Food' : 'Store'}: ${ord.operatorName || 'any operator'}`
+                            : `Runner: ${ord.runnerName || ord.turnRunner || 'none yet'}`}
+                        </p>
+                        {(ord.outOfStock || ord.gatePickup) && (
+                          <p className="text-[11px] text-slate-400">
+                            {ord.outOfStock ? `Out of stock: ${ord.outOfStock}` : ''}
+                            {ord.gatePickup ? ` · Gate pickup: ${ord.gatePickup.status}${ord.gatePickup.runnerName ? ` (${ord.gatePickup.runnerName}, ₦${ord.gatePickup.fee})` : ''}` : ''}
+                          </p>
+                        )}
                       </div>
                       <div className="text-right shrink-0 flex flex-col items-end gap-1">
                         <span className="font-bold text-sm text-[#0e9f55] whitespace-nowrap">

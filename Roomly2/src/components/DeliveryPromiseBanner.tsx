@@ -71,8 +71,8 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
           </div>
 
           <p className="text-xs text-emerald-100/90">
-            From our trusted stores and food partners. Delivery is {naira(OUTSIDE_DELIVERY_FEE)}, and these items are paid
-            for first.
+            From our trusted stores and food partners. Delivery is {naira(OUTSIDE_DELIVERY_FEE)} to the school gate, paid for
+            first. At checkout you can ask an inside runner to bring it to your room.
           </p>
         </div>
       </div>

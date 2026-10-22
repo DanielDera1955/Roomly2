@@ -8,9 +8,11 @@ import {
   ensureOperatorStatus,
   subscribeMyTodaySummary,
   getMySummaries,
+  getMyUid,
 } from '../api.js';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
-import { OrderRecord, partLabel } from '../types';
+import { OrderRecord, partLabel, shortLocation } from '../types';
+import { OUT_OF_STOCK_LABEL } from '../config';
 import { playChime } from '../sound';
 import { SoundToggle } from './SoundToggle';
 import { ThemeToggle } from './ThemeToggle';
@@ -171,7 +173,9 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
       const ids = new Set(list.map((o) => o.id));
       if (seen.current && list.some((o) => !seen.current!.has(o.id))) playChime('order');
       seen.current = ids;
-      setOrders(list);
+      // Each order goes to the operator the student chose; older orders without one show to everyone
+      const me = getMyUid();
+      setOrders(isAdmin ? list : list.filter((o) => !o.operatorId || o.operatorId === me));
       setLoading(false);
     });
   }, [kind]);
@@ -326,6 +330,18 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                       </p>
                     </div>
                   )}
+
+                  <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 text-xs space-y-1">
+                    {isAdmin && o.operatorName && <p>Operator: <strong>{o.operatorName}</strong></p>}
+                    <p>
+                      If out of stock: <strong>{OUT_OF_STOCK_LABEL[o.outOfStock || 'refund']}</strong>
+                    </p>
+                    <p>
+                      {o.gatePickup && o.gatePickup.status !== 'refused' && o.gatePickup.status !== 'refunded'
+                        ? `An inside runner will collect it at the gate for ${shortLocation(o)}.`
+                        : 'The student collects it at the school gate.'}
+                    </p>
+                  </div>
 
                   <div className="space-y-2">
                     {items.map((i, idx) => (

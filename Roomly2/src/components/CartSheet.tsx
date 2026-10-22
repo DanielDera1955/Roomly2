@@ -16,13 +16,17 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
-import { HOSTELS, deliveryFeeFor, isOutsideSource } from '../config';
-import { getNextBatch } from '../api.js';
+import { HOSTELS, deliveryFeeFor, CartKind, CART_LABEL, GATE_PICKUP_FEES, OUT_OF_STOCK_LABEL, OutOfStockChoice } from '../config';
+import { getNextBatch, getOutsideChoices } from '../api.js';
 import { isValidNigerianPhone, normalizePhone } from '../api.js';
 
 interface CartSheetProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Which of the three carts is open; items are only that cart's items */
+  cart: CartKind;
+  cartCounts: Record<CartKind, number>;
+  onSwitchCart: (c: CartKind) => void;
   items: CartItem[];
   customRequest: string;
   onUpdateQuantity: (cartItemId: string, delta: number) => void;
@@ -48,12 +52,21 @@ interface CartSheetProps {
     subtotal: number;
     deliveryFee: number;
     totalAmount: number;
-  }) => void;
+    cart: CartKind;
+    operatorId?: string;
+    operatorName?: string;
+    turnRunner?: string;
+    outOfStock: OutOfStockChoice;
+    gatePickup?: boolean;
+  }) => void | Promise<void>;
 }
 
 export const CartSheet: React.FC<CartSheetProps> = ({
   isOpen,
   onClose,
+  cart,
+  cartCounts,
+  onSwitchCart,
   items,
   customRequest,
   onUpdateQuantity,
@@ -82,6 +95,9 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const [acknowledgedNoCancel, setAcknowledgedNoCancel] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [outOfStock, setOutOfStock] = useState<OutOfStockChoice | ''>('');
+  const [gatePickup, setGatePickup] = useState(false);
+  const [operatorId, setOperatorId] = useState('');
 
   // Is repeat customer?
   const isRepeatCustomer = Boolean(customer && (customer.isReturning || (customer.ordersCount && customer.ordersCount > 0)));
@@ -99,14 +115,14 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   // Repeat customer payment rule enforcement:
   // "phone number will be used to detect a reap customer who won't be able to order without making payment and clicking they have made the payment."
   useEffect(() => {
-    if (isRepeatCustomer || items.some((i) => isOutsideSource(i.source))) {
+    if (isRepeatCustomer || cart !== 'inside') {
       setPaymentChoice('pay_now');
     }
-  }, [isRepeatCustomer, items]);
+  }, [isRepeatCustomer, cart]);
 
   // Financial calculations
   const itemTotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
-  const hasOutside = items.some((i) => isOutsideSource(i.source));
+  const hasOutside = cart !== 'inside';
   const mustPrepay = isRepeatCustomer || hasOutside;
   const deliveryFee = deliveryFeeFor(itemTotal, hasOutside);
   const grandTotal = itemTotal + deliveryFee;
@@ -121,25 +137,27 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       window.clearInterval(id);
     };
   }, []);
-  // Next batch only, from the runners' and operators' switches. Outside items follow the store or food
-  // switches; with both, the order joins the later batch and must be paid before the earlier deadline.
-  const hasStoreItems = items.some((i) => i.source === 'outside');
-  const hasFoodItems = items.some((i) => i.source === 'food');
-  const parts: ('inside' | 'store' | 'food')[] = hasOutside
-    ? [...(hasStoreItems ? (['store'] as const) : []), ...(hasFoodItems ? (['food'] as const) : [])]
-    : ['inside'];
-  const results = parts.map((p) => ({ part: p, ...getNextBatch(p) }));
-  const pausedPart = results.find((r) => !r.next);
-  const open = pausedPart ? [] : results.map((r) => r.next!);
-  const chosen = open.slice().sort((a, b) => b.start.getTime() - a.start.getTime())[0];
+  // Next batch only. Inside: the runner whose turn it is. Outside: the operators taking that batch;
+  // the student picks one (the one with fewer orders today is suggested).
+  const insideNext = cart === 'inside' ? getNextBatch('inside') : null;
+  const outside = cart !== 'inside' ? getOutsideChoices(cart) : null;
+  const operators = outside?.operators || [];
+  const chosenOp = operators.find((o) => o.uid === operatorId) || operators[0];
+  const chosen = cart === 'inside'
+    ? insideNext?.next || null
+    : outside?.batch && chosenOp
+    ? { batch: outside.batch, start: chosenOp.start, startText: chosenOp.startText, by: chosenOp.name }
+    : null;
   const selectedBatch = chosen?.batch;
-  const payBy = open.length ? new Date(Math.min(...open.map((n) => n.start.getTime()))) : null;
+  const payBy = chosen ? chosen.start : null;
   const payByText = payBy ? payBy.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
-  const pausedText = pausedPart
-    ? `${pausedPart.part === 'food' ? 'Food orders are' : pausedPart.part === 'store' ? 'Store orders are' : 'Ordering is'} paused right now.${
-        pausedPart.note ? ' ' + pausedPart.note : ' Please check back soon.'
-      }`
-    : '';
+  const pauseNote = cart === 'inside' ? insideNext?.note : outside?.note;
+  const pausedText = chosen
+    ? ''
+    : `${cart === 'food' ? 'Food orders are' : cart === 'store' ? 'Store orders are' : 'Ordering is'} paused right now.${
+        pauseNote ? ' ' + pauseNote : ' Please check back soon.'
+      }`;
+  const otherCarts = (['inside', 'store', 'food'] as CartKind[]).filter((k) => k !== cart && cartCounts[k] > 0);
 
   // Tell the student when the batch they saw stops accepting and the order moves to the next one
   const lastBatch = useRef<{ key: string; window: string } | null>(null);
@@ -155,7 +173,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const hasCustomRequest = Boolean(customRequest && customRequest.trim().length > 0);
   const isPhoneValid = isValidNigerianPhone(phone);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
@@ -196,6 +214,11 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       return;
     }
 
+    if (!outOfStock) {
+      setErrorMessage('Please choose what we should do if an item is out of stock.');
+      return;
+    }
+
     if (!acknowledgedNoCancel) {
       setErrorMessage('Please confirm that you have rechecked your order details (No cancellation policy).');
       return;
@@ -204,7 +227,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
 
     setSubmitting(true);
     try {
-      onPlaceOrder({
+      await onPlaceOrder({
         phone: normalizePhone(phone),
         name: name.trim(),
         area: customMode ? 'Custom' : area,
@@ -221,11 +244,17 @@ export const CartSheet: React.FC<CartSheetProps> = ({
         subtotal: itemTotal,
         deliveryFee,
         totalAmount: grandTotal,
+        cart,
+        operatorId: cart !== 'inside' ? chosenOp?.uid : undefined,
+        operatorName: cart !== 'inside' ? chosenOp?.name : undefined,
+        turnRunner: cart === 'inside' ? insideNext?.next?.by || '' : undefined,
+        outOfStock,
+        gatePickup: cart !== 'inside' && gatePickup,
       });
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to place order');
-      setSubmitting(false);
     }
+    setSubmitting(false);
   };
 
   return (
@@ -240,7 +269,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 dark:border-slate-800 shrink-0">
           <div>
             <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
-              Roomly Checkout
+              {CART_LABEL[cart]}
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               {items.length} {items.length === 1 ? 'item' : 'items'}
@@ -256,6 +285,23 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {/* Other carts: each is checked out on its own */}
+        {otherCarts.length > 0 && (
+          <div className="px-5 py-2 border-b border-slate-100 dark:border-slate-800 flex items-center gap-1.5 overflow-x-auto shrink-0">
+            <span className="text-[11px] text-slate-500 shrink-0">Other carts:</span>
+            {otherCarts.map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => onSwitchCart(k)}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 shrink-0 cursor-pointer"
+              >
+                {CART_LABEL[k]} ({cartCounts[k]})
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Scrollable Checkout Content */}
         <form onSubmit={handleSubmit} className="overflow-y-auto p-5 space-y-5 flex-1">
@@ -533,7 +579,9 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                 <p className="mt-2 text-[11px] font-bold text-amber-700 dark:text-amber-300">
                   Pay before {payByText} to join the {selectedBatch.window} batch.
                 </p>
-                <p className="text-[10px] text-slate-400 mt-0.5">Every order joins the next batch.</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Every order joins the next batch.{cart !== 'inside' ? ' Delivery is to the school gate.' : ''}
+                </p>
               </div>
             ) : (
               <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200">
@@ -541,6 +589,82 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               </div>
             )}
           </div>
+
+          {/* WHO HANDLES THIS ORDER */}
+          {chosen && cart === 'inside' && chosen.by && (
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 text-xs">
+              Your order goes to <strong>{chosen.by}</strong>, the runner on this batch.
+            </div>
+          )}
+          {chosen && cart !== 'inside' && operators.length > 0 && (
+            <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                {cart === 'food' ? 'Food partner' : 'Store'}
+              </h3>
+              {operators.length === 1 ? (
+                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 text-xs">
+                  Your order goes to <strong>{operators[0].name}</strong>.
+                </div>
+              ) : (
+                operators.map((op, idx) => {
+                  const on = (chosenOp?.uid || '') === op.uid;
+                  return (
+                    <button
+                      key={op.uid}
+                      type="button"
+                      onClick={() => setOperatorId(op.uid)}
+                      className={`w-full p-3 rounded-2xl border text-left text-xs cursor-pointer ${
+                        on ? 'border-[#0e9f55] bg-emerald-50/60 dark:bg-emerald-950/40' : 'border-slate-200 dark:border-slate-800'
+                      }`}
+                    >
+                      <span className="font-bold text-slate-900 dark:text-white">{op.name}</span>
+                      {idx === 0 && <span className="ml-1.5 text-[10px] font-bold text-[#0e9f55]">Fewer orders now</span>}
+                      <span className="block text-[11px] text-slate-500">Will start sending by {op.startText}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          )}
+
+          {/* OUT OF STOCK */}
+          <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              If an item is out of stock
+            </h3>
+            {((cart === 'inside' ? ['refund', 'swap'] : ['refund', 'tomorrow', 'swap']) as OutOfStockChoice[]).map((k) => (
+              <label key={k} className="flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-200 cursor-pointer">
+                <input
+                  type="radio"
+                  name="oos"
+                  checked={outOfStock === k}
+                  onChange={() => setOutOfStock(k)}
+                  className="w-4 h-4 accent-[#0e9f55]"
+                />
+                <span>{OUT_OF_STOCK_LABEL[k]}</span>
+              </label>
+            ))}
+          </div>
+
+          {/* GATE PICKUP (outside carts only) */}
+          {cart !== 'inside' && (
+            <label className="flex items-start gap-2.5 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs cursor-pointer">
+              <input
+                type="checkbox"
+                checked={gatePickup}
+                onChange={(e) => setGatePickup(e.target.checked)}
+                className="w-4 h-4 mt-0.5 accent-[#0e9f55]"
+              />
+              <span>
+                <strong className="block text-slate-900 dark:text-white">Bring it from the gate to my room</strong>
+                <span className="text-slate-500 dark:text-slate-400">
+                  An inside runner collects it at the gate. ₦{GATE_PICKUP_FEES.normal.toLocaleString()}, or ₦
+                  {GATE_PICKUP_FEES.heavy.toLocaleString()} if the runner marks it heavy. Paid to the runner separately; they can
+                  accept or decline.
+                </span>
+              </span>
+            </label>
+          )}
 
           {/* PAYMENT CHOICE WITH REPEAT CUSTOMER ENFORCEMENT */}
           <div className="space-y-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
@@ -707,7 +831,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               <span className="font-mono text-base">₦{grandTotal.toLocaleString()}</span>
             </button>
             <p className="text-[10px] text-center text-slate-400 mt-2">
-              Dispatches directly to campus delivery runners
+              {cart === 'inside' ? 'Goes to the runner on this batch' : `Goes to ${chosenOp?.name || 'the operator'}, delivered to the school gate`}
             </p>
           </div>
         </form>
