@@ -1,8 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ShoppingBag, Truck, Shield, Store } from 'lucide-react';
 import { subscribeStaff } from '../api.js';
-import { ThemeToggle } from './ThemeToggle';
-import { SoundToggle } from './SoundToggle';
 
 type Mode = 'customer' | 'runner' | 'operator' | 'admin';
 
@@ -11,7 +8,7 @@ interface AdminSwitcherProps {
   onSelect: (mode: Mode) => void;
 }
 
-/** Shown only when the admin is signed in: jump between the customer, runner and admin screens. */
+/** Shown only when the admin is signed in: jump between the four screens. */
 export const AdminSwitcher: React.FC<AdminSwitcherProps> = ({ current, onSelect }) => {
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -19,31 +16,29 @@ export const AdminSwitcher: React.FC<AdminSwitcherProps> = ({ current, onSelect 
 
   if (!isAdmin) return null;
 
-  const items: { id: Mode; label: string; Icon: React.ElementType }[] = [
-    { id: 'customer', label: 'Customer', Icon: ShoppingBag },
-    { id: 'runner', label: 'Runner', Icon: Truck },
-    { id: 'operator', label: 'Operator', Icon: Store },
-    { id: 'admin', label: 'Admin', Icon: Shield },
+  const items: { id: Mode; label: string }[] = [
+    { id: 'customer', label: 'Customer' },
+    { id: 'runner', label: 'Runner' },
+    { id: 'operator', label: 'Operator' },
+    { id: 'admin', label: 'Admin' },
   ];
 
   return (
-    <div className="w-full bg-slate-900 text-white px-3 py-1.5 flex items-center justify-center gap-1.5">
-      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">Admin view</span>
-      {items.map(({ id, label, Icon }) => (
-        <button
-          key={id}
-          type="button"
-          onClick={() => onSelect(id)}
-          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors ${
-            current === id ? 'bg-[#0e9f55] text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-          }`}
-        >
-          <Icon className="w-3 h-3" />
-          {label}
-        </button>
-      ))}
-      <SoundToggle className="ml-1 !p-1.5 bg-slate-800" />
-      <ThemeToggle className="!p-1.5 bg-slate-800 text-slate-300" />
+    <div className="w-full max-w-full overflow-hidden bg-slate-900 px-2 py-1.5">
+      <div className="grid grid-cols-4 gap-1">
+        {items.map(({ id, label }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onSelect(id)}
+            className={`min-w-0 truncate px-1 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors ${
+              current === id ? 'bg-[#0e9f55] text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 };
