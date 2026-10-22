@@ -60,7 +60,14 @@ service cloud.firestore {
         (signedIn() && request.auth.uid == uid
          && (isOperator('store') || isOperator('food'))
          && request.resource.data.kind == staffRole()
-         && request.resource.data.get('adminOff', false) == resource.data.get('adminOff', false));
+         && request.resource.data.get('adminOff', false) == resource.data.get('adminOff', false)) ||
+        // Anyone placing an order may add one to that operator's order count for today
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['load'])
+         && request.resource.data.load.count is int
+         && ((request.resource.data.load.date == resource.data.get('load', {'date': '', 'count': 0}).date
+              && request.resource.data.load.count == resource.data.get('load', {'date': '', 'count': 0}).count + 1)
+             || (request.resource.data.load.date != resource.data.get('load', {'date': '', 'count': 0}).date
+              && request.resource.data.load.count == 1)));
       allow delete: if isAdmin();
     }
 
@@ -117,14 +124,19 @@ service cloud.firestore {
       // Customers may only press "I have made payment". Runners and admin can update anything.
       // Operators may only change the status of their own part, on paid orders.
       allow update: if isStaff() ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'paymentSentAt', 'history', 'payReady'])
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'paymentSentAt', 'history', 'payReady',
+             'deliveryBatch', 'deliveryTime', 'deliveryDate', 'paymentDeadline'])
          && resource.data.paymentStatus == 'unpaid'
          && request.resource.data.paymentStatus == 'payment_sent'
          && request.resource.data.payReady == true) ||
         (isOperator('store') && resource.data.hasStore == true && resource.data.payReady == true
-         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['storeStatus', 'history'])) ||
+         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['storeStatus', 'history', 'status', 'deliveredAt'])
+         && (request.resource.data.status == resource.data.status
+             || (resource.data.get('cart', '') == 'store' && request.resource.data.status == 'Delivered'))) ||
         (isOperator('food') && resource.data.hasFood == true && resource.data.payReady == true
-         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['foodStatus', 'history']));
+         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['foodStatus', 'history', 'status', 'deliveredAt'])
+         && (request.resource.data.status == resource.data.status
+             || (resource.data.get('cart', '') == 'food' && request.resource.data.status == 'Delivered')));
 
       allow delete: if isAdmin();
 
