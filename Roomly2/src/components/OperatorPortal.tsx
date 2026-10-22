@@ -1,6 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Package, Phone } from 'lucide-react';
-import { subscribeOperatorOrders, updatePartStatus, getCurrentStaff, logoutStaff, ensureOperatorStatus } from '../api.js';
+import {
+  subscribeOperatorOrders,
+  updatePartStatus,
+  getCurrentStaff,
+  logoutStaff,
+  ensureOperatorStatus,
+  subscribeMyTodaySummary,
+  getMySummaries,
+} from '../api.js';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { OrderRecord, partLabel } from '../types';
 import { playChime } from '../sound';
@@ -8,6 +16,132 @@ import { SoundToggle } from './SoundToggle';
 import { ThemeToggle } from './ThemeToggle';
 
 type Kind = 'store' | 'food';
+
+type Range = 'today' | 'week' | 'month' | 'year' | 'custom';
+const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const naira = (n: number) => `₦${Math.round(n || 0).toLocaleString()}`;
+
+function rangeDates(r: Range): [string, string] {
+  const now = new Date();
+  const start = new Date(now);
+  if (r === 'week') start.setDate(now.getDate() - ((now.getDay() + 6) % 7)); // from Monday
+  if (r === 'month') start.setDate(1);
+  if (r === 'year') start.setMonth(0, 1);
+  return [ymd(start), ymd(now)];
+}
+
+function addUp(days: any[]) {
+  return days.reduce(
+    (t, d) => ({
+      orders: t.orders + (d.orders || 0),
+      paid: t.paid + (d.paid || 0),
+      earnings: t.earnings + (d.keep || 0) + (d.deliveryKeep || 0),
+      owed: t.owed + (d.owed || 0) + (d.deliveryOwe || 0),
+      delivery: t.delivery + (d.deliveryKeep || 0),
+      estimated: t.estimated || Boolean(d.estimated),
+    }),
+    { orders: 0, paid: 0, earnings: 0, owed: 0, delivery: 0, estimated: false }
+  );
+}
+
+/** Live overview: completed orders, earnings and amount owed, from small daily summaries */
+const OperatorOverview: React.FC = () => {
+  const [range, setRange] = useState<Range>('today');
+  const [today, setToday] = useState<any | null>(null);
+  const [days, setDays] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const week = rangeDates('week');
+  const [from, setFrom] = useState(week[0]);
+  const [to, setTo] = useState(week[1]);
+
+  useEffect(() => subscribeMyTodaySummary(setToday), []);
+
+  const load = async (r: Range, f?: string, t?: string) => {
+    if (r === 'today') return;
+    const [a, b] = r === 'custom' ? [f || from, t || to] : rangeDates(r);
+    setLoading(true);
+    setDays(await getMySummaries(a <= b ? a : b, a <= b ? b : a));
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    if (range !== 'custom') load(range);
+  }, [range]);
+
+  // Keep the longer ranges in step with today's live numbers
+  const list = range === 'today' ? (today ? [today] : []) : days.filter((d) => d.date !== ymd(new Date())).concat(today ? [today] : []);
+  const inRange = range === 'today' ? list : list.filter((d) => {
+    const [a, b] = range === 'custom' ? [from, to] : rangeDates(range);
+    return d.date >= (a <= b ? a : b) && d.date <= (a <= b ? b : a);
+  });
+  const t = addUp(inRange);
+  const tabs: [Range, string][] = [
+    ['today', 'Today'],
+    ['week', 'Week'],
+    ['month', 'Month'],
+    ['year', 'Year'],
+    ['custom', 'Pick dates'],
+  ];
+
+  return (
+    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-4 space-y-3">
+      <div className="flex items-center gap-1.5 overflow-x-auto">
+        {tabs.map(([k, label]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setRange(k)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 cursor-pointer ${
+              range === k ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {range === 'custom' && (
+        <div className="flex items-center gap-2 text-xs">
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="flex-1 min-w-0 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900" />
+          <span className="text-slate-400">to</span>
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="flex-1 min-w-0 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900" />
+          <button type="button" onClick={() => load('custom', from, to)} className="px-3 py-1.5 rounded-lg bg-[#0e9f55] text-white font-bold cursor-pointer">
+            Show
+          </button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-2.5">
+          <span className="block text-[10px] font-bold uppercase text-slate-500">Completed</span>
+          <span className="block text-lg font-extrabold">{t.orders}</span>
+          <span className="block text-[10px] text-slate-400">orders</span>
+        </div>
+        <div className="rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 p-2.5">
+          <span className="block text-[10px] font-bold uppercase text-emerald-700 dark:text-emerald-300">You earned</span>
+          <span className="block text-base font-extrabold text-[#0e9f55]">{naira(t.earnings)}</span>
+          <span className="block text-[10px] text-slate-400">items + delivery</span>
+        </div>
+        <div className="rounded-2xl bg-amber-50 dark:bg-amber-950/30 p-2.5">
+          <span className="block text-[10px] font-bold uppercase text-amber-700 dark:text-amber-300">{range === 'today' ? 'Owed today' : 'Owed'}</span>
+          <span className="block text-base font-extrabold text-amber-700 dark:text-amber-300">{naira(t.owed)}</span>
+          <span className="block text-[10px] text-slate-400">to Roomly</span>
+        </div>
+      </div>
+
+      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+        {loading
+          ? 'Loading…'
+          : `Students paid ${naira(t.paid)} for your items. Delivery you keep: ${naira(t.delivery)}. Counted when you tap "Sent to school gate".`}
+      </p>
+      {t.estimated && (
+        <p className="text-[11px] text-amber-700 dark:text-amber-300">
+          Some amounts are estimated because an item has no cost price yet. Ask the admin to add it.
+        </p>
+      )}
+    </div>
+  );
+};
 
 interface OperatorPortalProps {
   onBack: () => void;
@@ -111,6 +245,9 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
             ))}
           </div>
         )}
+
+        {/* Live overview (operators only) */}
+        {!isAdmin && <OperatorOverview />}
 
         {/* Availability: operators set their own batches; the admin sees everyone and can switch them off */}
         {isAdmin ? <OperatorOverridePanel /> : <BatchSwitches side={kind} />}
