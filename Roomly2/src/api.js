@@ -1310,11 +1310,10 @@ function costOf(item, products, inside = false) {
 const dayId = (uid, day) => `${uid}_${day}`;
 
 /** Add one delivered order (or gate fee) to the signed-in provider's record for today. Counted once per key. */
-async function addToMyDay(kind, key, add, estimated) {
+async function addToMyDay(kind, key, add, estimated, day = ymdOf(new Date())) {
   const uid = auth.currentUser?.uid;
   const staff = getCurrentStaff();
   if (!uid || !staff) return;
-  const day = ymdOf(new Date());
   const ref = doc(db, 'settlements', dayId(uid, day));
   let created = false;
   await runTransaction(db, async (tx) => {
@@ -1345,8 +1344,9 @@ async function addToMyDay(kind, key, add, estimated) {
     });
     tx.set(ref, next);
   });
-  // Remember the open day publicly so checkout can hide a provider who has not cleared it
-  {
+  // Remember the open day publicly so checkout can hide a provider who has not cleared it.
+  // Only when money is owed: a day that owes nothing (gate fees, help shares) must never block anyone.
+  if ((add.due || 0) > 0) {
     try {
       if (kind === 'runner') {
         await setDoc(doc(db, 'availability', 'inside'), { runnerUnsettled: { [uid]: arrayUnion(day) } }, { merge: true });
@@ -1395,12 +1395,8 @@ async function recordOperatorDelivery(order, kind) {
   );
 }
 
-/** Runner: an inside order was delivered. 30% of the profit is theirs, 70% is owed. */
-/** @returns {Promise<void>} */
-async function recordRunnerDelivery(order) {
-  const staff = getCurrentStaff();
-  if (!staff || staff.role !== 'runner') return; // admin taps are not a runner's delivery
-  if (order.cart && order.cart !== 'inside') return;
+/** Profit on an inside order: item margin + delivery fee */
+async function insideProfitOf(order) {
   const items = (order.items || []).filter((i) => !i.source || i.source === 'school');
   const products = (await readCatalog()).products || [];
   let paid = 0;
@@ -1413,7 +1409,21 @@ async function recordRunnerDelivery(order) {
     estimated = estimated || c.estimated;
   }
   const fee = order.deliveryFee || 0;
-  const profit = Math.max(0, paid - spent) + fee;
+  return { paid, spent, fee, profit: Math.max(0, paid - spent) + fee, estimated };
+}
+
+/**
+ * Runner: an inside order was delivered. 30% of the profit is the runners', 70% is owed to Roomly.
+ * Shared delivery (Phase 6): with a helper, the 30% splits 50/50; the 70% does not change.
+ */
+/** @returns {Promise<void>} */
+async function recordRunnerDelivery(order) {
+  const staff = getCurrentStaff();
+  if (!staff || staff.role !== 'runner') return; // admin taps are not a runner's delivery
+  if (order.cart && order.cart !== 'inside') return;
+  const { paid, spent, fee, profit, estimated } = await insideProfitOf(order);
+  const share = profit * RUNNER_SHARE;
+  const helperShare = order.helperEmail ? Math.round(share / 2) : 0;
   await addToMyDay(
     'runner',
     order.id,
@@ -1424,10 +1434,92 @@ async function recordRunnerDelivery(order) {
       itemsCost: spent,
       deliveryFees: fee,
       profit,
-      keep: spent + profit * RUNNER_SHARE,
+      keep: spent + share - helperShare,
       due: profit * (1 - RUNNER_SHARE),
+      owedToHelpers: helperShare,
+      sharedOrders: order.helperEmail ? 1 : 0,
     },
     estimated
+  );
+  // Keep the numbers on the order, so the helper's share and a later helper can be worked out exactly
+  try {
+    await updateDoc(doc(db, 'orders', order.id), { runnerProfit: profit, helperShare });
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+/**
+ * Runner on the order records who helped (max two runners per order). No acceptance step.
+ * helper = { email, name } or null. Before delivery it can be changed; after delivery it can be set once.
+ */
+/** @returns {Promise<void>} */
+export async function setOrderHelper(orderId, helper) {
+  const staff = getCurrentStaff();
+  if (!staff || (staff.role !== 'runner' && staff.role !== 'admin')) throw new Error('Runners only');
+  const ref = doc(db, 'orders', orderId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('Order not found');
+  const o = { ...snap.data(), id: snap.id };
+  if (helper && helper.email === o.runnerId) throw new Error('The helper must be a different runner');
+  const delivered = o.status === 'Delivered';
+  if (delivered && o.helperEmail) throw new Error('A helper is already recorded on this delivery');
+  if (delivered && !helper) return;
+  if (delivered && staff.id !== o.runnerId) throw new Error('Only the runner who delivered it can add a helper now');
+  const now = new Date().toISOString();
+  const patch = {
+    helperEmail: helper ? helper.email : '',
+    helperName: helper ? helper.name : '',
+    history: [
+      ...(o.history || []),
+      {
+        status: o.status,
+        timestamp: now,
+        note: helper ? `${helper.name} helped with this delivery (30% share split 50/50)` : 'Helper removed',
+        updatedBy: staff.name || 'Runner',
+      },
+    ],
+  };
+  // Helper added after delivery: move half of the delivering runner's 30% to the helper
+  if (delivered && helper) {
+    const profit = Number.isFinite(o.runnerProfit) ? o.runnerProfit : (await insideProfitOf(o)).profit;
+    const half = Math.round((profit * RUNNER_SHARE) / 2);
+    patch.helperShare = half;
+    patch.runnerProfit = profit;
+    if (staff.role === 'runner' && staff.id === o.runnerId) {
+      const day = ymdOf(new Date(o.deliveredAt || now));
+      await addToMyDay('runner', 'helpadj-' + o.id, { keep: -half, owedToHelpers: half, sharedOrders: 1 }, false, day);
+    }
+  }
+  await updateDoc(ref, slim(patch));
+}
+
+/**
+ * Helper's side: deliveries this runner helped with are added to their own record (on the delivery day).
+ * They owe nothing on these; the delivering runner hands over the share.
+ */
+/** @returns {() => void} */
+export function syncMyHelpCredits() {
+  const staff = getCurrentStaff();
+  if (!staff || staff.role !== 'runner' || !staff.email) return () => {};
+  const done = new Set();
+  const q = query(collection(db, 'orders'), where('helperEmail', '==', staff.email), limit(40));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const since = Date.now() - 3 * 86400000;
+      snap.docs.forEach((d) => {
+        const o = d.data();
+        if (o.status !== 'Delivered' || !(o.helperShare > 0) || done.has(d.id)) return;
+        if (Date.parse(o.deliveredAt || '') < since) return;
+        done.add(d.id);
+        const day = ymdOf(new Date(o.deliveredAt));
+        addToMyDay('runner', 'help-' + d.id, { helpShare: o.helperShare, keep: o.helperShare, helpedOrders: 1 }, false, day).catch((e) =>
+          console.error(e)
+        );
+      });
+    },
+    () => {}
   );
 }
 
