@@ -58,6 +58,7 @@ interface CartSheetProps {
     turnRunner?: string;
     outOfStock: OutOfStockChoice;
     gatePickup?: boolean;
+    payTo?: { bankName: string; accountNumber: string; accountName: string } | null;
   }) => void | Promise<void>;
 }
 
@@ -250,6 +251,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
         turnRunner: cart === 'inside' ? insideNext?.next?.by || '' : undefined,
         outOfStock,
         gatePickup: cart !== 'inside' && gatePickup,
+        // Students pay the runner or operator handling the order (Roomly's account if they have not set one)
+        payTo: (cart === 'inside' ? insideNext?.next?.payTo : chosenOp?.payTo) || null,
       });
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to place order');

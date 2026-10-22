@@ -4,6 +4,7 @@ import { ThemeToggle } from './ThemeToggle';
 import { SoundToggle } from './SoundToggle';
 import { BatchSwitches } from './BatchSwitches';
 import { GatePickupPanel } from './GatePickupPanel';
+import { ProviderSettlement, PayAccountForm } from './SettlementPanel';
 import { playChime } from '../sound';
 import { ChevronDown as ChevronDownIcon, Phone as PhoneIcon } from 'lucide-react';
 import {
@@ -642,15 +643,15 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
             ))}
           </select>
 
-          <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">My earnings</span>
-            <span className="text-base font-extrabold text-slate-900 dark:text-white">₦{totalEarnings.toLocaleString()}</span>
-          </div>
         </div>
 
         <BatchSwitches />
 
         <GatePickupPanel />
+
+        {/* Today's 70/30 statement, settlement and payment account (runners only) */}
+        {getCurrentStaff()?.role === 'runner' && <ProviderSettlement kind="runner" />}
+        {getCurrentStaff()?.role === 'runner' && <PayAccountForm />}
 
         {/* Filters */}
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">

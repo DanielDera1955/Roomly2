@@ -162,6 +162,8 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
   };
 
   const stepIndex = getCurrentStepIndex();
+  // Students pay the runner or operator on this order; older orders use Roomly's account
+  const payAcct = (currentOrder as any)?.payTo || STORE_CONFIG.bankDetails;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs transition-opacity animate-in fade-in">
@@ -289,15 +291,15 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                     <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/40 text-xs space-y-1.5">
                       <div className="flex justify-between">
                         <span className="text-slate-400">Bank</span>
-                        <span className="font-bold">{STORE_CONFIG.bankDetails.bankName}</span>
+                        <span className="font-bold">{payAcct.bankName}</span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-slate-400">Account number</span>
                         <div className="flex items-center gap-1">
-                          <span className="font-bold">{STORE_CONFIG.bankDetails.accountNumber}</span>
+                          <span className="font-bold">{payAcct.accountNumber}</span>
                           <button
                             type="button"
-                            onClick={() => copyToClipboard(STORE_CONFIG.bankDetails.accountNumber, 'acc')}
+                            onClick={() => copyToClipboard(payAcct.accountNumber, 'acc')}
                             className="p-1 text-slate-400 hover:text-slate-700"
                           >
                             <Copy className="w-3 h-3" />
@@ -306,7 +308,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-400">Account name</span>
-                        <span className="font-semibold">{STORE_CONFIG.bankDetails.accountName}</span>
+                        <span className="font-semibold">{payAcct.accountName}</span>
                       </div>
                     </div>
                     <button

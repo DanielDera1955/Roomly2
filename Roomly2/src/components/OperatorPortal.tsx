@@ -11,6 +11,7 @@ import {
   getMyUid,
 } from '../api.js';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
+import { ProviderSettlement, PayAccountForm } from './SettlementPanel';
 import { OrderRecord, partLabel, shortLocation } from '../types';
 import { OUT_OF_STOCK_LABEL } from '../config';
 import { playChime } from '../sound';
@@ -36,9 +37,9 @@ function addUp(days: any[]) {
   return days.reduce(
     (t, d) => ({
       orders: t.orders + (d.orders || 0),
-      paid: t.paid + (d.paid || 0),
-      earnings: t.earnings + (d.keep || 0) + (d.deliveryKeep || 0),
-      owed: t.owed + (d.owed || 0) + (d.deliveryOwe || 0),
+      paid: t.paid + (d.itemsPaid || 0),
+      earnings: t.earnings + (d.keep || 0),
+      owed: t.owed + (d.due || 0),
       delivery: t.delivery + (d.deliveryKeep || 0),
       estimated: t.estimated || Boolean(d.estimated),
     }),
@@ -250,8 +251,10 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
           </div>
         )}
 
-        {/* Live overview (operators only) */}
+        {/* Live overview, settlement and payment account (operators only) */}
         {!isAdmin && <OperatorOverview />}
+        {!isAdmin && <ProviderSettlement kind="operator" />}
+        {!isAdmin && <PayAccountForm />}
 
         {/* Availability: operators set their own batches; the admin sees everyone and can switch them off */}
         {isAdmin ? <OperatorOverridePanel /> : <BatchSwitches side={kind} />}
