@@ -62,8 +62,9 @@ export const Header: React.FC<HeaderProps> = ({
                     storeStatus.isOpen ? 'bg-[#0e9f55]' : 'bg-rose-500'
                   }`}
                 />
-                {storeStatus.isOpen ? 'Open' : 'Closed'}
+                Open
               </span>
+              )}
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate">
               {greetingName} · <span className="text-slate-400">6am - 11pm</span>
