@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Package, Phone } from 'lucide-react';
-import { subscribeOperatorOrders, updatePartStatus, getCurrentStaff, logoutStaff } from '../api.js';
+import { subscribeOperatorOrders, updatePartStatus, getCurrentStaff, logoutStaff, ensureOperatorStatus } from '../api.js';
+import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { OrderRecord, partLabel } from '../types';
 import { playChime } from '../sound';
 import { SoundToggle } from './SoundToggle';
@@ -23,6 +24,11 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState('');
   const seen = useRef<Set<string> | null>(null);
+
+  // Make sure the admin can see this operator in the override list
+  useEffect(() => {
+    if (!isAdmin) ensureOperatorStatus();
+  }, [isAdmin]);
 
   useEffect(() => {
     setLoading(true);
@@ -105,6 +111,9 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
             ))}
           </div>
         )}
+
+        {/* Availability: operators set their own batches; the admin sees everyone and can switch them off */}
+        {isAdmin ? <OperatorOverridePanel /> : <BatchSwitches side={kind} />}
 
         <div className="flex items-center gap-2 overflow-x-auto py-0.5">
           {tabs.map(([key, label]) => (

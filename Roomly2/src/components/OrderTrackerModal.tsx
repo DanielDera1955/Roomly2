@@ -88,9 +88,11 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
       if (diff <= 0) {
         setTimeRemaining('00:00 (Time expired)');
       } else {
-        const mins = Math.floor(diff / 60000);
+        const hrs = Math.floor(diff / 3600000);
+        const mins = Math.floor((diff % 3600000) / 60000);
         const secs = Math.floor((diff % 60000) / 1000);
-        setTimeRemaining(`${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`);
+        const mmss = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        setTimeRemaining(hrs > 0 ? `${hrs}h ${mmss}` : mmss);
       }
     };
 
@@ -229,10 +231,17 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                         <span>Bank Transfer Payment</span>
                       </div>
                       <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-amber-200 dark:bg-amber-900/60 text-amber-950 dark:text-amber-100">
-                        {timeRemaining ? timeRemaining : '15-min window'}
+                        {timeRemaining ? timeRemaining : 'Pay soon'}
                       </span>
                     </div>
                     <p className="text-xs text-amber-900 dark:text-amber-200 leading-snug">
+                      {currentOrder.paymentDeadline && (
+                        <strong className="block mb-1">
+                          Pay before{' '}
+                          {new Date(currentOrder.paymentDeadline).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} to
+                          join your batch.
+                        </strong>
+                      )}
                       Orders are attended to once payment is confirmed. Please transfer{' '}
                       <strong>₦{currentOrder.totalAmount.toLocaleString()}</strong> to:
                     </p>

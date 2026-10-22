@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Plus,
@@ -16,8 +16,8 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
-import { HOSTELS, deliveryFeeFor, isOutsideSource, getNextOutsideSlot, startLabel, BatchOption } from '../config';
-import { getBookableBatches } from '../api.js';
+import { HOSTELS, deliveryFeeFor, isOutsideSource } from '../config';
+import { getNextBatch } from '../api.js';
 import { isValidNigerianPhone, normalizePhone } from '../api.js';
 
 interface CartSheetProps {
@@ -43,6 +43,7 @@ interface CartSheetProps {
     deliveryBatch: DeliveryBatchId;
     deliveryTime: string;
     deliveryDate?: string;
+    paymentDeadline?: string;
     paymentMethod: 'pay_now' | 'pay_on_delivery';
     subtotal: number;
     deliveryFee: number;
@@ -120,14 +121,36 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       window.clearInterval(id);
     };
   }, []);
-  // Next batch only. Outside items follow the store or food schedule; with both, the later one.
+  // Next batch only, from the runners' and operators' switches. Outside items follow the store or food
+  // switches; with both, the order joins the later batch and must be paid before the earlier deadline.
   const hasStoreItems = items.some((i) => i.source === 'outside');
   const hasFoodItems = items.some((i) => i.source === 'food');
-  const selectedBatch: BatchOption | undefined = hasOutside
-    ? [hasStoreItems ? getNextOutsideSlot('store') : null, hasFoodItems ? getNextOutsideSlot('food') : null]
-        .filter((o): o is BatchOption => Boolean(o))
-        .sort((a, b) => b.orderBy.getTime() - a.orderBy.getTime())[0]
-    : getBookableBatches(false)[0];
+  const parts: ('inside' | 'store' | 'food')[] = hasOutside
+    ? [...(hasStoreItems ? (['store'] as const) : []), ...(hasFoodItems ? (['food'] as const) : [])]
+    : ['inside'];
+  const results = parts.map((p) => ({ part: p, ...getNextBatch(p) }));
+  const pausedPart = results.find((r) => !r.next);
+  const open = pausedPart ? [] : results.map((r) => r.next!);
+  const chosen = open.slice().sort((a, b) => b.start.getTime() - a.start.getTime())[0];
+  const selectedBatch = chosen?.batch;
+  const payBy = open.length ? new Date(Math.min(...open.map((n) => n.start.getTime()))) : null;
+  const payByText = payBy ? payBy.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+  const pausedText = pausedPart
+    ? `${pausedPart.part === 'food' ? 'Food orders are' : pausedPart.part === 'store' ? 'Store orders are' : 'Ordering is'} paused right now.${
+        pausedPart.note ? ' ' + pausedPart.note : ' Please check back soon.'
+      }`
+    : '';
+
+  // Tell the student when the batch they saw stops accepting and the order moves to the next one
+  const lastBatch = useRef<{ key: string; window: string } | null>(null);
+  const [batchNotice, setBatchNotice] = useState('');
+  useEffect(() => {
+    const prev = lastBatch.current;
+    if (prev && selectedBatch && prev.key !== selectedBatch.key) {
+      setBatchNotice(`The ${prev.window} batch has stopped taking orders. Your order will join the next batch: ${selectedBatch.dayLabel}, ${selectedBatch.window}.`);
+    }
+    if (selectedBatch) lastBatch.current = { key: selectedBatch.key, window: selectedBatch.window };
+  }, [selectedBatch?.key]);
 
   const hasCustomRequest = Boolean(customRequest && customRequest.trim().length > 0);
   const isPhoneValid = isValidNigerianPhone(phone);
@@ -146,8 +169,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       return;
     }
 
-    if (!selectedBatch) {
-      setErrorMessage('No delivery batch is open right now. Please check back soon.');
+    if (!selectedBatch || !payBy) {
+      setErrorMessage(pausedText || 'No delivery batch is open right now. Please check back soon.');
       return;
     }
 
@@ -193,6 +216,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
         deliveryBatch: (selectedBatch?.id || 'afternoon') as DeliveryBatchId,
         deliveryTime: selectedBatch?.label || '',
         deliveryDate: selectedBatch?.date,
+        paymentDeadline: payBy?.toISOString(),
         paymentMethod: paymentChoice,
         subtotal: itemTotal,
         deliveryFee,
@@ -486,7 +510,12 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               </h3>
             </div>
 
-            {selectedBatch ? (
+            {batchNotice && (
+              <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 text-[11px] text-blue-800 dark:text-blue-200">
+                {batchNotice}
+              </div>
+            )}
+            {selectedBatch && chosen ? (
               <div className="p-3 rounded-2xl border border-slate-900 dark:border-white bg-slate-50 dark:bg-slate-800/60">
                 <div className="flex items-center justify-between gap-2">
                   <div>
@@ -494,19 +523,21 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                       {selectedBatch.dayLabel}, {selectedBatch.window}
                     </span>
                     <span className="block text-[11px] text-slate-500 dark:text-slate-400">
-                      Still accepting orders, will start sending by {startLabel(selectedBatch)}. Order by{' '}
-                      {selectedBatch.orderBy.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.
+                      Still accepting orders, will start sending by {chosen.startText}.
                     </span>
                   </div>
                   <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
                     ₦{deliveryFee.toLocaleString()}
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1.5">Every order joins the next batch.</p>
+                <p className="mt-2 text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                  Pay before {payByText} to join the {selectedBatch.window} batch.
+                </p>
+                <p className="text-[10px] text-slate-400 mt-0.5">Every order joins the next batch.</p>
               </div>
             ) : (
               <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200">
-                No delivery batch is open right now. Please check back soon.
+                {pausedText || 'No delivery batch is open right now. Please check back soon.'}
               </div>
             )}
           </div>
@@ -546,7 +577,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                   </span>
                 </div>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#0e9f55]/10 text-[#0e9f55]">
-                  15m confirmation
+                  {payByText ? `Pay before ${payByText}` : 'Pay first'}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 pl-6">
@@ -669,7 +700,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
           <div className="pt-1">
             <button
               type="submit"
-              disabled={submitting || !acknowledgedNoCancel}
+              disabled={submitting || !acknowledgedNoCancel || !selectedBatch}
               className="w-full h-12 bg-[#0e9f55] hover:bg-[#0b8044] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold flex items-center justify-between px-5 shadow-lg shadow-[#0e9f55]/20 active:scale-[0.98] transition-all cursor-pointer"
             >
               <span>{submitting ? 'Placing Order...' : 'Confirm & Place Order'}</span>

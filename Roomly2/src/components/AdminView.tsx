@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { OrderChat } from './OrderChat';
-import { BatchSwitches } from './BatchSwitches';
+import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { playChime } from '../sound';
 import { Phone as PhoneIcon, ChevronDown as ChevronDownIcon } from 'lucide-react';
 import {
@@ -550,6 +550,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
         {currentTab === 'orders' && (
           <div className="space-y-4">
             <BatchSwitches />
+            <OperatorOverridePanel />
 
             {/* Search & Filter */}
             <div className="space-y-2">
