@@ -17,7 +17,8 @@ import {
   setStoreOverride,
   isValidNigerianPhone,
 } from './api.js';
-import { Product, isOutsideSource } from './config';
+import { Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG } from './config';
+import { MessageCircle } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
 import { AdminSwitcher } from './components/AdminSwitcher';
@@ -27,7 +28,7 @@ import { Header, PortalMode } from './components/Header';
 import { PhoneLookupBar } from './components/PhoneLookupBar';
 import { SearchBar } from './components/SearchBar';
 import { DeliveryPromiseBanner } from './components/DeliveryPromiseBanner';
-import { CategoryNav } from './components/CategoryNav';
+import { CategoryNav, ShopTab } from './components/CategoryNav';
 import { ProductCard } from './components/ProductCard';
 import { FoodCustomizerSheet } from './components/FoodCustomizerSheet';
 import { RequestTab } from './components/RequestTab';
@@ -68,10 +69,12 @@ export default function App() {
   // Categories & Products from API
   const [categories, setCategories] = useState<CategoryDefinition[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>('Everyday');
-  const [selectedSubcategory, setSelectedSubcategory] = useState<string>('All');
+  // Two categories per side: 'store' (Store Items) and 'food' (Cooked Food), plus the Request form
+  const [selectedTab, setSelectedTab] = useState<ShopTab>('store');
+  const [selectedFilter, setSelectedFilter] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [sourceMode, setSourceMode] = useState<'inside' | 'outside'>('inside');
+  const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
 
   // Customer & Phone Lookup
   // Remember the customer on this device until they press Sign out
@@ -183,8 +186,11 @@ export default function App() {
     setHistoryOrders([]);
   };
 
+  // "Active Orders & History": one screen that replaces My orders and Track
   const handleOpenHistory = async () => {
+    setIsTrackerOpen(false);
     setHistoryOpen(true);
+    if (!isValidNigerianPhone(phone) || !/^\d{6}$/.test(pin)) return;
     setHistoryLoading(true);
     setHistoryOrders(await getMyOrders(phone, pin));
     setHistoryLoading(false);
@@ -260,7 +266,9 @@ export default function App() {
   };
 
   const handleAddCustomizedFood = (foodItem: CartItem) => {
-    setCartItems((prev) => [...prev, foodItem]);
+    // Keep the product's source so outside food reaches the food operator
+    const source = foodItem.source ?? customizingFood?.source;
+    setCartItems((prev) => [...prev, source ? { ...foodItem, source } : foodItem]);
   };
 
   const handleUpdateCartQuantity = (cartItemId: string, delta: number) => {
@@ -366,12 +374,24 @@ export default function App() {
     return map;
   }, [cartItems]);
 
-  // Filter products by search, main category, and subcategory
+  // Products on the chosen side (inside or outside school)
+  const sideProducts = useMemo(
+    () => products.filter((p) => (sourceMode === 'outside' ? isOutsideSource(p.source) : !isOutsideSource(p.source))),
+    [products, sourceMode]
+  );
+
+  // Quick filters inside a category, taken from the products' own categories (Drinks, Toiletries...)
+  const groupFilters = useMemo(() => {
+    if (selectedTab === 'Request') return [];
+    const names = sideProducts.filter((p) => shopGroupOf(p) === selectedTab).map((p) => p.category);
+    return Array.from(new Set(names));
+  }, [sideProducts, selectedTab]);
+
+  // Search first; otherwise the chosen category and filter
   const filteredProducts = useMemo(() => {
-    let list = products.filter((p) => (sourceMode === 'outside' ? isOutsideSource(p.source) : !isOutsideSource(p.source)));
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      return list.filter(
+      return sideProducts.filter(
         (p) =>
           p.name.toLowerCase().includes(q) ||
           p.category.toLowerCase().includes(q) ||
@@ -379,14 +399,29 @@ export default function App() {
           (p.description && p.description.toLowerCase().includes(q))
       );
     }
-    if (selectedCategory !== 'Request') {
-      list = list.filter((p) => p.category.toLowerCase() === selectedCategory.toLowerCase());
-      if (selectedSubcategory && selectedSubcategory !== 'All') {
-        list = list.filter((p) => p.subcategory.toLowerCase() === selectedSubcategory.toLowerCase());
-      }
-    }
+    if (selectedTab === 'Request') return [];
+    let list = sideProducts.filter((p) => shopGroupOf(p) === selectedTab);
+    if (selectedFilter !== 'All') list = list.filter((p) => p.category.toLowerCase() === selectedFilter.toLowerCase());
     return list;
-  }, [products, selectedCategory, selectedSubcategory, searchQuery, sourceMode]);
+  }, [sideProducts, selectedTab, selectedFilter, searchQuery]);
+
+  // Only 10 items load at a time; Show more loads the next 10
+  useEffect(() => {
+    setVisibleCount(ITEMS_PER_PAGE);
+  }, [sourceMode, selectedTab, selectedFilter, searchQuery]);
+  const visibleProducts = filteredProducts.slice(0, visibleCount);
+
+  // Orders for the Active Orders & History screen: only paid ones (or pay on delivery),
+  // plus the order just placed in this session so the student can still pay for it
+  const screenOrders = useMemo(() => {
+    const byId = new Map<string, OrderRecord>();
+    [...historyOrders, ...recentOrders].forEach((o) => byId.set(o.id, o));
+    if (activeOrder) byId.set(activeOrder.id, activeOrder);
+    return Array.from(byId.values())
+      .filter((o) => o.paymentStatus !== 'unpaid' || o.id === activeOrder?.id)
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  }, [historyOrders, recentOrders, activeOrder]);
+  const activeOrderCount = screenOrders.filter((o) => o.status !== 'Delivered' && o.status !== 'Cancelled').length;
 
   const handleToggleStoreHoursOverride = () => {
     const current = storeStatus.isOpen;
@@ -457,9 +492,9 @@ export default function App() {
           storeStatus={storeStatus}
           darkMode={darkMode}
           onToggleDarkMode={() => setDarkMode((prev) => !prev)}
-          onOpenTracker={() => setIsTrackerOpen(true)}
+          onOpenTracker={handleOpenHistory}
           onToggleStoreHoursOverride={handleToggleStoreHoursOverride}
-          activeOrderCount={activeOrder ? 1 : 0}
+          activeOrderCount={activeOrderCount}
         />
 
         {/* Main Storefront Body */}
@@ -496,9 +531,6 @@ export default function App() {
             onSignOut={handleSignOut}
           />
 
-          {/* Delivery Promise Banner */}
-          <DeliveryPromiseBanner />
-
           {/* Inside school or outside school */}
           <div>
             <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/70">
@@ -517,31 +549,29 @@ export default function App() {
                 </button>
               ))}
             </div>
-            {sourceMode === 'outside' && (
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-snug">
-                From our trusted stores and food partner, brought to the school gate and then to your room. Delivery is
-                ₦800, and these items are paid for first.
-              </p>
-            )}
           </div>
+
+          {/* Delivery bar: changes with the toggle above */}
+          <DeliveryPromiseBanner mode={sourceMode} />
 
           {/* Search Bar */}
           <SearchBar query={searchQuery} onChange={setSearchQuery} />
 
-          {/* Category & Subcategory Nav */}
+          {/* Two categories per side */}
           {!searchQuery && (
             <CategoryNav
-              categories={categories}
-              selectedCategory={selectedCategory}
-              onSelectCategory={setSelectedCategory}
-              selectedSubcategory={selectedSubcategory}
-              onSelectSubcategory={setSelectedSubcategory}
+              side={sourceMode}
+              selected={selectedTab}
+              onSelect={setSelectedTab}
+              filters={groupFilters}
+              selectedFilter={selectedFilter}
+              onSelectFilter={setSelectedFilter}
               requestCount={customRequest ? 1 : 0}
             />
           )}
 
           {/* Request Tab vs Product Grid */}
-          {!searchQuery && selectedCategory === 'Request' ? (
+          {!searchQuery && selectedTab === 'Request' ? (
             <RequestTab
               customRequest={customRequest}
               onSaveCustomRequest={setCustomRequest}
@@ -555,16 +585,19 @@ export default function App() {
                   <h2 className="text-sm font-extrabold text-slate-900 dark:text-white">
                     {searchQuery
                       ? `Search: "${searchQuery}"`
-                      : selectedSubcategory !== 'All'
-                      ? `${selectedCategory} › ${selectedSubcategory}`
-                      : `${selectedCategory} Items`}
+                      : selectedTab === 'Request'
+                      ? ''
+                      : selectedFilter !== 'All'
+                      ? `${shopGroupLabel(selectedTab, sourceMode)} › ${selectedFilter}`
+                      : shopGroupLabel(selectedTab, sourceMode)}
                   </h2>
                   <p className="text-[11px] text-slate-400">
                     {filteredProducts.length} {filteredProducts.length === 1 ? 'item' : 'items'} available
+                    {filteredProducts.length > visibleCount ? `, showing ${visibleCount}. Search to find any item fast.` : ''}
                   </p>
                 </div>
 
-                {selectedCategory === 'Food' && (
+                {selectedTab === 'food' && !searchQuery && (
                   <span className="text-[10px] font-bold text-[#0e9f55] bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200/60">
                     0-plate protein orders supported
                   </span>
@@ -576,21 +609,43 @@ export default function App() {
                   No items found in this section. Try choosing another subcategory or the Request tab!
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  {filteredProducts.map((product) => (
-                    <ProductCard
-                      key={product.id}
-                      product={product}
-                      quantity={productQuantityMap[product.id] || 0}
-                      onAdd={handleAddSimpleProduct}
-                      onRemove={handleRemoveSimpleProduct}
-                      onOpenFoodCustomizer={(prod) => setCustomizingFood(prod)}
-                    />
-                  ))}
-                </div>
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    {visibleProducts.map((product) => (
+                      <ProductCard
+                        key={product.id}
+                        product={product}
+                        quantity={productQuantityMap[product.id] || 0}
+                        onAdd={handleAddSimpleProduct}
+                        onRemove={handleRemoveSimpleProduct}
+                        onOpenFoodCustomizer={(prod) => setCustomizingFood(prod)}
+                      />
+                    ))}
+                  </div>
+                  {filteredProducts.length > visibleCount && (
+                    <button
+                      type="button"
+                      onClick={() => setVisibleCount((n) => n + ITEMS_PER_PAGE)}
+                      className="w-full py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
+                    >
+                      Show more ({filteredProducts.length - visibleCount} more)
+                    </button>
+                  )}
+                </>
               )}
             </div>
           )}
+
+          {/* Feedback on WhatsApp */}
+          <a
+            href={`https://wa.me/${STORE_CONFIG.feedbackWhatsApp}?text=${encodeURIComponent('Hi Roomly, I have a suggestion / complaint: ')}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/30 text-xs font-bold text-[#0e9f55]"
+          >
+            <MessageCircle className="w-4 h-4" />
+            <span>Suggest a feature or send a complaint on WhatsApp</span>
+          </a>
         </main>
 
         {/* Floating Cart Bar */}
@@ -627,8 +682,9 @@ export default function App() {
         <OrderHistoryModal
           isOpen={historyOpen}
           onClose={() => setHistoryOpen(false)}
-          orders={historyOrders}
+          orders={screenOrders}
           loading={historyLoading}
+          signedIn={isValidNigerianPhone(phone) && /^\d{6}$/.test(pin) && !customer?.wrongPin}
           onSelect={(o) => {
             setActiveOrder(o);
             setHistoryOpen(false);
@@ -639,6 +695,7 @@ export default function App() {
         <OrderTrackerModal
           isOpen={isTrackerOpen}
           onClose={() => setIsTrackerOpen(false)}
+          onOpenAll={handleOpenHistory}
           order={activeOrder}
           onSearchOrderId={async (orderId) => {
             const found = await getOrderById(orderId);

@@ -63,6 +63,8 @@ export const STORE_CONFIG = {
   },
   supportPhone: '08012345678',
   supportWhatsApp: '+2348012345678',
+  // Students use this to suggest a feature or send a complaint (08141850484)
+  feedbackWhatsApp: '2348141850484',
 };
 
 export interface DeliveryBatchOption {
@@ -142,14 +144,21 @@ const slot = (id: DeliveryBatchId, start: number, end: number, orderBy: number):
 const SCHOOL_DAY = [slot('afternoon', T(14), T(15), T(12, 30)), slot('late', T(17), T(18), T(15, 30)), slot('evening', T(20), T(21), T(18, 30))];
 /** 0 = Sunday ... 6 = Saturday. Runners and admin can switch any batch off for a day. */
 export const WEEKLY_BATCHES: Record<number, BatchSlotDef[]> = {
-  0: [slot('midday', T(12), T(12, 30), T(11)), slot('evening', T(20), T(21), T(19))],
+  // Sunday: four batches, delivered by 12pm, 4pm, 6pm and 9pm
+  0: [
+    slot('midday', T(11), T(12), T(10)),
+    slot('afternoon', T(15), T(16), T(13, 30)),
+    slot('late', T(17), T(18), T(15, 30)),
+    slot('evening', T(20), T(21), T(18, 30)),
+  ],
   1: SCHOOL_DAY,
   2: SCHOOL_DAY,
   3: SCHOOL_DAY,
   4: SCHOOL_DAY,
   5: SCHOOL_DAY,
+  // Saturday: 9 to 10am, 1 to 2pm, 4 to 5pm, 8 to 9pm
   6: [
-    slot('morning', T(10), T(11), T(9)),
+    slot('morning', T(9), T(10), T(8)),
     slot('midday', T(13), T(14), T(11, 30)),
     slot('late', T(16), T(17), T(14, 30)),
     slot('evening', T(20), T(21), T(18, 30)),
@@ -234,8 +243,46 @@ export function formatRemaining(ms: number): string {
   return h ? `${h}h ${m}m` : `${m}m`;
 }
 
-/** Inside school: ₦300 when the items come to under ₦1,600, ₦500 from ₦1,600 up. Outside-school items: ₦800. */
-export const DELIVERY_FEES = { small: 300, large: 500, threshold: 1600 };
+// ---------- Outside school schedule ----------
+/** Outside store items: 10 to 11am, 2 to 3pm, 5 to 6pm. The store stops taking orders 30 mins before sending. */
+export const OUTSIDE_STORE_BATCHES: BatchSlotDef[] = [
+  { id: 'morning', name: 'Morning store batch', startMin: T(10), endMin: T(11), orderByMin: T(9, 30) },
+  { id: 'afternoon', name: 'Afternoon store batch', startMin: T(14), endMin: T(15), orderByMin: T(13, 30) },
+  { id: 'late', name: 'Evening store batch', startMin: T(17), endMin: T(18), orderByMin: T(16, 30) },
+];
+/** Outside food: one evening batch, arriving about 5:30 to 7pm. Ordering closes at 6:30pm. */
+export const OUTSIDE_FOOD_BATCH: BatchSlotDef = {
+  id: 'evening',
+  name: 'Evening food batch',
+  startMin: T(17, 30),
+  endMin: T(19),
+  orderByMin: T(18, 30),
+};
+
+/** Next outside batch still taking orders. kind 'store' or 'food'. */
+export function getNextOutsideSlot(kind: 'store' | 'food', now: Date = new Date()): BatchOption | null {
+  const slots = kind === 'food' ? [OUTSIDE_FOOD_BATCH] : OUTSIDE_STORE_BATCHES;
+  for (let d = 0; d < 3; d++) {
+    const day = new Date(now);
+    day.setHours(0, 0, 0, 0);
+    day.setDate(day.getDate() + d);
+    for (const s of slots) {
+      const opt = buildOption(day, d, s);
+      if (opt.orderBy.getTime() > now.getTime()) return opt;
+    }
+  }
+  return null;
+}
+
+/** "will start sending by 2pm" style label for a batch */
+export const startLabel = (opt: BatchOption): string => {
+  const t = opt.window.split(' to ')[0];
+  const end = opt.window.match(/(am|pm)$/)?.[1] || '';
+  return /(am|pm)$/.test(t) ? t : `${t}${end}`;
+};
+
+/** Inside school: ₦390 when the items come to under ₦3,200, ₦500 from ₦3,200 up. Outside-school items: ₦800. */
+export const DELIVERY_FEES = { small: 390, large: 500, threshold: 3200 };
 export function deliveryFeeFor(itemTotal: number, hasOutside: boolean = false): number {
   if (hasOutside) return OUTSIDE_DELIVERY_FEE;
   return itemTotal < DELIVERY_FEES.threshold ? DELIVERY_FEES.small : DELIVERY_FEES.large;
@@ -252,11 +299,25 @@ export function calculateDeliveryFee(batchId: string = 'morning'): number {
   return STORE_CONFIG.deliveryFeeBatch;
 }
 
-// Campus buildings
+// Campus hostels (students type their own room, e.g. A12)
+export const HOSTELS = ['JV', 'TA', 'New Hostel'];
 export const CAMPUS_LOCATIONS: Record<string, string[]> = {
-  Hostels: ['Hostel A', 'Hostel B', 'Hostel C', 'Hostel D'],
-  Lodge: ['Lodge 1', 'Lodge 2', 'Lodge 3'],
+  Hostels: HOSTELS,
 };
+
+// ---------- Home screen categories (two per side) ----------
+export type ShopGroup = 'store' | 'food';
+/** Cooked food goes to Food, everything else to Store Items, decided from the product itself */
+export function shopGroupOf(p: Product): ShopGroup {
+  if (p.isFood || String(p.category).toLowerCase() === 'food') return 'food';
+  if (p.source === 'food') return 'food';
+  return 'store';
+}
+export function shopGroupLabel(group: ShopGroup, side: 'inside' | 'outside'): string {
+  if (group === 'store') return 'Store Items';
+  return side === 'outside' ? 'Cooked Food and Drinks' : 'Cooked Food';
+}
+export const ITEMS_PER_PAGE = 10;
 
 // Initial Categories & Subcategories
 export const INITIAL_CATEGORIES: CategoryDefinition[] = [
