@@ -42,6 +42,28 @@ service cloud.firestore {
       allow write: if isStaff();
     }
 
+    // ---------- availability switches ----------
+    // Inside batches: runners and admin. Everyone can read (students see the next batch).
+    match /availability/{doc} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+    // One record per store or food operator, keyed by their login uid.
+    // Operators edit only their own, and can never change the admin's switch-off.
+    match /operatorStatus/{uid} {
+      allow read: if true;
+      allow create: if signedIn() && request.auth.uid == uid
+        && (isOperator('store') || isOperator('food'))
+        && request.resource.data.kind == staffRole()
+        && request.resource.data.get('adminOff', false) == false;
+      allow update: if isAdmin() ||
+        (signedIn() && request.auth.uid == uid
+         && (isOperator('store') || isOperator('food'))
+         && request.resource.data.kind == staffRole()
+         && request.resource.data.get('adminOff', false) == resource.data.get('adminOff', false));
+      allow delete: if isAdmin();
+    }
+
     // ---------- customers (no accounts) ----------
     // Document id = hash(phone + PIN). You can only fetch a profile if you know both.
     // Listing every customer is staff only.
