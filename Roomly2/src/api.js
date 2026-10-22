@@ -21,6 +21,7 @@ import {
   timeLabel,
   SWITCH_CUTOFF_MIN,
   PRICING,
+  GATE_PICKUP_FEES,
 } from './config.ts';
 import { db, auth } from './firebase.ts';
 import { CLOUDINARY } from './cloudinary.ts';
@@ -334,6 +335,42 @@ export function getNextBatch(side, now = new Date()) {
   return { next: null, note: notes[0] || '' };
 }
 
+/**
+ * Outside checkout: the next batch any operator of this kind is accepting, and every operator accepting it.
+ * Each operator: { uid, name, start, startText, load } where load = orders today (fewer = suggested).
+ */
+export function getOutsideChoices(kind, now = new Date()) {
+  const today = ymdOf(now);
+  for (let d = 0; d < 3; d++) {
+    for (const opt of slotsForDay(kind, now, d)) {
+      const ops = [];
+      for (const op of activeOperators(kind)) {
+        const sw = (op.slots || {})[opt.key];
+        if (accepting(opt, sw, 'outside', now)) {
+          const start = switchStartDate(opt, sw);
+          const load = op.load && op.load.date === today ? op.load.count || 0 : 0;
+          ops.push({ uid: op.id, name: op.name || 'Operator', start, startText: startTextOf(start), load });
+        }
+      }
+      if (ops.length) return { batch: opt, operators: ops.sort((a, b) => a.load - b.load) };
+    }
+  }
+  const { note } = getNextBatch(kind, now);
+  return { batch: null, operators: [], note };
+}
+
+/** Count today's orders per operator, so the next student is pointed at the one with fewer. Best effort. */
+async function bumpOperatorLoad(uid) {
+  const today = ymdOf(new Date());
+  const cur = operatorDocs[uid]?.load;
+  const count = cur && cur.date === today ? (cur.count || 0) + 1 : 1;
+  try {
+    await setDoc(doc(db, 'operatorStatus', uid), { load: { date: today, count } }, { merge: true });
+  } catch (e) {
+    /* someone else counted at the same moment; not important */
+  }
+}
+
 const startTextOf = (d) => {
   const min = d.getHours() * 60 + d.getMinutes();
   return timeLabel(min);
@@ -342,6 +379,11 @@ const startTextOf = (d) => {
 /** Switches for runners (inside) — today and later only */
 export function getInsideSwitches() {
   return insideSwitches;
+}
+
+/** Login uid of the signed-in staff member */
+export function getMyUid() {
+  return auth.currentUser?.uid || '';
 }
 
 /** The signed-in operator's own switches */
@@ -369,7 +411,7 @@ function staleKeys(map) {
 export async function setInsideSwitch(key, patch) {
   const staff = getCurrentStaff();
   const prev = insideSwitches[key] || {};
-  const sw = slim({ ...prev, ...patch, by: staff?.name || 'Runner', at: Date.now() });
+  const sw = slim({ ...prev, ...patch, by: staff?.name || 'Runner', byPhone: staff?.phone || '', at: Date.now() });
   insideSwitches = { ...insideSwitches, [key]: sw };
   fireBatches();
   await setDoc(doc(db, 'availability', 'inside'), { slots: { ...staleKeys(insideSwitches), [key]: sw } }, { merge: true });
@@ -750,8 +792,9 @@ export async function createOrder(orderPayload) {
 
   const subtotal = Number(orderPayload.subtotal || 0);
   const batchId = orderPayload.deliveryBatch && orderPayload.deliveryBatch !== 'premium' ? orderPayload.deliveryBatch : nextBatchId();
-  const hasStore = (orderPayload.items || []).some((i) => i.source === 'outside');
-  const hasFood = (orderPayload.items || []).some((i) => i.source === 'food');
+  const cart = ['inside', 'store', 'food'].includes(orderPayload.cart) ? orderPayload.cart : '';
+  const hasStore = cart ? cart === 'store' : (orderPayload.items || []).some((i) => i.source === 'outside');
+  const hasFood = cart ? cart === 'food' : (orderPayload.items || []).some((i) => i.source === 'food');
   const hasOutside = hasStore || hasFood;
   const deliveryFee = deliveryFeeFor(subtotal, hasOutside);
   const totalAmount = subtotal + deliveryFee;
@@ -781,6 +824,16 @@ export async function createOrder(orderPayload) {
     customRequest: orderPayload.customRequest || '',
     hasStore,
     hasFood,
+    cart,
+    operatorId: orderPayload.operatorId || '',
+    operatorName: orderPayload.operatorName || '',
+    turnRunner: orderPayload.turnRunner || '',
+    outOfStock: orderPayload.outOfStock || 'refund',
+    gateReq: Boolean(orderPayload.gatePickup && (cart === 'store' || cart === 'food')),
+    gatePickup:
+      orderPayload.gatePickup && (cart === 'store' || cart === 'food')
+        ? { status: 'pending', fee: GATE_PICKUP_FEES.normal, heavy: false, updatedAt: createdAtIso }
+        : null,
     payReady: false,
     storeStatus: hasStore ? 'pending' : '',
     foodStatus: hasFood ? 'pending' : '',
@@ -845,13 +898,37 @@ export async function createOrder(orderPayload) {
     console.error('Failed to create order:', err);
     throw new Error('Could not place order');
   }
+  if (newOrder.operatorId) bumpOperatorLoad(newOrder.operatorId);
   return newOrder;
+}
+
+/**
+ * Unpaid orders: 'open' until the batch deadline, then 'missed' (paying now joins the next batch),
+ * then 'expired' once the day the order was placed has ended.
+ */
+export function paymentState(o, now = new Date()) {
+  if (!o || o.paymentStatus !== 'unpaid') return 'paid';
+  if (o.createdAt && ymdOf(new Date(o.createdAt)) < ymdOf(now)) return 'expired';
+  if (o.paymentDeadline && Date.parse(o.paymentDeadline) <= now.getTime()) return 'missed';
+  return 'open';
 }
 
 /** @returns {Promise<any>} */
 export async function markPaymentSent(orderId) {
   try {
     return await patchOrder(orderId, (o) => {
+      if (paymentState(o) === 'expired') throw new Error('This order expired at the end of the day it was placed.');
+      if (paymentState(o) === 'missed') {
+        // Missed the batch: the order joins the next batch that is taking orders
+        const side = o.cart === 'store' || o.cart === 'food' ? o.cart : 'inside';
+        const { next } = getNextBatch(side);
+        if (next) {
+          o.deliveryBatch = next.batch.id;
+          o.deliveryTime = next.batch.label;
+          o.deliveryDate = next.batch.date;
+          o.paymentDeadline = next.start.toISOString();
+        }
+      }
       const now = new Date().toISOString();
       o.paymentStatus = 'payment_sent';
       o.paymentSentAt = now;
@@ -1156,6 +1233,11 @@ export async function updatePartStatus(orderId, kind, status, who = 'Operator') 
     const updated = await patchOrder(orderId, (o) => {
       wasSent = o[field] === 'sent';
       o[field] = status;
+      // An outside cart is finished once it reaches the school gate
+      if (status === 'sent' && o.cart === kind && o.status !== 'Delivered') {
+        o.status = 'Delivered';
+        o.deliveredAt = new Date().toISOString();
+      }
       o.history.push({
         status: o.status,
         timestamp: new Date().toISOString(),
@@ -1268,5 +1350,59 @@ export async function getMySummaries(from, to) {
   } catch (e) {
     console.error(e);
     return [];
+  }
+}
+
+/* ---------------- gate pickup (Phase 4) ----------------
+ * An outside order can ask an inside runner to bring the parcel from the gate to the room.
+ * Runners read the items, tick heavy (₦1,000) or not (₦600), then accept or refuse.
+ * After accepting they can mark it delivered, or refund if the job turned out too small.
+ */
+
+/** Runners: live list of gate pickup requests (newest first) */
+/** @returns {() => void} */
+export function subscribeGatePickups(cb) {
+  const q = query(collection(db, 'orders'), where('gateReq', '==', true), limit(60));
+  return onSnapshot(
+    q,
+    (snap) =>
+      cb(
+        snap.docs
+          .map((d) => ({ ...d.data(), id: d.id }))
+          .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      ),
+    () => cb([])
+  );
+}
+
+/** Runners: action = 'accept' | 'refuse' | 'delivered' | 'refund'. heavy only matters on accept. */
+/** @returns {Promise<any>} */
+export async function updateGatePickup(orderId, action, heavy = false) {
+  const staff = getCurrentStaff();
+  const who = staff?.name || 'Runner';
+  const status = { accept: 'accepted', refuse: 'refused', delivered: 'delivered', refund: 'refunded' }[action];
+  if (!status) return null;
+  try {
+    return await patchOrder(orderId, (o) => {
+      const gp = o.gatePickup || { status: 'pending', fee: GATE_PICKUP_FEES.normal };
+      if (action === 'accept') {
+        gp.heavy = Boolean(heavy);
+        gp.fee = heavy ? GATE_PICKUP_FEES.heavy : GATE_PICKUP_FEES.normal;
+        gp.runnerName = who;
+        gp.runnerPhone = staff?.phone || '';
+      }
+      gp.status = status;
+      gp.updatedAt = new Date().toISOString();
+      o.gatePickup = gp;
+      o.history.push({
+        status: o.status,
+        timestamp: gp.updatedAt,
+        note: `Gate pickup ${status}${action === 'accept' ? ` (₦${gp.fee.toLocaleString()}${gp.heavy ? ', heavy' : ''})` : ''} by ${who}`,
+        updatedBy: who,
+      });
+    });
+  } catch (e) {
+    console.error(e);
+    return null;
   }
 }

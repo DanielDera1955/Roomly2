@@ -102,8 +102,27 @@ export const PRICING = {
   outsideBigFrom: 10000,
 };
 
-/** Delivery for any order that contains outside-school items (runner gets 600, 200 is yours) */
+/** Outside delivery to the school gate: ₦800 (₦600 to the operator, ₦200 to you) */
 export const OUTSIDE_DELIVERY_FEE = 800;
+
+// ---------- Three carts (Phase 4) ----------
+/** inside = one cart for inside store items and cooked food (runner); store / food = the two outside carts */
+export type CartKind = 'inside' | 'store' | 'food';
+export const cartOf = (i: { source?: string }): CartKind => (i.source === 'outside' ? 'store' : i.source === 'food' ? 'food' : 'inside');
+export const CART_LABEL: Record<CartKind, string> = {
+  inside: 'Inside school',
+  store: 'Outside: store items',
+  food: 'Outside: cooked food and drinks',
+};
+/** Gate pickup: an inside runner brings the parcel from the gate to the room. Paid to the runner. */
+export const GATE_PICKUP_FEES = { normal: 600, heavy: 1000 };
+/** What the student wants if an item is out of stock */
+export type OutOfStockChoice = 'refund' | 'tomorrow' | 'swap';
+export const OUT_OF_STOCK_LABEL: Record<OutOfStockChoice, string> = {
+  refund: 'Refund that item',
+  tomorrow: "Get it in tomorrow's batch (no extra delivery)",
+  swap: 'Buy a same-category item at the same price',
+};
 
 const roundUp10 = (n: number) => Math.ceil((n - 0.000001) / 10) * 10;
 

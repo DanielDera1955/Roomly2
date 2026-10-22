@@ -17,7 +17,7 @@ import {
   setStoreOverride,
   isValidNigerianPhone,
 } from './api.js';
-import { Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG } from './config';
+import { Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind } from './config';
 import { MessageCircle } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
@@ -96,6 +96,8 @@ export default function App() {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [customRequest, setCustomRequest] = useState<string>('');
   const [isCartOpen, setIsCartOpen] = useState(false);
+  // Three carts: inside (runner), outside store items, outside cooked food and drinks
+  const [cartKind, setCartKind] = useState<CartKind>('inside');
 
   // Food Customizer Bottom Sheet
   const [customizingFood, setCustomizingFood] = useState<Product | null>(null);
@@ -302,7 +304,7 @@ export default function App() {
         id: `${item.productId}-${Date.now()}-${Math.random()}`,
       }))
     );
-    setIsCartOpen(true);
+    openCart();
   };
 
   // Place Order flow
@@ -321,8 +323,10 @@ export default function App() {
       setActiveOrder(newOrder);
       setRecentOrders((prev) => [newOrder, ...prev]);
 
-      setCartItems([]);
-      setCustomRequest('');
+      // Only the cart that was checked out is emptied; the other carts stay
+      const placed: CartKind = orderPayload.cart || 'inside';
+      setCartItems((prev) => prev.filter((i) => cartOf(i) !== placed));
+      if (placed === 'inside') setCustomRequest('');
       setIsCartOpen(false);
 
       if (orderPayload.phone) {
@@ -331,9 +335,22 @@ export default function App() {
       }
 
       setIsTrackerOpen(true);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Order creation error:', err);
+      window.alert(err?.message || 'Could not place your order. Check your connection and try again.');
     }
+  };
+
+  // Cart sizes, and which cart opens: the side being browsed, else the first cart with items
+  const cartCounts = useMemo(() => {
+    const c: Record<CartKind, number> = { inside: customRequest ? 1 : 0, store: 0, food: 0 };
+    cartItems.forEach((i) => (c[cartOf(i)] += i.quantity));
+    return c;
+  }, [cartItems, customRequest]);
+  const openCart = () => {
+    const preferred: CartKind[] = sourceMode === 'outside' ? ['store', 'food', 'inside'] : ['inside', 'store', 'food'];
+    setCartKind(preferred.find((k) => cartCounts[k] > 0) || preferred[0]);
+    setIsCartOpen(true);
   };
 
   // Advance Status Demo Handler
@@ -576,7 +593,10 @@ export default function App() {
               customRequest={customRequest}
               onSaveCustomRequest={setCustomRequest}
               onClearCustomRequest={() => setCustomRequest('')}
-              onOpenCart={() => setIsCartOpen(true)}
+              onOpenCart={() => {
+                setCartKind('inside');
+                setIsCartOpen(true);
+              }}
             />
           ) : (
             <div className="space-y-3">
@@ -653,7 +673,7 @@ export default function App() {
           totalItems={totalItemsCount}
           totalPrice={totalItemsPrice}
           hasCustomRequest={Boolean(customRequest)}
-          onOpenCart={() => setIsCartOpen(true)}
+          onOpenCart={openCart}
         />
 
         {/* Food Customizer Bottom Sheet (with 0-plate support!) */}
@@ -667,8 +687,11 @@ export default function App() {
         <CartSheet
           isOpen={isCartOpen}
           onClose={() => setIsCartOpen(false)}
-          items={cartItems}
-          customRequest={customRequest}
+          cart={cartKind}
+          cartCounts={cartCounts}
+          onSwitchCart={setCartKind}
+          items={cartItems.filter((i) => cartOf(i) === cartKind)}
+          customRequest={cartKind === 'inside' ? customRequest : ''}
           onUpdateQuantity={handleUpdateCartQuantity}
           onRemoveItem={handleRemoveCartItem}
           onRemoveCustomRequest={() => setCustomRequest('')}

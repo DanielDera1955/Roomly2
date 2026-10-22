@@ -81,6 +81,24 @@ export interface OrderRecord {
   runnerCurrentLocation?: string;
   runnerLocationUpdatedAt?: string;
   history?: OrderStatusHistory[];
+
+  // Phase 4: one order per cart
+  cart?: 'inside' | 'store' | 'food';
+  operatorId?: string;
+  operatorName?: string;
+  turnRunner?: string; // the runner whose turn it is, shown at checkout
+  outOfStock?: 'refund' | 'tomorrow' | 'swap';
+  deliveryDate?: string;
+  gateReq?: boolean;
+  gatePickup?: {
+    status: 'pending' | 'accepted' | 'refused' | 'delivered' | 'refunded';
+    fee: number;
+    heavy?: boolean;
+    runnerName?: string;
+    runnerPhone?: string;
+    note?: string;
+    updatedAt?: string;
+  };
 }
 
 export interface DeliveryRunner {
