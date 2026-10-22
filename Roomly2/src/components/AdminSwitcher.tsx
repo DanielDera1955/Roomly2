@@ -25,7 +25,7 @@ export const AdminSwitcher: React.FC<AdminSwitcherProps> = ({ current, onSelect 
 
   return (
     <div className="w-full max-w-full overflow-hidden bg-slate-900 px-2 py-1.5">
-      <div className="grid grid-cols-4 gap-1">
+      <div className="grid grid-cols-4 gap-1 max-w-[480px] mx-auto">
         {items.map(({ id, label }) => (
           <button
             key={id}
