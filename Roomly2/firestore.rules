@@ -27,7 +27,7 @@ service cloud.firestore {
       allow create, delete: if isAdmin();
       allow update: if isAdmin() ||
         (signedIn() && request.auth.token.email == email &&
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isOnline', 'currentZone']));
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isOnline', 'currentZone', 'payAccount']));
     }
 
     // ---------- catalog (categories + products in one document) ----------
@@ -60,7 +60,9 @@ service cloud.firestore {
         (signedIn() && request.auth.uid == uid
          && (isOperator('store') || isOperator('food'))
          && request.resource.data.kind == staffRole()
-         && request.resource.data.get('adminOff', false) == resource.data.get('adminOff', false)) ||
+         && request.resource.data.get('adminOff', false) == resource.data.get('adminOff', false)
+         // an operator can add an unsettled day but never remove one (only the admin can)
+         && request.resource.data.get('unsettled', []).hasAll(resource.data.get('unsettled', []))) ||
         // Anyone placing an order may add one to that operator's order count for today
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['load'])
          && request.resource.data.load.count is int
@@ -78,6 +80,23 @@ service cloud.firestore {
         && (isOperator('store') || isOperator('food'))
         && request.resource.data.orders is int
         && request.resource.data.orderIds.size() <= 500;
+      allow delete: if isAdmin();
+    }
+
+    // ---------- daily statements and settlement (one record per provider per day) ----------
+    // Id = uid + '_' + date. Providers create and add to their own; only the admin confirms or settles.
+    match /settlements/{id} {
+      allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && id == request.auth.uid + '_' + request.resource.data.date
+        && (isRunner() || isOperator('store') || isOperator('food'))
+        && request.resource.data.settled == false
+        && request.resource.data.confirmed == 0;
+      allow update: if isAdmin() ||
+        (signedIn() && resource.data.uid == request.auth.uid
+         && request.resource.data.uid == resource.data.uid
+         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['settled', 'confirmed', 'override', 'settledBy', 'settledAt', 'date', 'kind']));
       allow delete: if isAdmin();
     }
 
