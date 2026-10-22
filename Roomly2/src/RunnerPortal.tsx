@@ -3,6 +3,8 @@ import { OrderChat } from './OrderChat';
 import { ThemeToggle } from './ThemeToggle';
 import { SoundToggle } from './SoundToggle';
 import { BatchSwitches } from './BatchSwitches';
+import { GatePickupPanel } from './GatePickupPanel';
+import { ProviderSettlement, PayAccountForm } from './SettlementPanel';
 import { playChime } from '../sound';
 import { ChevronDown as ChevronDownIcon, Phone as PhoneIcon } from 'lucide-react';
 import {
@@ -214,13 +216,16 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
     }
   };
 
+  // Runners handle inside-school orders; outside carts go to operators (gate pickups have their own panel)
+  const insideOrders = orders.filter((o) => !o.cart || o.cart === 'inside');
+
   // 1. Active Orders Available to Accept (unassigned or received)
-  const unassignedOrders = orders.filter(
+  const unassignedOrders = insideOrders.filter(
     (o) => o.status !== 'Delivered' && o.status !== 'Cancelled' && (!o.runnerId || o.status === 'Received')
   );
 
   // 2. Active Orders Currently Assigned to Chosen Runner
-  const myActiveOrders = orders.filter(
+  const myActiveOrders = insideOrders.filter(
     (o) =>
       o.runnerId === activeRunner?.id &&
       o.status !== 'Delivered' &&
@@ -228,7 +233,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
   );
 
   // 3. Past Completed Orders Delivered by Chosen Runner (History)
-  const myCompletedOrders = orders.filter(
+  const myCompletedOrders = insideOrders.filter(
     (o) => o.runnerId === activeRunner?.id && o.status === 'Delivered'
   );
 
@@ -302,6 +307,13 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
               <span>{shortLocation(ord)}</span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">{ord.deliveryTime}</p>
+            {(ord.turnRunner || ord.outOfStock) && (
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                {ord.turnRunner ? `Turn: ${ord.turnRunner}` : ''}
+                {ord.turnRunner && ord.outOfStock ? ' · ' : ''}
+                {ord.outOfStock ? `Out of stock: ${ord.outOfStock === 'swap' ? 'same-category swap' : 'refund'}` : ''}
+              </p>
+            )}
           </div>
           <div className="shrink-0 flex flex-col items-end gap-1.5">
             <span className="font-extrabold text-base text-[#0e9f55] whitespace-nowrap">₦{ord.totalAmount.toLocaleString()}</span>
@@ -631,13 +643,15 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
             ))}
           </select>
 
-          <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">My earnings</span>
-            <span className="text-base font-extrabold text-slate-900 dark:text-white">₦{totalEarnings.toLocaleString()}</span>
-          </div>
         </div>
 
         <BatchSwitches />
+
+        <GatePickupPanel />
+
+        {/* Today's 70/30 statement, settlement and payment account (runners only) */}
+        {getCurrentStaff()?.role === 'runner' && <ProviderSettlement kind="runner" />}
+        {getCurrentStaff()?.role === 'runner' && <PayAccountForm />}
 
         {/* Filters */}
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">

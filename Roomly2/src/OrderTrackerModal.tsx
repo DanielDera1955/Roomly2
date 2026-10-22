@@ -22,8 +22,8 @@ import {
   Zap,
 } from 'lucide-react';
 import { OrderRecord, locationText, shortLocation, roomText, partLabel } from '../types';
-import { STORE_CONFIG } from '../config';
-import { markPaymentSent } from '../api.js';
+import { STORE_CONFIG, OUT_OF_STOCK_LABEL } from '../config';
+import { markPaymentSent, paymentState } from '../api.js';
 
 interface OrderTrackerModalProps {
   isOpen: boolean;
@@ -88,9 +88,11 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
       if (diff <= 0) {
         setTimeRemaining('00:00 (Time expired)');
       } else {
-        const mins = Math.floor(diff / 60000);
+        const hrs = Math.floor(diff / 3600000);
+        const mins = Math.floor((diff % 3600000) / 60000);
         const secs = Math.floor((diff % 60000) / 1000);
-        setTimeRemaining(`${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`);
+        const mmss = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        setTimeRemaining(hrs > 0 ? `${hrs}h ${mmss}` : mmss);
       }
     };
 
@@ -132,6 +134,8 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
       if (updated) {
         setCurrentOrder(updated);
         if (onPaymentSent) onPaymentSent(updated);
+      } else {
+        window.alert('Could not record your payment. If this order has expired, please place a new order.');
       }
     } finally {
       setMarkingPayment(false);
@@ -158,6 +162,8 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
   };
 
   const stepIndex = getCurrentStepIndex();
+  // Students pay the runner or operator on this order; older orders use Roomly's account
+  const payAcct = (currentOrder as any)?.payTo || STORE_CONFIG.bankDetails;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs transition-opacity animate-in fade-in">
@@ -210,10 +216,44 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                   <Building className="w-4 h-4 text-[#0e9f55] shrink-0 mt-0.5" />
                   <span>{locationText(currentOrder)}</span>
                 </div>
+                {(currentOrder.operatorName || currentOrder.turnRunner || currentOrder.outOfStock) && (
+                  <div className="text-xs text-slate-600 dark:text-slate-300 space-y-0.5 pt-1 border-t border-slate-200 dark:border-slate-700">
+                    {currentOrder.operatorName && <p>From: <strong>{currentOrder.operatorName}</strong> (delivered to the school gate)</p>}
+                    {!currentOrder.operatorName && currentOrder.turnRunner && <p>Runner: <strong>{currentOrder.turnRunner}</strong></p>}
+                    {currentOrder.outOfStock && <p>If out of stock: {OUT_OF_STOCK_LABEL[currentOrder.outOfStock]}</p>}
+                  </div>
+                )}
               </div>
 
+              {/* GATE PICKUP: separate request to an inside runner */}
+              {currentOrder.gatePickup && (
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs space-y-1">
+                  <p className="font-bold text-slate-800 dark:text-slate-100">Gate to room pickup</p>
+                  <p className="text-slate-600 dark:text-slate-300">
+                    {currentOrder.gatePickup.status === 'pending'
+                      ? 'Waiting for an inside runner to accept.'
+                      : currentOrder.gatePickup.status === 'accepted'
+                      ? `${currentOrder.gatePickup.runnerName || 'A runner'} will bring it to your room. Pay them ₦${currentOrder.gatePickup.fee.toLocaleString()}${currentOrder.gatePickup.heavy ? ' (heavy parcel)' : ''} directly.`
+                      : currentOrder.gatePickup.status === 'delivered'
+                      ? 'Brought to your room.'
+                      : currentOrder.gatePickup.status === 'refunded'
+                      ? 'The runner refunded this pickup. Please collect at the gate.'
+                      : 'No runner could take this one. Please collect at the school gate.'}
+                  </p>
+                  {currentOrder.gatePickup.runnerPhone && currentOrder.gatePickup.status === 'accepted' && (
+                    <a href={`tel:${currentOrder.gatePickup.runnerPhone}`} className="inline-block font-bold text-[#0e9f55]">
+                      Call {currentOrder.gatePickup.runnerName}
+                    </a>
+                  )}
+                </div>
+              )}
+
               {/* PAYMENT: bank details until the student taps "payment made", then a short note, then nothing once confirmed */}
-              {currentOrder.paymentMethod === 'pay_now' ? (
+              {currentOrder.paymentMethod === 'pay_now' && paymentState(currentOrder) === 'expired' ? (
+                <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-xs text-rose-800 dark:text-rose-200 font-medium">
+                  This order was not paid for and expired at the end of the day. Please place a new order.
+                </div>
+              ) : currentOrder.paymentMethod === 'pay_now' ? (
                 currentOrder.paymentStatus === 'payment_confirmed' ? null : currentOrder.paymentStatus === 'payment_sent' ? (
                   <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 text-xs text-emerald-900 dark:text-emerald-200 font-medium flex items-start gap-2">
                     <Check className="w-4 h-4 text-[#0e9f55] stroke-[3] shrink-0 mt-0.5" />
@@ -229,25 +269,37 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                         <span>Bank Transfer Payment</span>
                       </div>
                       <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-amber-200 dark:bg-amber-900/60 text-amber-950 dark:text-amber-100">
-                        {timeRemaining ? timeRemaining : '15-min window'}
+                        {timeRemaining ? timeRemaining : 'Pay soon'}
                       </span>
                     </div>
                     <p className="text-xs text-amber-900 dark:text-amber-200 leading-snug">
+                      {paymentState(currentOrder) === 'missed' && (
+                        <strong className="block mb-1 text-rose-700 dark:text-rose-300">
+                          You missed this batch. If you pay now, your order joins the next batch. Unpaid orders expire at the end of the day.
+                        </strong>
+                      )}
+                      {paymentState(currentOrder) === 'open' && currentOrder.paymentDeadline && (
+                        <strong className="block mb-1">
+                          Pay before{' '}
+                          {new Date(currentOrder.paymentDeadline).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} to
+                          join your batch.
+                        </strong>
+                      )}
                       Orders are attended to once payment is confirmed. Please transfer{' '}
                       <strong>₦{currentOrder.totalAmount.toLocaleString()}</strong> to:
                     </p>
                     <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/40 text-xs space-y-1.5">
                       <div className="flex justify-between">
                         <span className="text-slate-400">Bank</span>
-                        <span className="font-bold">{STORE_CONFIG.bankDetails.bankName}</span>
+                        <span className="font-bold">{payAcct.bankName}</span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-slate-400">Account number</span>
                         <div className="flex items-center gap-1">
-                          <span className="font-bold">{STORE_CONFIG.bankDetails.accountNumber}</span>
+                          <span className="font-bold">{payAcct.accountNumber}</span>
                           <button
                             type="button"
-                            onClick={() => copyToClipboard(STORE_CONFIG.bankDetails.accountNumber, 'acc')}
+                            onClick={() => copyToClipboard(payAcct.accountNumber, 'acc')}
                             className="p-1 text-slate-400 hover:text-slate-700"
                           >
                             <Copy className="w-3 h-3" />
@@ -256,7 +308,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-400">Account name</span>
-                        <span className="font-semibold">{STORE_CONFIG.bankDetails.accountName}</span>
+                        <span className="font-semibold">{payAcct.accountName}</span>
                       </div>
                     </div>
                     <button
@@ -358,7 +410,11 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                         Order Delivered & Handed Over!
                       </h4>
                       <p className="text-[11px] text-emerald-800 dark:text-emerald-400">
-                        Delivered to {shortLocation(currentOrder)}. Enjoy your order!
+                        {currentOrder.cart === 'store' || currentOrder.cart === 'food'
+                          ? currentOrder.gatePickup && currentOrder.gatePickup.status !== 'refused' && currentOrder.gatePickup.status !== 'refunded'
+                            ? 'Your items are at the school gate, and the runner is bringing them to your room.'
+                            : 'Your items are at the school gate. Please collect them.'
+                          : `Delivered to ${shortLocation(currentOrder)}. Enjoy your order!`}
                       </p>
                     </div>
                   </div>
@@ -376,7 +432,8 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                 )}
               </div>
 
-              {/* 4-Step Progress Tracker */}
+              {/* 4-Step Progress Tracker (inside orders; outside carts show the store/food status below) */}
+              {currentOrder.cart !== 'store' && currentOrder.cart !== 'food' && (
               <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -431,6 +488,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                   })}
                 </div>
               </div>
+              )}
 
               {(currentOrder.hasStore || currentOrder.hasFood) && (
                 <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs space-y-1.5">
