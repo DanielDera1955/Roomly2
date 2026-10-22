@@ -24,6 +24,7 @@ import {
   GATE_PICKUP_FEES,
   SETTLE_BY_HOUR,
   RUNNER_SHARE,
+  sellingPrice,
 } from './config.ts';
 import { db, auth } from './firebase.ts';
 import { CLOUDINARY } from './cloudinary.ts';
@@ -1725,4 +1726,103 @@ export async function updateGatePickup(orderId, action, heavy = false) {
     console.error(e);
     return null;
   }
+}
+
+/* ---------------- product requests and price changes (Phase 7) ----------------
+ * catalogRequests/{id}: an operator asks to change the cost price of one of their products,
+ * or to add a new product. The admin approves (the catalog is updated, margin added) or rejects.
+ */
+
+/** Operator: send a request. req = { type: 'price' | 'new', productId?, productName, newCost, category?, unit?, imageUrl?, note? } */
+/** @returns {Promise<void>} */
+export async function sendCatalogRequest(req) {
+  const staff = getCurrentStaff();
+  const uid = auth.currentUser?.uid;
+  if (!uid || !staff || (staff.role !== 'store' && staff.role !== 'food')) throw new Error('Operators only');
+  const newCost = Math.round(Number(req.newCost) || 0);
+  if (newCost <= 0) throw new Error('Enter the cost price you pay');
+  if (!String(req.productName || '').trim()) throw new Error('Enter the product name');
+  const source = staff.role === 'food' ? 'food' : 'outside';
+  const products = (await readCatalog()).products || [];
+  const current = req.productId ? products.find((p) => p.id === req.productId) : null;
+  if (req.type === 'price' && !current) throw new Error('Choose one of your products');
+  await addDoc(
+    collection(db, 'catalogRequests'),
+    slim({
+      type: req.type === 'price' ? 'price' : 'new',
+      status: 'pending',
+      operatorUid: uid,
+      operatorName: staff.name || 'Operator',
+      kind: staff.role,
+      source,
+      productId: current ? current.id : '',
+      productName: String(req.productName).trim().slice(0, 80),
+      currentCost: current ? current.costPrice || 0 : 0,
+      currentPrice: current ? current.price || 0 : 0,
+      newCost,
+      newPrice: sellingPrice(newCost, source),
+      category: String(req.category || (current ? current.category : '') || '').slice(0, 60),
+      unit: String(req.unit || '').slice(0, 60),
+      imageUrl: String(req.imageUrl || '').slice(0, 500),
+      note: String(req.note || '').slice(0, 200),
+      createdAt: new Date().toISOString(),
+    })
+  );
+}
+
+/** Operator: their own requests, newest first */
+/** @returns {() => void} */
+export function subscribeMyCatalogRequests(cb) {
+  const uid = auth.currentUser?.uid;
+  if (!uid) {
+    cb([]);
+    return () => {};
+  }
+  const q = query(collection(db, 'catalogRequests'), where('operatorUid', '==', uid), limit(30));
+  return onSnapshot(
+    q,
+    (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))),
+    () => cb([])
+  );
+}
+
+/** Admin: requests waiting for a decision */
+/** @returns {() => void} */
+export function subscribePendingCatalogRequests(cb) {
+  const q = query(collection(db, 'catalogRequests'), where('status', '==', 'pending'), limit(50));
+  return onSnapshot(
+    q,
+    (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))),
+    () => cb([])
+  );
+}
+
+/** Admin: approve (updates the catalog) or reject a request */
+/** @returns {Promise<void>} */
+export async function decideCatalogRequest(r, approve, adminNote = '') {
+  if (approve) {
+    if (r.type === 'price') {
+      await saveProduct({ id: r.productId, costPrice: r.newCost, price: sellingPrice(r.newCost, r.source) });
+    } else {
+      const isFoodCat = String(r.category).toLowerCase() === 'food';
+      await saveProduct({
+        name: r.productName,
+        category: r.category || (r.kind === 'food' ? 'Food' : 'Everyday'),
+        subcategory: 'All',
+        costPrice: r.newCost,
+        price: sellingPrice(r.newCost, r.source),
+        source: r.source,
+        unit: r.unit || '',
+        imageUrl: r.imageUrl || '',
+        isFood: r.kind === 'food' && isFoodCat,
+        description: r.note || '',
+        isAvailable: true,
+      });
+    }
+  }
+  await updateDoc(doc(db, 'catalogRequests', r.id), {
+    status: approve ? 'approved' : 'rejected',
+    adminNote: String(adminNote || '').slice(0, 200),
+    decidedAt: new Date().toISOString(),
+  });
 }
