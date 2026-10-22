@@ -100,6 +100,18 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ---------- product requests and price changes from operators ----------
+    match /catalogRequests/{id} {
+      allow read: if isAdmin() || (signedIn() && resource.data.operatorUid == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.operatorUid == request.auth.uid
+        && (isOperator('store') || isOperator('food'))
+        && request.resource.data.kind == staffRole()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.newCost is int && request.resource.data.newCost > 0;
+      allow update, delete: if isAdmin();
+    }
+
     // ---------- customers (no accounts) ----------
     // Document id = hash(phone + PIN). You can only fetch a profile if you know both.
     // Listing every customer is staff only.
