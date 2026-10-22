@@ -22,6 +22,8 @@ import {
   SWITCH_CUTOFF_MIN,
   PRICING,
   GATE_PICKUP_FEES,
+  SETTLE_BY_HOUR,
+  RUNNER_SHARE,
 } from './config.ts';
 import { db, auth } from './firebase.ts';
 import { CLOUDINARY } from './cloudinary.ts';
@@ -44,6 +46,8 @@ import {
   deleteField,
   runTransaction,
   documentId,
+  arrayUnion,
+  arrayRemove,
 } from 'firebase/firestore';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 
@@ -105,6 +109,7 @@ onAuthStateChanged(auth, async (user) => {
           role: d.role === 'store' || d.role === 'food' ? d.role : 'runner',
           name: d.name || 'Runner',
           phone: d.phone || '',
+          payAccount: d.payAccount || null,
         },
         denied: false,
       });
@@ -247,6 +252,7 @@ export async function setBatchOff(key, off) {
  */
 
 let insideSwitches = {};
+let runnerUnsettled = {}; // runner uid -> dates not yet settled
 let operatorDocs = {};
 const fireBatches = () => window.dispatchEvent(new Event('roomly-batches'));
 try {
@@ -254,6 +260,7 @@ try {
     doc(db, 'availability', 'inside'),
     (s) => {
       insideSwitches = s.exists() ? s.data().slots || {} : {};
+      runnerUnsettled = s.exists() ? s.data().runnerUnsettled || {} : {};
       fireBatches();
     },
     () => {}
@@ -298,9 +305,19 @@ function accepting(opt, sw, side, now) {
   return switchIsLive(sw, side, now) && switchStartDate(opt, sw).getTime() > now.getTime();
 }
 
+/** A day must be cleared before 6am the next morning; after that the provider is hidden from checkout */
+export function isOverdue(dates, now = new Date()) {
+  return (dates || []).some((d) => {
+    const due = new Date(d + 'T00:00:00');
+    due.setDate(due.getDate() + 1);
+    due.setHours(SETTLE_BY_HOUR, 0, 0, 0);
+    return now.getTime() >= due.getTime();
+  });
+}
+
 /** Operators of one kind that the admin has not switched off */
 function activeOperators(kind) {
-  return Object.values(operatorDocs).filter((o) => o.kind === kind && !o.adminOff);
+  return Object.values(operatorDocs).filter((o) => o.kind === kind && !o.adminOff && !isOverdue(o.unsettled));
 }
 
 /**
@@ -313,9 +330,10 @@ export function getNextBatch(side, now = new Date()) {
     for (const opt of slotsForDay(side, now, d)) {
       if (side === 'inside') {
         const sw = insideSwitches[opt.key];
-        if (accepting(opt, sw, 'inside', now)) {
+        const blocked = sw && sw.byUid && isOverdue(runnerUnsettled[sw.byUid], now);
+        if (!blocked && accepting(opt, sw, 'inside', now)) {
           const start = switchStartDate(opt, sw);
-          return { next: { batch: opt, start, startText: startTextOf(start), by: sw.by || '' }, note: '' };
+          return { next: { batch: opt, start, startText: startTextOf(start), by: sw.by || '', payTo: sw.payTo || null }, note: '' };
         }
         if (sw && sw.note) notes.push(sw.note);
       } else {
@@ -349,7 +367,7 @@ export function getOutsideChoices(kind, now = new Date()) {
         if (accepting(opt, sw, 'outside', now)) {
           const start = switchStartDate(opt, sw);
           const load = op.load && op.load.date === today ? op.load.count || 0 : 0;
-          ops.push({ uid: op.id, name: op.name || 'Operator', start, startText: startTextOf(start), load });
+          ops.push({ uid: op.id, name: op.name || 'Operator', start, startText: startTextOf(start), load, payTo: op.payTo || null });
         }
       }
       if (ops.length) return { batch: opt, operators: ops.sort((a, b) => a.load - b.load) };
@@ -411,7 +429,7 @@ function staleKeys(map) {
 export async function setInsideSwitch(key, patch) {
   const staff = getCurrentStaff();
   const prev = insideSwitches[key] || {};
-  const sw = slim({ ...prev, ...patch, by: staff?.name || 'Runner', byPhone: staff?.phone || '', at: Date.now() });
+  const sw = slim({ ...prev, ...patch, by: staff?.name || 'Runner', byPhone: staff?.phone || '', byUid: auth.currentUser?.uid || '', payTo: staff?.payAccount || null, at: Date.now() });
   insideSwitches = { ...insideSwitches, [key]: sw };
   fireBatches();
   await setDoc(doc(db, 'availability', 'inside'), { slots: { ...staleKeys(insideSwitches), [key]: sw } }, { merge: true });
@@ -430,7 +448,7 @@ export async function setOperatorSwitch(key, patch) {
   fireBatches();
   await setDoc(
     doc(db, 'operatorStatus', uid),
-    { kind: staff.role, name: staff.name || 'Operator', slots: { ...staleKeys(mine.slots), [key]: sw }, updatedAt: Date.now() },
+    { kind: staff.role, name: staff.name || 'Operator', payTo: staff.payAccount || null, slots: { ...staleKeys(mine.slots), [key]: sw }, updatedAt: Date.now() },
     { merge: true }
   );
 }
@@ -828,6 +846,7 @@ export async function createOrder(orderPayload) {
     operatorId: orderPayload.operatorId || '',
     operatorName: orderPayload.operatorName || '',
     turnRunner: orderPayload.turnRunner || '',
+    payTo: orderPayload.payTo || null,
     outOfStock: orderPayload.outOfStock || 'refund',
     gateReq: Boolean(orderPayload.gatePickup && (cart === 'store' || cart === 'food')),
     gatePickup:
@@ -1021,6 +1040,9 @@ export async function updateOrderStatus(orderId, newStatus, updatedBy = 'Admin',
         o.runnerLocationUpdatedAt = now;
       }
     });
+    if (updated && becameDelivered) {
+      recordRunnerDelivery(updated).catch((e) => console.error('Runner summary not saved:', e));
+    }
     if (updated && becameDelivered && phone) {
       try {
         await updateDoc(doc(db, 'phones', await phoneKey(phone)), { deliveredCount: increment(1) });
@@ -1256,35 +1278,92 @@ export async function updatePartStatus(orderId, kind, status, who = 'Operator') 
   }
 }
 
-/* ---------------- operator daily summaries (Phase 3) ----------------
- * opDaily/{operator uid}/days/{yyyy-mm-dd}: one small record per operator per day.
- * Operators keep the standard (cost) price of their items and ₦600 per outside cart.
- * They owe Roomly the margin and ₦200 per cart. With store AND food in one order, the
- * ₦800 is split evenly (₦300 + ₦100 each) until Phase 4 gives each its own cart.
+/* ---------------- daily statements and settlement (Phases 3 + 5) ----------------
+ * settlements/{uid}_{yyyy-mm-dd}: one small record per provider (store, food or runner) per day.
+ *   Operators keep the standard (cost) price + ₦600 per cart; they owe the margin + ₦200 per cart.
+ *   Runners keep what they spent on items + 30% of the day's profit (item margin + delivery fees);
+ *   they owe the other 70%. Gate pickup fees are shown but kept by the runner.
+ * due = what the provider owes for that day. They tap "I have sent"; the admin confirms or overrides.
+ * A day not settled by 6am next morning hides that provider from checkout.
  */
 
 const OP_KEEP_PER_CART = 600;
 const OP_OWE_PER_CART = 200;
 
-/** Cost (standard price) of one item. Uses the cost price you entered; otherwise works it back from the margin. */
-function costOf(item, products) {
+/** Cost (standard price) of one cart line. Uses the cost price you entered; otherwise works it back from the margin. */
+function costOf(item, products, inside = false) {
   const p = products.find((x) => x.id === item.productId);
   if (p && p.costPrice > 0 && !item.isFood) return { cost: p.costPrice * item.quantity, estimated: false };
   if (p && p.costPrice > 0 && item.isFood && item.plates > 0 && !(item.extras || []).length) {
     return { cost: p.costPrice * item.plates * item.quantity, estimated: false };
   }
-  // No cost price: estimate it from the selling price
   const price = item.totalPrice || 0;
   const per = item.quantity > 0 ? price / item.quantity : price;
-  const rate = per / (1 + PRICING.outsideMargin) >= PRICING.outsideBigFrom ? PRICING.outsideBigMargin : PRICING.outsideMargin;
+  const rate = inside
+    ? PRICING.schoolMargin
+    : per / (1 + PRICING.outsideMargin) >= PRICING.outsideBigFrom
+    ? PRICING.outsideBigMargin
+    : PRICING.outsideMargin;
   return { cost: Math.round(price / (1 + rate)), estimated: true };
 }
 
-/** @returns {Promise<void>} */
-async function recordOperatorDelivery(order, kind) {
+const dayId = (uid, day) => `${uid}_${day}`;
+
+/** Add one delivered order (or gate fee) to the signed-in provider's record for today. Counted once per key. */
+async function addToMyDay(kind, key, add, estimated) {
   const uid = auth.currentUser?.uid;
   const staff = getCurrentStaff();
-  if (!uid || !staff || staff.role !== kind) return; // only the operator's own deliveries
+  if (!uid || !staff) return;
+  const day = ymdOf(new Date());
+  const ref = doc(db, 'settlements', dayId(uid, day));
+  let created = false;
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const d = snap.exists()
+      ? snap.data()
+      : {
+          uid,
+          kind,
+          name: staff.name || '',
+          date: day,
+          orders: 0,
+          paid: 0,
+          keep: 0,
+          due: 0,
+          sentTotal: 0,
+          confirmed: 0,
+          settled: false,
+          payments: [],
+          keys: [],
+          estimated: false,
+        };
+    if ((d.keys || []).includes(key)) return;
+    created = !snap.exists();
+    const next = { ...d, keys: [...(d.keys || []), key], estimated: Boolean(d.estimated || estimated), updatedAt: Date.now() };
+    Object.entries(add).forEach(([k, v]) => {
+      next[k] = Math.round(((next[k] || 0) + v) * 100) / 100;
+    });
+    tx.set(ref, next);
+  });
+  // Remember the open day publicly so checkout can hide a provider who has not cleared it
+  {
+    try {
+      if (kind === 'runner') {
+        await setDoc(doc(db, 'availability', 'inside'), { runnerUnsettled: { [uid]: arrayUnion(day) } }, { merge: true });
+      } else {
+        await setDoc(doc(db, 'operatorStatus', uid), { unsettled: arrayUnion(day) }, { merge: true });
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+}
+
+/** Operator: their part of an outside order reached the gate */
+/** @returns {Promise<void>} */
+async function recordOperatorDelivery(order, kind) {
+  const staff = getCurrentStaff();
+  if (!staff || staff.role !== kind) return;
   const source = kind === 'food' ? 'food' : 'outside';
   const items = (order.items || []).filter((i) => i.source === source);
   const products = (await readCatalog()).products || [];
@@ -1297,33 +1376,69 @@ async function recordOperatorDelivery(order, kind) {
     keep += c.cost;
     estimated = estimated || c.estimated;
   }
-  const share = order.hasStore && order.hasFood ? 0.5 : 1;
-  const deliveryKeep = Math.round(OP_KEEP_PER_CART * share);
-  const deliveryOwe = Math.round(OP_OWE_PER_CART * share);
-  const day = ymdOf(new Date());
-  const ref = doc(db, 'opDaily', uid, 'days', day);
-  await runTransaction(db, async (tx) => {
-    const snap = await tx.get(ref);
-    const d = snap.exists()
-      ? snap.data()
-      : { date: day, kind, name: staff.name || '', orders: 0, paid: 0, keep: 0, owed: 0, deliveryKeep: 0, deliveryOwe: 0, estimated: false, orderIds: [] };
-    if ((d.orderIds || []).includes(order.id)) return;
-    tx.set(ref, {
-      ...d,
-      orders: (d.orders || 0) + 1,
-      paid: (d.paid || 0) + paid,
-      keep: (d.keep || 0) + keep,
-      owed: (d.owed || 0) + Math.max(0, paid - keep),
-      deliveryKeep: (d.deliveryKeep || 0) + deliveryKeep,
-      deliveryOwe: (d.deliveryOwe || 0) + deliveryOwe,
-      estimated: Boolean(d.estimated || estimated),
-      orderIds: [...(d.orderIds || []), order.id],
-      updatedAt: Date.now(),
-    });
-  });
+  const share = order.hasStore && order.hasFood ? 0.5 : 1; // only older mixed orders
+  const deliveryKeep = OP_KEEP_PER_CART * share;
+  const deliveryOwe = OP_OWE_PER_CART * share;
+  await addToMyDay(
+    kind,
+    order.id,
+    {
+      orders: 1,
+      paid: paid + deliveryKeep + deliveryOwe,
+      itemsPaid: paid,
+      itemsCost: keep,
+      deliveryKeep,
+      keep: keep + deliveryKeep,
+      due: Math.max(0, paid - keep) + deliveryOwe,
+    },
+    estimated
+  );
 }
 
-/** Live summary for today (one document). cb(summary | null) */
+/** Runner: an inside order was delivered. 30% of the profit is theirs, 70% is owed. */
+/** @returns {Promise<void>} */
+async function recordRunnerDelivery(order) {
+  const staff = getCurrentStaff();
+  if (!staff || staff.role !== 'runner') return; // admin taps are not a runner's delivery
+  if (order.cart && order.cart !== 'inside') return;
+  const items = (order.items || []).filter((i) => !i.source || i.source === 'school');
+  const products = (await readCatalog()).products || [];
+  let paid = 0;
+  let spent = 0;
+  let estimated = false;
+  for (const i of items) {
+    const c = costOf(i, products, true);
+    paid += i.totalPrice || 0;
+    spent += c.cost;
+    estimated = estimated || c.estimated;
+  }
+  const fee = order.deliveryFee || 0;
+  const profit = Math.max(0, paid - spent) + fee;
+  await addToMyDay(
+    'runner',
+    order.id,
+    {
+      orders: 1,
+      paid: paid + fee,
+      itemsPaid: paid,
+      itemsCost: spent,
+      deliveryFees: fee,
+      profit,
+      keep: spent + profit * RUNNER_SHARE,
+      due: profit * (1 - RUNNER_SHARE),
+    },
+    estimated
+  );
+}
+
+/** Runner: a gate pickup they brought to a room (they keep the whole fee) */
+async function recordGateFee(order) {
+  const staff = getCurrentStaff();
+  if (!staff || staff.role !== 'runner' || !order.gatePickup) return;
+  await addToMyDay('runner', 'gate-' + order.id, { gateFees: order.gatePickup.fee || 0, keep: order.gatePickup.fee || 0 }, false);
+}
+
+/** Live record for today (one document). cb(record | null) */
 /** @returns {() => void} */
 export function subscribeMyTodaySummary(cb) {
   const uid = auth.currentUser?.uid;
@@ -1332,24 +1447,133 @@ export function subscribeMyTodaySummary(cb) {
     return () => {};
   }
   return onSnapshot(
-    doc(db, 'opDaily', uid, 'days', ymdOf(new Date())),
+    doc(db, 'settlements', dayId(uid, ymdOf(new Date()))),
     (s) => cb(s.exists() ? s.data() : null),
     () => cb(null)
   );
 }
 
-/** Daily summaries between two dates (yyyy-mm-dd, inclusive). One small read per day with orders. */
+/** Records between two dates (yyyy-mm-dd, inclusive). One small read per day with orders. */
 /** @returns {Promise<any[]>} */
 export async function getMySummaries(from, to) {
   const uid = auth.currentUser?.uid;
   if (!uid) return [];
   try {
-    const q = query(collection(db, 'opDaily', uid, 'days'), where(documentId(), '>=', from), where(documentId(), '<=', to));
+    const q = query(
+      collection(db, 'settlements'),
+      where('uid', '==', uid),
+      where(documentId(), '>=', dayId(uid, from)),
+      where(documentId(), '<=', dayId(uid, to))
+    );
     const snap = await getDocs(q);
-    return snap.docs.map((d) => d.data());
+    return snap.docs.map((d) => ({ ...d.data(), id: d.id }));
   } catch (e) {
     console.error(e);
     return [];
+  }
+}
+
+/** Provider: their days not yet settled (oldest first) */
+/** @returns {() => void} */
+export function subscribeMyOpenSettlements(cb) {
+  const uid = auth.currentUser?.uid;
+  if (!uid) {
+    cb([]);
+    return () => {};
+  }
+  const q = query(collection(db, 'settlements'), where('uid', '==', uid), where('settled', '==', false), limit(60));
+  return onSnapshot(
+    q,
+    (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => String(a.date).localeCompare(String(b.date)))),
+    (e) => {
+      console.error(e);
+      cb([]);
+    }
+  );
+}
+
+/** Provider: "I have sent" (partial payments allowed, with a note) */
+/** @returns {Promise<void>} */
+export async function sendSettlement(id, amount, note) {
+  const amt = Math.round(Number(amount) || 0);
+  if (amt <= 0) throw new Error('Enter the amount you sent');
+  const ref = doc(db, 'settlements', id);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error('Record not found');
+    const d = snap.data();
+    tx.update(ref, {
+      sentTotal: (d.sentTotal || 0) + amt,
+      payments: [...(d.payments || []), { amount: amt, note: String(note || '').slice(0, 200), at: new Date().toISOString() }],
+      updatedAt: Date.now(),
+    });
+  });
+}
+
+/** Admin: every day not yet settled, across all providers */
+/** @returns {() => void} */
+export function subscribeOpenSettlements(cb) {
+  const q = query(collection(db, 'settlements'), where('settled', '==', false), limit(200));
+  return onSnapshot(
+    q,
+    (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => String(a.date).localeCompare(String(b.date)))),
+    (e) => {
+      console.error(e);
+      cb([]);
+    }
+  );
+}
+
+/** Admin: confirm money received. override = mark the day settled (paid outside the app). */
+/** @returns {Promise<void>} */
+export async function adminConfirmSettlement(id, amount, override = false) {
+  const ref = doc(db, 'settlements', id);
+  let rec = null;
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error('Record not found');
+    const d = snap.data();
+    const confirmed = (d.confirmed || 0) + Math.max(0, Math.round(Number(amount) || 0));
+    const settled = override || confirmed >= Math.round(d.due || 0);
+    rec = { ...d, confirmed, settled };
+    tx.update(ref, {
+      confirmed,
+      settled,
+      override: Boolean(override),
+      settledBy: settled ? getCurrentStaff()?.name || 'Admin' : '',
+      settledAt: settled ? new Date().toISOString() : '',
+      updatedAt: Date.now(),
+    });
+  });
+  // Cleared: the provider shows at checkout again (if no other day is overdue)
+  if (rec && rec.settled) {
+    if (rec.kind === 'runner') {
+      await setDoc(doc(db, 'availability', 'inside'), { runnerUnsettled: { [rec.uid]: arrayRemove(rec.date) } }, { merge: true });
+    } else {
+      await setDoc(doc(db, 'operatorStatus', rec.uid), { unsettled: arrayRemove(rec.date) }, { merge: true });
+    }
+  }
+}
+
+/** Staff: where students pay them (shown to the student on their order) */
+/** @returns {Promise<void>} */
+export async function savePayAccount(acc) {
+  const staff = getCurrentStaff();
+  if (!staff || staff.role === 'admin') throw new Error('Staff only');
+  const clean = {
+    bankName: String(acc.bankName || '').trim().slice(0, 60),
+    accountNumber: String(acc.accountNumber || '').replace(/\D/g, '').slice(0, 10),
+    accountName: String(acc.accountName || '').trim().slice(0, 80),
+  };
+  if (!clean.bankName || clean.accountNumber.length !== 10 || !clean.accountName) {
+    throw new Error('Enter the bank name, the 10-digit account number and the account name');
+  }
+  await updateDoc(doc(db, 'staff', staff.email), { payAccount: clean });
+  pushStaff({ ...staffState, staff: { ...staff, payAccount: clean } });
+  // Operators: show it on their status record right away
+  const uid = auth.currentUser?.uid;
+  if (uid && (staff.role === 'store' || staff.role === 'food')) {
+    await setDoc(doc(db, 'operatorStatus', uid), { payTo: clean }, { merge: true });
   }
 }
 
@@ -1382,8 +1606,9 @@ export async function updateGatePickup(orderId, action, heavy = false) {
   const who = staff?.name || 'Runner';
   const status = { accept: 'accepted', refuse: 'refused', delivered: 'delivered', refund: 'refunded' }[action];
   if (!status) return null;
+  let gateDone = null;
   try {
-    return await patchOrder(orderId, (o) => {
+    const res = await patchOrder(orderId, (o) => {
       const gp = o.gatePickup || { status: 'pending', fee: GATE_PICKUP_FEES.normal };
       if (action === 'accept') {
         gp.heavy = Boolean(heavy);
@@ -1394,6 +1619,7 @@ export async function updateGatePickup(orderId, action, heavy = false) {
       gp.status = status;
       gp.updatedAt = new Date().toISOString();
       o.gatePickup = gp;
+      gateDone = action === 'delivered' ? o : null;
       o.history.push({
         status: o.status,
         timestamp: gp.updatedAt,
@@ -1401,6 +1627,8 @@ export async function updateGatePickup(orderId, action, heavy = false) {
         updatedBy: who,
       });
     });
+    if (gateDone) recordGateFee(gateDone).catch((e) => console.error(e));
+    return res;
   } catch (e) {
     console.error(e);
     return null;

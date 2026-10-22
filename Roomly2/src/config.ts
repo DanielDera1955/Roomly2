@@ -114,6 +114,10 @@ export const CART_LABEL: Record<CartKind, string> = {
   store: 'Outside: store items',
   food: 'Outside: cooked food and drinks',
 };
+/** Daily settlement: a day must be cleared before this hour the next morning */
+export const SETTLE_BY_HOUR = 6;
+/** Inside runners keep 30% of the day's profit and owe 70% */
+export const RUNNER_SHARE = 0.3;
 /** Gate pickup: an inside runner brings the parcel from the gate to the room. Paid to the runner. */
 export const GATE_PICKUP_FEES = { normal: 600, heavy: 1000 };
 /** What the student wants if an item is out of stock */
