@@ -20,6 +20,7 @@ import {
   slotsForDay,
   timeLabel,
   SWITCH_CUTOFF_MIN,
+  PRICING,
 } from './config.ts';
 import { db, auth } from './firebase.ts';
 import { CLOUDINARY } from './cloudinary.ts';
@@ -40,6 +41,8 @@ import {
   addDoc,
   where,
   deleteField,
+  runTransaction,
+  documentId,
 } from 'firebase/firestore';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 
@@ -1149,7 +1152,9 @@ export async function updatePartStatus(orderId, kind, status, who = 'Operator') 
   const field = kind === 'food' ? 'foodStatus' : 'storeStatus';
   const label = kind === 'food' ? 'Food' : 'Store';
   try {
-    return await patchOrder(orderId, (o) => {
+    let wasSent = false;
+    const updated = await patchOrder(orderId, (o) => {
+      wasSent = o[field] === 'sent';
       o[field] = status;
       o.history.push({
         status: o.status,
@@ -1158,8 +1163,110 @@ export async function updatePartStatus(orderId, kind, status, who = 'Operator') 
         updatedBy: who,
       });
     });
+    // A completed order goes into this operator's small daily summary (counted once)
+    if (updated && status === 'sent' && !wasSent) {
+      recordOperatorDelivery(updated, kind).catch((e) => console.error('Daily summary not saved:', e));
+    }
+    return updated;
   } catch (e) {
     console.error(e);
     return null;
+  }
+}
+
+/* ---------------- operator daily summaries (Phase 3) ----------------
+ * opDaily/{operator uid}/days/{yyyy-mm-dd}: one small record per operator per day.
+ * Operators keep the standard (cost) price of their items and ₦600 per outside cart.
+ * They owe Roomly the margin and ₦200 per cart. With store AND food in one order, the
+ * ₦800 is split evenly (₦300 + ₦100 each) until Phase 4 gives each its own cart.
+ */
+
+const OP_KEEP_PER_CART = 600;
+const OP_OWE_PER_CART = 200;
+
+/** Cost (standard price) of one item. Uses the cost price you entered; otherwise works it back from the margin. */
+function costOf(item, products) {
+  const p = products.find((x) => x.id === item.productId);
+  if (p && p.costPrice > 0 && !item.isFood) return { cost: p.costPrice * item.quantity, estimated: false };
+  if (p && p.costPrice > 0 && item.isFood && item.plates > 0 && !(item.extras || []).length) {
+    return { cost: p.costPrice * item.plates * item.quantity, estimated: false };
+  }
+  // No cost price: estimate it from the selling price
+  const price = item.totalPrice || 0;
+  const per = item.quantity > 0 ? price / item.quantity : price;
+  const rate = per / (1 + PRICING.outsideMargin) >= PRICING.outsideBigFrom ? PRICING.outsideBigMargin : PRICING.outsideMargin;
+  return { cost: Math.round(price / (1 + rate)), estimated: true };
+}
+
+/** @returns {Promise<void>} */
+async function recordOperatorDelivery(order, kind) {
+  const uid = auth.currentUser?.uid;
+  const staff = getCurrentStaff();
+  if (!uid || !staff || staff.role !== kind) return; // only the operator's own deliveries
+  const source = kind === 'food' ? 'food' : 'outside';
+  const items = (order.items || []).filter((i) => i.source === source);
+  const products = (await readCatalog()).products || [];
+  let paid = 0;
+  let keep = 0;
+  let estimated = false;
+  for (const i of items) {
+    const c = costOf(i, products);
+    paid += i.totalPrice || 0;
+    keep += c.cost;
+    estimated = estimated || c.estimated;
+  }
+  const share = order.hasStore && order.hasFood ? 0.5 : 1;
+  const deliveryKeep = Math.round(OP_KEEP_PER_CART * share);
+  const deliveryOwe = Math.round(OP_OWE_PER_CART * share);
+  const day = ymdOf(new Date());
+  const ref = doc(db, 'opDaily', uid, 'days', day);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const d = snap.exists()
+      ? snap.data()
+      : { date: day, kind, name: staff.name || '', orders: 0, paid: 0, keep: 0, owed: 0, deliveryKeep: 0, deliveryOwe: 0, estimated: false, orderIds: [] };
+    if ((d.orderIds || []).includes(order.id)) return;
+    tx.set(ref, {
+      ...d,
+      orders: (d.orders || 0) + 1,
+      paid: (d.paid || 0) + paid,
+      keep: (d.keep || 0) + keep,
+      owed: (d.owed || 0) + Math.max(0, paid - keep),
+      deliveryKeep: (d.deliveryKeep || 0) + deliveryKeep,
+      deliveryOwe: (d.deliveryOwe || 0) + deliveryOwe,
+      estimated: Boolean(d.estimated || estimated),
+      orderIds: [...(d.orderIds || []), order.id],
+      updatedAt: Date.now(),
+    });
+  });
+}
+
+/** Live summary for today (one document). cb(summary | null) */
+/** @returns {() => void} */
+export function subscribeMyTodaySummary(cb) {
+  const uid = auth.currentUser?.uid;
+  if (!uid) {
+    cb(null);
+    return () => {};
+  }
+  return onSnapshot(
+    doc(db, 'opDaily', uid, 'days', ymdOf(new Date())),
+    (s) => cb(s.exists() ? s.data() : null),
+    () => cb(null)
+  );
+}
+
+/** Daily summaries between two dates (yyyy-mm-dd, inclusive). One small read per day with orders. */
+/** @returns {Promise<any[]>} */
+export async function getMySummaries(from, to) {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return [];
+  try {
+    const q = query(collection(db, 'opDaily', uid, 'days'), where(documentId(), '>=', from), where(documentId(), '<=', to));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data());
+  } catch (e) {
+    console.error(e);
+    return [];
   }
 }
