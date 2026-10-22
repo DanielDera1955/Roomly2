@@ -64,6 +64,16 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ---------- operator daily summaries (one small record per operator per day) ----------
+    match /opDaily/{uid}/days/{day} {
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && (isOperator('store') || isOperator('food'))
+        && request.resource.data.orders is int
+        && request.resource.data.orderIds.size() <= 500;
+      allow delete: if isAdmin();
+    }
+
     // ---------- customers (no accounts) ----------
     // Document id = hash(phone + PIN). You can only fetch a profile if you know both.
     // Listing every customer is staff only.
