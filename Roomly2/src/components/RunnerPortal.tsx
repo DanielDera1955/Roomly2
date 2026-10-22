@@ -579,6 +579,9 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
                   Live
                 </span>
               </div>
+              <p className="text-[11px] font-bold text-[#0e9f55] truncate">
+                Welcome back, {getCurrentStaff()?.name || 'Runner'}
+              </p>
             </div>
           </div>
 

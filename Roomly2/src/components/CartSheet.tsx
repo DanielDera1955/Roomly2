@@ -16,7 +16,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
-import { CAMPUS_LOCATIONS, STORE_CONFIG, deliveryFeeFor, isOutsideSource } from '../config';
+import { HOSTELS, deliveryFeeFor, isOutsideSource, getNextOutsideSlot, startLabel, BatchOption } from '../config';
 import { getBookableBatches } from '../api.js';
 import { isValidNigerianPhone, normalizePhone } from '../api.js';
 
@@ -67,15 +67,16 @@ export const CartSheet: React.FC<CartSheetProps> = ({
 
   // Form states
   const [name, setName] = useState(customer?.name || '');
-  const [area, setArea] = useState<'Hostels' | 'Lodge'>((customer?.area as any) || 'Hostels');
-  const [building, setBuilding] = useState(customer?.building || CAMPUS_LOCATIONS['Hostels'][0]);
+  // Location: hostel (JV, TA, New Hostel) plus a typed room number
+  const area = 'Hostels';
+  const savedHostel = (b?: string) => (b && HOSTELS.includes(b) ? b : HOSTELS[0]);
+  const [building, setBuilding] = useState(savedHostel(customer?.building));
   const [room, setRoom] = useState(customer?.room || '');
   const [customMode, setCustomMode] = useState(false);
   const [customLocation, setCustomLocation] = useState('');
 
-  // 4 Delivery Options: 1 Premium (₦1,500) + 3 Batches (₦1,000 each)
-  const [slotKey, setSlotKey] = useState('');
-  const [batchTick, setBatchTick] = useState(0);
+  // The order always joins the next batch (no batch picker)
+  const [, setBatchTick] = useState(0);
   const [paymentChoice, setPaymentChoice] = useState<'pay_now' | 'pay_on_delivery'>('pay_now');
   const [acknowledgedNoCancel, setAcknowledgedNoCancel] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -88,11 +89,9 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   useEffect(() => {
     if (customer) {
       if (customer.name) setName(customer.name);
-      if (customer.area && CAMPUS_LOCATIONS[customer.area]) {
-        setArea(customer.area);
-        setBuilding(customer.building || CAMPUS_LOCATIONS[customer.area][0]);
-      }
-      if (customer.room) setRoom(customer.room);
+      // Older saved locations (Hostel A, Lodge 1...) fall back to the first hostel
+      if (customer.building) setBuilding(savedHostel(customer.building));
+      if (customer.room && HOSTELS.includes(customer.building)) setRoom(customer.room);
     }
   }, [customer]);
 
@@ -103,15 +102,6 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       setPaymentChoice('pay_now');
     }
   }, [isRepeatCustomer, items]);
-
-  // Adjust building options when area toggles
-  const handleAreaChange = (newArea: 'Hostels' | 'Lodge') => {
-    setArea(newArea);
-    const availableBuildings = CAMPUS_LOCATIONS[newArea] || [];
-    if (!availableBuildings.includes(building)) {
-      setBuilding(availableBuildings[0] || '');
-    }
-  };
 
   // Financial calculations
   const itemTotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
@@ -130,8 +120,14 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       window.clearInterval(id);
     };
   }, []);
-  const batchOptions = getBookableBatches(hasOutside);
-  const selectedBatch = batchOptions.find((o) => o.key === slotKey) || batchOptions[0];
+  // Next batch only. Outside items follow the store or food schedule; with both, the later one.
+  const hasStoreItems = items.some((i) => i.source === 'outside');
+  const hasFoodItems = items.some((i) => i.source === 'food');
+  const selectedBatch: BatchOption | undefined = hasOutside
+    ? [hasStoreItems ? getNextOutsideSlot('store') : null, hasFoodItems ? getNextOutsideSlot('food') : null]
+        .filter((o): o is BatchOption => Boolean(o))
+        .sort((a, b) => b.orderBy.getTime() - a.orderBy.getTime())[0]
+    : getBookableBatches(false)[0];
 
   const hasCustomRequest = Boolean(customRequest && customRequest.trim().length > 0);
   const isPhoneValid = isValidNigerianPhone(phone);
@@ -160,8 +156,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       return;
     }
 
-    if (!customMode && !room.trim()) {
-      setErrorMessage('Please enter your exact room number/floor for delivery');
+    if (!customMode && !/\d/.test(room)) {
+      setErrorMessage('Please type your room, for example A12');
       return;
     }
 
@@ -190,7 +186,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
         name: name.trim(),
         area: customMode ? 'Custom' : area,
         building: customMode ? customLocation.trim() : building,
-        room: customMode ? '-' : room.trim(),
+        room: customMode ? '-' : room.replace(/\s+/g, '').toUpperCase(),
         isCustomLocation: customMode,
         items,
         customRequest: customRequest.trim(),
@@ -279,12 +275,34 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                         <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
                           {item.name}
                         </h4>
-                        {item.extras && item.extras.length > 0 && (
-                          <p className="text-[10px] text-amber-700 dark:text-amber-400 truncate">
-                            +{item.extras.map((e) => `${e.quantity || 1}x ${e.name}`).join(', ')}
-                          </p>
-                        )}
-                        {item.plates !== undefined && item.plates > 0 && (
+                        {item.extras && item.extras.length > 0 && (() => {
+                          const extrasCost = item.extras.reduce((s, e) => s + e.price * (e.quantity || 1), 0);
+                          const dishCost = item.unitPrice - extrasCost;
+                          return (
+                            <div className="mt-0.5 space-y-0.5 text-[10px]">
+                              {item.plates !== undefined && item.plates > 0 && (
+                                <div className="flex justify-between gap-2 text-slate-500 dark:text-slate-400">
+                                  <span>
+                                    {item.plates} {item.plates === 1 ? 'plate' : 'plates'}
+                                  </span>
+                                  <span className="font-mono">₦{dishCost.toLocaleString()}</span>
+                                </div>
+                              )}
+                              {item.extras.map((e) => (
+                                <div key={e.id} className="flex justify-between gap-2 text-amber-700 dark:text-amber-400">
+                                  <span className="break-words">
+                                    + {e.quantity || 1}x {e.name}
+                                  </span>
+                                  <span className="font-mono shrink-0">₦{(e.price * (e.quantity || 1)).toLocaleString()}</span>
+                                </div>
+                              ))}
+                              {item.quantity > 1 && (
+                                <span className="block text-slate-400">× {item.quantity} of this dish</span>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        {(!item.extras || item.extras.length === 0) && item.plates !== undefined && item.plates > 0 && (
                           <span className="text-[10px] text-slate-400 block">
                             {item.plates} {item.plates === 1 ? 'plate' : 'plates'}
                           </span>
@@ -399,48 +417,38 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Area
-                  </label>
-                  <select
-                    value={area}
-                    onChange={(e) => handleAreaChange(e.target.value as 'Hostels' | 'Lodge')}
-                    className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55] cursor-pointer"
-                  >
-                    <option value="Hostels">Hostels</option>
-                    <option value="Lodge">Lodge</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Building
+                    Hostel
                   </label>
                   <select
                     value={building}
                     onChange={(e) => setBuilding(e.target.value)}
                     className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55] cursor-pointer"
                   >
-                    {(CAMPUS_LOCATIONS[area] || []).map((b) => (
+                    {HOSTELS.map((b) => (
                       <option key={b} value={b}>
                         {b}
                       </option>
                     ))}
                   </select>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Room Number / Floor (Exact Door Location)
-                </label>
-                <input
-                  type="text"
-                  value={room}
-                  onChange={(e) => setRoom(e.target.value)}
-                  placeholder="e.g. Room 12, Floor 2"
-                  className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55]"
-                />
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Room number
+                  </label>
+                  <input
+                    type="text"
+                    value={room}
+                    onChange={(e) => setRoom(e.target.value.toUpperCase().slice(0, 8))}
+                    placeholder="e.g. A12"
+                    autoCapitalize="characters"
+                    className="w-full px-3 py-2 text-sm font-mono bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55]"
+                  />
+                </div>
               </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 -mt-1">
+                Enter the room where you will be when the delivery arrives.
+              </p>
               </>
               )}
 
@@ -474,46 +482,33 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-[#0e9f55]" />
-                <span>Choose a delivery batch</span>
+                <span>Your delivery batch</span>
               </h3>
             </div>
 
-            <div className="grid grid-cols-1 gap-2">
-              {batchOptions.length === 0 && (
-                <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200">
-                  No delivery batch is open right now. Please check back soon.
+            {selectedBatch ? (
+              <div className="p-3 rounded-2xl border border-slate-900 dark:border-white bg-slate-50 dark:bg-slate-800/60">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <span className="text-xs font-extrabold text-slate-900 dark:text-white">
+                      {selectedBatch.dayLabel}, {selectedBatch.window}
+                    </span>
+                    <span className="block text-[11px] text-slate-500 dark:text-slate-400">
+                      Still accepting orders, will start sending by {startLabel(selectedBatch)}. Order by{' '}
+                      {selectedBatch.orderBy.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    ₦{deliveryFee.toLocaleString()}
+                  </span>
                 </div>
-              )}
-              {batchOptions.map((opt) => {
-                const isSelected = selectedBatch?.key === opt.key;
-                return (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    onClick={() => setSlotKey(opt.key)}
-                    className={`w-full p-3 rounded-2xl border text-left transition-all cursor-pointer ${
-                      isSelected
-                        ? 'border-slate-900 dark:border-white bg-slate-50 dark:bg-slate-800/60 ring-1 ring-slate-900 dark:ring-white'
-                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <span className="text-xs font-extrabold text-slate-900 dark:text-white">
-                          {opt.dayLabel}, {opt.window}
-                        </span>
-                        <span className="block text-[11px] text-slate-500 dark:text-slate-400">
-                          {opt.name} · order by {opt.orderBy.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-                        </span>
-                      </div>
-                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                        ₦{deliveryFee.toLocaleString()}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+                <p className="text-[10px] text-slate-400 mt-1.5">Every order joins the next batch.</p>
+              </div>
+            ) : (
+              <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200">
+                No delivery batch is open right now. Please check back soon.
+              </div>
+            )}
           </div>
 
           {/* PAYMENT CHOICE WITH REPEAT CUSTOMER ENFORCEMENT */}

@@ -66,6 +66,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
       <div className="max-w-[480px] mx-auto px-4 py-4 space-y-4">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
+            <p className="text-xs font-bold text-[#0e9f55]">Welcome back, {staff?.name || 'Operator'}</p>
             <h1 className="text-lg font-extrabold leading-tight">{kind === 'food' ? 'Food orders' : 'Store orders'}</h1>
             <p className="text-xs text-slate-500">Paid orders only</p>
           </div>
@@ -162,12 +163,23 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
 
               {isOpen && (
                 <div className="space-y-3">
-                  <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 text-xs space-y-1">
-                    <p className="font-bold">Write this on the package</p>
-                    <p className="text-sm font-extrabold">
-                      {o.name} · {o.phone}
-                    </p>
-                  </div>
+                  {kind === 'food' ? (
+                    <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-xs space-y-1">
+                      <p className="font-bold text-amber-900 dark:text-amber-200">
+                        Write the student's first name and last 4 digits on the bag, so the owner is clear
+                      </p>
+                      <p className="text-base font-extrabold">
+                        {String(o.name || '').trim().split(/\s+/)[0]} · {String(o.phone || '').slice(-4)}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 text-xs space-y-1">
+                      <p className="font-bold">Write this on the package</p>
+                      <p className="text-sm font-extrabold">
+                        {o.name} · {o.phone}
+                      </p>
+                    </div>
+                  )}
 
                   <div className="space-y-2">
                     {items.map((i, idx) => (

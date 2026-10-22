@@ -34,6 +34,8 @@ interface OrderTrackerModalProps {
   userOrders?: OrderRecord[];
   onSelectOrder?: (order: OrderRecord) => void;
   onPaymentSent?: (updatedOrder: OrderRecord) => void;
+  /** Opens the Active Orders & History list */
+  onOpenAll?: () => void;
 }
 
 const STATUS_STEPS = [
@@ -52,6 +54,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
   userOrders = [],
   onSelectOrder,
   onPaymentSent,
+  onOpenAll,
 }) => {
   if (!isOpen) return null;
 
@@ -168,11 +171,19 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 shrink-0">
           <div>
             <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
-              Track Order Status
+              Order status
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Live updates directly to your room door
-            </p>
+            {onOpenAll ? (
+              <button
+                type="button"
+                onClick={onOpenAll}
+                className="text-xs font-bold text-[#0e9f55] hover:underline cursor-pointer"
+              >
+                See all active orders &amp; history
+              </button>
+            ) : (
+              <p className="text-xs text-slate-500 dark:text-slate-400">Live updates directly to your room door</p>
+            )}
           </div>
           <button
             type="button"
@@ -472,9 +483,13 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                           {item.quantity}x {item.name}
                         </h5>
                         {item.extras && item.extras.length > 0 && (
-                          <p className="text-[10px] text-amber-700 dark:text-amber-400 truncate">
-                            +{item.extras.map((e) => `${e.quantity || 1}x ${e.name}`).join(', ')}
-                          </p>
+                          <div className="text-[10px] text-amber-700 dark:text-amber-400">
+                            {item.extras.map((e) => (
+                              <span key={e.id} className="block truncate">
+                                + {e.quantity || 1}x {e.name} (₦{(e.price * (e.quantity || 1)).toLocaleString()})
+                              </span>
+                            ))}
+                          </div>
                         )}
                         {item.plates !== undefined && item.plates > 0 && (
                           <span className="text-[10px] text-slate-400">
@@ -537,7 +552,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
             <div className="text-center py-10 space-y-3">
               <Package className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto" />
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                No order selected. Use My orders to open one.
+                No order selected. Open Active Orders &amp; History to pick one.
               </p>
             </div>
           )}

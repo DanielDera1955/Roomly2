@@ -74,15 +74,15 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right: Actions */}
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* Track Order Button */}
+          {/* Active Orders & History (replaces My orders and Track) */}
           <button
             type="button"
             onClick={onOpenTracker}
             className="relative px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 flex items-center gap-1.5 transition-colors cursor-pointer"
-            aria-label="Track Order"
+            aria-label="Active orders and history"
           >
             <Compass className="w-3.5 h-3.5 text-[#0e9f55]" />
-            <span>Track</span>
+            <span>Orders</span>
             {activeOrderCount > 0 && (
               <span className="w-2 h-2 rounded-full bg-[#0e9f55] ring-2 ring-white dark:ring-slate-900" />
             )}
