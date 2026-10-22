@@ -78,7 +78,7 @@ service cloud.firestore {
       allow create: if request.resource.data.status == 'Received'
         && request.resource.data.runnerId == ''
         && request.resource.data.paymentStatus in ['unpaid', 'pay_on_delivery']
-        && request.resource.data.deliveryFee in [300, 500, 800, 1000, 1500]
+        && request.resource.data.deliveryFee in [300, 390, 500, 800, 1000, 1500]
         && request.resource.data.totalAmount == request.resource.data.subtotal + request.resource.data.deliveryFee
         && request.resource.data.items.size() <= 60;
 
