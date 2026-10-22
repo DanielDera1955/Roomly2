@@ -174,6 +174,7 @@ export interface BatchOption {
   window: string; // "2 to 3pm"
   label: string; // "Today, Afternoon Batch (2 to 3pm)"
   orderBy: Date;
+  startMin: number; // scheduled start, minutes after midnight
 }
 
 export const timeLabel = (min: number): string => {
@@ -204,6 +205,7 @@ function buildOption(day: Date, dayOffset: number, s: BatchSlotDef): BatchOption
     window,
     label: `${dayLabel}, ${s.name} (${window})`,
     orderBy: new Date(day.getTime() + s.orderByMin * 60000),
+    startMin: s.startMin,
   };
 }
 
@@ -273,6 +275,19 @@ export function getNextOutsideSlot(kind: 'store' | 'food', now: Date = new Date(
   }
   return null;
 }
+
+/** Every slot on a day for one side: inside batches, outside store batches, or the food batch */
+export type SwitchSide = 'inside' | 'store' | 'food';
+export function slotsForDay(side: SwitchSide, base: Date, dayOffset: number): BatchOption[] {
+  if (side === 'inside') return listDaySlots(base, dayOffset);
+  const day = new Date(base);
+  day.setHours(0, 0, 0, 0);
+  day.setDate(day.getDate() + dayOffset);
+  const defs = side === 'food' ? [OUTSIDE_FOOD_BATCH] : OUTSIDE_STORE_BATCHES;
+  return defs.map((s) => buildOption(day, dayOffset, s));
+}
+/** Switches turn themselves off at night: 10pm inside, 8pm outside */
+export const SWITCH_CUTOFF_MIN = { inside: T(22), outside: T(20) };
 
 /** "will start sending by 2pm" style label for a batch */
 export const startLabel = (opt: BatchOption): string => {

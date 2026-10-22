@@ -17,6 +17,9 @@ import {
   deliveryFeeFor,
   nextBatchId,
   getBookableSlots,
+  slotsForDay,
+  timeLabel,
+  SWITCH_CUTOFF_MIN,
 } from './config.ts';
 import { db, auth } from './firebase.ts';
 import { CLOUDINARY } from './cloudinary.ts';
@@ -36,6 +39,7 @@ import {
   increment,
   addDoc,
   where,
+  deleteField,
 } from 'firebase/firestore';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 
@@ -228,6 +232,184 @@ export async function setBatchOff(key, off) {
   batchOff = new Set(keep);
   window.dispatchEvent(new Event('roomly-batches'));
   await setDoc(doc(db, 'settings', 'batches'), { off: keep });
+}
+
+/* ---------------- availability switches (Phase 2) ----------------
+ * availability/inside           runners + admin: one switch per inside batch
+ * operatorStatus/{auth uid}     each store or food operator: one switch per batch, plus adminOff
+ * A switch: { on, start (minutes after midnight), note, by, at (ms) }
+ * A batch accepts orders while its switch is on, the night cut-off has not passed,
+ * and the "start sending" time has not arrived. Customers only ever see the next one.
+ */
+
+let insideSwitches = {};
+let operatorDocs = {};
+const fireBatches = () => window.dispatchEvent(new Event('roomly-batches'));
+try {
+  onSnapshot(
+    doc(db, 'availability', 'inside'),
+    (s) => {
+      insideSwitches = s.exists() ? s.data().slots || {} : {};
+      fireBatches();
+    },
+    () => {}
+  );
+  onSnapshot(
+    collection(db, 'operatorStatus'),
+    (snap) => {
+      const next = {};
+      snap.forEach((d) => {
+        next[d.id] = { ...d.data(), id: d.id };
+      });
+      operatorDocs = next;
+      fireBatches();
+    },
+    () => {}
+  );
+} catch (e) {
+  /* ignore */
+}
+
+const ymdOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** On, and not yet turned off by the night cut-off (10pm inside, 8pm outside). Switching on after the cut-off lasts until the next night. */
+export function switchIsLive(sw, side, now = new Date()) {
+  if (!sw || !sw.on) return false;
+  const at = new Date(sw.at || 0);
+  const cut = new Date(at);
+  cut.setHours(0, 0, 0, 0);
+  cut.setMinutes(side === 'inside' ? SWITCH_CUTOFF_MIN.inside : SWITCH_CUTOFF_MIN.outside);
+  if (at.getTime() >= cut.getTime()) cut.setDate(cut.getDate() + 1);
+  return now.getTime() < cut.getTime();
+}
+
+/** The moment a batch stops accepting: the day of the batch at the start time the runner or operator set */
+export function switchStartDate(opt, sw) {
+  const day = new Date(opt.date + 'T00:00:00');
+  const min = sw && Number.isFinite(sw.start) ? sw.start : opt.startMin;
+  return new Date(day.getTime() + min * 60000);
+}
+
+function accepting(opt, sw, side, now) {
+  return switchIsLive(sw, side, now) && switchStartDate(opt, sw).getTime() > now.getTime();
+}
+
+/** Operators of one kind that the admin has not switched off */
+function activeOperators(kind) {
+  return Object.values(operatorDocs).filter((o) => o.kind === kind && !o.adminOff);
+}
+
+/**
+ * Next batch still taking orders for 'inside', 'store' or 'food'.
+ * Returns { next: { batch, start, startText, by }, note } — next is null when ordering is paused.
+ */
+export function getNextBatch(side, now = new Date()) {
+  const notes = [];
+  for (let d = 0; d < 3; d++) {
+    for (const opt of slotsForDay(side, now, d)) {
+      if (side === 'inside') {
+        const sw = insideSwitches[opt.key];
+        if (accepting(opt, sw, 'inside', now)) {
+          const start = switchStartDate(opt, sw);
+          return { next: { batch: opt, start, startText: startTextOf(start), by: sw.by || '' }, note: '' };
+        }
+        if (sw && sw.note) notes.push(sw.note);
+      } else {
+        // Any one operator accepting makes the batch open. The earliest start is the safe deadline.
+        let best = null;
+        for (const op of activeOperators(side)) {
+          const sw = (op.slots || {})[opt.key];
+          if (accepting(opt, sw, 'outside', now)) {
+            const start = switchStartDate(opt, sw);
+            if (!best || start < best.start) best = { start, by: op.name || '' };
+          } else if (sw && sw.note) notes.push(sw.note);
+        }
+        if (best) return { next: { batch: opt, start: best.start, startText: startTextOf(best.start), by: best.by }, note: '' };
+      }
+    }
+  }
+  return { next: null, note: notes[0] || '' };
+}
+
+const startTextOf = (d) => {
+  const min = d.getHours() * 60 + d.getMinutes();
+  return timeLabel(min);
+};
+
+/** Switches for runners (inside) — today and later only */
+export function getInsideSwitches() {
+  return insideSwitches;
+}
+
+/** The signed-in operator's own switches */
+export function getMyOperatorStatus() {
+  const uid = auth.currentUser?.uid;
+  return uid ? operatorDocs[uid] || null : null;
+}
+
+/** Every operator, for the admin override panel */
+export function getAllOperatorStatus() {
+  return Object.values(operatorDocs);
+}
+
+function staleKeys(map) {
+  const today = ymdOf(new Date());
+  const out = {};
+  Object.keys(map || {}).forEach((k) => {
+    if (String(k).split('|')[0] < today) out[k] = deleteField();
+  });
+  return out;
+}
+
+/** Runners and admin: set one inside batch. patch = { on, start, note } */
+/** @returns {Promise<void>} */
+export async function setInsideSwitch(key, patch) {
+  const staff = getCurrentStaff();
+  const prev = insideSwitches[key] || {};
+  const sw = slim({ ...prev, ...patch, by: staff?.name || 'Runner', at: Date.now() });
+  insideSwitches = { ...insideSwitches, [key]: sw };
+  fireBatches();
+  await setDoc(doc(db, 'availability', 'inside'), { slots: { ...staleKeys(insideSwitches), [key]: sw } }, { merge: true });
+}
+
+/** Store and food operators: set one of their own batches. patch = { on, start, note } */
+/** @returns {Promise<void>} */
+export async function setOperatorSwitch(key, patch) {
+  const staff = getCurrentStaff();
+  const uid = auth.currentUser?.uid;
+  if (!uid || !staff || (staff.role !== 'store' && staff.role !== 'food')) throw new Error('Operators only');
+  const mine = operatorDocs[uid] || {};
+  const prev = (mine.slots || {})[key] || {};
+  const sw = slim({ ...prev, ...patch, at: Date.now() });
+  operatorDocs = { ...operatorDocs, [uid]: { ...mine, id: uid, kind: staff.role, name: staff.name, slots: { ...(mine.slots || {}), [key]: sw } } };
+  fireBatches();
+  await setDoc(
+    doc(db, 'operatorStatus', uid),
+    { kind: staff.role, name: staff.name || 'Operator', slots: { ...staleKeys(mine.slots), [key]: sw }, updatedAt: Date.now() },
+    { merge: true }
+  );
+}
+
+/** Create the operator's status record on first visit, so the admin can see them */
+/** @returns {Promise<void>} */
+export async function ensureOperatorStatus() {
+  const staff = getCurrentStaff();
+  const uid = auth.currentUser?.uid;
+  if (!uid || !staff || (staff.role !== 'store' && staff.role !== 'food')) return;
+  if (operatorDocs[uid]) return;
+  try {
+    await setDoc(doc(db, 'operatorStatus', uid), { kind: staff.role, name: staff.name || 'Operator', updatedAt: Date.now() }, { merge: true });
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+/** Admin only: switch an operator off (or allow them again) */
+/** @returns {Promise<void>} */
+export async function setOperatorAdminOff(uid, off) {
+  operatorDocs = { ...operatorDocs, [uid]: { ...(operatorDocs[uid] || {}), adminOff: Boolean(off) } };
+  fireBatches();
+  await setDoc(doc(db, 'operatorStatus', uid), { adminOff: Boolean(off), adminAt: Date.now() }, { merge: true });
 }
 
 /* ---------- catalog (one document: categories + products) ---------- */
@@ -576,6 +758,13 @@ export async function createOrder(orderPayload) {
 
   const now = new Date();
   const createdAtIso = now.toISOString();
+  // Payment deadline follows the switch: the moment the batch stops accepting (falls back to 15 minutes)
+  const askedDeadline = Date.parse(orderPayload.paymentDeadline || '');
+  const deadline =
+    Number.isFinite(askedDeadline) && askedDeadline > now.getTime() && askedDeadline < now.getTime() + 3 * 86400000
+      ? new Date(askedDeadline)
+      : new Date(now.getTime() + 15 * 60 * 1000);
+  const deadlineText = deadline.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const batchMeta = DELIVERY_BATCHES.find((b) => b.id === batchId);
 
   const newOrder = {
@@ -594,7 +783,7 @@ export async function createOrder(orderPayload) {
     foodStatus: hasFood ? 'pending' : '',
     paymentMethod,
     paymentStatus: paymentMethod === 'pay_on_delivery' ? 'pay_on_delivery' : 'unpaid',
-    paymentDeadline: new Date(now.getTime() + 15 * 60 * 1000).toISOString(),
+    paymentDeadline: deadline.toISOString(),
     isFirstTimeCustomer: !isRepeatCustomer,
     deliveryBatch: batchId,
     deliveryTime: orderPayload.deliveryTime || (batchMeta ? `${batchMeta.name} (${batchMeta.timeWindow})` : 'Next delivery batch'),
@@ -609,7 +798,7 @@ export async function createOrder(orderPayload) {
     runnerName: '',
     runnerPhone: '',
     runnerCurrentLocation:
-      paymentMethod === 'pay_now' ? 'Awaiting student bank transfer (15m window)' : 'Unassigned. Ready for packaging',
+      paymentMethod === 'pay_now' ? `Awaiting student bank transfer (pay before ${deadlineText})` : 'Unassigned. Ready for packaging',
     runnerLocationUpdatedAt: createdAtIso,
     history: [
       {
@@ -617,7 +806,7 @@ export async function createOrder(orderPayload) {
         timestamp: createdAtIso,
         note:
           paymentMethod === 'pay_now'
-            ? 'Order received. Complete bank transfer within 15 minutes to initiate packaging.'
+            ? `Order received. Pay before ${deadlineText} to join this batch.`
             : 'Order placed by first-time customer (Pay on Delivery). Ready for runner packaging.',
         updatedBy: 'System',
       },
