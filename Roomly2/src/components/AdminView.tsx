@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { OrderChat } from './OrderChat';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { AdminSettlementsPanel } from './SettlementPanel';
+import { AdminCatalogRequests } from './CatalogRequests';
 import { playChime } from '../sound';
 import { Phone as PhoneIcon, ChevronDown as ChevronDownIcon } from 'lucide-react';
 import {
@@ -810,6 +811,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
         {/* ================= TAB 3: PRODUCTS & PHOTOS (User prompt explicitly requested adding product images) ================= */}
         {currentTab === 'products' && (
           <div className="space-y-4">
+            {/* Operators' price change and new product requests */}
+            <AdminCatalogRequests onChanged={fetchAllData} />
+
             {/* Header with Add Product button */}
             <div className="flex items-center justify-between">
               <div>
