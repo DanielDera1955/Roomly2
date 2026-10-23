@@ -121,7 +121,9 @@ service cloud.firestore {
       allow update: if isAdmin() ||
         (signedIn() && resource.data.uid == request.auth.uid
          && request.resource.data.uid == resource.data.uid
-         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['settled', 'confirmed', 'override', 'settledBy', 'settledAt', 'date', 'kind']));
+         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['settled', 'confirmed', 'override', 'settledBy', 'settledAt', 'date', 'kind'])
+         // a provider can raise an objection but never answer one (only the admin can)
+         && request.resource.data.get('objections', {}).keys().hasAll(resource.data.get('objections', {}).keys()));
       allow delete: if isAdmin();
     }
 
@@ -191,6 +193,13 @@ service cloud.firestore {
          && (resource.data.get('gatePickup', null) == null || resource.data.gatePickup.status in ['refused', 'refunded'])
          && request.resource.data.gatePickup.status == 'pending'
          && request.resource.data.gatePickup.fee == 600) ||
+        // Operators confirm the student's payment reached their account (their own orders only)
+        (((isOperator('store') && resource.data.hasStore == true) || (isOperator('food') && resource.data.hasFood == true))
+         && resource.data.payReady == true
+         && resource.data.get('operatorId', '') in ['', request.auth.uid]
+         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'paymentConfirmedAt', 'paymentConfirmedBy', 'history'])
+         && resource.data.paymentStatus == 'payment_sent'
+         && request.resource.data.paymentStatus == 'payment_confirmed') ||
         (isOperator('store') && resource.data.hasStore == true && resource.data.payReady == true
          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['storeStatus', 'history', 'status', 'deliveredAt'])
          && (request.resource.data.status == resource.data.status
