@@ -355,7 +355,52 @@ export function getNextBatch(side, now = new Date()) {
       }
     }
   }
-  return { next: null, note: notes[0] || '' };
+  // Nobody has opened a batch: students can still order. The order joins the next scheduled batch
+  // and goes to a runner / operator who can take it; the student is told it is not opened yet.
+  const fb = scheduledNext(side, now);
+  if (!fb) return { next: null, note: notes[0] || '' };
+  const who = side === 'inside' ? fallbackRunner(now) : fallbackOperators(side)[0];
+  if (!who) return { next: null, note: notes[0] || '' };
+  return {
+    next: { batch: fb.opt, start: fb.start, startText: startTextOf(fb.start), by: who.name || '', payTo: who.payTo || null, unconfirmed: true },
+    note: notes[0] || '',
+  };
+}
+
+/** The next batch on the timetable that has not started yet (today or the next two days) */
+function scheduledNext(side, now = new Date()) {
+  for (let d = 0; d < 3; d++) {
+    for (const opt of slotsForDay(side, now, d)) {
+      const start = switchStartDate(opt, null);
+      if (start.getTime() > now.getTime()) return { opt, start };
+    }
+  }
+  return null;
+}
+
+/** Inside: the runner who most recently opened a batch (settled up, with a payment account) */
+function fallbackRunner(now = new Date()) {
+  const seen = new Set();
+  const list = Object.values(insideSwitches)
+    .filter((sw) => sw && sw.byUid)
+    .sort((a, b) => (b.at || 0) - (a.at || 0));
+  for (const sw of list) {
+    if (seen.has(sw.byUid)) continue;
+    seen.add(sw.byUid);
+    if (isOverdue(runnerUnsettled[sw.byUid], now)) continue;
+    const payTo = runnerPay[sw.byUid] || sw.payTo;
+    if (payTo) return { uid: sw.byUid, name: sw.by || 'Runner', payTo };
+  }
+  return null;
+}
+
+/** Outside: operators who can take orders (not switched off by you, settled, with an account), fewest orders first */
+function fallbackOperators(kind) {
+  const today = ymdOf(new Date());
+  return activeOperators(kind)
+    .filter((o) => o.payTo)
+    .map((o) => ({ uid: o.id, name: o.name || 'Operator', payTo: o.payTo, load: o.load && o.load.date === today ? o.load.count || 0 : 0 }))
+    .sort((a, b) => a.load - b.load);
 }
 
 /**
@@ -378,7 +423,11 @@ export function getOutsideChoices(kind, now = new Date()) {
       if (ops.length) return { batch: opt, operators: ops.sort((a, b) => a.load - b.load) };
     }
   }
+  // Nobody has opened a batch yet: still let the student order into the next scheduled batch
   const { note } = getNextBatch(kind, now);
+  const fb = scheduledNext(kind, now);
+  const ops = fallbackOperators(kind).map((o) => ({ ...o, start: fb ? fb.start : null, startText: fb ? startTextOf(fb.start) : '' }));
+  if (fb && ops.length) return { batch: fb.opt, operators: ops, note, unconfirmed: true };
   return { batch: null, operators: [], note };
 }
 
