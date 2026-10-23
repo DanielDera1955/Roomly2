@@ -20,7 +20,7 @@ import {
   subscribeProductRequest,
 } from './api.js';
 import { Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, FOOD_EXTRAS } from './config';
-import { MessageCircle } from 'lucide-react';
+import { MessageCircle, Sun, Sunrise, Moon, ShoppingBag, ChevronRight } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
 import { AdminSwitcher } from './components/AdminSwitcher';
@@ -777,7 +777,42 @@ export default function App() {
 
           {/* Phone Number Input & Customer Recognition */}
           <div className="-mx-4 -mt-4 px-4 pt-5 pb-3 bg-gradient-to-b from-emerald-100/70 to-transparent dark:from-emerald-950/40">
-            <p className={`font-semibold text-[#0b8044] dark:text-[#0e9f55] leading-snug ${hasCompletedOrder ? 'text-base' : 'text-sm mb-1'}`}>{heroGreeting}</p>
+            {hasCompletedOrder ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="relative shrink-0">
+                    <div className="absolute inset-0 rounded-full bg-amber-300/40 dark:bg-emerald-400/20 blur-md" />
+                    <div className="relative w-12 h-12 rounded-full bg-white/80 dark:bg-emerald-950/70 border border-emerald-200/80 dark:border-emerald-800/60 shadow-sm flex items-center justify-center">
+                      {dayPart === 'Good morning' ? (
+                        <Sunrise className="w-6 h-6 text-amber-500" />
+                      ) : dayPart === 'Good afternoon' ? (
+                        <Sun className="w-6 h-6 text-amber-500" />
+                      ) : (
+                        <Moon className="w-5 h-5 text-indigo-400 dark:text-emerald-300" />
+                      )}
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#0b8044] dark:text-[#0e9f55]">{dayPart}</p>
+                    <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-tight truncate">{firstName}</h1>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Nice to have you back.</p>
+                  </div>
+                </div>
+                {activeOrderCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleOpenHistory}
+                    className="inline-flex items-center gap-1.5 pl-2.5 pr-2 py-1.5 rounded-full bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-900 text-xs font-bold text-[#0b8044] dark:text-[#0e9f55] shadow-xs cursor-pointer"
+                  >
+                    <ShoppingBag className="w-3.5 h-3.5" />
+                    {activeOrderCount} {activeOrderCount === 1 ? 'order' : 'orders'} on the way
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            ) : (
+              <p className="font-semibold text-[#0b8044] dark:text-[#0e9f55] leading-snug text-sm mb-1">{heroGreeting}</p>
+            )}
             {!hasCompletedOrder && (
               <>
                 <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-snug">
