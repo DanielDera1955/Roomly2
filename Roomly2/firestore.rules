@@ -146,6 +146,11 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // ---------- admin dashboard: one small summary per day ----------
+    match /statsDaily/{day} {
+      allow read, write: if isAdmin();
+    }
+
     // ---------- customers (no accounts) ----------
     // Document id = hash(phone + PIN). You can only fetch a profile if you know both.
     // Listing every customer is staff only.
