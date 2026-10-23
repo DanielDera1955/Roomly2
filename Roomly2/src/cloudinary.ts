@@ -2,6 +2,6 @@
 // cloudName: your Cloudinary "Cloud name" (Settings > API Keys)
 // uploadPreset: an UNSIGNED upload preset (Settings > Upload > Upload presets)
 export const CLOUDINARY = {
-  cloudName: 'yruqvp1l',
+  cloudName: 'yruqvp1i',
   uploadPreset: 'ntvr1wuk',
 };
