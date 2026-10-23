@@ -17,7 +17,7 @@ interface CategoryNavProps {
 
 const EMOJI: Record<ShopGroup, string> = { store: '🛒', food: '🍛' };
 
-/** Two categories per side: Store Items, and Cooked Food (inside) or Cooked Food and Drinks (outside). */
+/** Two categories per side: Store Items, and Cooked Food (inside and outside). */
 export const CategoryNav: React.FC<CategoryNavProps> = ({
   side,
   selected,

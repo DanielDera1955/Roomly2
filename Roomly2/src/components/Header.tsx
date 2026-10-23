@@ -33,8 +33,6 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleStoreHoursOverride,
   activeOrderCount = 0,
 }) => {
-  const greetingName = customer?.name ? `Hi ${customer.name}` : 'Hi there';
-
   return (
     <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 px-4 py-2.5">
       {/* Row 1: Brand, Open Badge, and Quick Actions */}
@@ -45,14 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
             R
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-white">
-                Roomly
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate">
-              {greetingName}
-            </p>
+            <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-white">Roomly</span>
           </div>
         </div>
 

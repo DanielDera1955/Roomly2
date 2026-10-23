@@ -16,7 +16,7 @@ import {
   CheckCircle,
   Clock,
   ArrowRight,
-  RefreshCw,
+  LogOut,
   Building,
   User,
   CreditCard,
@@ -680,43 +680,31 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pb-24 selection:bg-[#0e9f55]/20">
       {/* Top Header */}
       <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 px-4 py-3">
-        <div className="max-w-[480px] mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 flex items-center justify-center font-bold shadow-xs">
+        <div className="max-w-[480px] mx-auto flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="shrink-0 w-9 h-9 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 flex items-center justify-center font-bold shadow-xs">
               <Truck className="w-4 h-4" />
             </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-extrabold text-sm text-slate-900 dark:text-white">
-                  Runner Portal
-                </span>
-                <span className="text-[10px] font-black px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-[#0e9f55]">
-                  Live
-                </span>
-              </div>
+            <div className="min-w-0">
+              <span className="block font-extrabold text-sm text-slate-900 dark:text-white truncate">Runner Portal</span>
               <p className="text-[11px] font-bold text-[#0e9f55] truncate">
                 Welcome back, {getCurrentStaff()?.name || 'Runner'}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={fetchOrdersAndRunners}
-              className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-              title="Refresh all orders"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
+          <div className="shrink-0 flex items-center gap-1">
             <SoundToggle className="hover:bg-slate-100 dark:hover:bg-slate-800" />
             <ThemeToggle className="text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" />
             <button
               type="button"
               onClick={() => logoutStaff()}
-              className="text-xs font-bold text-slate-500 hover:text-rose-500 px-2.5 py-1.5 cursor-pointer whitespace-nowrap"
+              title="Sign out"
+              aria-label="Sign out"
+              className="flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-rose-500 p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer whitespace-nowrap"
             >
-              Sign out
+              <LogOut className="w-4 h-4" />
+              <span className="hidden sm:inline">Sign out</span>
             </button>
           </div>
         </div>

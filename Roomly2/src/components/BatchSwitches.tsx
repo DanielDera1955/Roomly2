@@ -214,12 +214,15 @@ export const BatchSwitches: React.FC<BatchSwitchesProps> = ({ side = 'inside' })
   );
 };
 
-/** Admin: see every store and food operator and switch any of them off */
-export const OperatorOverridePanel: React.FC = () => {
+/** Admin: store or food operators (filtered by view) with a clear OFF / ON override */
+export const OperatorOverridePanel: React.FC<{ kind?: 'store' | 'food' }> = ({ kind }) => {
   useBatchTick();
   const [busy, setBusy] = useState('');
-  const ops = getAllOperatorStatus().sort((a: any, b: any) => String(a.kind).localeCompare(String(b.kind)));
+  const ops = getAllOperatorStatus()
+    .filter((op: any) => !kind || op.kind === kind)
+    .sort((a: any, b: any) => String(a.kind).localeCompare(String(b.kind)));
   const now = new Date();
+  const title = kind === 'food' ? 'Food operators' : kind === 'store' ? 'Store operators' : 'Store and food operators';
 
   const liveCount = (op: any) =>
     Object.entries(op.slots || {}).filter(([key, sw]: [string, any]) => {
@@ -227,10 +230,11 @@ export const OperatorOverridePanel: React.FC = () => {
       return o && switchIsLive(sw, 'outside', now) && switchStartDate(o, sw).getTime() > now.getTime();
     }).length;
 
-  const toggle = async (op: any) => {
+  const set = async (op: any, off: boolean) => {
+    if (Boolean(op.adminOff) === off) return;
     setBusy(op.id);
     try {
-      await setOperatorAdminOff(op.id, !op.adminOff);
+      await setOperatorAdminOff(op.id, off);
     } catch (e) {
       window.alert('Could not update this operator.');
     }
@@ -239,34 +243,63 @@ export const OperatorOverridePanel: React.FC = () => {
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-4 space-y-2">
-      <p className="text-xs font-black uppercase tracking-wider text-slate-500">Store and food operators</p>
+      <p className="text-xs font-black uppercase tracking-wider text-slate-500">{title}</p>
       {ops.length === 0 && (
         <p className="text-xs text-slate-400">Operators appear here after they sign in to their portal once.</p>
       )}
       {ops.map((op: any) => {
         const n = liveCount(op);
+        const off = Boolean(op.adminOff);
         return (
-          <div key={op.id} className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs">
+          <div
+            key={op.id}
+            className={`flex items-center justify-between gap-2 p-3 rounded-2xl text-xs border-2 ${
+              off ? 'bg-rose-50/60 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/50' : 'bg-emerald-50 dark:bg-emerald-950/30 border-[#0e9f55]'
+            }`}
+          >
             <div className="min-w-0">
-              <span className="font-bold text-slate-900 dark:text-white">{op.name || 'Operator'}</span>
-              <span className="block text-[11px] text-slate-500">
-                {op.kind === 'food' ? 'Food' : 'Store'} ·{' '}
-                {op.adminOff ? 'Switched off by you' : n > 0 ? `Taking orders (${n} batch${n === 1 ? '' : 'es'} on)` : 'Not taking orders'}
+              <span className="font-bold text-slate-900 dark:text-white">
+                {op.name || 'Operator'}
+                {!kind && <span className="font-normal text-slate-500"> · {op.kind === 'food' ? 'Food' : 'Store'}</span>}
+              </span>
+              <span className={`block text-[11px] font-bold ${off ? 'text-rose-600 dark:text-rose-400' : 'text-[#0e9f55]'}`}>
+                {off
+                  ? 'OFF: hidden from students until you switch ON'
+                  : n > 0
+                  ? `ON: taking orders (${n} batch${n === 1 ? '' : 'es'} on)`
+                  : "ON, but they haven't opened a batch"}
               </span>
             </div>
-            <button
-              type="button"
-              disabled={busy === op.id}
-              onClick={() => toggle(op)}
-              className={`px-3 py-1.5 rounded-lg font-bold text-xs cursor-pointer ${
-                op.adminOff ? 'bg-[#0e9f55] text-white' : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
-              }`}
-            >
-              {op.adminOff ? 'Allow again' : 'Switch off'}
-            </button>
+            <div className="shrink-0 grid grid-cols-2 rounded-xl overflow-hidden border border-slate-300 dark:border-slate-600">
+              <button
+                type="button"
+                disabled={busy === op.id || off}
+                onClick={() => set(op, true)}
+                aria-pressed={off}
+                className={`px-3 py-1.5 font-black text-xs cursor-pointer disabled:cursor-default ${
+                  off ? 'bg-rose-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-400'
+                }`}
+              >
+                OFF
+              </button>
+              <button
+                type="button"
+                disabled={busy === op.id || !off}
+                onClick={() => set(op, false)}
+                aria-pressed={!off}
+                className={`px-3 py-1.5 font-black text-xs cursor-pointer disabled:cursor-default ${
+                  !off ? 'bg-[#0e9f55] text-white' : 'bg-white dark:bg-slate-900 text-slate-400'
+                }`}
+              >
+                ON
+              </button>
+            </div>
           </div>
         );
       })}
+      <p className="text-[11px] text-slate-400 leading-snug">
+        Your OFF overrides the operator. They cannot take orders until you switch them back ON.
+      </p>
     </div>
   );
 };

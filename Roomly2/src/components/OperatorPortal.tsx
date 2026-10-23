@@ -272,7 +272,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
         {!isAdmin && <OperatorProductsPanel />}
 
         {/* Availability: operators set their own batches; the admin sees everyone and can switch them off */}
-        {isAdmin ? <OperatorOverridePanel /> : <BatchSwitches side={kind} />}
+        {isAdmin ? <OperatorOverridePanel kind={kind} /> : <BatchSwitches side={kind} />}
 
         <div className="flex items-center gap-2 overflow-x-auto py-0.5">
           {tabs.map(([key, label]) => (
