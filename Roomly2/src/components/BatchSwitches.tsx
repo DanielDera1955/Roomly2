@@ -10,6 +10,8 @@ import {
   setOperatorAdminOff,
   switchIsLive,
   switchStartDate,
+  batchOpen,
+  batchCloseDate,
 } from '../api.js';
 
 const toHHMM = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
@@ -43,7 +45,9 @@ const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?
   const live = switchIsLive(sw, side === 'inside' ? 'inside' : 'outside', now);
   const startMin = sw && Number.isFinite(sw.start) ? sw.start : o.startMin;
   // Only a live batch can be "sending"; an Off batch can still be given a later time and switched on
-  const started = live && switchStartDate(o, sw).getTime() <= now.getTime();
+  // Past the batch time but still ON: late orders keep joining this batch until it is switched OFF
+  const started = false;
+  const pastTime = live && switchStartDate(o, sw).getTime() <= now.getTime();
   const [time, setTime] = useState(toHHMM(startMin));
   const [note, setNote] = useState(sw?.note || '');
   const [busy, setBusy] = useState(false);
@@ -71,8 +75,8 @@ const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?
       return;
     }
     const start = Number.isFinite(startNum) ? startNum : o.startMin;
-    if (switchStartDate(o, { start }).getTime() <= Date.now()) {
-      window.alert('That start time has already passed. Set a later "will start sending by" time, then switch on.');
+    if (Date.now() >= batchCloseDate(o, side).getTime()) {
+      window.alert('This batch is over for today. Switch on the next batch instead.');
       return;
     }
     save({ on: true, start, note: note.trim().slice(0, 120) });
@@ -96,7 +100,9 @@ const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?
             {started
               ? 'Sending now. New orders go to the next batch.'
               : live
-              ? 'ON: you are taking orders for this batch'
+              ? pastTime
+                ? 'ON: past the batch time, still taking late orders. Tap OFF when you stop.'
+                : 'ON: you are taking orders for this batch'
               : 'OFF: students can still order, but they are told it is not opened yet'}
           </span>
         </div>
@@ -175,7 +181,7 @@ export const BatchSwitches: React.FC<BatchSwitchesProps> = ({ side = 'inside' })
   const mine = side === 'inside' ? null : getMyOperatorStatus();
   const switches: Record<string, any> = side === 'inside' ? getInsideSwitches() : mine?.slots || {};
   const days = [slotsForDay(side, now, 0), slotsForDay(side, now, 1)];
-  const cutoff = side === 'inside' ? '10pm' : '8pm';
+  const cutoff = side === 'inside' ? '10pm' : '7:30pm';
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 overflow-hidden">
@@ -198,15 +204,15 @@ export const BatchSwitches: React.FC<BatchSwitchesProps> = ({ side = 'inside' })
             <div key={i} className="space-y-1.5">
               <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{i === 0 ? 'Today' : 'Tomorrow'}</p>
               {slots
-                .filter((o) => i > 0 || switchStartDate(o, switches[o.key]).getTime() > now.getTime() - 3600000)
+                .filter((o) => i > 0 || now.getTime() < batchCloseDate(o, side).getTime() || switchIsLive(switches[o.key], side === 'inside' ? 'inside' : 'outside', now))
                 .map((o) => (
                   <SwitchRow key={o.key} side={side} o={o} sw={switches[o.key]} adminOff={mine?.adminOff} />
                 ))}
             </div>
           ))}
           <p className="text-[11px] text-slate-400 leading-snug">
-            Tap ON when you are ready to take a batch, and set the time you will start sending. Students can order even while it is OFF; they
-            are told the batch is not opened yet. Switches turn OFF by themselves after {cutoff}; switch back ON if you are still working.
+            Tap ON when you are ready to take a batch. After the batch time, leave it ON while you still take late orders, and tap OFF when you
+            stop. Students then see the next batch. Switches turn OFF by themselves after {cutoff}.
           </p>
         </div>
       )}
@@ -227,7 +233,7 @@ export const OperatorOverridePanel: React.FC<{ kind?: 'store' | 'food' }> = ({ k
   const liveCount = (op: any) =>
     Object.entries(op.slots || {}).filter(([key, sw]: [string, any]) => {
       const o = slotsForDay(op.kind, now, 0).concat(slotsForDay(op.kind, now, 1)).find((x) => x.key === key);
-      return o && switchIsLive(sw, 'outside', now) && switchStartDate(o, sw).getTime() > now.getTime();
+      return o && batchOpen(o, sw, op.kind, now);
     }).length;
 
   const set = async (op: any, off: boolean) => {

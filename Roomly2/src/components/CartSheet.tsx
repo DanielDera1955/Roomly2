@@ -154,7 +154,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const chosen = cart === 'inside'
     ? insideNext?.next || null
     : outside?.batch && chosenOp
-    ? { batch: outside.batch, start: chosenOp.start, startText: chosenOp.startText, by: chosenOp.name, unconfirmed: Boolean(outside.unconfirmed) }
+    ? { batch: outside.batch, start: chosenOp.start, startText: chosenOp.startText, late: Boolean(chosenOp.late), by: chosenOp.name, unconfirmed: Boolean(outside.unconfirmed) }
     : null;
   // The batch has not been opened by a runner / operator yet: ordering still works, the student just accepts it
   const unconfirmed = Boolean((chosen as any)?.unconfirmed);
@@ -178,14 +178,10 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const nowDate = new Date();
   const dayStart = new Date(nowDate);
   dayStart.setHours(0, 0, 0, 0);
-  const isLate = Boolean(
-    selectedBatch &&
-      !unconfirmed &&
-      (selectedBatch.dayLabel !== 'Today' ||
-        slotsForDay(cart, nowDate, 0).some(
-          (o) => o.key !== selectedBatch.key && dayStart.getTime() + o.startMin * 60000 <= nowDate.getTime()
-        ))
-  );
+  // Done for today: the batch is closed (switched OFF or past its last moment), so the order goes to another day
+  const isLate = Boolean(selectedBatch && selectedBatch.dayLabel !== 'Today');
+  const pastBatchTime = Boolean((chosen as any)?.late);
+  void dayStart;
   const [lateAccepted, setLateAccepted] = useState(false);
   useEffect(() => setLateAccepted(false), [selectedBatch?.key]);
 
@@ -666,7 +662,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               </h3>
             </div>
 
-            {unconfirmed && selectedBatch && (
+            {unconfirmed && !isLate && selectedBatch && (
               <label className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-xs text-amber-900 dark:text-amber-200 cursor-pointer">
                 <input
                   type="checkbox"
@@ -690,8 +686,10 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                   className="w-4 h-4 mt-0.5 accent-[#0e9f55]"
                 />
                 <span>
-                  <strong>The earlier batch is closed.</strong> Your order will come in the next batch:{' '}
-                  {selectedBatch.dayLabel === 'Today' ? 'today' : selectedBatch.dayLabel.toLowerCase()}, {selectedBatch.window}. Tick to accept.
+                  <strong>
+                    {cart === 'inside' ? 'The runners have' : 'This operator has'} stopped taking orders for today.
+                  </strong>{' '}
+                  Your order will go in the next batch: {selectedBatch.dayLabel.toLowerCase()}, {selectedBatch.window}. Tick to accept.
                 </span>
               </label>
             )}
@@ -708,9 +706,11 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                       {selectedBatch.dayLabel}, {selectedBatch.window}
                     </span>
                     <span className="block text-[11px] text-slate-500 dark:text-slate-400">
-                      {unconfirmed
+                      {pastBatchTime
+                        ? "It's past the batch time, but orders are still being accepted."
+                        : unconfirmed
                         ? `Not opened yet. Usually starts around ${chosen.startText}.`
-                        : `Still accepting orders, will start sending by ${chosen.startText}.`}
+                        : `Taking orders now. Starts sending around ${chosen.startText}.`}
                     </span>
                   </div>
                   <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
@@ -718,7 +718,9 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                   </span>
                 </div>
                 <p className="mt-2 text-[11px] font-bold text-amber-700 dark:text-amber-300">
-                  Pay before {payByText} to join the {selectedBatch.window} batch.
+                  {pastBatchTime
+                    ? `Pay within 15 minutes (before ${payByText}) to join this batch.`
+                    : `Pay before ${payByText} to join the ${selectedBatch.window} batch.`}
                 </p>
                 <p className="text-[10px] text-slate-400 mt-0.5">
                   Every order joins the next batch.{cart !== 'inside' ? ' Delivery is to the school gate.' : ''}

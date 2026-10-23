@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Clock, Store, UtensilsCrossed } from 'lucide-react';
 import { getNextBatch } from '../api.js';
-import { formatRemaining, slotsForDay, SwitchSide } from '../config';
+import { slotsForDay, SwitchSide } from '../config';
 
 interface DeliveryPromiseBannerProps {
   mode: 'inside' | 'outside';
@@ -27,7 +27,7 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
   const todayCount = slotsForDay(side, new Date(), 0).length;
   const { next, note } = getNextBatch(side);
   const Icon = side === 'inside' ? Clock : side === 'food' ? UtensilsCrossed : Store;
-  const title = side === 'inside' ? 'Delivery to your room' : side === 'food' ? 'Cooked food and drinks' : 'Outside store items';
+  const title = side === 'inside' ? 'Delivery to your room' : side === 'food' ? 'Cooked food' : 'Outside store items';
   const where = side === 'inside' ? 'to your room' : 'to the school gate';
 
   return (
@@ -38,24 +38,31 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
           <Icon className="w-3.5 h-3.5" />
           {title} · {todayCount} {todayCount === 1 ? 'batch' : 'batches'} today
         </p>
-        {next && next.unconfirmed ? (
+        {next && next.batch.dayLabel !== 'Today' ? (
           <>
-            <h2 className="text-lg font-extrabold tracking-tight">
-              Next batch: {next.batch.dayLabel}, {next.batch.window}
-            </h2>
+            <h2 className="text-lg font-extrabold tracking-tight">{todayCount > 0 ? 'Done for today' : 'No batch today'}</h2>
             <p className="text-xs text-emerald-100/90">
-              Not opened yet, but you can order now. Your order joins this batch once the {side === 'inside' ? 'runner' : 'operator'} starts it.
+              Next batch: {next.batch.dayLabel.toLowerCase()}, {next.batch.window}. You can still order now.
               {note ? ` ${note}` : ''}
+            </p>
+          </>
+        ) : next && next.late ? (
+          <>
+            <h2 className="text-lg font-extrabold tracking-tight">Today's batch: {next.batch.window}</h2>
+            <p className="text-xs text-emerald-100/90">It's past the batch time, but orders are still being accepted. Order now.</p>
+          </>
+        ) : next && next.unconfirmed ? (
+          <>
+            <h2 className="text-lg font-extrabold tracking-tight">Today's batch: {next.batch.window}</h2>
+            <p className="text-xs text-emerald-100/90">
+              Orders are open. Order now to make today's batch ({where}).{note ? ` ${note}` : ''}
             </p>
           </>
         ) : next ? (
           <>
-            <h2 className="text-lg font-extrabold tracking-tight">
-              Next batch: {next.batch.dayLabel}, {next.batch.window}
-            </h2>
+            <h2 className="text-lg font-extrabold tracking-tight">Taking orders now</h2>
             <p className="text-xs text-emerald-100/90">
-              Still accepting orders, will start sending by {next.startText} ({where}). Order within{' '}
-              <strong className="text-white">{formatRemaining(next.start.getTime() - Date.now())}</strong>.
+              Today's batch runs from {next.batch.window} ({where}). Order now to make it.
             </p>
           </>
         ) : (
