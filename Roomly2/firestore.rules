@@ -34,6 +34,31 @@ service cloud.firestore {
     match /catalog/{doc} {
       allow read: if true;
       allow write: if isAdmin();
+      // catalog/extra: products runners and operators add by quoting a student's request (add only, never remove)
+      allow create, update: if doc == 'extra'
+        && (isRunner() || isOperator('store') || isOperator('food'))
+        && request.resource.data.products.size() <= 2000
+        && (resource == null || request.resource.data.products.size() >= resource.data.get('products', []).size());
+    }
+
+    // ---------- product requests from students ----------
+    // Anyone may send one; the id works like an order id. Runners see inside requests, operators their own kind.
+    match /productRequests/{id} {
+      allow get: if true;
+      allow list: if isStaff()
+        || (isOperator('store') && resource.data.side == 'store')
+        || (isOperator('food') && resource.data.side == 'food');
+      allow create: if request.resource.data.status == 'open'
+        && request.resource.data.side in ['inside', 'store', 'food']
+        && request.resource.data.items.size() > 0 && request.resource.data.items.size() <= 15;
+      // The first reply wins: only an open request can be quoted, by the right kind of staff
+      allow update: if isAdmin() ||
+        (resource.data.status == 'open' && request.resource.data.status == 'quoted'
+         && request.resource.data.quotedBy.uid == request.auth.uid
+         && ((resource.data.side == 'inside' && isRunner())
+             || (resource.data.side == 'store' && isOperator('store'))
+             || (resource.data.side == 'food' && isOperator('food'))));
+      allow delete: if isAdmin();
     }
 
     // ---------- store settings (open/closed override) ----------
@@ -160,6 +185,12 @@ service cloud.firestore {
          && resource.data.paymentStatus == 'unpaid'
          && request.resource.data.paymentStatus == 'payment_sent'
          && request.resource.data.payReady == true) ||
+        // Customers may ask for gate to room pickup on an outside order (again if a runner refused)
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['gateReq', 'gatePickup', 'history'])
+         && resource.data.get('cart', '') in ['store', 'food']
+         && (resource.data.get('gatePickup', null) == null || resource.data.gatePickup.status in ['refused', 'refunded'])
+         && request.resource.data.gatePickup.status == 'pending'
+         && request.resource.data.gatePickup.fee == 600) ||
         (isOperator('store') && resource.data.hasStore == true && resource.data.payReady == true
          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['storeStatus', 'history', 'status', 'deliveredAt'])
          && (request.resource.data.status == resource.data.status
