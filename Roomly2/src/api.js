@@ -902,6 +902,7 @@ export async function createOrder(orderPayload) {
     operatorId: orderPayload.operatorId || '',
     operatorName: orderPayload.operatorName || '',
     turnRunner: orderPayload.turnRunner || '',
+    lateBatch: Boolean(orderPayload.lateBatch),
     payTo: orderPayload.payTo || null,
     outOfStock: orderPayload.outOfStock || 'refund',
     gateReq: Boolean(orderPayload.gatePickup && (cart === 'store' || cart === 'food')),
@@ -2283,4 +2284,180 @@ export async function runnerSetStock(productId, inStock) {
 /** @returns {Promise<any[]>} */
 export async function getProductsFresh() {
   return (await readCatalog(true)).products;
+}
+
+/* ---------------- Admin dashboard (Fix batch 3b) ----------------
+ * statsDaily/{yyyy-mm-dd}: one small summary per day, built from that day's orders.
+ * Days older than 2 days are saved once and then just read; the last 2 days are counted live
+ * (orders can still complete). The first open imports past orders the same way.
+ */
+
+const STORE_OF_ORDER = (o) =>
+  o.cart === 'store' || o.cart === 'food'
+    ? o.cart
+    : o.cart === 'inside'
+    ? 'inside'
+    : o.hasStore && !o.hasFood
+    ? 'store'
+    : o.hasFood && !o.hasStore
+    ? 'food'
+    : 'inside';
+
+const emptyStore = () => ({
+  placed: 0,
+  unpaid: 0,
+  completed: 0,
+  sales: 0,
+  earnings: 0,
+  late: 0,
+  firstTime: 0,
+  products: {},
+  categories: {},
+  hours: {},
+  hostels: {},
+  batches: {},
+  customers: {},
+  oos: {},
+  team: {},
+});
+
+/** Your earnings on one completed order, and per product line (estimated where no cost price is set) */
+function orderMoney(o, products) {
+  const store = STORE_OF_ORDER(o);
+  const lines = [];
+  let margin = 0;
+  for (const i of o.items || []) {
+    const inside = store === 'inside';
+    if (!inside && i.source !== (store === 'food' ? 'food' : 'outside')) continue;
+    if (inside && i.source && i.source !== 'school') continue;
+    const c = costOf(i, products, inside);
+    const m = Math.max(0, (i.totalPrice || 0) - c.cost);
+    margin += m;
+    lines.push({ i, m: inside ? m * (1 - RUNNER_SHARE) : m });
+  }
+  const earnings =
+    store === 'inside' ? (margin + (o.deliveryFee || 0)) * (1 - RUNNER_SHARE) : margin + (o.cart === store ? OP_OWE_PER_CART : OP_OWE_PER_CART / 2);
+  return { store, earnings, lines };
+}
+
+/** Pure: turn a list of orders into per-day summaries. Exported so the maths can be tested. */
+export function summarizeOrders(orders, products) {
+  const days = {};
+  for (const o of orders) {
+    if (!o || !o.createdAt || o.status === 'Cancelled') continue;
+    const d = new Date(o.createdAt);
+    const day = ymdOf(d);
+    const s = (days[day] = days[day] || { date: day, stores: { inside: emptyStore(), store: emptyStore(), food: emptyStore() } });
+    const { store, earnings, lines } = orderMoney(o, products);
+    const t = s.stores[store];
+    t.placed++;
+    if (o.paymentStatus === 'unpaid') {
+      t.unpaid++;
+      continue;
+    }
+    if (o.lateBatch) t.late++;
+    const batch = (String(o.deliveryTime || '').match(/\(([^)]+)\)/) || [])[1] || 'Other';
+    t.batches[batch] = (t.batches[batch] || 0) + 1;
+    t.hours[d.getHours()] = (t.hours[d.getHours()] || 0) + 1;
+    if (o.area !== 'Custom' && o.building) t.hostels[o.building] = (t.hostels[o.building] || 0) + 1;
+    t.customers[o.phone] = (t.customers[o.phone] || 0) + 1;
+    if (o.isFirstTimeCustomer) t.firstTime++;
+    if (o.outOfStock) t.oos[o.outOfStock] = (t.oos[o.outOfStock] || 0) + 1;
+    if (o.status !== 'Delivered') continue;
+    // Completed: money, products, team
+    t.completed++;
+    t.sales += o.totalAmount || 0;
+    t.earnings += earnings;
+    for (const { i, m } of lines) {
+      const key = String(i.productId || i.name).replace(/[.#$/\[\]]/g, '_');
+      const p = products.find((x) => x.id === i.productId);
+      const name = p ? p.name : String(i.name).replace(/\s*\(\d+ plates?\)$/, '');
+      const cur = (t.products[key] = t.products[key] || { name, category: (p && p.category) || '', qty: 0, sales: 0, earnings: 0 });
+      cur.qty += i.quantity || 1;
+      cur.sales += i.totalPrice || 0;
+      cur.earnings += m;
+      const ck = (p && p.category) || 'No category';
+      const cc = (t.categories[ck] = t.categories[ck] || { qty: 0, sales: 0, earnings: 0 });
+      cc.qty += i.quantity || 1;
+      cc.sales += i.totalPrice || 0;
+      cc.earnings += m;
+    }
+    const who = store === 'inside' ? o.runnerName || o.turnRunner || 'Unknown runner' : o.operatorName || 'Unknown operator';
+    const tm = (t.team[who] = t.team[who] || { orders: 0, confirmMins: 0, confirmed: 0 });
+    tm.orders++;
+    if (o.paymentSentAt && o.paymentConfirmedAt) {
+      const mins = (Date.parse(o.paymentConfirmedAt) - Date.parse(o.paymentSentAt)) / 60000;
+      if (mins >= 0 && mins < 24 * 60) {
+        tm.confirmMins += mins;
+        tm.confirmed++;
+      }
+    }
+  }
+  return days;
+}
+
+/**
+ * Admin: summaries for every day from `from` to `to` (yyyy-mm-dd). Saved days are read; the rest are
+ * counted from orders, and days older than 2 days are saved for next time.
+ */
+/** @returns {Promise<any[]>} */
+export async function getDaySummaries(from, to) {
+  const saved = {};
+  try {
+    const snap = await getDocs(query(collection(db, 'statsDaily'), where(documentId(), '>=', from), where(documentId(), '<=', to)));
+    snap.forEach((d) => (saved[d.id] = d.data()));
+  } catch (e) {
+    console.error(e);
+  }
+  const today = new Date();
+  const liveFrom = new Date(today);
+  liveFrom.setDate(today.getDate() - 2);
+  const liveDay = ymdOf(liveFrom);
+  // Days to count from orders: not saved yet, or still live
+  const need = [];
+  for (let d = new Date(from + 'T00:00:00'); ymdOf(d) <= to; d.setDate(d.getDate() + 1)) {
+    const k = ymdOf(d);
+    if (!saved[k] || k >= liveDay) need.push(k);
+  }
+  if (need.length) {
+    const start = new Date(need[0] + 'T00:00:00');
+    const end = new Date(need[need.length - 1] + 'T00:00:00');
+    end.setDate(end.getDate() + 1);
+    const snap = await getDocs(
+      query(collection(db, 'orders'), where('createdAt', '>=', start.toISOString()), where('createdAt', '<', end.toISOString()), limit(5000))
+    );
+    const orders = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+    const products = (await readCatalog()).products || [];
+    const counted = summarizeOrders(orders, products);
+    for (const k of need) {
+      const sum = counted[k] || { date: k, stores: { inside: emptyStore(), store: emptyStore(), food: emptyStore() } };
+      saved[k] = sum;
+      if (k < liveDay) setDoc(doc(db, 'statsDaily', k), slim(sum)).catch((e) => console.error(e));
+    }
+  }
+  return Object.keys(saved)
+    .filter((k) => k >= from && k <= to)
+    .sort()
+    .map((k) => saved[k]);
+}
+
+/** Admin: student product requests in a date range (for "demand you're missing") */
+/** @returns {Promise<any[]>} */
+export async function getRequestsRange(from, to) {
+  try {
+    const end = new Date(to + 'T00:00:00');
+    end.setDate(end.getDate() + 1);
+    const snap = await getDocs(
+      query(
+        collection(db, 'productRequests'),
+        where('createdAt', '>=', new Date(from + 'T00:00:00').toISOString()),
+        where('createdAt', '<', end.toISOString()),
+        limit(1000)
+      )
+    );
+    return snap.docs.map((d) => d.data());
+  } catch (e) {
+    console.error(e);
+    return [];
+  }
 }
