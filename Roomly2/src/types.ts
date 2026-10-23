@@ -102,6 +102,9 @@ export interface OrderRecord {
     runnerPhone?: string;
     note?: string;
     updatedAt?: string;
+    runnerPay?: { bankName: string; accountNumber: string; accountName: string } | null;
+    paid?: boolean;
+    paidAt?: string;
   };
 }
 

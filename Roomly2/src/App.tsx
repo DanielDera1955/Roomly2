@@ -815,6 +815,7 @@ export default function App() {
           cart={cartKind}
           cartCounts={cartCounts}
           onSwitchCart={setCartKind}
+          allItems={cartItems}
           items={cartItems.filter((i) => cartOf(i) === cartKind)}
           customRequest={cartKind === 'inside' ? customRequest : ''}
           onUpdateQuantity={handleUpdateCartQuantity}

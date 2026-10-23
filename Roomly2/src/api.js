@@ -922,8 +922,8 @@ export async function createOrder(orderPayload) {
   const deliveryFee = deliveryFeeFor(subtotal, hasOutside);
   const totalAmount = subtotal + deliveryFee;
 
-  let paymentMethod = orderPayload.paymentMethod;
-  if ((isRepeatCustomer || hasOutside) && paymentMethod === 'pay_on_delivery') paymentMethod = 'pay_now';
+  // Everyone pays first (pay on delivery has been removed)
+  const paymentMethod = 'pay_now';
 
   const now = new Date();
   const createdAtIso = now.toISOString();
@@ -1838,6 +1838,8 @@ export async function updateGatePickup(orderId, action, heavy = false) {
         gp.fee = heavy ? GATE_PICKUP_FEES.heavy : GATE_PICKUP_FEES.normal;
         gp.runnerName = who;
         gp.runnerPhone = staff?.phone || '';
+        gp.runnerPay = staff?.payAccount || null; // the student pays the runner this account
+        gp.paid = false;
       }
       gp.status = status;
       gp.updatedAt = new Date().toISOString();
@@ -2086,12 +2088,18 @@ export async function quoteProductRequest(reqId, costs, category) {
 
 /** Student: ask an inside runner to bring an outside order from the gate to the room (₦600, ₦1,000 if heavy) */
 /** @returns {Promise<any>} */
-export async function requestGatePickup(orderId) {
+export async function requestGatePickup(orderId, building = '', room = '') {
   try {
     return await patchOrder(orderId, (o) => {
       if (o.cart !== 'store' && o.cart !== 'food') throw new Error('Only outside orders');
       if (o.gatePickup && o.gatePickup.status !== 'refused' && o.gatePickup.status !== 'refunded') return;
       const now = new Date().toISOString();
+      // Where the runner should bring it
+      if (building && room) {
+        o.area = 'Hostels';
+        o.building = String(building).slice(0, 40);
+        o.room = String(room).replace(/\s+/g, '').toUpperCase().slice(0, 8);
+      }
       o.gateReq = true;
       o.gatePickup = { status: 'pending', fee: GATE_PICKUP_FEES.normal, heavy: false, updatedAt: now };
       o.history.push({ status: o.status, timestamp: now, note: 'Student asked for gate to room pickup', updatedBy: o.name || 'Customer' });
@@ -2508,5 +2516,21 @@ export async function getRequestsRange(from, to) {
   } catch (e) {
     console.error(e);
     return [];
+  }
+}
+
+/** Student: they paid the runner for gate to room pickup */
+/** @returns {Promise<any>} */
+export async function markGatePickupPaid(orderId) {
+  try {
+    return await patchOrder(orderId, (o) => {
+      if (!o.gatePickup || o.gatePickup.status !== 'accepted' || o.gatePickup.paid) return;
+      const now = new Date().toISOString();
+      o.gatePickup = { ...o.gatePickup, paid: true, paidAt: now };
+      o.history.push({ status: o.status, timestamp: now, note: 'Student paid the runner for gate to room pickup', updatedBy: o.name || 'Customer' });
+    });
+  } catch (e) {
+    console.error(e);
+    return null;
   }
 }
