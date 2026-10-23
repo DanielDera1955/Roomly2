@@ -306,8 +306,40 @@ export function switchStartDate(opt, sw) {
   return new Date(day.getTime() + min * 60000);
 }
 
-function accepting(opt, sw, side, now) {
-  return switchIsLive(sw, side, now) && switchStartDate(opt, sw).getTime() > now.getTime();
+/**
+ * A batch keeps taking late orders after its start time until the runner / operator switches it OFF.
+ * The last moment it can: the next batch's start the same day, or the night cut-off.
+ */
+export function batchCloseDate(opt, side) {
+  const day = new Date(opt.date + 'T00:00:00');
+  const cut = side === 'inside' ? SWITCH_CUTOFF_MIN.inside : SWITCH_CUTOFF_MIN.outside;
+  const later = slotsForDay(side, day, 0)
+    .map((o) => o.startMin)
+    .filter((m) => m > opt.startMin)
+    .sort((a, b) => a - b)[0];
+  return new Date(day.getTime() + Math.min(later ?? cut, cut) * 60000);
+}
+
+/** Switched ON and not past the batch's last moment. side: 'inside' | 'store' | 'food' */
+export function batchOpen(opt, sw, side, now = new Date()) {
+  return switchIsLive(sw, side === 'inside' ? 'inside' : 'outside', now) && now.getTime() < batchCloseDate(opt, side).getTime();
+}
+const accepting = (opt, sw, side, now) => batchOpen(opt, sw, side, now);
+
+/** Past the start time: still open, but the student gets 15 minutes to pay */
+const LATE_PAY_MS = 15 * 60000;
+const payDeadline = (start, now) => (start.getTime() > now.getTime() ? start : new Date(now.getTime() + LATE_PAY_MS));
+
+/** Someone opened this batch and has since switched it OFF: it is done for the day */
+function closedByStaff(opt, side) {
+  if (side === 'inside') {
+    const sw = insideSwitches[opt.key];
+    return Boolean(sw && sw.on === false && sw.at);
+  }
+  return activeOperators(side).some((op) => {
+    const sw = (op.slots || {})[opt.key];
+    return sw && sw.on === false && sw.at;
+  });
 }
 
 /** A day must be cleared before 6am the next morning; after that the provider is hidden from checkout */
@@ -338,7 +370,10 @@ export function getNextBatch(side, now = new Date()) {
         const blocked = sw && sw.byUid && isOverdue(runnerUnsettled[sw.byUid], now);
         if (!blocked && accepting(opt, sw, 'inside', now)) {
           const start = switchStartDate(opt, sw);
-          return { next: { batch: opt, start, startText: startTextOf(start), by: sw.by || '', payTo: runnerPay[sw.byUid] || sw.payTo || null }, note: '' };
+          return {
+            next: { batch: opt, start: payDeadline(start, now), startText: startTextOf(start), late: start <= now, by: sw.by || '', payTo: runnerPay[sw.byUid] || sw.payTo || null },
+            note: '',
+          };
         }
         if (sw && sw.note) notes.push(sw.note);
       } else {
@@ -346,12 +381,16 @@ export function getNextBatch(side, now = new Date()) {
         let best = null;
         for (const op of activeOperators(side)) {
           const sw = (op.slots || {})[opt.key];
-          if (accepting(opt, sw, 'outside', now)) {
+          if (accepting(opt, sw, side, now)) {
             const start = switchStartDate(opt, sw);
             if (!best || start < best.start) best = { start, by: op.name || '' };
           } else if (sw && sw.note) notes.push(sw.note);
         }
-        if (best) return { next: { batch: opt, start: best.start, startText: startTextOf(best.start), by: best.by }, note: '' };
+        if (best)
+          return {
+            next: { batch: opt, start: payDeadline(best.start, now), startText: startTextOf(best.start), late: best.start <= now, by: best.by },
+            note: '',
+          };
       }
     }
   }
@@ -362,17 +401,26 @@ export function getNextBatch(side, now = new Date()) {
   const who = side === 'inside' ? fallbackRunner(now) : fallbackOperators(side)[0];
   if (!who) return { next: null, note: notes[0] || '' };
   return {
-    next: { batch: fb.opt, start: fb.start, startText: startTextOf(fb.start), by: who.name || '', payTo: who.payTo || null, unconfirmed: true },
+    next: {
+      batch: fb.opt,
+      start: payDeadline(fb.start, now),
+      startText: startTextOf(fb.start),
+      late: fb.start <= now,
+      by: who.name || '',
+      payTo: who.payTo || null,
+      unconfirmed: true,
+    },
     note: notes[0] || '',
   };
 }
 
-/** The next batch on the timetable that has not started yet (today or the next two days) */
+/** The next batch on the timetable still open: not closed by staff and not past its last moment */
 function scheduledNext(side, now = new Date()) {
   for (let d = 0; d < 3; d++) {
     for (const opt of slotsForDay(side, now, d)) {
-      const start = switchStartDate(opt, null);
-      if (start.getTime() > now.getTime()) return { opt, start };
+      if (now.getTime() >= batchCloseDate(opt, side).getTime()) continue;
+      if (closedByStaff(opt, side)) continue;
+      return { opt, start: switchStartDate(opt, null) };
     }
   }
   return null;
@@ -414,10 +462,10 @@ export function getOutsideChoices(kind, now = new Date()) {
       const ops = [];
       for (const op of activeOperators(kind)) {
         const sw = (op.slots || {})[opt.key];
-        if (accepting(opt, sw, 'outside', now)) {
+        if (accepting(opt, sw, kind, now)) {
           const start = switchStartDate(opt, sw);
           const load = op.load && op.load.date === today ? op.load.count || 0 : 0;
-          ops.push({ uid: op.id, name: op.name || 'Operator', start, startText: startTextOf(start), load, payTo: op.payTo || null });
+          ops.push({ uid: op.id, name: op.name || 'Operator', start: payDeadline(start, now), startText: startTextOf(start), late: start <= now, load, payTo: op.payTo || null });
         }
       }
       if (ops.length) return { batch: opt, operators: ops.sort((a, b) => a.load - b.load) };
@@ -426,7 +474,12 @@ export function getOutsideChoices(kind, now = new Date()) {
   // Nobody has opened a batch yet: still let the student order into the next scheduled batch
   const { note } = getNextBatch(kind, now);
   const fb = scheduledNext(kind, now);
-  const ops = fallbackOperators(kind).map((o) => ({ ...o, start: fb ? fb.start : null, startText: fb ? startTextOf(fb.start) : '' }));
+  const ops = fallbackOperators(kind).map((o) => ({
+    ...o,
+    start: fb ? payDeadline(fb.start, now) : null,
+    startText: fb ? startTextOf(fb.start) : '',
+    late: fb ? fb.start <= now : false,
+  }));
   if (fb && ops.length) return { batch: fb.opt, operators: ops, note, unconfirmed: true };
   return { batch: null, operators: [], note };
 }

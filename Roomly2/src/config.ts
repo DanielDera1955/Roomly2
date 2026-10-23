@@ -270,18 +270,18 @@ export function formatRemaining(ms: number): string {
 }
 
 // ---------- Outside school schedule ----------
-/** Outside store items: two batches a day, 12:30 to 1:30pm and 5:00 to 6:30pm */
+/** Outside store items: two batches a day, 12:30 to 1:30pm and 5 to 7pm */
 export const OUTSIDE_STORE_BATCHES: BatchSlotDef[] = [
   { id: 'afternoon', name: 'Afternoon store batch', startMin: T(12, 30), endMin: T(13, 30), orderByMin: T(12) },
-  { id: 'late', name: 'Evening store batch', startMin: T(17), endMin: T(18, 30), orderByMin: T(16, 30) },
+  { id: 'late', name: 'Evening store batch', startMin: T(17), endMin: T(19), orderByMin: T(16, 30) },
 ];
-/** Outside food: one batch a day, arriving about 5:30 to 6:30pm */
+/** Outside food: one batch a day, 5 to 7pm */
 export const OUTSIDE_FOOD_BATCH: BatchSlotDef = {
   id: 'evening',
   name: 'Food batch',
-  startMin: T(17, 30),
-  endMin: T(18, 30),
-  orderByMin: T(17),
+  startMin: T(17),
+  endMin: T(19),
+  orderByMin: T(16, 30),
 };
 
 /** Next outside batch still taking orders. kind 'store' or 'food'. */
@@ -309,8 +309,8 @@ export function slotsForDay(side: SwitchSide, base: Date, dayOffset: number): Ba
   const defs = side === 'food' ? [OUTSIDE_FOOD_BATCH] : OUTSIDE_STORE_BATCHES;
   return defs.map((s) => buildOption(day, dayOffset, s));
 }
-/** Switches turn themselves off at night: 10pm inside, 8pm outside */
-export const SWITCH_CUTOFF_MIN = { inside: T(22), outside: T(20) };
+/** Switches turn themselves off at night: 10pm inside, 7:30pm outside (safety net for a forgotten switch) */
+export const SWITCH_CUTOFF_MIN = { inside: T(22), outside: T(19, 30) };
 
 /** "will start sending by 2pm" style label for a batch */
 export const startLabel = (opt: BatchOption): string => {
