@@ -43,6 +43,7 @@ import {
   uploadProductImage,
   getCategories,
   addCategory,
+  deleteCategory,
   addSubcategory,
   deleteSubcategory,
   getProducts,
@@ -205,6 +206,26 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
     const updated = await addSubcategory(catName, subName.trim());
     setCategories(updated);
     setNewSubcatName((prev) => ({ ...prev, [catName]: '' }));
+  };
+
+  // Move one product to another category straight from the product list
+  const handleMoveProduct = async (product: Product, category: string) => {
+    if (!category || category === product.category) return;
+    try {
+      const updated = await saveProduct({ id: product.id, category, subcategory: 'All' });
+      setProducts(updated);
+    } catch (e: any) {
+      window.alert(e?.message || 'Could not move this product.');
+    }
+  };
+
+  const handleDeleteCategory = async (catName: string) => {
+    if (!window.confirm(`Delete the category "${catName}"?`)) return;
+    try {
+      setCategories(await deleteCategory(catName));
+    } catch (e: any) {
+      window.alert(e?.message || 'Could not delete this category.');
+    }
   };
 
   const handleDeleteSubcategory = async (catName: string, subName: string) => {
@@ -1144,9 +1165,22 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                             </span>
                           )}
                         </div>
-                        <span className="text-[10px] text-slate-400 block truncate">
-                          {p.category} › {p.subcategory} {p.unit ? `(${p.unit})` : ''}
-                        </span>
+                        <select
+                          value={p.category}
+                          onChange={(e) => handleMoveProduct(p, e.target.value)}
+                          className="mt-0.5 max-w-full text-[10px] font-semibold px-1.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 cursor-pointer"
+                          title="Move to another category"
+                        >
+                          {!categories.some((c) => c.name === p.category) && <option value={p.category}>{p.category}</option>}
+                          {categories
+                            .filter((c) => c.name !== 'Request')
+                            .map((c) => (
+                              <option key={c.id || c.name} value={c.name}>
+                                {c.name}
+                              </option>
+                            ))}
+                        </select>
+                        {p.unit && <span className="text-[10px] text-slate-400 block truncate">{p.unit}</span>}
                       </div>
                     </div>
 
@@ -1513,9 +1547,21 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                         {cat.name}
                       </h4>
                     </div>
-                    <span className="text-[11px] text-slate-400">
-                      {cat.subcategories.length - 1} subcategories
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-slate-400">
+                        {products.filter((p) => p.category === cat.name).length} products
+                      </span>
+                      {cat.name !== 'Request' && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCategory(cat.name)}
+                          className="p-1 text-slate-400 hover:text-rose-500 cursor-pointer"
+                          title="Delete category (only when it has no products)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Subcategories Pills */}
