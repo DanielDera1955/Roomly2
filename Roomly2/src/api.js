@@ -1337,7 +1337,7 @@ function costOf(item, products, inside = false) {
 const dayId = (uid, day) => `${uid}_${day}`;
 
 /** Add one delivered order (or gate fee) to the signed-in provider's record for today. Counted once per key. */
-async function addToMyDay(kind, key, add, estimated, day = ymdOf(new Date())) {
+async function addToMyDay(kind, key, add, estimated, day = ymdOf(new Date()), cart = null) {
   const uid = auth.currentUser?.uid;
   const staff = getCurrentStaff();
   if (!uid || !staff) return;
@@ -1361,11 +1361,19 @@ async function addToMyDay(kind, key, add, estimated, day = ymdOf(new Date())) {
           settled: false,
           payments: [],
           keys: [],
+          carts: [],
+          objections: {},
+          cleared: false,
           estimated: false,
         };
     if ((d.keys || []).includes(key)) return;
     created = !snap.exists();
     const next = { ...d, keys: [...(d.keys || []), key], estimated: Boolean(d.estimated || estimated), updatedAt: Date.now() };
+    // One line per completed cart, so the provider and the admin see the maths cart by cart
+    if (cart) {
+      next.carts = [...(d.carts || []), slim(cart)];
+      next.cleared = false; // a new cart needs clearing again
+    }
     Object.entries(add).forEach(([k, v]) => {
       next[k] = Math.round(((next[k] || 0) + v) * 100) / 100;
     });
@@ -1406,19 +1414,24 @@ async function recordOperatorDelivery(order, kind) {
   const share = order.hasStore && order.hasFood ? 0.5 : 1; // only older mixed orders
   const deliveryKeep = OP_KEEP_PER_CART * share;
   const deliveryOwe = OP_OWE_PER_CART * share;
+  const cartPaid = paid + deliveryKeep + deliveryOwe;
+  const cartKeep = keep + deliveryKeep;
+  const cartOwed = Math.max(0, paid - keep) + deliveryOwe;
   await addToMyDay(
     kind,
     order.id,
     {
       orders: 1,
-      paid: paid + deliveryKeep + deliveryOwe,
+      paid: cartPaid,
       itemsPaid: paid,
       itemsCost: keep,
       deliveryKeep,
       keep: keep + deliveryKeep,
-      due: Math.max(0, paid - keep) + deliveryOwe,
+      due: cartOwed,
     },
-    estimated
+    estimated,
+    undefined,
+    { orderId: order.id, customer: order.name || '', paid: cartPaid, keep: cartKeep, owed: cartOwed, estimated }
   );
 }
 
@@ -1466,7 +1479,17 @@ async function recordRunnerDelivery(order) {
       owedToHelpers: helperShare,
       sharedOrders: order.helperEmail ? 1 : 0,
     },
-    estimated
+    estimated,
+    undefined,
+    {
+      orderId: order.id,
+      customer: order.name || '',
+      paid: paid + fee,
+      keep: spent + share - helperShare,
+      owed: Math.round(profit * (1 - RUNNER_SHARE) * 100) / 100,
+      helper: order.helperName || '',
+      estimated,
+    }
   );
   // Keep the numbers on the order, so the helper's share and a later helper can be worked out exactly
   try {
@@ -1997,5 +2020,124 @@ export async function requestGatePickup(orderId) {
   } catch (e) {
     console.error(e);
     return null;
+  }
+}
+
+/* ---------------- Fix batch 2: order stages, clear / object settlement, admin views ----------------
+ * Stages: Active (student says paid) -> Payment Confirmed (provider checked their account) -> Completed.
+ * Settlement: each provider's day lists its completed carts (paid - keep = owed). The provider taps
+ * All cleared, or objects to a cart with a reason; the admin corrects the amount or dismisses it.
+ * After clearing, the provider sends the money and taps "I have sent"; the admin confirms receipt.
+ */
+
+/** Which stage an order is in: 'unpaid' | 'active' | 'confirmed' | 'completed' | 'cancelled' */
+export function orderStage(o) {
+  if (!o) return 'unpaid';
+  if (o.status === 'Cancelled') return 'cancelled';
+  if (o.status === 'Delivered') return 'completed';
+  if (o.paymentStatus === 'payment_confirmed') return 'confirmed';
+  if (o.paymentStatus === 'payment_sent' || o.paymentStatus === 'pay_on_delivery') return 'active';
+  return 'unpaid';
+}
+
+/** Store / food operator: they checked their account and the student's money arrived */
+/** @returns {Promise<any>} */
+export async function operatorConfirmPayment(orderId) {
+  const staff = getCurrentStaff();
+  const who = staff?.name || 'Operator';
+  try {
+    return await patchOrder(orderId, (o) => {
+      if (o.paymentStatus !== 'payment_sent') return;
+      const now = new Date().toISOString();
+      o.paymentStatus = 'payment_confirmed';
+      o.paymentConfirmedAt = now;
+      o.paymentConfirmedBy = who;
+      o.history.push({ status: o.status, timestamp: now, note: `Payment confirmed by ${who}`, updatedBy: who });
+    });
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
+}
+
+/** Provider: agree with the day's statement. Not allowed while an objection is open. */
+/** @returns {Promise<void>} */
+export async function clearMyDay(id) {
+  const ref = doc(db, 'settlements', id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('Record not found');
+  const open = Object.values(snap.data().objections || {}).filter((x) => x && x.status === 'open').length;
+  if (open) throw new Error('You have an open objection. Wait for Roomly to answer it first.');
+  await updateDoc(ref, { cleared: true, clearedAt: new Date().toISOString() });
+}
+
+/** Provider: object to one cart, with the reason */
+/** @returns {Promise<void>} */
+export async function objectToCart(id, orderId, reason) {
+  const r = String(reason || '').trim().slice(0, 300);
+  if (!r) throw new Error('Say why this cart is wrong');
+  await updateDoc(doc(db, 'settlements', id), {
+    [`objections.${orderId}`]: { reason: r, status: 'open', at: new Date().toISOString(), reply: '' },
+    cleared: false,
+  });
+}
+
+/**
+ * Admin: answer an objection. newOwed = corrected amount owed on that cart (null = dismiss, amount stays).
+ */
+/** @returns {Promise<void>} */
+export async function adminResolveObjection(id, orderId, newOwed, reply) {
+  const ref = doc(db, 'settlements', id);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error('Record not found');
+    const d = snap.data();
+    const obj = (d.objections || {})[orderId];
+    if (!obj) throw new Error('No objection on this cart');
+    const patch = {
+      [`objections.${orderId}`]: {
+        ...obj,
+        status: newOwed === null ? 'dismissed' : 'corrected',
+        reply: String(reply || '').slice(0, 300),
+        answeredAt: new Date().toISOString(),
+      },
+    };
+    if (newOwed !== null) {
+      const amt = Math.max(0, Math.round(Number(newOwed) || 0));
+      const carts = (d.carts || []).map((c) => (c.orderId === orderId ? { ...c, owed: amt, keep: Math.max(0, (c.paid || 0) - amt) } : c));
+      const old = (d.carts || []).find((c) => c.orderId === orderId);
+      const delta = amt - (old ? old.owed || 0 : 0);
+      patch.carts = carts;
+      patch.due = Math.max(0, Math.round(((d.due || 0) + delta) * 100) / 100);
+      patch.keep = Math.round(((d.keep || 0) - delta) * 100) / 100;
+    }
+    tx.update(ref, patch);
+  });
+}
+
+/** Admin: every provider's record for one day */
+/** @returns {() => void} */
+export function subscribeSettlementsByDate(day, cb) {
+  const q = query(collection(db, 'settlements'), where('date', '==', day), limit(200));
+  return onSnapshot(
+    q,
+    (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id }))),
+    (e) => {
+      console.error(e);
+      cb([]);
+    }
+  );
+}
+
+/** Admin: records between two dates (for the Money tab) */
+/** @returns {Promise<any[]>} */
+export async function getSettlementsRange(from, to) {
+  try {
+    const q = query(collection(db, 'settlements'), where('date', '>=', from), where('date', '<=', to), limit(2000));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+  } catch (e) {
+    console.error(e);
+    return [];
   }
 }
