@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   getProducts,
   getCategories,
@@ -33,6 +33,7 @@ import { DeliveryPromiseBanner } from './components/DeliveryPromiseBanner';
 import { CategoryNav, ShopTab } from './components/CategoryNav';
 import { ProductCard } from './components/ProductCard';
 import { FoodCustomizerSheet } from './components/FoodCustomizerSheet';
+import { ProductSheet, OrderAgainRow } from './components/ShopExtras';
 import { RequestTab, RequestSide, RequestItemInput } from './components/RequestTab';
 import { FloatingCartBar } from './components/FloatingCartBar';
 import { CartSheet } from './components/CartSheet';
@@ -659,6 +660,42 @@ export default function App() {
     ? `Hi ${firstName}, we've got you covered.`
     : "Hi there, we've got you covered.";
 
+  // Signed-in students: load their order history once, for "Order again" and the greeting
+  const historyLoadedFor = useRef('');
+  useEffect(() => {
+    if (!signedInCustomer) {
+      historyLoadedFor.current = '';
+      return;
+    }
+    if (historyLoadedFor.current === phone) return;
+    historyLoadedFor.current = phone;
+    getMyOrders(phone, pin)
+      .then((list: OrderRecord[]) => setHistoryOrders(list))
+      .catch(() => {
+        historyLoadedFor.current = '';
+      });
+  }, [signedInCustomer, phone, pin]);
+
+  // "Order again": their most-bought items on this side, from delivered orders
+  const orderAgain = useMemo(() => {
+    if (!signedInCustomer) return [] as Product[];
+    const counts: Record<string, number> = {};
+    screenOrders
+      .filter((o) => o.status === 'Delivered')
+      .forEach((o) => (o.items || []).forEach((i) => {
+        if (!i.isFood && i.productId) counts[i.productId] = (counts[i.productId] || 0) + (i.quantity || 1);
+      }));
+    const byId = new Map(sideProducts.map((p) => [p.id, p]));
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([id]) => byId.get(id))
+      .filter((p): p is Product => Boolean(p))
+      .slice(0, 6);
+  }, [signedInCustomer, screenOrders, sideProducts]);
+
+  // Tap a product: details and similar items
+  const [detailProduct, setDetailProduct] = useState<Product | null>(null);
+
   const handleToggleStoreHoursOverride = () => {
     const current = storeStatus.isOpen;
     const nextStatus = setStoreOverride(!current);
@@ -731,6 +768,8 @@ export default function App() {
           onOpenTracker={handleOpenHistory}
           onToggleStoreHoursOverride={handleToggleStoreHoursOverride}
           activeOrderCount={activeOrderCount}
+          signedIn={signedInCustomer}
+          onSignOut={handleSignOut}
         />
 
         {/* Main Storefront Body */}
@@ -751,16 +790,19 @@ export default function App() {
             )}
           </div>
 
-          <PhoneLookupBar
-            phone={phone}
-            onPhoneChange={setPhone}
-            pin={pin}
-            onPinChange={setPin}
-            customer={customer}
-            onOpenHistory={handleOpenHistory}
-            onSignOut={handleSignOut}
-            cartCount={cartItems.reduce((n, i) => n + i.quantity, 0)}
-          />
+          {/* Sign-in box: guests only. Signed-in students use the Orders and Account buttons in the header */}
+          {!signedInCustomer && (
+            <PhoneLookupBar
+              phone={phone}
+              onPhoneChange={setPhone}
+              pin={pin}
+              onPinChange={setPin}
+              customer={customer}
+              onOpenHistory={handleOpenHistory}
+              onSignOut={handleSignOut}
+              cartCount={cartItems.reduce((n, i) => n + i.quantity, 0)}
+            />
+          )}
 
           {/* Inside school or outside school */}
           <div>
@@ -787,6 +829,15 @@ export default function App() {
 
           {/* Search Bar */}
           <SearchBar query={searchQuery} onChange={setSearchQuery} />
+
+          {!searchQuery && (
+            <OrderAgainRow
+              items={orderAgain}
+              qtyOf={(id) => productQuantityMap[id] || 0}
+              onAdd={handleAddSimpleProduct}
+              onOpen={setDetailProduct}
+            />
+          )}
 
           {/* Two categories per side */}
           {!searchQuery && (
@@ -865,6 +916,7 @@ export default function App() {
                         onAdd={handleAddSimpleProduct}
                         onRemove={handleRemoveSimpleProduct}
                         onOpenFoodCustomizer={(prod) => setCustomizingFood(prod)}
+                        onOpenDetails={setDetailProduct}
                       />
                     ))}
                   </div>
@@ -900,6 +952,16 @@ export default function App() {
           totalPrice={totalItemsPrice}
           hasCustomRequest={Boolean(customRequest)}
           onOpenCart={openCart}
+        />
+
+        <ProductSheet
+          product={detailProduct}
+          pool={sideProducts}
+          qtyOf={(id) => productQuantityMap[id] || 0}
+          onAdd={handleAddSimpleProduct}
+          onRemove={handleRemoveSimpleProduct}
+          onOpen={setDetailProduct}
+          onClose={() => setDetailProduct(null)}
         />
 
         {/* Food Customizer Bottom Sheet (with 0-plate support!) */}

@@ -2354,7 +2354,7 @@ export async function operatorSetPrice(productId, cost) {
 
 /** Operator: add a product they sell. It goes live at once in their store. */
 /** @returns {Promise<void>} */
-export async function operatorAddProduct({ name, category, cost, unit, imageUrl }) {
+export async function operatorAddProduct({ name, category, cost, unit, imageUrl, group = '' }) {
   const store = myStore();
   if (store !== 'store' && store !== 'food') throw new Error('Operators only');
   const n = String(name || '').trim().slice(0, 80);
@@ -2366,7 +2366,7 @@ export async function operatorAddProduct({ name, category, cost, unit, imageUrl 
     id: `prod-op-${Date.now()}`,
     name: n,
     category: String(category || ''),
-    subcategory: 'All',
+    subcategory: String(group || '').trim().slice(0, 40) || 'All',
     costPrice: c,
     price: sellingPrice(c, source),
     source,
@@ -2549,6 +2549,22 @@ export async function getDaySummaries(from, to) {
     .filter((k) => k >= from && k <= to)
     .sort()
     .map((k) => saved[k]);
+}
+
+/** Admin: phone -> name, from saved student profiles (one read per profile) */
+/** @returns {Promise<Record<string, string>>} */
+export async function getCustomerNames() {
+  const names = {};
+  try {
+    const snap = await getDocs(collection(db, 'customers'));
+    snap.forEach((d) => {
+      const c = d.data();
+      if (c.phone && c.name) names[c.phone] = c.name;
+    });
+  } catch (e) {
+    console.error(e);
+  }
+  return names;
 }
 
 /** Admin: student product requests in a date range (for "demand you're missing") */

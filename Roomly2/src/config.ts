@@ -275,13 +275,13 @@ export const OUTSIDE_STORE_BATCHES: BatchSlotDef[] = [
   { id: 'afternoon', name: 'Afternoon store batch', startMin: T(12, 30), endMin: T(13, 30), orderByMin: T(12) },
   { id: 'late', name: 'Evening store batch', startMin: T(17), endMin: T(19), orderByMin: T(16, 30) },
 ];
-/** Outside food: one batch a day, 5 to 7pm */
+/** Outside food: one batch a day, 4:30 to 7pm */
 export const OUTSIDE_FOOD_BATCH: BatchSlotDef = {
   id: 'evening',
   name: 'Food batch',
-  startMin: T(17),
+  startMin: T(16, 30),
   endMin: T(19),
-  orderByMin: T(16, 30),
+  orderByMin: T(16),
 };
 
 /** Next outside batch still taking orders. kind 'store' or 'food'. */
