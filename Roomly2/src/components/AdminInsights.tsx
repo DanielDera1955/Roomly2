@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import { getDaySummaries, getRequestsRange, getSettlementsRange, getProductsFresh, isOverdue } from '../api.js';
+import { getDaySummaries, getRequestsRange, getSettlementsRange, getProductsFresh, isOverdue, getCustomerNames } from '../api.js';
 import { storeOfSource, STORE_LABEL, StoreKey, SETTLE_BY_HOUR } from '../config';
 
 type Range = 1 | 7 | 30;
@@ -271,6 +271,8 @@ export const AdminInsights: React.FC = () => {
             <Bars rows={(Object.entries(now.hostels) as [string, number][]).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, v, `${v}`])} color="bg-blue-500" />
           </div>
 
+          <QuietRegulars />
+
           {/* 4. Timing and batches */}
           <div className={card}>
             <p className={title}>Timing and batches</p>
@@ -338,6 +340,89 @@ export const AdminInsights: React.FC = () => {
           </div>
         </>
       )}
+    </div>
+  );
+};
+
+/** Regulars going quiet: 4+ orders in the 30 days before last week, none in the last 7 days */
+const QuietRegulars: React.FC = () => {
+  const [rows, setRows] = useState<{ phone: string; name: string; orders: number; last: string }[] | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    setBusy(true);
+    const today = new Date();
+    const from = new Date(today);
+    from.setDate(today.getDate() - 37);
+    const quietFrom = new Date(today);
+    quietFrom.setDate(today.getDate() - 6);
+    const [days, names] = await Promise.all([getDaySummaries(ymd(from), ymd(today)), getCustomerNames()]);
+    const quietKey = ymd(quietFrom);
+    const before: Record<string, number> = {};
+    const recent = new Set<string>();
+    const last: Record<string, string> = {};
+    for (const d of days) {
+      for (const st of Object.values(d.stores || {}) as any[]) {
+        for (const [phone, n] of Object.entries(st.customers || {}) as [string, number][]) {
+          if (d.date >= quietKey) recent.add(phone);
+          else before[phone] = (before[phone] || 0) + n;
+          if (!last[phone] || d.date > last[phone]) last[phone] = d.date;
+        }
+      }
+    }
+    setRows(
+      Object.entries(before)
+        .filter(([phone, n]) => n >= 4 && !recent.has(phone))
+        .map(([phone, n]) => ({ phone, name: names[phone] || '', orders: n, last: last[phone] }))
+        .sort((a, b) => b.orders - a.orders)
+    );
+    setBusy(false);
+  };
+
+  const daysAgo = (date: string) => Math.round((Date.now() - new Date(date + 'T12:00:00').getTime()) / 86400000);
+  const waLink = (r: { phone: string; name: string }) => {
+    const intl = r.phone.replace(/\D/g, '').replace(/^0/, '234');
+    const first = r.name.trim().split(/\s+/)[0];
+    const msg = `Hi${first ? ' ' + first : ''}, it's Daniel from Roomly. Noticed you haven't ordered in a while. Was anything off with your last order? Your feedback helps us get it right.`;
+    return `https://wa.me/${intl}?text=${encodeURIComponent(msg)}`;
+  };
+
+  return (
+    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <p className="text-xs font-black uppercase tracking-wider text-slate-500">Quiet regulars</p>
+          <p className="text-[11px] text-slate-400">4+ orders in the month before, none in the last 7 days</p>
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={load}
+          className="shrink-0 px-3 py-1.5 rounded-xl bg-[#0e9f55] text-white text-xs font-bold disabled:opacity-50 cursor-pointer"
+        >
+          {busy ? 'Checking…' : rows ? 'Refresh' : 'Find them'}
+        </button>
+      </div>
+      {rows && rows.length === 0 && <p className="text-xs text-slate-400">No regulars have gone quiet. Good sign.</p>}
+      {rows?.map((r) => (
+        <div key={r.phone} className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs">
+          <span className="min-w-0">
+            <strong className="block truncate">{r.name || 'Student'}</strong>
+            <span className="text-[11px] text-slate-500">
+              {r.phone} · {r.orders} orders · last {daysAgo(r.last)} days ago
+            </span>
+          </span>
+          <a
+            href={waLink(r)}
+            target="_blank"
+            rel="noreferrer"
+            className="shrink-0 px-3 py-1.5 rounded-lg bg-[#25D366] text-white font-bold"
+          >
+            WhatsApp
+          </a>
+        </div>
+      ))}
+      <p className="text-[10px] text-slate-400">Send one personal message. If they don't reply, leave it there.</p>
     </div>
   );
 };

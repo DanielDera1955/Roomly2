@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { SoundToggle } from './SoundToggle';
-import { Moon, Sun } from 'lucide-react';
+import { Moon, Sun, ShoppingBag, UserRound, LogOut } from 'lucide-react';
 import { CustomerProfile } from '../types';
 
 export type PortalMode = 'customer' | 'runner' | 'admin' | 'operator';
@@ -20,6 +20,9 @@ interface HeaderProps {
   onOpenTracker: () => void;
   onToggleStoreHoursOverride?: () => void;
   activeOrderCount?: number;
+  /** Signed-in student: shows the Orders and Account buttons instead of the sign-in box */
+  signedIn?: boolean;
+  onSignOut?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -32,7 +35,10 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenTracker,
   onToggleStoreHoursOverride,
   activeOrderCount = 0,
+  signedIn = false,
+  onSignOut,
 }) => {
+  const [accountOpen, setAccountOpen] = useState(false);
   return (
     <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 px-4 py-2.5">
       {/* Row 1: Brand, Open Badge, and Quick Actions */}
@@ -48,7 +54,52 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Right: Actions */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="relative flex items-center gap-1.5 shrink-0">
+          {signedIn && (
+            <>
+              <button
+                type="button"
+                onClick={onOpenTracker}
+                className="relative w-8 h-8 rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                aria-label="Active orders and history"
+                title="Active orders and history"
+              >
+                <ShoppingBag className="w-4 h-4" />
+                {activeOrderCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-[#0e9f55] text-white text-[10px] font-bold flex items-center justify-center">
+                    {activeOrderCount}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setAccountOpen((v) => !v)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                aria-label="Account"
+                title="Account"
+              >
+                <UserRound className="w-4 h-4" />
+              </button>
+              {accountOpen && (
+                <div className="absolute right-0 top-10 z-40 w-56 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl text-xs space-y-2">
+                  <p className="text-slate-500">
+                    Signed in as <strong className="text-slate-900 dark:text-white">{customer?.name || 'you'}</strong>
+                    <span className="block font-mono text-[11px]">{customer?.phone}</span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAccountOpen(false);
+                      onSignOut?.();
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-slate-600 dark:text-slate-300 hover:text-rose-600 cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" /> Sign out
+                  </button>
+                </div>
+              )}
+            </>
+          )}
           {/* Dark Mode Toggle */}
           <SoundToggle className="border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" />
           <button

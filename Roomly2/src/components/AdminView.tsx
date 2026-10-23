@@ -101,7 +101,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [newProdName, setNewProdName] = useState('');
   const [newProdCategory, setNewProdCategory] = useState('');
-  const [newProdSubcategory, setNewProdSubcategory] = useState('Bread');
+  const [newProdSubcategory, setNewProdSubcategory] = useState('');
   const [newProdPrice, setNewProdPrice] = useState<number>(1000);
   const [newProdUnit, setNewProdUnit] = useState('');
   const [newProdCost, setNewProdCost] = useState<number>(0);
@@ -259,7 +259,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
       id: `prod-${Date.now()}`,
       name: newProdName.trim(),
       category: newProdCategory,
-      subcategory: 'All',
+      subcategory: newProdSubcategory.trim() || 'All',
       price: Number(newProdPrice),
       costPrice: newProdCost > 0 ? newProdCost : undefined,
       source: STORE_SOURCE[adminStore],
@@ -777,6 +777,24 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                   </div>
                 </div>
 
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-0.5">
+                    Group (similar items show together, e.g. Soft Drinks, Noodles)
+                  </label>
+                  <input
+                    type="text"
+                    list="roomly-groups"
+                    value={newProdSubcategory}
+                    onChange={(e) => setNewProdSubcategory(e.target.value)}
+                    placeholder="Soft Drinks"
+                    className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
+                  />
+                  <datalist id="roomly-groups">
+                    {Array.from(new Set(products.map((p) => p.subcategory).filter((g) => g && g !== 'All'))).map((g) => (
+                      <option key={g} value={g} />
+                    ))}
+                  </datalist>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-[10px] font-bold text-slate-400 block mb-0.5">
@@ -1062,6 +1080,20 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                           }
                           className="w-full px-2.5 py-1.5 text-xs font-mono font-bold bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
                           required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 block mb-0.5">
+                          Group (e.g. Soft Drinks)
+                        </label>
+                        <input
+                          type="text"
+                          list="roomly-groups"
+                          value={editingProduct.subcategory && editingProduct.subcategory !== 'All' ? editingProduct.subcategory : ''}
+                          onChange={(e) => setEditingProduct({ ...editingProduct, subcategory: e.target.value || 'All' })}
+                          placeholder="Soft Drinks"
+                          className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
                         />
                       </div>
 

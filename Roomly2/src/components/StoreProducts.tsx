@@ -36,6 +36,7 @@ export const OperatorProductsPanel: React.FC = () => {
   const [category, setCategory] = useState('');
   const [cost, setCost] = useState('');
   const [unit, setUnit] = useState('');
+  const [group, setGroup] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [uploading, setUploading] = useState(false);
 
@@ -67,7 +68,8 @@ export const OperatorProductsPanel: React.FC = () => {
   const add = async () => {
     setBusy('add');
     try {
-      await operatorAddProduct({ name, category, cost: costNum, unit, imageUrl });
+      await operatorAddProduct({ name, category, cost: costNum, unit, imageUrl, group });
+      setGroup('');
       setName('');
       setCost('');
       setUnit('');
@@ -157,6 +159,19 @@ export const OperatorProductsPanel: React.FC = () => {
                 </p>
               )}
               <input value={unit} onChange={(e) => setUnit(e.target.value)} className={input} placeholder="Size or unit (optional)" />
+              <input
+                value={group}
+                onChange={(e) => setGroup(e.target.value)}
+                list="op-groups"
+                maxLength={40}
+                className={input}
+                placeholder="Group, e.g. Soft Drinks (similar items show together)"
+              />
+              <datalist id="op-groups">
+                {Array.from(new Set(products.map((p) => p.subcategory).filter((g) => g && g !== 'All'))).map((g) => (
+                  <option key={g} value={g} />
+                ))}
+              </datalist>
               <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300 cursor-pointer">
                 <Camera className="w-4 h-4 text-[#0e9f55]" />
                 <span>{uploading ? 'Uploading…' : imageUrl ? 'Photo added (tap to change)' : 'Add a photo (optional)'}</span>

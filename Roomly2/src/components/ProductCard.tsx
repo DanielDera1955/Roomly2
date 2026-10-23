@@ -8,6 +8,8 @@ interface ProductCardProps {
   onAdd: (product: Product) => void;
   onRemove: (productId: string) => void;
   onOpenFoodCustomizer?: (product: Product) => void;
+  /** Tap the card (not the Add button): details and similar products */
+  onOpenDetails?: (product: Product) => void;
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({
@@ -16,12 +18,15 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   onAdd,
   onRemove,
   onOpenFoodCustomizer,
+  onOpenDetails,
 }) => {
   const [imageError, setImageError] = useState(false);
 
   const handleCardClick = () => {
     if (product.isFood && onOpenFoodCustomizer) {
       onOpenFoodCustomizer(product);
+    } else {
+      onOpenDetails?.(product);
     }
   };
 
@@ -45,7 +50,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     <div
       onClick={handleCardClick}
       className={`group relative flex flex-col justify-between bg-white dark:bg-slate-900 rounded-2xl p-2.5 border border-slate-200/70 dark:border-slate-800 shadow-[0_2px_10px_-4px_rgba(15,60,40,0.15)] hover:shadow-md transition-all ${
-        product.isFood ? 'cursor-pointer' : ''
+        product.isFood || onOpenDetails ? 'cursor-pointer' : ''
       }`}
     >
       <div>
