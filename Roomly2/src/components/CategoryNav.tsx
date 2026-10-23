@@ -54,7 +54,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
       </div>
 
       {selected !== 'Request' && filters.length > 1 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4 pb-0.5">
           {['All', ...filters].map((f) => {
             const on = selectedFilter.toLowerCase() === f.toLowerCase();
             return (
@@ -62,10 +62,10 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
                 key={f}
                 type="button"
                 onClick={() => onSelectFilter(f)}
-                className={`px-2.5 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                className={`shrink-0 whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   on
                     ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700 hover:bg-slate-50'
+                    : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-300/80 dark:border-slate-700 shadow-xs hover:border-[#0e9f55]'
                 }`}
               >
                 {f}

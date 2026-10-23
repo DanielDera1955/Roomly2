@@ -44,7 +44,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   return (
     <div
       onClick={handleCardClick}
-      className={`group relative flex flex-col justify-between bg-white dark:bg-slate-900 rounded-2xl p-2.5 border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md transition-all ${
+      className={`group relative flex flex-col justify-between bg-white dark:bg-slate-900 rounded-2xl p-2.5 border border-slate-200/70 dark:border-slate-800 shadow-[0_2px_10px_-4px_rgba(15,60,40,0.15)] hover:shadow-md transition-all ${
         product.isFood ? 'cursor-pointer' : ''
       }`}
     >
@@ -61,7 +61,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             />
           ) : (
             <div
-              className={`w-full h-full bg-gradient-to-br ${product.gradient} flex items-center justify-center p-3 select-none`}
+              className="w-full h-full bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-800/70 flex items-center justify-center p-3 select-none"
             >
               <span className="text-4xl filter drop-shadow-sm">{product.emoji}</span>
             </div>
