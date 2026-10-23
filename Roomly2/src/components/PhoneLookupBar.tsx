@@ -11,6 +11,7 @@ interface PhoneLookupBarProps {
   customer: CustomerProfile | null;
   onOpenHistory: () => void;
   onSignOut: () => void;
+  cartCount?: number;
 }
 
 export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
@@ -21,6 +22,7 @@ export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
   customer,
   onOpenHistory,
   onSignOut,
+  cartCount = 0,
 }) => {
   const [inputValue, setInputValue] = useState(phone || '');
   const isValid = isValidNigerianPhone(inputValue);
@@ -72,6 +74,14 @@ export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
             </div>
           )}
         </div>
+
+        {!customer && (
+          <p className={`mt-1.5 text-[11px] leading-snug font-medium ${cartCount > 0 ? 'text-[#0e9f55]' : 'text-slate-500 dark:text-slate-400'}`}>
+            {cartCount > 0
+              ? `You have ${cartCount} item${cartCount === 1 ? '' : 's'} in your cart. Enter your phone number and PIN to order them and keep them saved to your number.`
+              : 'Enter your phone number and 6-digit PIN to order and track your deliveries.'}
+          </p>
+        )}
 
         {isValid && (
           <div className="mt-2">
