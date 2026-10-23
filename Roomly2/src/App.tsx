@@ -19,7 +19,7 @@ import {
   createProductRequest,
   subscribeProductRequest,
 } from './api.js';
-import { Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoryRank } from './config';
+import { Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore } from './config';
 import { MessageCircle } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
@@ -516,12 +516,17 @@ export default function App() {
   // Quick filters inside a category, taken from the products' own categories (Drinks, Toiletries...)
   const groupFilters = useMemo(() => {
     if (selectedTab === 'Request') return [];
-    // Products with no category only show under All
-    const names = sideProducts.filter((p) => shopGroupOf(p) === selectedTab && p.category).map((p) => p.category);
-    // Shown in each store's standard order (Bread & Pastries, Drinks... / Food, Soft Drinks); anything else goes last
-    const side = sourceMode === 'outside' && selectedTab === 'food' ? 'food' : sourceMode;
-    return Array.from(new Set(names)).sort((a, b) => categoryRank(a, side) - categoryRank(b, side));
-  }, [sideProducts, selectedTab, sourceMode]);
+    // Every category of this store always shows (even empty), in the store's standard order.
+    // Products without a category, or with another store's category, show under All only.
+    if (sourceMode === 'inside') {
+      // Inside: Store Items gets the inside categories; the Cooked Food tab needs none
+      if (selectedTab === 'food') return [];
+      return categoriesForStore(categories, 'inside')
+        .map((c) => c.name)
+        .filter((n) => n.toLowerCase() !== 'food');
+    }
+    return categoriesForStore(categories, selectedTab === 'food' ? 'food' : 'store').map((c) => c.name);
+  }, [categories, selectedTab, sourceMode]);
 
   // Search first; otherwise the chosen category and filter
   const filteredProducts = useMemo(() => {
@@ -735,7 +740,7 @@ export default function App() {
 
               {filteredProducts.length === 0 ? (
                 <div className="text-center py-10 px-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-400 text-xs space-y-3">
-                  <p>{searchQuery ? `We don't have "${searchQuery}" yet.` : 'No items in this section yet.'}</p>
+                  <p>{searchQuery ? `We don't have "${searchQuery}" yet.` : 'Nothing here yet. Tell us what you want and we will add it.'}</p>
                   <button
                     type="button"
                     onClick={() => {
