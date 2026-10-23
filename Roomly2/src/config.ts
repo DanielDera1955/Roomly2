@@ -347,8 +347,11 @@ export const CAMPUS_LOCATIONS: Record<string, string[]> = {
 export type ShopGroup = 'store' | 'food';
 /** Cooked food goes to Food, everything else to Store Items, decided from the product itself */
 export function shopGroupOf(p: Product): ShopGroup {
-  if (p.isFood || String(p.category).toLowerCase() === 'food') return 'food';
+  // Outside school: the tab follows the store, so Cooked Food always goes to the Food cart
   if (p.source === 'food') return 'food';
+  if (p.source === 'outside') return 'store';
+  // Inside school: one cart, so the tab follows the product
+  if (p.isFood || String(p.category).toLowerCase() === 'food') return 'food';
   return 'store';
 }
 export function shopGroupLabel(group: ShopGroup, side: 'inside' | 'outside'): string {
