@@ -38,7 +38,17 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
           <Icon className="w-3.5 h-3.5" />
           {title} · {todayCount} {todayCount === 1 ? 'batch' : 'batches'} today
         </p>
-        {next ? (
+        {next && next.unconfirmed ? (
+          <>
+            <h2 className="text-lg font-extrabold tracking-tight">
+              Next batch: {next.batch.dayLabel}, {next.batch.window}
+            </h2>
+            <p className="text-xs text-emerald-100/90">
+              Not opened yet, but you can order now. Your order joins this batch once the {side === 'inside' ? 'runner' : 'operator'} starts it.
+              {note ? ` ${note}` : ''}
+            </p>
+          </>
+        ) : next ? (
           <>
             <h2 className="text-lg font-extrabold tracking-tight">
               Next batch: {next.batch.dayLabel}, {next.batch.window}
@@ -50,7 +60,7 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
           </>
         ) : (
           <>
-            <h2 className="text-base font-extrabold">Not taking orders right now</h2>
+            <h2 className="text-base font-extrabold">No delivery scheduled right now</h2>
             <p className="text-xs text-emerald-100/90">{note || 'Check back soon for the next batch.'}</p>
           </>
         )}

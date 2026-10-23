@@ -148,8 +148,10 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const chosen = cart === 'inside'
     ? insideNext?.next || null
     : outside?.batch && chosenOp
-    ? { batch: outside.batch, start: chosenOp.start, startText: chosenOp.startText, by: chosenOp.name }
+    ? { batch: outside.batch, start: chosenOp.start, startText: chosenOp.startText, by: chosenOp.name, unconfirmed: Boolean(outside.unconfirmed) }
     : null;
+  // The batch has not been opened by a runner / operator yet: ordering still works, the student just accepts it
+  const unconfirmed = Boolean((chosen as any)?.unconfirmed);
   const selectedBatch = chosen?.batch;
   const payBy = chosen ? chosen.start : null;
   const payByText = payBy ? payBy.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
@@ -171,6 +173,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   dayStart.setHours(0, 0, 0, 0);
   const isLate = Boolean(
     selectedBatch &&
+      !unconfirmed &&
       (selectedBatch.dayLabel !== 'Today' ||
         slotsForDay(cart, nowDate, 0).some(
           (o) => o.key !== selectedBatch.key && dayStart.getTime() + o.startMin * 60000 <= nowDate.getTime()
@@ -239,7 +242,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       return;
     }
 
-    if (isLate && !lateAccepted) {
+    if ((isLate || unconfirmed) && !lateAccepted) {
       setErrorMessage('Please tick that you accept your order coming in the next batch.');
       return;
     }
@@ -279,7 +282,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
         operatorName: cart !== 'inside' ? chosenOp?.name : undefined,
         turnRunner: cart === 'inside' ? insideNext?.next?.by || '' : undefined,
         outOfStock,
-        lateBatch: isLate, // for the dashboard: student accepted the next batch
+        lateBatch: isLate || unconfirmed, // for the dashboard: student accepted the next batch
         gatePickup: cart !== 'inside' && gatePickup,
         // Students pay the runner or operator handling the order (Roomly's account if they have not set one)
         payTo: (cart === 'inside' ? insideNext?.next?.payTo : chosenOp?.payTo) || null,
@@ -600,6 +603,21 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               </h3>
             </div>
 
+            {unconfirmed && selectedBatch && (
+              <label className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-xs text-amber-900 dark:text-amber-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={lateAccepted}
+                  onChange={(e) => setLateAccepted(e.target.checked)}
+                  className="w-4 h-4 mt-0.5 accent-[#0e9f55]"
+                />
+                <span>
+                  <strong>This batch is not open yet.</strong> You can still order now. Your order will come in the next batch:{' '}
+                  {selectedBatch.dayLabel === 'Today' ? 'today' : selectedBatch.dayLabel.toLowerCase()}, {selectedBatch.window}, once the{' '}
+                  {cart === 'inside' ? 'runner' : 'operator'} starts it (or the batch after). Tick to accept.
+                </span>
+              </label>
+            )}
             {isLate && selectedBatch && (
               <label className="flex items-start gap-2 p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 text-xs text-blue-900 dark:text-blue-200 cursor-pointer">
                 <input
@@ -627,7 +645,9 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                       {selectedBatch.dayLabel}, {selectedBatch.window}
                     </span>
                     <span className="block text-[11px] text-slate-500 dark:text-slate-400">
-                      Still accepting orders, will start sending by {chosen.startText}.
+                      {unconfirmed
+                        ? `Not opened yet. Usually starts around ${chosen.startText}.`
+                        : `Still accepting orders, will start sending by ${chosen.startText}.`}
                     </span>
                   </div>
                   <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
@@ -882,7 +902,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
           <div className="pt-1">
             <button
               type="submit"
-              disabled={submitting || !acknowledgedNoCancel || !selectedBatch || waitingCount > 0 || (isLate && !lateAccepted)}
+              disabled={submitting || !acknowledgedNoCancel || !selectedBatch || waitingCount > 0 || ((isLate || unconfirmed) && !lateAccepted)}
               className="w-full h-12 bg-[#0e9f55] hover:bg-[#0b8044] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold flex items-center justify-between px-5 shadow-lg shadow-[#0e9f55]/20 active:scale-[0.98] transition-all cursor-pointer"
             >
               <span>{submitting ? 'Placing Order...' : 'Confirm & Place Order'}</span>

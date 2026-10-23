@@ -80,24 +80,51 @@ const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?
   const turnOff = () => save({ on: false, note: note.trim().slice(0, 120) });
 
   return (
-    <div className={`p-3 rounded-2xl text-xs space-y-2 ${live && !started ? 'bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50' : 'bg-slate-50 dark:bg-slate-800/60'}`}>
+    <div
+      className={`p-3 rounded-2xl text-xs space-y-2 border-2 ${
+        started
+          ? 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700'
+          : live
+          ? 'bg-emerald-50 dark:bg-emerald-950/30 border-[#0e9f55]'
+          : 'bg-rose-50/60 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/50'
+      }`}
+    >
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
           <span className="font-bold text-slate-900 dark:text-white">{side === 'food' ? 'Food batch' : o.window}</span>
-          <span className="block text-[11px] text-slate-500">
-            {started ? 'Sending now, no longer taking orders' : live ? 'On: students can order' : 'Off: students cannot order for this batch'}
+          <span className={`block text-[11px] font-bold ${started ? 'text-slate-500' : live ? 'text-[#0e9f55]' : 'text-rose-600 dark:text-rose-400'}`}>
+            {started
+              ? 'Sending now. New orders go to the next batch.'
+              : live
+              ? 'ON: you are taking orders for this batch'
+              : 'OFF: students can still order, but they are told it is not opened yet'}
           </span>
         </div>
-        <button
-          type="button"
-          disabled={busy || started || adminOff}
-          onClick={live ? turnOff : turnOn}
-          className={`px-3 py-1.5 rounded-lg font-bold text-xs cursor-pointer disabled:opacity-40 ${
-            live ? 'bg-[#0e9f55] text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-          }`}
-        >
-          {live ? 'On' : 'Off'}
-        </button>
+        {/* Clear two-position switch: the highlighted side is the current state */}
+        <div className="shrink-0 grid grid-cols-2 rounded-xl overflow-hidden border border-slate-300 dark:border-slate-600">
+          <button
+            type="button"
+            disabled={busy || started || !live}
+            onClick={turnOff}
+            aria-pressed={!live}
+            className={`px-3 py-1.5 font-black text-xs cursor-pointer disabled:cursor-default ${
+              !live ? 'bg-rose-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-400'
+            }`}
+          >
+            OFF
+          </button>
+          <button
+            type="button"
+            disabled={busy || started || live || adminOff}
+            onClick={turnOn}
+            aria-pressed={live}
+            className={`px-3 py-1.5 font-black text-xs cursor-pointer disabled:cursor-default ${
+              live ? 'bg-[#0e9f55] text-white' : 'bg-white dark:bg-slate-900 text-slate-400'
+            }`}
+          >
+            ON
+          </button>
+        </div>
       </div>
 
       {!started && (
@@ -178,8 +205,8 @@ export const BatchSwitches: React.FC<BatchSwitchesProps> = ({ side = 'inside' })
             </div>
           ))}
           <p className="text-[11px] text-slate-400 leading-snug">
-            A batch only takes orders while it is On, until the start time you set. Switches turn off by themselves after {cutoff};
-            you can switch back on after that if you are still working.
+            Tap ON when you are ready to take a batch, and set the time you will start sending. Students can order even while it is OFF; they
+            are told the batch is not opened yet. Switches turn OFF by themselves after {cutoff}; switch back ON if you are still working.
           </p>
         </div>
       )}
