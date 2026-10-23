@@ -562,6 +562,18 @@ export async function addSubcategory(categoryName, subcategoryName) {
   return cat.categories;
 }
 
+/** Remove a main category. Refused while any product still uses it (move those products first). */
+/** @returns {Promise<any>} */
+export async function deleteCategory(categoryName) {
+  const cat = await readCatalog(true);
+  const name = String(categoryName).toLowerCase();
+  const inUse = cat.products.filter((p) => String(p.category).toLowerCase() === name).length;
+  if (inUse > 0) throw new Error(`${inUse} product(s) still use "${categoryName}". Move them to another category first.`);
+  cat.categories = cat.categories.filter((c) => c.name.toLowerCase() !== name);
+  await writeCatalog(cat);
+  return cat.categories;
+}
+
 /** @returns {Promise<any>} */
 export async function deleteSubcategory(categoryName, subcategoryName) {
   const cat = await readCatalog(true);
