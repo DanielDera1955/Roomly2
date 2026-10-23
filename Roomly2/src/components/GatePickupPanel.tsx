@@ -13,6 +13,7 @@ export const GatePickupPanel: React.FC = () => {
   const [busy, setBusy] = useState('');
   const [open, setOpen] = useState(true);
   const me = getCurrentStaff()?.name || '';
+  const hasAccount = Boolean((getCurrentStaff() as any)?.payAccount?.accountNumber);
 
   useEffect(() => subscribeGatePickups((l: OrderRecord[]) => setList(l)), []);
 
@@ -62,7 +63,7 @@ export const GatePickupPanel: React.FC = () => {
                     </p>
                   </div>
                   <span className="font-bold whitespace-nowrap">
-                    {gp.status === 'accepted' ? `₦${gp.fee.toLocaleString()}` : 'New'}
+                    {gp.status === 'accepted' ? `₦${gp.fee.toLocaleString()}${gp.paid ? ' · Paid' : ''}` : 'New'}
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-600 dark:text-slate-300">
@@ -80,10 +81,15 @@ export const GatePickupPanel: React.FC = () => {
                       />
                       Heavy or bulky (₦{GATE_PICKUP_FEES.heavy.toLocaleString()} instead of ₦{GATE_PICKUP_FEES.normal.toLocaleString()})
                     </label>
+                    {!hasAccount && (
+                      <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                        Save your bank account first (in your payout settings). The student pays you directly into it.
+                      </p>
+                    )}
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
-                        disabled={busy === o.id}
+                        disabled={busy === o.id || !hasAccount}
                         onClick={() => act(o, 'accept')}
                         className="py-2 rounded-xl bg-[#0e9f55] text-white font-bold disabled:opacity-40 cursor-pointer"
                       >
@@ -105,13 +111,18 @@ export const GatePickupPanel: React.FC = () => {
                   <>
                     <p className="text-[11px] text-slate-500">
                       Accepted by {gp.runnerName}
-                      {gp.heavy ? ' (heavy)' : ''}. The student pays the runner ₦{gp.fee.toLocaleString()}.
+                      {gp.heavy ? ' (heavy)' : ''}.{' '}
+                      {gp.paid ? (
+                        <strong className="text-[#0e9f55]">Paid ₦{gp.fee.toLocaleString()}. Collect it from the gate.</strong>
+                      ) : (
+                        <strong className="text-amber-700 dark:text-amber-300">Waiting for the student to pay ₦{gp.fee.toLocaleString()}. Check your account before going.</strong>
+                      )}
                     </p>
                     {mine && (
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
-                          disabled={busy === o.id}
+                          disabled={busy === o.id || !gp.paid}
                           onClick={() => act(o, 'delivered')}
                           className="py-2 rounded-xl bg-[#0e9f55] text-white font-bold disabled:opacity-40 cursor-pointer"
                         >
