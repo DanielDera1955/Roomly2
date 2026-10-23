@@ -717,8 +717,8 @@ export default function App() {
 
   // RENDER PORTAL 3: CUSTOMER STOREFRONT
   return (
-    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 flex justify-center selection:bg-[#0e9f55]/20">
-      <div className="w-full max-w-[480px] bg-slate-50 dark:bg-slate-900 min-h-screen flex flex-col relative shadow-2xl border-x border-slate-200/60 dark:border-slate-800/60 pb-24">
+    <div className="min-h-screen bg-[#e8efeb] dark:bg-slate-950 flex justify-center selection:bg-[#0e9f55]/20">
+      <div className="w-full max-w-[480px] bg-[#f4f8f6] dark:bg-slate-900 min-h-screen flex flex-col relative shadow-2xl border-x border-slate-200/60 dark:border-slate-800/60 pb-24">
         <AdminSwitcher current="customer" onSelect={handleSelectPortal} />
         {/* Header */}
         <Header
@@ -737,8 +737,8 @@ export default function App() {
         <main className="p-4 space-y-4 flex-1">
 
           {/* Phone Number Input & Customer Recognition */}
-          <div className="pt-1">
-            <p className={`font-semibold text-[#0e9f55] leading-snug ${hasCompletedOrder ? 'text-base' : 'text-sm mb-1'}`}>{heroGreeting}</p>
+          <div className="-mx-4 -mt-4 px-4 pt-5 pb-3 bg-gradient-to-b from-emerald-100/70 to-transparent dark:from-emerald-950/40">
+            <p className={`font-semibold text-[#0b8044] dark:text-[#0e9f55] leading-snug ${hasCompletedOrder ? 'text-base' : 'text-sm mb-1'}`}>{heroGreeting}</p>
             {!hasCompletedOrder && (
               <>
                 <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-snug">
