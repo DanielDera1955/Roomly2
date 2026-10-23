@@ -19,7 +19,7 @@ import {
   createProductRequest,
   subscribeProductRequest,
 } from './api.js';
-import { Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore } from './config';
+import { Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, FOOD_EXTRAS } from './config';
 import { MessageCircle } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
@@ -234,6 +234,87 @@ export default function App() {
     window.addEventListener('roomly-settings', h);
     return () => window.removeEventListener('roomly-settings', h);
   }, []);
+
+  // ---------- Saved carts (on this phone): one for guests, one per signed-in number ----------
+  const cartOwner =
+    customer && customer.name && !customer.wrongPin && isValidNigerianPhone(phone) && /^\d{6}$/.test(pin) ? `u_${customer.phone || phone}` : 'guest';
+  const [loadedOwner, setLoadedOwner] = useState('');
+  const readCart = (owner: string): CartItem[] => {
+    try {
+      const v = JSON.parse(localStorage.getItem(`roomly_cart_${owner}`) || '[]');
+      return Array.isArray(v) ? v : [];
+    } catch (e) {
+      return [];
+    }
+  };
+  const writeCart = (owner: string, items: CartItem[]) => {
+    try {
+      if (items.length) localStorage.setItem(`roomly_cart_${owner}`, JSON.stringify(items));
+      else localStorage.removeItem(`roomly_cart_${owner}`);
+    } catch (e) {
+      /* storage blocked: the cart still works for this visit */
+    }
+  };
+  const mergeCarts = (a: CartItem[], b: CartItem[]) => {
+    const out = [...a];
+    b.forEach((it) => {
+      const same = out.findIndex((x) => x.id === it.id && !it.isFood);
+      if (same >= 0) {
+        const q = out[same].quantity + it.quantity;
+        out[same] = { ...out[same], quantity: q, totalPrice: q * out[same].unitPrice };
+      } else out.push(it);
+    });
+    return out;
+  };
+  // Switch carts when someone signs in or out
+  useEffect(() => {
+    if (loadedOwner === cartOwner) return;
+    if (!loadedOwner) {
+      setCartItems(readCart(cartOwner));
+    } else if (loadedOwner === 'guest') {
+      // Guest signed in: what they picked joins their account cart
+      setCartItems((prev) => mergeCarts(readCart(cartOwner), prev));
+      writeCart('guest', []);
+    } else {
+      // Signed out: their cart stays saved under their number
+      setCartItems(readCart(cartOwner));
+    }
+    setLoadedOwner(cartOwner);
+  }, [cartOwner, loadedOwner]);
+  // Save every change for the current owner
+  useEffect(() => {
+    if (loadedOwner && loadedOwner === cartOwner) writeCart(cartOwner, cartItems);
+  }, [cartItems, cartOwner, loadedOwner]);
+  // Today's prices: a saved cart follows the current store price; deleted products drop out
+  useEffect(() => {
+    if (!products.length) return;
+    const byId = new Map(products.map((p) => [p.id, p]));
+    setCartItems((prev) => {
+      let changed = false;
+      const next = prev
+        .filter((it) => {
+          if (it.pendingQuote || it.requestId || byId.has(it.productId)) return true;
+          changed = true;
+          return false;
+        })
+        .map((it) => {
+          const p = byId.get(it.productId);
+          if (!p || it.pendingQuote) return it;
+          let unit = p.price;
+          if (it.isFood && (it.plates !== undefined || it.extras?.length)) {
+            const extras = (it.extras || []).map((e) => ({ ...e, price: FOOD_EXTRAS.find((f) => f.id === e.id)?.price ?? e.price }));
+            unit = (it.plates || 0) * p.price + extras.reduce((sum, e) => sum + e.price * (e.quantity || 0), 0);
+            if (unit === it.unitPrice) return it;
+            changed = true;
+            return { ...it, extras, unitPrice: unit, totalPrice: unit * it.quantity };
+          }
+          if (unit === it.unitPrice) return it;
+          changed = true;
+          return { ...it, unitPrice: unit, totalPrice: unit * it.quantity };
+        });
+      return changed ? next : prev;
+    });
+  }, [products, loadedOwner]);
 
   // Cart operations
   const handleAddSimpleProduct = (product: Product) => {
@@ -678,6 +759,7 @@ export default function App() {
             customer={customer}
             onOpenHistory={handleOpenHistory}
             onSignOut={handleSignOut}
+            cartCount={cartItems.reduce((n, i) => n + i.quantity, 0)}
           />
 
           {/* Inside school or outside school */}
