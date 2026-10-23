@@ -3,6 +3,7 @@ import { slotsForDay, timeLabel, SwitchSide, BatchOption } from '../config';
 import {
   getInsideSwitches,
   getMyOperatorStatus,
+  getCurrentStaff,
   getAllOperatorStatus,
   setInsideSwitch,
   setOperatorSwitch,
@@ -63,6 +64,12 @@ const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?
 
   const startNum = fromHHMM(time);
   const turnOn = () => {
+    // Students must always see the runner's or operator's own account, so it has to be saved first
+    const staff = getCurrentStaff();
+    if (staff && staff.role !== 'admin' && !staff.payAccount) {
+      window.alert('Add your payment account first, under "Where students pay you", then switch on.');
+      return;
+    }
     const start = Number.isFinite(startNum) ? startNum : o.startMin;
     if (switchStartDate(o, { start }).getTime() <= Date.now()) {
       window.alert('That start time has already passed. Set a later "will start sending by" time, then switch on.');

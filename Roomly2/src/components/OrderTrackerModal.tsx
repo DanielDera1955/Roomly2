@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { OrderRecord, locationText, shortLocation, roomText, partLabel } from '../types';
 import { STORE_CONFIG, OUT_OF_STOCK_LABEL } from '../config';
-import { markPaymentSent, paymentState } from '../api.js';
+import { markPaymentSent, paymentState, requestGatePickup } from '../api.js';
 
 interface OrderTrackerModalProps {
   isOpen: boolean;
@@ -163,7 +163,17 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
 
   const stepIndex = getCurrentStepIndex();
   // Students pay the runner or operator on this order; older orders use Roomly's account
-  const payAcct = (currentOrder as any)?.payTo || STORE_CONFIG.bankDetails;
+  // Students only ever see the runner's or operator's own account (never Roomly's)
+  const payAcct = (currentOrder as any)?.payTo || null;
+  const [askingGate, setAskingGate] = useState(false);
+  const askGatePickup = async () => {
+    if (!currentOrder) return;
+    setAskingGate(true);
+    const updated = await requestGatePickup(currentOrder.id);
+    if (updated) setCurrentOrder(updated as OrderRecord);
+    else window.alert('Could not send the request. Please try again.');
+    setAskingGate(false);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs transition-opacity animate-in fade-in">
@@ -224,6 +234,25 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* Outside orders come to the gate; the student can ask a runner to bring it to the room */}
+              {(currentOrder.cart === 'store' || currentOrder.cart === 'food') &&
+                currentOrder.paymentStatus !== 'unpaid' &&
+                (!currentOrder.gatePickup || currentOrder.gatePickup.status === 'refused' || currentOrder.gatePickup.status === 'refunded') && (
+                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs space-y-2">
+                    <p className="text-slate-700 dark:text-slate-200">
+                      This order comes to the <strong>school gate</strong>. Want it brought to your room? An inside runner can collect it for ₦600 (₦1,000 if heavy), paid to the runner.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={askingGate}
+                      onClick={askGatePickup}
+                      className="w-full py-2 rounded-xl bg-[#0e9f55] text-white font-bold disabled:opacity-50 cursor-pointer"
+                    >
+                      {askingGate ? 'Sending…' : 'Ask a runner to bring it to my room'}
+                    </button>
+                  </div>
+                )}
 
               {/* GATE PICKUP: separate request to an inside runner */}
               {currentOrder.gatePickup && (
@@ -288,29 +317,35 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                       Orders are attended to once payment is confirmed. Please transfer{' '}
                       <strong>₦{currentOrder.totalAmount.toLocaleString()}</strong> to:
                     </p>
-                    <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/40 text-xs space-y-1.5">
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Bank</span>
-                        <span className="font-bold">{payAcct.bankName}</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-400">Account number</span>
-                        <div className="flex items-center gap-1">
-                          <span className="font-bold">{payAcct.accountNumber}</span>
-                          <button
-                            type="button"
-                            onClick={() => copyToClipboard(payAcct.accountNumber, 'acc')}
-                            className="p-1 text-slate-400 hover:text-slate-700"
-                          >
-                            <Copy className="w-3 h-3" />
-                          </button>
+                    {payAcct ? (
+                      <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/40 text-xs space-y-1.5">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Bank</span>
+                          <span className="font-bold">{payAcct.bankName}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400">Account number</span>
+                          <div className="flex items-center gap-1">
+                            <span className="font-bold">{payAcct.accountNumber}</span>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(payAcct.accountNumber, 'acc')}
+                              className="p-1 text-slate-400 hover:text-slate-700"
+                            >
+                              <Copy className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Account name</span>
+                          <span className="font-semibold">{payAcct.accountName}</span>
                         </div>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Account name</span>
-                        <span className="font-semibold">{payAcct.accountName}</span>
+                    ) : (
+                      <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/40 text-xs">
+                        Payment details are missing on this order. Message your {currentOrder.cart === 'inside' || !currentOrder.cart ? 'runner' : 'operator'} below for their account.
                       </div>
-                    </div>
+                    )}
                     <button
                       type="button"
                       onClick={handleStudentClickPaymentMade}

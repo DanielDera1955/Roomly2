@@ -16,7 +16,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
-import { HOSTELS, deliveryFeeFor, CartKind, CART_LABEL, GATE_PICKUP_FEES, OUT_OF_STOCK_LABEL, OutOfStockChoice } from '../config';
+import { HOSTELS, deliveryFeeFor, CartKind, CART_LABEL, GATE_PICKUP_FEES, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay } from '../config';
 import { getNextBatch, getOutsideChoices } from '../api.js';
 import { isValidNigerianPhone, normalizePhone } from '../api.js';
 
@@ -160,6 +160,24 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       }`;
   const otherCarts = (['inside', 'store', 'food'] as CartKind[]).filter((k) => k !== cart && cartCounts[k] > 0);
 
+  // Requested products still waiting for a price: the cart cannot be checked out yet
+  const waitingCount = items.filter((i) => i.pendingQuote).length;
+
+  // Late order: a batch earlier today has already gone, or the next batch is another day.
+  // The student must accept that the order joins the next batch.
+  const nowDate = new Date();
+  const dayStart = new Date(nowDate);
+  dayStart.setHours(0, 0, 0, 0);
+  const isLate = Boolean(
+    selectedBatch &&
+      (selectedBatch.dayLabel !== 'Today' ||
+        slotsForDay(cart, nowDate, 0).some(
+          (o) => o.key !== selectedBatch.key && dayStart.getTime() + o.startMin * 60000 <= nowDate.getTime()
+        ))
+  );
+  const [lateAccepted, setLateAccepted] = useState(false);
+  useEffect(() => setLateAccepted(false), [selectedBatch?.key]);
+
   // Tell the student when the batch they saw stops accepting and the order moves to the next one
   const lastBatch = useRef<{ key: string; window: string } | null>(null);
   const [batchNotice, setBatchNotice] = useState('');
@@ -212,6 +230,16 @@ export const CartSheet: React.FC<CartSheetProps> = ({
     if ((isRepeatCustomer || hasOutside) && paymentChoice === 'pay_on_delivery') {
       setErrorMessage('Repeat customers must select Pay Now (Bank Transfer) before orders can be packaged.');
       setPaymentChoice('pay_now');
+      return;
+    }
+
+    if (waitingCount > 0) {
+      setErrorMessage(`Waiting for the price of ${waitingCount} requested item(s). You can check out once it comes back.`);
+      return;
+    }
+
+    if (isLate && !lateAccepted) {
+      setErrorMessage('Please tick that you accept your order coming in the next batch.');
       return;
     }
 
@@ -380,9 +408,13 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                             {item.plates} {item.plates === 1 ? 'plate' : 'plates'}
                           </span>
                         )}
-                        <p className="text-xs font-mono font-semibold text-[#0e9f55]">
-                          ₦{item.totalPrice.toLocaleString()}
-                        </p>
+                        {item.pendingQuote ? (
+                          <p className="text-[11px] font-bold text-amber-600 dark:text-amber-400">Waiting for price</p>
+                        ) : (
+                          <p className="text-xs font-mono font-semibold text-[#0e9f55]">
+                            ₦{item.totalPrice.toLocaleString()}
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -455,8 +487,15 @@ export const CartSheet: React.FC<CartSheetProps> = ({
           <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
               <MapPin className="w-3.5 h-3.5 text-[#0e9f55]" />
-              <span>Campus Delivery Destination</span>
+              <span>{cart === 'inside' ? 'Delivered to your room' : 'Your details'}</span>
             </h3>
+            {cart !== 'inside' && (
+              <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200">
+                <strong>Delivered to the school gate, not to your room.</strong> Your room details are used to label the
+                bag and reach you. Want it brought to your room? Tick gate pickup below, or ask from your order screen once
+                it arrives.
+              </div>
+            )}
 
             <div className="grid grid-cols-1 gap-2.5">
               <div>
@@ -559,6 +598,20 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               </h3>
             </div>
 
+            {isLate && selectedBatch && (
+              <label className="flex items-start gap-2 p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 text-xs text-blue-900 dark:text-blue-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={lateAccepted}
+                  onChange={(e) => setLateAccepted(e.target.checked)}
+                  className="w-4 h-4 mt-0.5 accent-[#0e9f55]"
+                />
+                <span>
+                  <strong>The earlier batch is closed.</strong> Your order will come in the next batch:{' '}
+                  {selectedBatch.dayLabel === 'Today' ? 'today' : selectedBatch.dayLabel.toLowerCase()}, {selectedBatch.window}. Tick to accept.
+                </span>
+              </label>
+            )}
             {batchNotice && (
               <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 text-[11px] text-blue-800 dark:text-blue-200">
                 {batchNotice}
@@ -827,14 +880,18 @@ export const CartSheet: React.FC<CartSheetProps> = ({
           <div className="pt-1">
             <button
               type="submit"
-              disabled={submitting || !acknowledgedNoCancel || !selectedBatch}
+              disabled={submitting || !acknowledgedNoCancel || !selectedBatch || waitingCount > 0 || (isLate && !lateAccepted)}
               className="w-full h-12 bg-[#0e9f55] hover:bg-[#0b8044] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold flex items-center justify-between px-5 shadow-lg shadow-[#0e9f55]/20 active:scale-[0.98] transition-all cursor-pointer"
             >
               <span>{submitting ? 'Placing Order...' : 'Confirm & Place Order'}</span>
               <span className="font-mono text-base">₦{grandTotal.toLocaleString()}</span>
             </button>
             <p className="text-[10px] text-center text-slate-400 mt-2">
-              {cart === 'inside' ? 'Goes to the runner on this batch' : `Goes to ${chosenOp?.name || 'the operator'}, delivered to the school gate`}
+              {waitingCount > 0
+                ? `Waiting for the price of ${waitingCount} requested item(s). You can check out once it comes back.`
+                : cart === 'inside'
+                ? 'Goes to the runner on this batch'
+                : `Goes to ${chosenOp?.name || 'the operator'}, delivered to the school gate`}
             </p>
           </div>
         </form>

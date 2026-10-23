@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { sellingPrice } from '../config';
 import { OrderRecord, CategoryDefinition, DeliveryRunner, locationText, shortLocation, roomText } from '../types';
-import { Product, PRESET_PRODUCT_IMAGES } from '../config';
+import { Product, PRESET_PRODUCT_IMAGES, INSIDE_CATEGORIES, OUTSIDE_CATEGORIES } from '../config';
 import { OrderHistorySection } from './SpendingHistorySection';
 import {
   getOrders,
@@ -1444,6 +1444,31 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
         {/* ================= TAB 3: CATEGORIES & SUBCATEGORIES ================= */}
         {currentTab === 'categories' && (
           <div className="space-y-4">
+            {/* One tap: create Roomly's standard inside and outside categories that are missing */}
+            {(() => {
+              const have = new Set(categories.map((c) => c.name.toLowerCase()));
+              const missing = [...INSIDE_CATEGORIES, ...OUTSIDE_CATEGORIES].filter((c) => !have.has(c.name.toLowerCase()));
+              if (missing.length === 0) return null;
+              return (
+                <div className="bg-emerald-50 dark:bg-emerald-950/30 rounded-2xl p-4 border border-emerald-200 dark:border-emerald-900/50 space-y-2">
+                  <p className="text-xs text-slate-700 dark:text-slate-200">
+                    {missing.length} of Roomly's standard categories are missing: {missing.map((c) => c.name).join(', ')}.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      let updated = categories;
+                      for (const c of missing) updated = await addCategory(c.name, c.emoji, ['All']);
+                      setCategories(updated);
+                    }}
+                    className="w-full py-2 rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer"
+                  >
+                    Add the standard categories
+                  </button>
+                  <p className="text-[11px] text-slate-500">Then edit each product and move it into its category.</p>
+                </div>
+              );
+            })()}
             <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 Add New Main Category

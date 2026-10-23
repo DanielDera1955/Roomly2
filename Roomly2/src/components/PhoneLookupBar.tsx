@@ -107,7 +107,7 @@ export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
               onClick={onOpenHistory}
               className="px-3 py-1.5 rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer"
             >
-              Orders & History
+              Active Orders and History
             </button>
             <button
               type="button"

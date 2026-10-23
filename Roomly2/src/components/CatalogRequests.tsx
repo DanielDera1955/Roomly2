@@ -92,7 +92,7 @@ export const OperatorCatalogRequests: React.FC = () => {
                 onClick={() => setMode(m)}
                 className={`py-1.5 rounded-xl text-xs font-bold cursor-pointer ${mode === m ? 'bg-white dark:bg-slate-900 text-[#0e9f55]' : 'text-slate-500'}`}
               >
-                {m === 'price' ? 'Change a price' : 'Add a new product'}
+                {m === 'price' ? 'Change a price' : "Add a product you sell that isn't in the store"}
               </button>
             ))}
           </div>

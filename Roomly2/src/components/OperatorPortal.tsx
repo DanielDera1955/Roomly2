@@ -13,6 +13,7 @@ import {
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { ProviderSettlement, PayAccountForm } from './SettlementPanel';
 import { OperatorCatalogRequests } from './CatalogRequests';
+import { ProductRequestsPanel } from './ProductRequestsPanel';
 import { OrderRecord, partLabel, shortLocation } from '../types';
 import { OUT_OF_STOCK_LABEL } from '../config';
 import { playChime } from '../sound';
@@ -256,6 +257,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
         {!isAdmin && <OperatorOverview />}
         {!isAdmin && <ProviderSettlement kind="operator" />}
         {!isAdmin && <PayAccountForm />}
+        {!isAdmin && <ProductRequestsPanel />}
         {!isAdmin && <OperatorCatalogRequests />}
 
         {/* Availability: operators set their own batches; the admin sees everyone and can switch them off */}

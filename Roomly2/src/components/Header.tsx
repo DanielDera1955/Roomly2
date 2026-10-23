@@ -1,6 +1,6 @@
 import React from 'react';
 import { SoundToggle } from './SoundToggle';
-import { Moon, Sun, Shield, Compass, Truck, ShoppingBag } from 'lucide-react';
+import { Moon, Sun } from 'lucide-react';
 import { CustomerProfile } from '../types';
 
 export type PortalMode = 'customer' | 'runner' | 'admin' | 'operator';
@@ -67,27 +67,13 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate">
-              {greetingName} · <span className="text-slate-400">6am - 11pm</span>
+              {greetingName}
             </p>
           </div>
         </div>
 
         {/* Right: Actions */}
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* Active Orders & History (replaces My orders and Track) */}
-          <button
-            type="button"
-            onClick={onOpenTracker}
-            className="relative px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 flex items-center gap-1.5 transition-colors cursor-pointer"
-            aria-label="Active orders and history"
-          >
-            <Compass className="w-3.5 h-3.5 text-[#0e9f55]" />
-            <span>Orders</span>
-            {activeOrderCount > 0 && (
-              <span className="w-2 h-2 rounded-full bg-[#0e9f55] ring-2 ring-white dark:ring-slate-900" />
-            )}
-          </button>
-
           {/* Dark Mode Toggle */}
           <SoundToggle className="border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" />
           <button

@@ -5,6 +5,7 @@ import { SoundToggle } from './SoundToggle';
 import { BatchSwitches } from './BatchSwitches';
 import { GatePickupPanel } from './GatePickupPanel';
 import { ProviderSettlement, PayAccountForm } from './SettlementPanel';
+import { ProductRequestsPanel } from './ProductRequestsPanel';
 import { playChime } from '../sound';
 import { ChevronDown as ChevronDownIcon, Phone as PhoneIcon } from 'lucide-react';
 import {
@@ -735,6 +736,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
         <GatePickupPanel />
 
         {/* Today's 70/30 statement, settlement and payment account (runners only) */}
+        {getCurrentStaff()?.role === 'runner' && <ProductRequestsPanel />}
         {getCurrentStaff()?.role === 'runner' && <ProviderSettlement kind="runner" />}
         {getCurrentStaff()?.role === 'runner' && <PayAccountForm />}
 
