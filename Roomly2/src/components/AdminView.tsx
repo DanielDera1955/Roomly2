@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { OrderChat } from './OrderChat';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { AdminSettlementsPanel } from './SettlementPanel';
-import { AdminCatalogRequests } from './CatalogRequests';
 import { playChime } from '../sound';
 import { Phone as PhoneIcon, ChevronDown as ChevronDownIcon } from 'lucide-react';
 import {
@@ -30,7 +29,7 @@ import {
 } from 'lucide-react';
 import { sellingPrice } from '../config';
 import { OrderRecord, CategoryDefinition, DeliveryRunner, locationText, shortLocation, roomText } from '../types';
-import { Product, PRESET_PRODUCT_IMAGES, INSIDE_CATEGORIES, OUTSIDE_CATEGORIES } from '../config';
+import { Product, PRESET_PRODUCT_IMAGES, StoreKey, STORE_LABEL, STORE_SOURCE, categoriesForStore, storeOfSource } from '../config';
 import { AdminDispatch, AdminTeam, AdminMoney } from './AdminDispatch';
 import {
   getOrders,
@@ -43,6 +42,8 @@ import {
   uploadProductImage,
   getCategories,
   addCategory,
+  setupStoreCategories,
+  getProductsFresh,
   deleteCategory,
   addSubcategory,
   deleteSubcategory,
@@ -90,13 +91,15 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
   // Products State
   const [products, setProducts] = useState<Product[]>([]);
   const [productSearch, setProductSearch] = useState('');
+  // Products and Categories are managed one store at a time: Inside School, Outside Store, Outside Food
+  const [adminStore, setAdminStore] = useState<StoreKey>('inside');
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
   const [tempPrice, setTempPrice] = useState<number>(0);
 
   // New Product Modal/Form State
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [newProdName, setNewProdName] = useState('');
-  const [newProdCategory, setNewProdCategory] = useState('Everyday');
+  const [newProdCategory, setNewProdCategory] = useState('');
   const [newProdSubcategory, setNewProdSubcategory] = useState('Bread');
   const [newProdPrice, setNewProdPrice] = useState<number>(1000);
   const [newProdUnit, setNewProdUnit] = useState('');
@@ -120,7 +123,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
       const [ordList, catList, prodList, runList, custList] = await Promise.all([
         getOrders(),
         getCategories(),
-        getProducts(),
+        getProductsFresh(),
         getRunners(),
         getAllCustomers(),
       ]);
@@ -195,7 +198,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCatName.trim()) return;
-    const updated = await addCategory(newCatName.trim(), newCatEmoji.trim() || '');
+    const updated = await addCategory(newCatName.trim(), newCatEmoji.trim() || '', ['All'], [adminStore]);
     setCategories(updated);
     setNewCatName('');
   };
@@ -210,7 +213,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
   // Move one product to another category straight from the product list
   const handleMoveProduct = async (product: Product, category: string) => {
-    if (!category || category === product.category) return;
+    if (category === (product.category || '')) return;
     try {
       const updated = await saveProduct({ id: product.id, category, subcategory: 'All' });
       setProducts(updated);
@@ -255,10 +258,10 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
       id: `prod-${Date.now()}`,
       name: newProdName.trim(),
       category: newProdCategory,
-      subcategory: newProdSubcategory || 'All',
+      subcategory: 'All',
       price: Number(newProdPrice),
       costPrice: newProdCost > 0 ? newProdCost : undefined,
-      source: newProdSource,
+      source: STORE_SOURCE[adminStore],
       unit: newProdUnit.trim() || '1 item',
       emoji: newProdEmoji.trim() || '',
       imageUrl: newProdImageUrl.trim() || undefined,
@@ -267,7 +270,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
       isAvailable: true,
     });
 
-    const updated = await getProducts();
+    const updated = await getProductsFresh();
     setProducts(updated);
     setIsAddingProduct(false);
     setNewProdName('');
@@ -330,8 +333,10 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
   });
 
   // Filtered products
+  const storeCats = categoriesForStore(categories, adminStore);
   const filteredProducts = products.filter((p) => {
     const q = productSearch.toLowerCase();
+    if (storeOfSource(p.source) !== adminStore) return false;
     return (
       !q ||
       p.name.toLowerCase().includes(q) ||
@@ -549,8 +554,25 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
         {/* ================= TAB 3: PRODUCTS & PHOTOS (User prompt explicitly requested adding product images) ================= */}
         {currentTab === 'products' && (
           <div className="space-y-4">
-            {/* Operators' price change and new product requests */}
-            <AdminCatalogRequests onChanged={fetchAllData} />
+            {/* Store switcher: each store keeps its own products and categories */}
+            <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800">
+              {(['inside', 'store', 'food'] as StoreKey[]).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => {
+                    setAdminStore(k);
+                    setNewProdSource(STORE_SOURCE[k]);
+                    setNewProdCategory('');
+                  }}
+                  className={`py-2 rounded-xl text-[11px] font-bold cursor-pointer ${
+                    adminStore === k ? 'bg-white dark:bg-slate-900 shadow-xs text-[#0e9f55]' : 'text-slate-500'
+                  }`}
+                >
+                  {STORE_LABEL[k]}
+                </button>
+              ))}
+            </div>
 
             {/* Header with Add Product button */}
             <div className="flex items-center justify-between">
@@ -627,20 +649,10 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-slate-400 block mb-0.5">Sold from</label>
-                    <select
-                      value={newProdSource}
-                      onChange={(e) => {
-                        const s = e.target.value as 'school' | 'outside' | 'food';
-                        setNewProdSource(s);
-                        if (newProdCost > 0) setNewProdPrice(sellingPrice(newProdCost, s));
-                      }}
-                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
-                    >
-                      <option value="school">Inside school (16%)</option>
-                      <option value="outside">Outside: trusted store (18% / 12%)</option>
-                      <option value="food">Outside: food operator (18% / 12%)</option>
-                    </select>
+                    <label className="text-[10px] font-bold text-slate-400 block mb-0.5">Store</label>
+                    <p className="px-2.5 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200">
+                      {STORE_LABEL[adminStore]} ({adminStore === 'inside' ? '16%' : '18% / 12%'})
+                    </p>
                   </div>
                   {newProdCost > 0 && (
                     <p className="col-span-2 text-[11px] text-slate-600 dark:text-slate-300">
@@ -650,48 +662,20 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-400 block mb-0.5">
-                      Main Category
-                    </label>
-                    <select
-                      value={newProdCategory}
-                      onChange={(e) => {
-                        setNewProdCategory(e.target.value);
-                        const cat = categories.find((c) => c.name === e.target.value);
-                        if (cat && cat.subcategories.length > 1) {
-                          setNewProdSubcategory(cat.subcategories[1]);
-                        }
-                      }}
-                      className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
-                    >
-                      {categories.map((c) => (
-                        <option key={c.name} value={c.name}>
-                          {c.emoji} {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-400 block mb-0.5">
-                      Subcategory
-                    </label>
-                    <select
-                      value={newProdSubcategory}
-                      onChange={(e) => setNewProdSubcategory(e.target.value)}
-                      className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
-                    >
-                      {(
-                        categories.find((c) => c.name === newProdCategory)?.subcategories || ['All']
-                      ).map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-0.5">Category</label>
+                  <select
+                    value={newProdCategory}
+                    onChange={(e) => setNewProdCategory(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
+                  >
+                    <option value="">No category (shows under All)</option>
+                    {storeCats.map((c) => (
+                      <option key={c.name} value={c.name}>
+                        {c.emoji} {c.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 {/* PRODUCT PHOTO FIELD (Image URL / Presets / File Upload) */}
@@ -883,14 +867,14 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                           )}
                         </div>
                         <select
-                          value={p.category}
+                          value={p.category || ''}
                           onChange={(e) => handleMoveProduct(p, e.target.value)}
                           className="mt-0.5 max-w-full text-[10px] font-semibold px-1.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 cursor-pointer"
                           title="Move to another category"
                         >
-                          {!categories.some((c) => c.name === p.category) && <option value={p.category}>{p.category}</option>}
-                          {categories
-                            .filter((c) => c.name !== 'Request')
+                          <option value="">No category (All only)</option>
+                          {p.category && !storeCats.some((c) => c.name === p.category) && <option value={p.category}>{p.category}</option>}
+                          {storeCats
                             .map((c) => (
                               <option key={c.id || c.name} value={c.name}>
                                 {c.name}
@@ -1195,34 +1179,55 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
         {/* ================= TAB 3: CATEGORIES & SUBCATEGORIES ================= */}
         {currentTab === 'categories' && (
           <div className="space-y-4">
-            {/* One tap: create Roomly's standard inside and outside categories that are missing */}
-            {(() => {
-              const have = new Set(categories.map((c) => c.name.toLowerCase()));
-              const missing = [...INSIDE_CATEGORIES, ...OUTSIDE_CATEGORIES].filter((c) => !have.has(c.name.toLowerCase()));
-              if (missing.length === 0) return null;
-              return (
-                <div className="bg-emerald-50 dark:bg-emerald-950/30 rounded-2xl p-4 border border-emerald-200 dark:border-emerald-900/50 space-y-2">
-                  <p className="text-xs text-slate-700 dark:text-slate-200">
-                    {missing.length} of Roomly's standard categories are missing: {missing.map((c) => c.name).join(', ')}.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      let updated = categories;
-                      for (const c of missing) updated = await addCategory(c.name, c.emoji, ['All']);
-                      setCategories(updated);
-                    }}
-                    className="w-full py-2 rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer"
-                  >
-                    Add the standard categories
-                  </button>
-                  <p className="text-[11px] text-slate-500">Then edit each product and move it into its category.</p>
-                </div>
-              );
-            })()}
+            {/* Store switcher: each store keeps its own products and categories */}
+            <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800">
+              {(['inside', 'store', 'food'] as StoreKey[]).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => {
+                    setAdminStore(k);
+                    setNewProdSource(STORE_SOURCE[k]);
+                    setNewProdCategory('');
+                  }}
+                  className={`py-2 rounded-xl text-[11px] font-bold cursor-pointer ${
+                    adminStore === k ? 'bg-white dark:bg-slate-900 shadow-xs text-[#0e9f55]' : 'text-slate-500'
+                  }`}
+                >
+                  {STORE_LABEL[k]}
+                </button>
+              ))}
+            </div>
+
+            {/* One tap: give each store its standard categories and remove the old ones */}
+            <div className="bg-emerald-50 dark:bg-emerald-950/30 rounded-2xl p-4 border border-emerald-200 dark:border-emerald-900/50 space-y-2">
+              <p className="text-xs text-slate-700 dark:text-slate-200">
+                Set up the standard categories for all three stores and remove the old ones. Products in an old category are kept and move
+                to "No category" (they still show under All).
+              </p>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!window.confirm('Set up the standard categories and remove the old ones? No product is deleted.')) return;
+                  try {
+                    const res = await setupStoreCategories();
+                    setCategories(res.categories);
+                    setProducts(await getProductsFresh());
+                    window.alert(
+                      `Done. Removed: ${res.removed.length ? res.removed.join(', ') : 'nothing'}. ${res.moved} product(s) moved to No category.`
+                    );
+                  } catch (e: any) {
+                    window.alert(e?.message || 'Could not update categories.');
+                  }
+                }}
+                className="w-full py-2 rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer"
+              >
+                Set up store categories (remove old ones)
+              </button>
+            </div>
             <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                Add New Main Category
+                Add a category to {STORE_LABEL[adminStore]}
               </h3>
               <form onSubmit={handleAddCategory} className="flex gap-2">
                 <input
@@ -1250,9 +1255,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
               </form>
             </div>
 
-            {/* List of categories with subcategory manager */}
+            {/* This store's categories */}
             <div className="space-y-3">
-              {categories.map((cat) => (
+              {storeCats.map((cat) => (
                 <div
                   key={cat.id || cat.name}
                   className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3"

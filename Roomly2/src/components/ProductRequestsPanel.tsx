@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { subscribeSideRequests, quoteProductRequest, mySide, getCategories, getCurrentStaff } from '../api.js';
-import { sellingPrice, INSIDE_CATEGORIES, OUTSIDE_CATEGORIES } from '../config';
+import { sellingPrice, categoriesForStore } from '../config';
 
 const naira = (n: number) => `₦${Math.round(n || 0).toLocaleString()}`;
 const input =
@@ -23,11 +23,8 @@ export const ProductRequestsPanel: React.FC = () => {
 
   useEffect(() => subscribeSideRequests(side, setList), [side]);
   useEffect(() => {
-    const standard = (side === 'inside' ? INSIDE_CATEGORIES : side === 'store' ? OUTSIDE_CATEGORIES : []).map((c) => c.name);
-    getCategories().then((l: any[]) => {
-      const names = l.map((c) => c.name).filter((n: string) => n !== 'Request');
-      setCategories(Array.from(new Set([...standard, ...names])));
-    });
+    // Only this store's categories (Inside, Outside Store, or Outside Food)
+    getCategories().then((l: any[]) => setCategories(categoriesForStore(l, side).map((c: any) => c.name)));
   }, [side]);
 
   const since = Date.now() - 3 * 86400000;
@@ -111,7 +108,7 @@ export const ProductRequestsPanel: React.FC = () => {
                   onChange={(e) => setCats((p) => ({ ...p, [r.id]: e.target.value }))}
                   className={input}
                 >
-                  <option value="">Category for the store</option>
+                  <option value="">No category (shows under All)</option>
                   {categories.map((n) => (
                     <option key={n} value={n}>
                       {n}

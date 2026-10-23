@@ -13,7 +13,7 @@ import {
 } from '../api.js';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { ProviderSettlement, PayAccountForm } from './SettlementPanel';
-import { OperatorCatalogRequests } from './CatalogRequests';
+import { OperatorProductsPanel } from './StoreProducts';
 import { ProductRequestsPanel } from './ProductRequestsPanel';
 import { OrderRecord, partLabel, shortLocation } from '../types';
 import { OUT_OF_STOCK_LABEL } from '../config';
@@ -42,11 +42,12 @@ function addUp(days: any[]) {
       orders: t.orders + (d.orders || 0),
       paid: t.paid + (d.itemsPaid || 0),
       earnings: t.earnings + (d.keep || 0),
+      sales: t.sales + (d.paid || 0),
       owed: t.owed + (d.due || 0),
       delivery: t.delivery + (d.deliveryKeep || 0),
       estimated: t.estimated || Boolean(d.estimated),
     }),
-    { orders: 0, paid: 0, earnings: 0, owed: 0, delivery: 0, estimated: false }
+    { orders: 0, paid: 0, earnings: 0, sales: 0, owed: 0, delivery: 0, estimated: false }
   );
 }
 
@@ -124,8 +125,8 @@ const OperatorOverview: React.FC = () => {
           <span className="block text-[10px] text-slate-400">orders</span>
         </div>
         <div className="rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 p-2.5">
-          <span className="block text-[10px] font-bold uppercase text-emerald-700 dark:text-emerald-300">You earned</span>
-          <span className="block text-base font-extrabold text-[#0e9f55]">{naira(t.earnings)}</span>
+          <span className="block text-[10px] font-bold uppercase text-emerald-700 dark:text-emerald-300">Total Sales</span>
+          <span className="block text-base font-extrabold text-[#0e9f55]">{naira(t.sales)}</span>
           <span className="block text-[10px] text-slate-400">items + delivery</span>
         </div>
         <div className="rounded-2xl bg-amber-50 dark:bg-amber-950/30 p-2.5">
@@ -138,7 +139,7 @@ const OperatorOverview: React.FC = () => {
       <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
         {loading
           ? 'Loading…'
-          : `Students paid ${naira(t.paid)} for your items. Delivery you keep: ${naira(t.delivery)}. Counted when you tap "Sent to school gate".`}
+          : `Total Sales is everything students paid on your completed carts (items ${naira(t.paid)} plus delivery). You keep ${naira(t.earnings)}. Counted when you tap "Sent to school gate".`}
       </p>
       {t.estimated && (
         <p className="text-[11px] text-amber-700 dark:text-amber-300">
@@ -268,7 +269,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
         {!isAdmin && <ProviderSettlement kind="operator" />}
         {!isAdmin && <PayAccountForm />}
         {!isAdmin && <ProductRequestsPanel />}
-        {!isAdmin && <OperatorCatalogRequests />}
+        {!isAdmin && <OperatorProductsPanel />}
 
         {/* Availability: operators set their own batches; the admin sees everyone and can switch them off */}
         {isAdmin ? <OperatorOverridePanel /> : <BatchSwitches side={kind} />}
