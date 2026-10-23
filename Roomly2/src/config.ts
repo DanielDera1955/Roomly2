@@ -353,7 +353,7 @@ export function shopGroupOf(p: Product): ShopGroup {
 }
 export function shopGroupLabel(group: ShopGroup, side: 'inside' | 'outside'): string {
   if (group === 'store') return 'Store Items';
-  return side === 'outside' ? 'Cooked Food and Drinks' : 'Cooked Food';
+  return 'Cooked Food';
 }
 export const ITEMS_PER_PAGE = 10;
 

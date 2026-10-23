@@ -564,6 +564,20 @@ export default function App() {
   }, [historyOrders, recentOrders, activeOrder]);
   const activeOrderCount = screenOrders.filter((o) => o.status !== 'Delivered' && o.status !== 'Cancelled').length;
 
+  // Hero greeting: guests, signed-in students without a finished order, and returning students
+  const signedInCustomer = Boolean(customer?.name) && !customer?.wrongPin && isValidNigerianPhone(phone) && /^\d{6}$/.test(pin);
+  const firstName = String(customer?.name || '').trim().split(/\s+/)[0] || '';
+  const hasCompletedOrder =
+    signedInCustomer &&
+    ((customer?.deliveredOrdersCount || 0) > 0 || screenOrders.some((o) => o.status === 'Delivered' && o.paymentStatus !== 'unpaid'));
+  const hour = new Date().getHours();
+  const dayPart = hour >= 5 && hour < 12 ? 'Good morning' : hour >= 12 && hour < 17 ? 'Good afternoon' : 'Good evening';
+  const heroGreeting = hasCompletedOrder
+    ? `${dayPart}, ${firstName}. It's nice to have you back.`
+    : signedInCustomer && firstName
+    ? `Hi ${firstName}, we've got you covered.`
+    : "Hi there, we've got you covered.";
+
   const handleToggleStoreHoursOverride = () => {
     const current = storeStatus.isOpen;
     const nextStatus = setStoreOverride(!current);
@@ -643,12 +657,17 @@ export default function App() {
 
           {/* Phone Number Input & Customer Recognition */}
           <div className="pt-1">
-            <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-snug">
-              Order Food and Other Items Within and Outside School
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Delivered to your hostel or lodge room in scheduled batches.
-            </p>
+            <p className={`font-semibold text-[#0e9f55] leading-snug ${hasCompletedOrder ? 'text-base' : 'text-sm mb-1'}`}>{heroGreeting}</p>
+            {!hasCompletedOrder && (
+              <>
+                <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-snug">
+                  Order Food and Other Items Within and Outside School
+                </h1>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Delivered to your hostel room or the school gate in scheduled batches.
+                </p>
+              </>
+            )}
           </div>
 
           <PhoneLookupBar
