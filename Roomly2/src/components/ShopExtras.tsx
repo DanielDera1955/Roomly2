@@ -157,3 +157,74 @@ export const OrderAgainRow: React.FC<{
     </div>
   );
 };
+
+/** Returning students: a greeting card whose sky follows the time of day (sunrise, blue sky, night) */
+export const GreetingCard: React.FC<{
+  dayPart: 'Good morning' | 'Good afternoon' | 'Good evening';
+  name: string;
+  hasUsuals: boolean;
+  activeOrders: number;
+  onOpenOrders: () => void;
+}> = ({ dayPart, name, hasUsuals, activeOrders, onOpenOrders }) => {
+  const morning = dayPart === 'Good morning';
+  const afternoon = dayPart === 'Good afternoon';
+  const sky = morning
+    ? 'linear-gradient(180deg,#fb923c 0%,#fbbf24 45%,#fde68a 100%)'
+    : afternoon
+    ? 'linear-gradient(180deg,#0ea5e9 0%,#38bdf8 55%,#7dd3fc 100%)'
+    : 'linear-gradient(180deg,#1e1b4b 0%,#312e81 55%,#0e7490 100%)';
+  const ink = morning ? 'text-orange-950' : 'text-white';
+  const stars = [
+    [190, 14],
+    [235, 46],
+    [262, 10],
+    [205, 78],
+    [290, 92],
+  ];
+  return (
+    <div className={`relative overflow-hidden rounded-3xl p-[18px] min-h-[176px] shadow-md ${ink}`} style={{ background: sky }}>
+      {morning && (
+        <div className="absolute right-5 top-5 w-14 h-14 rounded-full bg-orange-50" style={{ boxShadow: '0 0 40px 14px rgba(255,237,213,.8)' }} />
+      )}
+      {afternoon && (
+        <>
+          <div className="absolute right-6 top-[18px] w-12 h-12 rounded-full bg-yellow-300" style={{ boxShadow: '0 0 30px 10px rgba(253,224,71,.6)' }} />
+          <span className="absolute right-[70px] top-[30px] w-[70px] h-5 rounded-full bg-white/85" />
+          <span className="absolute right-5 top-[78px] w-[46px] h-3.5 rounded-full bg-white/85" />
+        </>
+      )}
+      {!morning && !afternoon && (
+        <>
+          {stars.map(([l, t]) => (
+            <span key={`${l}-${t}`} className="absolute w-[3px] h-[3px] rounded-full bg-white/85" style={{ left: l, top: t }} />
+          ))}
+          <div className="absolute right-[22px] top-4 w-10 h-10 rounded-full bg-amber-200 overflow-hidden" style={{ boxShadow: '0 0 30px 8px rgba(253,230,138,.35)' }}>
+            <div className="absolute w-10 h-10 rounded-full left-[11px] -top-1.5" style={{ background: '#262266' }} />
+          </div>
+        </>
+      )}
+      {/* hills */}
+      <div className="absolute -left-8 -right-8 -bottom-12 h-20 rounded-[50%] bg-[#0e9f55]/55" />
+      <div className="absolute left-[120px] -right-16 -bottom-14 h-20 rounded-[50%] bg-[#0b8044]/50" />
+
+      <div className="relative z-10">
+        <p className={`text-[11px] font-extrabold uppercase tracking-[0.14em] ${morning ? 'text-orange-800' : 'opacity-90'}`}>{dayPart}</p>
+        <h1 className="text-[30px] font-extrabold tracking-tight leading-tight truncate">{name}</h1>
+        <p className="text-[13px] opacity-90 max-w-[230px] leading-snug">
+          Nice to have you back.{hasUsuals ? ' Your usuals are one tap away.' : ''}
+        </p>
+        {activeOrders > 0 && (
+          <button
+            type="button"
+            onClick={onOpenOrders}
+            className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold cursor-pointer backdrop-blur-sm ${
+              morning ? 'bg-white/45' : 'bg-white/20'
+            }`}
+          >
+            🛍 {activeOrders} {activeOrders === 1 ? 'order' : 'orders'} on the way ›
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
