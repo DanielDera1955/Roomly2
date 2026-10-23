@@ -186,7 +186,7 @@ service cloud.firestore {
 
       allow create: if request.resource.data.status == 'Received'
         && request.resource.data.runnerId == ''
-        && request.resource.data.paymentStatus in ['unpaid', 'pay_on_delivery']
+        && request.resource.data.paymentStatus == 'unpaid'
         && request.resource.data.deliveryFee in [300, 390, 500, 800, 1000, 1500]
         && request.resource.data.totalAmount == request.resource.data.subtotal + request.resource.data.deliveryFee
         && request.resource.data.items.size() <= 60;
@@ -200,11 +200,20 @@ service cloud.firestore {
          && request.resource.data.paymentStatus == 'payment_sent'
          && request.resource.data.payReady == true) ||
         // Customers may ask for gate to room pickup on an outside order (again if a runner refused)
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['gateReq', 'gatePickup', 'history'])
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['gateReq', 'gatePickup', 'history', 'area', 'building', 'room'])
          && resource.data.get('cart', '') in ['store', 'food']
          && (resource.data.get('gatePickup', null) == null || resource.data.gatePickup.status in ['refused', 'refunded'])
          && request.resource.data.gatePickup.status == 'pending'
          && request.resource.data.gatePickup.fee == 600) ||
+        // Customers mark that they paid the runner who accepted their gate pickup (nothing else changes)
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['gatePickup', 'history'])
+         && resource.data.get('gatePickup', null) != null
+         && resource.data.gatePickup.status == 'accepted'
+         && request.resource.data.gatePickup.status == 'accepted'
+         && request.resource.data.gatePickup.paid == true
+         && request.resource.data.gatePickup.fee == resource.data.gatePickup.fee
+         && request.resource.data.gatePickup.get('runnerName', '') == resource.data.gatePickup.get('runnerName', '')
+         && request.resource.data.gatePickup.get('runnerPay', null) == resource.data.gatePickup.get('runnerPay', null)) ||
         // Operators confirm the student's payment reached their account (their own orders only)
         (((isOperator('store') && resource.data.hasStore == true) || (isOperator('food') && resource.data.hasFood == true))
          && resource.data.payReady == true
