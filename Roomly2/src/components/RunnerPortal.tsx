@@ -239,7 +239,11 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
 
   // 1. Active Orders Available to Accept (unassigned or received)
   const unassignedOrders = insideOrders.filter(
-    (o) => o.status !== 'Delivered' && o.status !== 'Cancelled' && (!o.runnerId || o.status === 'Received')
+    (o) =>
+      o.status !== 'Delivered' &&
+      o.status !== 'Cancelled' &&
+      o.paymentStatus !== 'unpaid' && // only orders the student says they have paid (or pay on delivery)
+      (!o.runnerId || o.status === 'Received')
   );
 
   // 2. Active Orders Currently Assigned to Chosen Runner
@@ -561,8 +565,20 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
             </button>
           )}
 
+          {/* Payment must be confirmed before packing (pay on delivery is collected at the door) */}
+          {!isAssignedToMe && ord.paymentStatus === 'payment_sent' && (
+            <button
+              type="button"
+              onClick={() => handleConfirmPayment(ord.id)}
+              disabled={updatingId === ord.id}
+              className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl text-xs font-black shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>Confirm payment received (₦{ord.totalAmount.toLocaleString()})</span>
+            </button>
+          )}
+
           {/* If unassigned or received: runner can accept and start packaging */}
-          {!isAssignedToMe && (
+          {!isAssignedToMe && (ord.paymentStatus === 'payment_confirmed' || ord.paymentStatus === 'pay_on_delivery') && (
             <button
               type="button"
               onClick={() => handleStartPackaging(ord.id)}
@@ -716,6 +732,9 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
             </label>
           </div>
 
+          {getCurrentStaff()?.role === 'runner' ? (
+            <p className="text-sm font-bold text-slate-900 dark:text-white">{getCurrentStaff()?.name}</p>
+          ) : (
           <select
             value={activeRunnerId}
             disabled={getCurrentStaff()?.role === 'runner'}
@@ -728,6 +747,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
               </option>
             ))}
           </select>
+          )}
 
         </div>
 

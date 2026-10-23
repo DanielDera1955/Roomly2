@@ -49,22 +49,6 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-white">
                 Roomly
               </span>
-              {storeStatus.isOpen && (
-              <span
-                className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 transition-colors ${
-                  storeStatus.isOpen
-                    ? 'bg-emerald-50 text-[#0e9f55] dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/40'
-                    : 'bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400 border border-rose-200/60 dark:border-rose-800/40'
-                }`}
-              >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    storeStatus.isOpen ? 'bg-[#0e9f55]' : 'bg-rose-500'
-                  }`}
-                />
-                Open
-              </span>
-              )}
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate">
               {greetingName}

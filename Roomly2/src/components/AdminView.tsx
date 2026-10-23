@@ -31,7 +31,7 @@ import {
 import { sellingPrice } from '../config';
 import { OrderRecord, CategoryDefinition, DeliveryRunner, locationText, shortLocation, roomText } from '../types';
 import { Product, PRESET_PRODUCT_IMAGES, INSIDE_CATEGORIES, OUTSIDE_CATEGORIES } from '../config';
-import { OrderHistorySection } from './SpendingHistorySection';
+import { AdminDispatch, AdminTeam, AdminMoney } from './AdminDispatch';
 import {
   getOrders,
   updateOrderStatus,
@@ -60,7 +60,7 @@ interface AdminViewProps {
   onOrderUpdated?: () => void;
 }
 
-type AdminTab = 'orders' | 'spending' | 'products' | 'categories' | 'customers';
+type AdminTab = 'orders' | 'team' | 'money' | 'products' | 'categories' | 'customers';
 
 export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpdated }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -470,15 +470,28 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
           <button
             type="button"
-            onClick={() => setCurrentTab('spending')}
+            onClick={() => setCurrentTab('team')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-              currentTab === 'spending'
+              currentTab === 'team'
                 ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
-            <BarChart3 className="w-3.5 h-3.5 text-[#0e9f55]" />
-            <span>Order History</span>
+            <User className="w-3.5 h-3.5" />
+            <span>Team</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCurrentTab('money')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+              currentTab === 'money'
+                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <BarChart3 className="w-3.5 h-3.5" />
+            <span>Money</span>
           </button>
 
           <button
@@ -524,310 +537,14 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
       {/* Main Container */}
       <div className="p-4 space-y-4 max-w-[540px] mx-auto">
-        {/* KPI Summary Cards */}
-        <div className="grid grid-cols-3 gap-2">
-          <div
-            onClick={() => setCurrentTab('spending')}
-            className="bg-white dark:bg-slate-900 rounded-2xl p-3 border border-slate-200/80 dark:border-slate-800 shadow-xs cursor-pointer hover:border-[#0e9f55]/60 transition-colors group"
-            title="Click to view order history, category demand & item volume"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                Total Revenue
-              </span>
-              <BarChart3 className="w-3 h-3 text-[#0e9f55] opacity-60 group-hover:opacity-100" />
-            </div>
-            <span className="text-sm font-extrabold font-mono text-[#0e9f55] block mt-0.5">
-              ₦{totalRevenue.toLocaleString()}
-            </span>
-            <span className="text-[9px] text-slate-400 block group-hover:text-[#0e9f55]">
-              Order & volume history ›
-            </span>
-          </div>
+        {/* ================= ORDERS & DISPATCH: Inside / Outside Store / Food ================= */}
+        {currentTab === 'orders' && <AdminDispatch />}
 
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-3 border border-slate-200/80 dark:border-slate-800 shadow-xs">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-              Active In-Flight
-            </span>
-            <span className="text-sm font-extrabold font-mono text-amber-500 block mt-0.5">
-              {activeCount} orders
-            </span>
-            <span className="text-[9px] text-slate-400">Dispatching now</span>
-          </div>
+        {/* ================= TEAM: runners, operators, accounts, switches ================= */}
+        {currentTab === 'team' && <AdminTeam />}
 
-          <div
-            onClick={() => setCurrentTab('products')}
-            className="bg-white dark:bg-slate-900 rounded-2xl p-3 border border-slate-200/80 dark:border-slate-800 shadow-xs cursor-pointer hover:border-slate-400 transition-colors"
-          >
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-              Catalog Items
-            </span>
-            <span className="text-sm font-extrabold font-mono text-slate-900 dark:text-white block mt-0.5">
-              {products.length} products
-            </span>
-            <span className="text-[9px] text-slate-400">Manage photos ›</span>
-          </div>
-        </div>
-
-        {/* ================= TAB 1: ORDERS & RUNNERS ================= */}
-        {currentTab === 'orders' && (
-          <div className="space-y-4">
-            <BatchSwitches />
-            <OperatorOverridePanel />
-            <AdminSettlementsPanel />
-
-            {/* Search & Filter */}
-            <div className="space-y-2">
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                <input
-                  type="text"
-                  value={orderSearchQuery}
-                  onChange={(e) => setOrderSearchQuery(e.target.value)}
-                  placeholder="Search orders, room, student or runner..."
-                  className="w-full pl-9 pr-3 py-2 text-xs bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]"
-                />
-              </div>
-
-              {/* Status Filter Tabs */}
-              <div className="flex gap-1 overflow-x-auto no-scrollbar pb-1">
-                {['All', 'Received', 'Packing', 'On the way', 'Delivered'].map((st) => (
-                  <button
-                    key={st}
-                    type="button"
-                    onClick={() => setSelectedStatus(st)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap transition-colors ${
-                      selectedStatus === st
-                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                        : 'bg-white dark:bg-slate-900 text-slate-500 border border-slate-200 dark:border-slate-800'
-                    }`}
-                  >
-                    {st === 'Packing' ? 'Being Packaged' : st}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Orders List */}
-            <div className="space-y-3">
-              {filteredOrders.length === 0 ? (
-                <div className="text-center py-10 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-400 text-xs">
-                  No orders found matching your search.
-                </div>
-              ) : (
-                filteredOrders.map((ord) => (
-                  <div
-                    key={ord.id}
-                    className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3"
-                  >
-                    {/* Header: tap to open or close */}
-                    <button
-                      type="button"
-                      onClick={() => setAdminOpen((prev) => ({ ...prev, [ord.id]: !prev[ord.id] }))}
-                      className="w-full flex items-start justify-between gap-3 text-left cursor-pointer"
-                    >
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="font-extrabold text-sm text-slate-900 dark:text-white">{ord.name}</span>
-                          <span
-                            className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                              ord.status === 'Delivered'
-                                ? 'bg-emerald-100 text-[#0e9f55] dark:bg-emerald-950/60'
-                                : ord.status === 'Packing'
-                                ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60'
-                                : ord.status === 'On the way'
-                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/60'
-                                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-                            }`}
-                          >
-                            {ord.status === 'Received' ? 'New' : ord.status}
-                          </span>
-                          {ord.paymentStatus === 'payment_sent' && (
-                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-500 text-white">Payment sent</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1 text-xs font-bold text-slate-800 dark:text-slate-200">
-                          <Building className="w-3.5 h-3.5 text-[#0e9f55] shrink-0" />
-                          <span>{shortLocation(ord)}</span>
-                        </div>
-                        <p className="text-xs text-slate-400">
-                          {ord.deliveryTime} ·{' '}
-                          {ord.cart === 'store' || ord.cart === 'food'
-                            ? `${ord.cart === 'food' ? 'Food' : 'Store'}: ${ord.operatorName || 'any operator'}`
-                            : `Runner: ${ord.runnerName || ord.turnRunner || 'none yet'}`}
-                        </p>
-                        {(ord.outOfStock || ord.gatePickup) && (
-                          <p className="text-[11px] text-slate-400">
-                            {ord.outOfStock ? `Out of stock: ${ord.outOfStock}` : ''}
-                            {ord.gatePickup ? ` · Gate pickup: ${ord.gatePickup.status}${ord.gatePickup.runnerName ? ` (${ord.gatePickup.runnerName}, ₦${ord.gatePickup.fee})` : ''}` : ''}
-                          </p>
-                        )}
-                      </div>
-                      <div className="text-right shrink-0 flex flex-col items-end gap-1">
-                        <span className="font-bold text-sm text-[#0e9f55] whitespace-nowrap">
-                          ₦{ord.totalAmount.toLocaleString()}
-                        </span>
-                        <ChevronDownIcon className={`w-4 h-4 text-slate-400 transition-transform ${adminOpen[ord.id] ? 'rotate-180' : ''}`} />
-                      </div>
-                    </button>
-
-                    {adminOpen[ord.id] && (
-                    <div className="space-y-3">
-                    {/* Payment Status & Actions */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <CreditCard className="w-3.5 h-3.5 text-slate-400" />
-                        <span className="font-semibold text-slate-600 dark:text-slate-300">
-                          Payment:
-                        </span>
-                        {ord.paymentStatus === 'payment_confirmed' ? (
-                          <span className="text-[#0e9f55] font-bold">Confirmed Paid</span>
-                        ) : ord.paymentStatus === 'payment_sent' ? (
-                          <span className="text-amber-600 font-bold animate-pulse">
-                            Student Sent Payment!
-                          </span>
-                        ) : ord.paymentStatus === 'pay_on_delivery' ? (
-                          <span className="text-blue-600 font-bold">Pay on Delivery</span>
-                        ) : (
-                          <span className="text-rose-600 font-bold">Awaiting Bank Transfer</span>
-                        )}
-                      </div>
-
-                      {ord.paymentStatus === 'payment_sent' && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await confirmPayment(ord.id, 'Admin');
-                            const refreshed = await getOrders();
-                            setOrders(refreshed);
-                            if (onOrderUpdated) onOrderUpdated();
-                          }}
-                          className="px-2.5 py-1 bg-[#0e9f55] hover:bg-[#0b8044] text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shrink-0"
-                        >
-                          Confirm Payment
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Assigned Runner Selector */}
-                    <div className="flex flex-col gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700 text-xs">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <User className="w-3.5 h-3.5 text-[#0e9f55]" />
-                        <span className="font-semibold text-slate-700 dark:text-slate-300">
-                          Assigned Runner:
-                        </span>
-                        <span className="font-bold text-slate-900 dark:text-white">
-                          {ord.runnerName || 'None assigned yet'}
-                        </span>
-                      </div>
-
-                      <select
-                        value={ord.runnerId || ''}
-                        onChange={(e) => handleAssignRunner(ord.id, e.target.value)}
-                        className="w-full bg-white dark:bg-slate-800 rounded-lg px-2 py-2 border border-slate-200 dark:border-slate-700 text-xs font-bold cursor-pointer"
-                      >
-                        <option value="">Assign Runner...</option>
-                        {runners.map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {r.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Products with Recognizable Photos in Admin view */}
-                    <div className="space-y-1.5 p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl">
-                      <span className="text-[10px] font-bold uppercase text-slate-400 block">
-                        Ordered Items ({ord.items?.length || 0}):
-                      </span>
-                      {ord.items?.map((item, idx) => (
-                        <div key={idx} className="flex items-center justify-between gap-2 text-xs">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className="w-8 h-8 rounded-lg overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shrink-0 flex items-center justify-center">
-                              {item.imageUrl ? (
-                                <img
-                                  src={item.imageUrl}
-                                  alt={item.name}
-                                  className="w-full h-full object-cover"
-                                  onError={(e) => {
-                                    (e.target as HTMLElement).style.display = 'none';
-                                  }}
-                                />
-                              ) : (
-                                <span className="text-base">{item.emoji || ''}</span>
-                              )}
-                            </div>
-                            <span className="text-slate-700 dark:text-slate-300 truncate">
-                              <strong>{item.quantity}x</strong> {item.name}
-                              {item.extras && item.extras.length > 0
-                                ? ` (+${item.extras.map((e) => `${e.quantity || 1}x ${e.name}`).join(', ')})`
-                                : ''}
-                            </span>
-                          </div>
-                          <span className="font-mono text-slate-900 dark:text-white shrink-0">
-                            ₦{item.totalPrice.toLocaleString()}
-                          </span>
-                        </div>
-                      ))}
-
-                      {ord.customRequest && (
-                        <div className="p-2 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 italic mt-1 text-xs">
-                          Custom Request: "{ord.customRequest}"
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Status Changer Buttons */}
-                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
-                        {['Received', 'Packing', 'On the way', 'Delivered'].map((step) => (
-                          <button
-                            key={step}
-                            type="button"
-                            onClick={() => handleStatusChange(ord.id, step)}
-                            disabled={updatingOrderId === ord.id}
-                            className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
-                              ord.status === step
-                                ? 'bg-[#0e9f55] text-white shadow-xs'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                            }`}
-                          >
-                            {step === 'Packing' ? 'Packaged' : step}
-                          </button>
-                        ))}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteOrder(ord.id)}
-                        className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg transition-colors cursor-pointer shrink-0"
-                        title="Delete order"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <a
-                      href={`tel:${ord.phone}`}
-                      className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#0e9f55] hover:bg-[#0b8044] text-white text-xs font-bold"
-                    >
-                      <PhoneIcon className="w-3.5 h-3.5" />
-                      <span>Call {ord.name} · {ord.phone}</span>
-                    </a>
-                    <OrderChat orderId={ord.id} role="admin" senderName="Admin" closed={ord.status === 'Delivered'} />
-                    </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ================= TAB 2: ORDER HISTORY & VOLUME DEMAND (User prompt: total volume, categories, items volume, peak batch, spending history, today, 7d, 30d, 1y, 5y) ================= */}
-        {currentTab === 'spending' && (
-          <OrderHistorySection orders={orders} categories={categories} products={products} />
-        )}
+        {/* ================= MONEY: real totals from settlement records ================= */}
+        {currentTab === 'money' && <AdminMoney />}
 
         {/* ================= TAB 3: PRODUCTS & PHOTOS (User prompt explicitly requested adding product images) ================= */}
         {currentTab === 'products' && (

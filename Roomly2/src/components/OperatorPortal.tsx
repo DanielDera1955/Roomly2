@@ -3,6 +3,7 @@ import { ChevronDown, Package, Phone } from 'lucide-react';
 import {
   subscribeOperatorOrders,
   updatePartStatus,
+  operatorConfirmPayment,
   getCurrentStaff,
   logoutStaff,
   ensureOperatorStatus,
@@ -159,7 +160,8 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
   const [kind, setKind] = useState<Kind>(staff?.role === 'food' ? 'food' : 'store');
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'packed' | 'sent'>('all');
+  // Stages: Active (student says paid) -> Payment confirmed (pack and send) -> Completed (sent to the gate)
+  const [filter, setFilter] = useState<'active' | 'confirmed' | 'completed'>('active');
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState('');
   const seen = useRef<Set<string> | null>(null);
@@ -185,8 +187,17 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
 
   const mine = (o: OrderRecord) => (o.items || []).filter((i) => (kind === 'food' ? i.source === 'food' : i.source === 'outside'));
   const statusOf = (o: OrderRecord) => (kind === 'food' ? o.foodStatus : o.storeStatus) || 'pending';
-  const count = (s: string) => orders.filter((o) => statusOf(o) === s).length;
-  const shown = orders.filter((o) => filter === 'all' || statusOf(o) === filter);
+  const stageOf = (o: OrderRecord) =>
+    statusOf(o) === 'sent' ? 'completed' : o.paymentStatus === 'payment_confirmed' ? 'confirmed' : 'active';
+  const count = (s: string) => orders.filter((o) => stageOf(o) === s).length;
+  const shown = orders.filter((o) => stageOf(o) === filter);
+  const confirmPaid = async (o: OrderRecord) => {
+    if (!window.confirm(`Confirm that ₦${(o.totalAmount || 0).toLocaleString()} from ${o.name} reached your account?`)) return;
+    setBusy(o.id);
+    const res = await operatorConfirmPayment(o.id);
+    if (!res) window.alert('Could not confirm. Check your connection and try again.');
+    setBusy('');
+  };
 
   const setStatus = async (o: OrderRecord, status: 'packed' | 'sent') => {
     setBusy(o.id);
@@ -202,10 +213,9 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
       : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300';
 
   const tabs: [typeof filter, string][] = [
-    ['all', `All orders (${orders.length})`],
-    ['pending', `To pack (${count('pending')})`],
-    ['packed', `Packed (${count('packed')})`],
-    ['sent', `Sent (${count('sent')})`],
+    ['active', `Active (${count('active')})`],
+    ['confirmed', `Payment confirmed (${count('confirmed')})`],
+    ['completed', `Completed (${count('completed')})`],
   ];
 
   return (
@@ -375,6 +385,21 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                     </div>
                   </div>
 
+                  {o.paymentStatus !== 'payment_confirmed' && st !== 'sent' ? (
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] text-slate-500">
+                        The student says they paid ₦{(o.totalAmount || 0).toLocaleString()} into your account. Check it, then confirm. Packing unlocks after.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={busy === o.id}
+                        onClick={() => confirmPaid(o)}
+                        className="w-full py-2.5 rounded-xl text-xs font-bold bg-amber-500 text-white disabled:opacity-40 cursor-pointer"
+                      >
+                        Confirm payment received
+                      </button>
+                    </div>
+                  ) : (
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
@@ -393,6 +418,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                       Sent to school gate
                     </button>
                   </div>
+                  )}
                   <a
                     href={`tel:${o.phone}`}
                     className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold"

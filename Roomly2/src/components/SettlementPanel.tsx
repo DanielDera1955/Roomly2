@@ -8,6 +8,8 @@ import {
   savePayAccount,
   getCurrentStaff,
   isOverdue,
+  clearMyDay,
+  objectToCart,
 } from '../api.js';
 import { STORE_CONFIG, SETTLE_BY_HOUR, RUNNER_SHARE } from '../config';
 
@@ -22,25 +24,33 @@ const card = 'bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 
 const input =
   'w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white';
 
-/** One open day: what is owed, what was sent, and the "I have sent" form */
+/** One open day: the carts with their maths, objections, All cleared, then "I have sent" */
 const OpenDay: React.FC<{ d: any }> = ({ d }) => {
   const remaining = Math.max(0, Math.round((d.due || 0) - (d.sentTotal || 0)));
   const [amount, setAmount] = useState(String(remaining || ''));
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showCarts, setShowCarts] = useState(false);
   const overdue = isOverdue([d.date]);
+  const objections = d.objections || {};
+  const openObj = Object.values(objections).filter((x: any) => x && x.status === 'open').length;
+  const carts: any[] = d.carts || [];
 
   useEffect(() => setAmount(String(remaining || '')), [remaining]);
 
-  const send = async () => {
+  const run = async (f: () => Promise<any>) => {
     setBusy(true);
     try {
-      await sendSettlement(d.id, Number(amount), note);
-      setNote('');
+      await f();
     } catch (e: any) {
       window.alert(e?.message || 'Could not save. Try again.');
     }
     setBusy(false);
+  };
+
+  const object = (orderId: string) => {
+    const reason = window.prompt('Why is this cart wrong? (e.g. price changed, item out of stock)');
+    if (reason && reason.trim()) run(() => objectToCart(d.id, orderId, reason));
   };
 
   return (
@@ -49,7 +59,7 @@ const OpenDay: React.FC<{ d: any }> = ({ d }) => {
         <div>
           <p className="font-bold text-slate-900 dark:text-white">{dayText(d.date)}</p>
           <p className="text-[11px] text-slate-500">
-            {d.orders || 0} order(s) · {overdue ? 'Overdue: you are hidden from checkout until Roomly confirms' : `Clear before ${deadlineText(d.date)}`}
+            {carts.length || d.orders || 0} cart(s) · {overdue ? 'Overdue: you are hidden from checkout until Roomly confirms' : `Clear before ${deadlineText(d.date)}`}
           </p>
         </div>
         <div className="text-right">
@@ -57,6 +67,62 @@ const OpenDay: React.FC<{ d: any }> = ({ d }) => {
           <p className="text-[10px] text-slate-400">owed</p>
         </div>
       </div>
+
+      {carts.length > 0 && (
+        <button type="button" onClick={() => setShowCarts(!showCarts)} className="text-[11px] font-bold text-[#0e9f55] cursor-pointer">
+          {showCarts ? 'Hide carts' : `See the ${carts.length} cart(s) and the maths`}
+          {openObj ? ` · ${openObj} objection(s) open` : ''}
+        </button>
+      )}
+      {showCarts && (
+        <div className="space-y-1.5">
+          <div className="grid grid-cols-4 gap-1 text-[10px] font-bold text-slate-500">
+            <span>Customer</span>
+            <span className="text-right">Paid</span>
+            <span className="text-right">You keep</span>
+            <span className="text-right">Owed</span>
+          </div>
+          {carts.map((c) => {
+            const ob = objections[c.orderId];
+            return (
+              <div key={c.orderId} className="space-y-1">
+                <div className="grid grid-cols-4 gap-1">
+                  <span className="truncate">{c.customer || c.orderId}</span>
+                  <span className="text-right font-mono">{naira(c.paid)}</span>
+                  <span className="text-right font-mono">{naira(c.keep)}</span>
+                  <span className="text-right font-mono font-bold">{naira(c.owed)}</span>
+                </div>
+                {ob ? (
+                  <p className={`text-[11px] ${ob.status === 'open' ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500'}`}>
+                    Your objection: {ob.reason}.{' '}
+                    {ob.status === 'open' ? 'Waiting for Roomly.' : `Roomly ${ob.status === 'corrected' ? 'corrected it' : 'kept the amount'}${ob.reply ? `: ${ob.reply}` : ''}.`}
+                  </p>
+                ) : (
+                  !d.cleared && (
+                    <button type="button" disabled={busy} onClick={() => object(c.orderId)} className="text-[11px] font-bold text-rose-600 cursor-pointer">
+                      Object to this cart
+                    </button>
+                  )
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {!d.cleared ? (
+        <button
+          type="button"
+          disabled={busy || openObj > 0}
+          onClick={() => run(() => clearMyDay(d.id))}
+          className="w-full py-2 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold disabled:opacity-40 cursor-pointer"
+        >
+          {openObj > 0 ? 'All cleared (locked while an objection is open)' : 'All cleared: the amounts are right'}
+        </button>
+      ) : (
+        <p className="text-[11px] font-bold text-[#0e9f55]">You cleared this day. Now send the money and tap "I have sent".</p>
+      )}
+
       {(d.payments || []).length > 0 && (
         <div className="text-[11px] text-slate-500 space-y-0.5">
           {(d.payments || []).map((p: any, i: number) => (
@@ -71,14 +137,19 @@ const OpenDay: React.FC<{ d: any }> = ({ d }) => {
           </p>
         </div>
       )}
-      {remaining > 0 && (
+      {d.cleared && remaining > 0 && (
         <div className="space-y-1.5">
           <div className="flex gap-2">
             <input type="number" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} className={input} placeholder="Amount" />
             <button
               type="button"
               disabled={busy || !Number(amount)}
-              onClick={send}
+              onClick={() =>
+                run(async () => {
+                  await sendSettlement(d.id, Number(amount), note);
+                  setNote('');
+                })
+              }
               className="shrink-0 px-3 py-1.5 rounded-lg bg-[#0e9f55] text-white font-bold disabled:opacity-40 cursor-pointer"
             >
               I have sent
@@ -139,7 +210,8 @@ export const ProviderSettlement: React.FC<{ kind: 'runner' | 'operator' }> = ({ 
 
       <div className="text-[11px] text-slate-600 dark:text-slate-300 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60">
         Send what you owe to <strong>{bank.bankName} · {bank.accountNumber}</strong> ({bank.accountName}) before {SETTLE_BY_HOUR}am the next
-        morning, then tap "I have sent". Part payments are fine; add a note.
+        morning. First check each day's carts and tap All cleared (or object to a cart), then send and tap "I have sent". Part
+        payments are fine; add a note.
       </div>
 
       {owing.length === 0 ? (
