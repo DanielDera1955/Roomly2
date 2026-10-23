@@ -375,9 +375,39 @@ export const OUTSIDE_CATEGORIES: { name: string; emoji: string }[] = [
   { name: 'Toiletries & Laundry Packs', emoji: '🧴' },
   { name: 'Drinks in Bulk', emoji: '🧃' },
 ];
+export const FOOD_CATEGORIES: { name: string; emoji: string }[] = [
+  { name: 'Food', emoji: '🍛' },
+  { name: 'Soft Drinks', emoji: '🥤' },
+];
+
+// ---------- Three stores (Fix batch 3a) ----------
+/** inside = inside school, store = outside store items, food = outside cooked food and drinks */
+export type StoreKey = 'inside' | 'store' | 'food';
+export const STORE_LABEL: Record<StoreKey, string> = { inside: 'Inside School', store: 'Outside Store', food: 'Outside Food' };
+export const STORE_SOURCE: Record<StoreKey, 'school' | 'outside' | 'food'> = { inside: 'school', store: 'outside', food: 'food' };
+/** Each store's standard categories. Inside also keeps "Food" for its Cooked Food tab. */
+export const STORE_CATEGORIES: Record<StoreKey, { name: string; emoji: string }[]> = {
+  inside: [...INSIDE_CATEGORIES, { name: 'Food', emoji: '🍛' }],
+  store: OUTSIDE_CATEGORIES,
+  food: FOOD_CATEGORIES,
+};
+/** Which store a product belongs to, from where it is sold */
+export const storeOfSource = (source?: string): StoreKey => (source === 'outside' ? 'store' : source === 'food' ? 'food' : 'inside');
+/** A store's categories: the standard ones first (in order), then any extra you created for that store */
+export function categoriesForStore<T extends { name: string; stores?: string[] }>(cats: T[], store: StoreKey): T[] {
+  const std = STORE_CATEGORIES[store].map((c) => c.name.toLowerCase());
+  return cats
+    .filter((c) => (c.stores || []).includes(store) || std.includes(c.name.toLowerCase()))
+    .sort((a, b) => {
+      const ia = std.indexOf(a.name.toLowerCase());
+      const ib = std.indexOf(b.name.toLowerCase());
+      return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
+    });
+}
+
 /** Sort category names by the standard order; anything else goes last */
-export function categoryRank(name: string, side: 'inside' | 'outside'): number {
-  const list = side === 'outside' ? OUTSIDE_CATEGORIES : INSIDE_CATEGORIES;
+export function categoryRank(name: string, side: 'inside' | 'outside' | 'food'): number {
+  const list = side === 'food' ? FOOD_CATEGORIES : side === 'outside' ? OUTSIDE_CATEGORIES : INSIDE_CATEGORIES;
   const i = list.findIndex((c) => c.name.toLowerCase() === String(name).toLowerCase());
   return i < 0 ? 999 : i;
 }

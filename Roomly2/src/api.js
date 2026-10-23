@@ -25,6 +25,8 @@ import {
   SETTLE_BY_HOUR,
   RUNNER_SHARE,
   sellingPrice,
+  STORE_CATEGORIES,
+  STORE_SOURCE,
 } from './config.ts';
 import { db, auth } from './firebase.ts';
 import { CLOUDINARY } from './cloudinary.ts';
@@ -488,12 +490,26 @@ let catalogAt = 0;
 async function readCatalog(force = false) {
   if (!force && catalogCache && Date.now() - catalogAt < 60000) return catalogCache;
   try {
-    const [snap, extraSnap] = await Promise.all([getDoc(doc(db, 'catalog', 'main')), getDoc(doc(db, 'catalog', 'extra')).catch(() => null)]);
+    const [snap, extraSnap, ovSnap] = await Promise.all([
+      getDoc(doc(db, 'catalog', 'main')),
+      getDoc(doc(db, 'catalog', 'extra')).catch(() => null),
+      getDoc(doc(db, 'catalog', 'overrides')).catch(() => null),
+    ]);
     const d = snap.exists() ? snap.data() : {};
     const main = d.products || INITIAL_PRODUCTS;
     const ids = new Set(main.map((p) => p.id));
     const extra = (extraSnap && extraSnap.exists() ? extraSnap.data().products || [] : []).filter((p) => p && !ids.has(p.id));
-    catalogCache = { categories: d.categories || INITIAL_CATEGORIES, products: [...main, ...extra], extraCount: extra.length };
+    // Operators' price changes and runners' out-of-stock switches win over the saved catalog
+    const ov = ovSnap && ovSnap.exists() ? ovSnap.data() : {};
+    const prices = ov.prices || {};
+    const stock = ov.stock || {};
+    const products = [...main, ...extra].map((p) => {
+      let q = p;
+      if (prices[p.id]) q = { ...q, costPrice: prices[p.id].cost, price: prices[p.id].price };
+      if (typeof stock[p.id] === 'boolean') q = { ...q, isAvailable: stock[p.id] };
+      return q;
+    });
+    catalogCache = { categories: d.categories || INITIAL_CATEGORIES, products, extraCount: extra.length, overrideIds: new Set([...Object.keys(prices), ...Object.keys(stock)]) };
   } catch (e) {
     console.error('Catalog read failed:', e);
     catalogCache = catalogCache || { categories: INITIAL_CATEGORIES, products: INITIAL_PRODUCTS, extraCount: 0 };
@@ -521,7 +537,7 @@ async function writeCatalog(cat) {
       console.error(e);
     }
   }
-  catalogCache = { ...data, extraCount: 0 };
+  catalogCache = { ...data, extraCount: 0, overrideIds: cat.overrideIds };
   catalogAt = Date.now();
 }
 
@@ -531,7 +547,7 @@ export async function getCategories() {
 }
 
 /** @returns {Promise<any>} */
-export async function addCategory(name, emoji = '📦', initialSubcategories = ['All']) {
+export async function addCategory(name, emoji = '📦', initialSubcategories = ['All'], stores = []) {
   const cat = await readCatalog(true);
   const trimmed = name.trim();
   if (!trimmed) return cat.categories;
@@ -543,6 +559,7 @@ export async function addCategory(name, emoji = '📦', initialSubcategories = [
       name: trimmed,
       emoji: emoji || '📦',
       subcategories: initialSubcategories.includes('All') ? initialSubcategories : ['All', ...initialSubcategories],
+      stores,
     },
   ];
   await writeCatalog(cat);
@@ -608,6 +625,18 @@ export async function saveProduct(productData) {
   }
   cat.products = products;
   await writeCatalog(cat);
+  // Your edit is now the price and stock for this product
+  if (productData.id && cat.overrideIds && cat.overrideIds.has(productData.id)) {
+    try {
+      await setDoc(
+        doc(db, 'catalog', 'overrides'),
+        { prices: { [productData.id]: deleteField() }, stock: { [productData.id]: deleteField() } },
+        { merge: true }
+      );
+    } catch (e) {
+      console.error(e);
+    }
+  }
   return products;
 }
 
@@ -1858,7 +1887,7 @@ export async function decideCatalogRequest(r, approve, adminNote = '') {
       const isFoodCat = String(r.category).toLowerCase() === 'food';
       await saveProduct({
         name: r.productName,
-        category: r.category || (r.kind === 'food' ? 'Food' : 'Everyday'),
+        category: r.category || '',
         subcategory: 'All',
         costPrice: r.newCost,
         price: sellingPrice(r.newCost, r.source),
@@ -1987,7 +2016,7 @@ export async function quoteProductRequest(reqId, costs, category) {
         ? slim({
             id: q.productId,
             name: q.name,
-            category: cat || (r.side === 'food' ? 'Food' : 'Everyday'),
+            category: cat, // empty = no category (shows under All)
             subcategory: 'All',
             price: q.price,
             costPrice: q.cost,
@@ -2140,4 +2169,118 @@ export async function getSettlementsRange(from, to) {
     console.error(e);
     return [];
   }
+}
+
+/* ---------------- three stores: categories, operator prices, runner stock (Fix batch 3a) ---------------- */
+
+/**
+ * Admin: give every store its standard categories and remove the old ones.
+ * Products in a removed category are kept and move to "no category" (they still show under All).
+ */
+/** @returns {Promise<{ categories: any[], removed: string[], moved: number }>} */
+export async function setupStoreCategories() {
+  const cat = await readCatalog(true);
+  const want = new Map(); // lower name -> { name, emoji, stores }
+  Object.entries(STORE_CATEGORIES).forEach(([store, list]) =>
+    list.forEach((c) => {
+      const k = c.name.toLowerCase();
+      const cur = want.get(k) || { name: c.name, emoji: c.emoji, stores: [] };
+      cur.stores = Array.from(new Set([...cur.stores, store]));
+      want.set(k, cur);
+    })
+  );
+  const removed = [];
+  const kept = [];
+  for (const c of cat.categories) {
+    const k = c.name.toLowerCase();
+    const w = want.get(k);
+    if (w) {
+      kept.push({ ...c, stores: Array.from(new Set([...(c.stores || []), ...w.stores])) });
+      want.delete(k);
+    } else if ((c.stores || []).length > 0) {
+      kept.push(c); // a category you created for a store yourself
+    } else {
+      removed.push(c.name);
+    }
+  }
+  want.forEach((w) => kept.push({ id: `cat-${w.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, name: w.name, emoji: w.emoji, subcategories: ['All'], stores: w.stores }));
+  const gone = new Set(removed.map((n) => n.toLowerCase()));
+  let moved = 0;
+  cat.products = cat.products.map((p) => {
+    if (gone.has(String(p.category || '').toLowerCase())) {
+      moved++;
+      return { ...p, category: '', subcategory: 'All' };
+    }
+    return p;
+  });
+  cat.categories = kept;
+  await writeCatalog(cat);
+  return { categories: kept, removed, moved };
+}
+
+const myStore = () => {
+  const r = getCurrentStaff()?.role;
+  return r === 'store' ? 'store' : r === 'food' ? 'food' : r === 'runner' ? 'inside' : '';
+};
+
+/** Operator: change the cost price of one of their products. The student price is worked out with your margin. */
+/** @returns {Promise<void>} */
+export async function operatorSetPrice(productId, cost) {
+  const store = myStore();
+  if (store !== 'store' && store !== 'food') throw new Error('Operators only');
+  const c = Math.round(Number(cost) || 0);
+  if (c <= 0) throw new Error('Enter your cost price');
+  const p = (await readCatalog(true)).products.find((x) => x.id === productId);
+  if (!p || p.source !== STORE_SOURCE[store]) throw new Error('You can only change your own store\'s products');
+  const price = sellingPrice(c, p.source);
+  await setDoc(
+    doc(db, 'catalog', 'overrides'),
+    { prices: { [productId]: { cost: c, price, by: getCurrentStaff()?.name || '', at: new Date().toISOString() } } },
+    { merge: true }
+  );
+  catalogAt = 0;
+}
+
+/** Operator: add a product they sell. It goes live at once in their store. */
+/** @returns {Promise<void>} */
+export async function operatorAddProduct({ name, category, cost, unit, imageUrl }) {
+  const store = myStore();
+  if (store !== 'store' && store !== 'food') throw new Error('Operators only');
+  const n = String(name || '').trim().slice(0, 80);
+  const c = Math.round(Number(cost) || 0);
+  if (!n) throw new Error('Enter the product name');
+  if (c <= 0) throw new Error('Enter your cost price');
+  const source = STORE_SOURCE[store];
+  const product = slim({
+    id: `prod-op-${Date.now()}`,
+    name: n,
+    category: String(category || ''),
+    subcategory: 'All',
+    costPrice: c,
+    price: sellingPrice(c, source),
+    source,
+    unit: String(unit || '').slice(0, 60),
+    imageUrl: String(imageUrl || '').slice(0, 500),
+    emoji: '🛍️',
+    gradient: 'from-slate-400/20 to-zinc-500/20',
+    isAvailable: true,
+    isFood: store === 'food' && String(category).toLowerCase() === 'food',
+    addedBy: getCurrentStaff()?.name || '',
+  });
+  await setDoc(doc(db, 'catalog', 'extra'), { products: arrayUnion(product) }, { merge: true });
+  catalogAt = 0;
+}
+
+/** Runner: mark an inside product out of stock (false) or back in stock (true) */
+/** @returns {Promise<void>} */
+export async function runnerSetStock(productId, inStock) {
+  if (myStore() !== 'inside') throw new Error('Runners only');
+  await setDoc(doc(db, 'catalog', 'overrides'), { stock: { [productId]: Boolean(inStock) } }, { merge: true });
+  catalogAt = 0;
+}
+
+/** Fresh product list (skips the 1-minute cache), for staff screens */
+/** @returns {Promise<any[]>} */
+export async function getProductsFresh() {
+  return (await readCatalog(true)).products;
 }

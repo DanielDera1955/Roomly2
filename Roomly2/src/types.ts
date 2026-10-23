@@ -119,6 +119,8 @@ export interface CategoryDefinition {
   name: string;
   emoji: string;
   subcategories: string[];
+  /** Which stores use this category: 'inside', 'store' (outside store), 'food' (outside food) */
+  stores?: string[];
 }
 
 // Location helpers (customers may deliver to a custom spot instead of their room)

@@ -504,16 +504,23 @@ export default function App() {
 
   // Products on the chosen side (inside or outside school)
   const sideProducts = useMemo(
-    () => products.filter((p) => (sourceMode === 'outside' ? isOutsideSource(p.source) : !isOutsideSource(p.source))),
+    () =>
+      products.filter(
+        (p) =>
+          p.isAvailable !== false && // out-of-stock items are hidden from students
+          (sourceMode === 'outside' ? isOutsideSource(p.source) : !isOutsideSource(p.source))
+      ),
     [products, sourceMode]
   );
 
   // Quick filters inside a category, taken from the products' own categories (Drinks, Toiletries...)
   const groupFilters = useMemo(() => {
     if (selectedTab === 'Request') return [];
-    const names = sideProducts.filter((p) => shopGroupOf(p) === selectedTab).map((p) => p.category);
-    // Shown in the standard order (Bread & Pastries, Drinks...); anything else goes last
-    return Array.from(new Set(names)).sort((a, b) => categoryRank(a, sourceMode) - categoryRank(b, sourceMode));
+    // Products with no category only show under All
+    const names = sideProducts.filter((p) => shopGroupOf(p) === selectedTab && p.category).map((p) => p.category);
+    // Shown in each store's standard order (Bread & Pastries, Drinks... / Food, Soft Drinks); anything else goes last
+    const side = sourceMode === 'outside' && selectedTab === 'food' ? 'food' : sourceMode;
+    return Array.from(new Set(names)).sort((a, b) => categoryRank(a, side) - categoryRank(b, side));
   }, [sideProducts, selectedTab, sourceMode]);
 
   // Search first; otherwise the chosen category and filter
