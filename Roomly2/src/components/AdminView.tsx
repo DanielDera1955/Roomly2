@@ -31,6 +31,7 @@ import { sellingPrice } from '../config';
 import { OrderRecord, CategoryDefinition, DeliveryRunner, locationText, shortLocation, roomText } from '../types';
 import { Product, PRESET_PRODUCT_IMAGES, StoreKey, STORE_LABEL, STORE_SOURCE, categoriesForStore, storeOfSource } from '../config';
 import { AdminDispatch, AdminTeam, AdminMoney } from './AdminDispatch';
+import { AdminInsights } from './AdminInsights';
 import {
   getOrders,
   updateOrderStatus,
@@ -61,7 +62,7 @@ interface AdminViewProps {
   onOrderUpdated?: () => void;
 }
 
-type AdminTab = 'orders' | 'team' | 'money' | 'products' | 'categories' | 'customers';
+type AdminTab = 'dashboard' | 'orders' | 'team' | 'money' | 'products' | 'categories' | 'customers';
 
 export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpdated }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -71,7 +72,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
   const [pinError, setPinError] = useState('');
 
   // Active Admin Tab
-  const [currentTab, setCurrentTab] = useState<AdminTab>('orders');
+  const [currentTab, setCurrentTab] = useState<AdminTab>('dashboard');
 
   // Orders State
   const [orders, setOrders] = useState<OrderRecord[]>([]);
@@ -462,6 +463,19 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
         <div className="max-w-[540px] mx-auto flex items-center justify-between gap-1 pt-2.5 overflow-x-auto no-scrollbar">
           <button
             type="button"
+            onClick={() => setCurrentTab('dashboard')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+              currentTab === 'dashboard'
+                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <BarChart3 className="w-3.5 h-3.5 text-[#0e9f55]" />
+            <span>Dashboard</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setCurrentTab('orders')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
               currentTab === 'orders'
@@ -542,6 +556,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
       {/* Main Container */}
       <div className="p-4 space-y-4 max-w-[540px] mx-auto">
+        {/* ================= DASHBOARD: performance and decisions ================= */}
+        {currentTab === 'dashboard' && <AdminInsights />}
+
         {/* ================= ORDERS & DISPATCH: Inside / Outside Store / Food ================= */}
         {currentTab === 'orders' && <AdminDispatch />}
 

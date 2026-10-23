@@ -59,6 +59,7 @@ interface CartSheetProps {
     outOfStock: OutOfStockChoice;
     gatePickup?: boolean;
     payTo?: { bankName: string; accountNumber: string; accountName: string } | null;
+    lateBatch?: boolean;
   }) => void | Promise<void>;
 }
 
@@ -278,6 +279,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
         operatorName: cart !== 'inside' ? chosenOp?.name : undefined,
         turnRunner: cart === 'inside' ? insideNext?.next?.by || '' : undefined,
         outOfStock,
+        lateBatch: isLate, // for the dashboard: student accepted the next batch
         gatePickup: cart !== 'inside' && gatePickup,
         // Students pay the runner or operator handling the order (Roomly's account if they have not set one)
         payTo: (cart === 'inside' ? insideNext?.next?.payTo : chosenOp?.payTo) || null,
