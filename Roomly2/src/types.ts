@@ -17,6 +17,10 @@ export interface CartItem {
     quantity?: number;
   }[];
   specialNote?: string;
+  // A requested product waiting for a price quote: the cart cannot be checked out until it is priced
+  pendingQuote?: boolean;
+  requestId?: string;
+  requestIdx?: number;
 }
 
 export interface CustomerProfile {

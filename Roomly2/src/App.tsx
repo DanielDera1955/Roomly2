@@ -16,8 +16,10 @@ import {
   getStoreStatus,
   setStoreOverride,
   isValidNigerianPhone,
+  createProductRequest,
+  subscribeProductRequest,
 } from './api.js';
-import { Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind } from './config';
+import { Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoryRank } from './config';
 import { MessageCircle } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
@@ -31,7 +33,7 @@ import { DeliveryPromiseBanner } from './components/DeliveryPromiseBanner';
 import { CategoryNav, ShopTab } from './components/CategoryNav';
 import { ProductCard } from './components/ProductCard';
 import { FoodCustomizerSheet } from './components/FoodCustomizerSheet';
-import { RequestTab } from './components/RequestTab';
+import { RequestTab, RequestSide, RequestItemInput } from './components/RequestTab';
 import { FloatingCartBar } from './components/FloatingCartBar';
 import { CartSheet } from './components/CartSheet';
 import { OrderTrackerModal } from './components/OrderTrackerModal';
@@ -75,6 +77,11 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sourceMode, setSourceMode] = useState<'inside' | 'outside'>('inside');
   const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
+  // The last section browsed (store or food), so the request form and delivery card know where the student is
+  const [lastGroup, setLastGroup] = useState<'store' | 'food'>('store');
+  useEffect(() => {
+    if (selectedTab !== 'Request') setLastGroup(selectedTab);
+  }, [selectedTab]);
 
   // Customer & Phone Lookup
   // Remember the customer on this device until they press Sign out
@@ -95,6 +102,17 @@ export default function App() {
   // Cart State
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [customRequest, setCustomRequest] = useState<string>('');
+
+  // Product requests: ids kept on this device; each is followed live until priced
+  const [requestIds, setRequestIds] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('roomly_requests') || '[]').slice(0, 20);
+    } catch (e) {
+      return [];
+    }
+  });
+  const [requests, setRequests] = useState<Record<string, any>>({});
+  const [requestPrefill, setRequestPrefill] = useState('');
   const [isCartOpen, setIsCartOpen] = useState(false);
   // Three carts: inside (runner), outside store items, outside cooked food and drinks
   const [cartKind, setCartKind] = useState<CartKind>('inside');
@@ -307,6 +325,99 @@ export default function App() {
     openCart();
   };
 
+  // ---------- Product requests ----------
+  useEffect(() => {
+    try {
+      localStorage.setItem('roomly_requests', JSON.stringify(requestIds.slice(0, 20)));
+    } catch (e) {
+      /* ignore */
+    }
+    const subs = requestIds.map((id) => subscribeProductRequest(id, (r: any) => setRequests((prev) => ({ ...prev, [id]: r }))));
+    return () => subs.forEach((u) => u());
+  }, [requestIds.join('|')]);
+
+  const sideSource = (side: RequestSide) => (side === 'store' ? 'outside' : side === 'food' ? 'food' : 'school') as CartItem['source'];
+
+  const handleSubmitRequest = async (side: RequestSide, items: RequestItemInput[], note: string, addToCart: boolean) => {
+    const id = await createProductRequest({
+      side,
+      items,
+      note,
+      category: selectedFilter !== 'All' ? selectedFilter : '',
+      phone,
+      name: customer?.name || '',
+    });
+    setRequestIds((prev) => [id, ...prev.filter((x) => x !== id)].slice(0, 20));
+    if (addToCart) {
+      // Placeholders: the cart cannot be checked out until the price comes back
+      setCartItems((prev) => [
+        ...prev,
+        ...items.map((it, i) => ({
+          id: `req-${id}-${i}`,
+          productId: `req:${id}:${i}`,
+          name: it.name.trim(),
+          unitPrice: 0,
+          quantity: 1,
+          totalPrice: 0,
+          imageUrl: it.photoUrl || '',
+          emoji: '🛍️',
+          source: sideSource(side),
+          isFood: false,
+          pendingQuote: true,
+          requestId: id,
+          requestIdx: i,
+        })),
+      ]);
+    }
+  };
+
+  const handleAddQuoteToCart = (r: any) => {
+    const side = r.side as RequestSide;
+    setCartItems((prev) => [
+      ...prev.filter((i) => i.requestId !== r.id),
+      ...r.quotes
+        .map((q: any, i: number) =>
+          q.available
+            ? {
+                id: `req-${r.id}-${i}`,
+                productId: q.productId,
+                name: q.name,
+                unitPrice: q.price,
+                quantity: 1,
+                totalPrice: q.price,
+                imageUrl: r.items[i]?.photoUrl || '',
+                emoji: '🛍️',
+                source: sideSource(side),
+                isFood: false,
+                requestId: r.id,
+                requestIdx: i,
+              }
+            : null
+        )
+        .filter(Boolean),
+    ]);
+    openCart();
+  };
+
+  // When a price comes back, fill it into the waiting cart items (or drop items that are not available)
+  useEffect(() => {
+    setCartItems((prev) => {
+      let changed = false;
+      const next = prev
+        .map((i) => {
+          if (!i.pendingQuote || !i.requestId) return i;
+          const r = requests[i.requestId];
+          if (!r || r.status !== 'quoted') return i;
+          changed = true;
+          const q = r.quotes?.[i.requestIdx ?? -1];
+          if (!q || !q.available) return null;
+          return { ...i, productId: q.productId, unitPrice: q.price, totalPrice: q.price * i.quantity, pendingQuote: false };
+        })
+        .filter(Boolean) as CartItem[];
+      return changed ? next : prev;
+    });
+  }, [requests]);
+
   // Place Order flow
   const handlePlaceOrder = async (orderPayload: any) => {
     if (customer?.wrongPin) {
@@ -401,8 +512,9 @@ export default function App() {
   const groupFilters = useMemo(() => {
     if (selectedTab === 'Request') return [];
     const names = sideProducts.filter((p) => shopGroupOf(p) === selectedTab).map((p) => p.category);
-    return Array.from(new Set(names));
-  }, [sideProducts, selectedTab]);
+    // Shown in the standard order (Bread & Pastries, Drinks...); anything else goes last
+    return Array.from(new Set(names)).sort((a, b) => categoryRank(a, sourceMode) - categoryRank(b, sourceMode));
+  }, [sideProducts, selectedTab, sourceMode]);
 
   // Search first; otherwise the chosen category and filter
   const filteredProducts = useMemo(() => {
@@ -516,17 +628,6 @@ export default function App() {
 
         {/* Main Storefront Body */}
         <main className="p-4 space-y-4 flex-1">
-          {/* Closed Warning Banner */}
-          {!storeStatus.isOpen && (
-            <div className="p-3 bg-rose-50 dark:bg-rose-950/40 rounded-2xl border border-rose-200 dark:border-rose-900/40 text-xs text-rose-800 dark:text-rose-200 flex items-center justify-between">
-              <div>
-                <strong className="font-bold">Store is currently closed.</strong>
-                <p className="text-[11px] text-rose-600 dark:text-rose-400">
-                  You can still order for the next delivery batch.
-                </p>
-              </div>
-            </div>
-          )}
 
           {/* Phone Number Input & Customer Recognition */}
           <div className="pt-1">
@@ -569,7 +670,7 @@ export default function App() {
           </div>
 
           {/* Delivery bar: changes with the toggle above */}
-          <DeliveryPromiseBanner mode={sourceMode} />
+          <DeliveryPromiseBanner mode={sourceMode} tab={lastGroup} />
 
           {/* Search Bar */}
           <SearchBar query={searchQuery} onChange={setSearchQuery} />
@@ -590,13 +691,14 @@ export default function App() {
           {/* Request Tab vs Product Grid */}
           {!searchQuery && selectedTab === 'Request' ? (
             <RequestTab
-              customRequest={customRequest}
-              onSaveCustomRequest={setCustomRequest}
-              onClearCustomRequest={() => setCustomRequest('')}
-              onOpenCart={() => {
-                setCartKind('inside');
-                setIsCartOpen(true);
-              }}
+              key={requestPrefill}
+              defaultSide={sourceMode === 'inside' ? 'inside' : lastGroup}
+              outside={sourceMode === 'outside'}
+              initialName={requestPrefill}
+              myRequests={requestIds.map((id) => requests[id]).filter(Boolean)}
+              cartRequestIds={new Set(cartItems.map((i) => i.requestId || '').filter(Boolean))}
+              onSubmit={handleSubmitRequest}
+              onAddQuoteToCart={handleAddQuoteToCart}
             />
           ) : (
             <div className="space-y-3">
@@ -625,8 +727,19 @@ export default function App() {
               </div>
 
               {filteredProducts.length === 0 ? (
-                <div className="text-center py-12 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-400 text-xs">
-                  No items found in this section. Try choosing another subcategory or the Request tab!
+                <div className="text-center py-10 px-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-400 text-xs space-y-3">
+                  <p>{searchQuery ? `We don't have "${searchQuery}" yet.` : 'No items in this section yet.'}</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRequestPrefill(searchQuery.trim());
+                      setSearchQuery('');
+                      setSelectedTab('Request');
+                    }}
+                    className="px-4 py-2 rounded-xl bg-[#0e9f55] text-white font-bold cursor-pointer"
+                  >
+                    Request a product
+                  </button>
                 </div>
               ) : (
                 <>

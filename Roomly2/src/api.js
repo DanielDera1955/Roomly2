@@ -254,6 +254,7 @@ export async function setBatchOff(key, off) {
 
 let insideSwitches = {};
 let runnerUnsettled = {}; // runner uid -> dates not yet settled
+let runnerPay = {}; // runner uid -> payment account students pay into
 let operatorDocs = {};
 const fireBatches = () => window.dispatchEvent(new Event('roomly-batches'));
 try {
@@ -262,6 +263,7 @@ try {
     (s) => {
       insideSwitches = s.exists() ? s.data().slots || {} : {};
       runnerUnsettled = s.exists() ? s.data().runnerUnsettled || {} : {};
+      runnerPay = s.exists() ? s.data().runnerPay || {} : {};
       fireBatches();
     },
     () => {}
@@ -334,7 +336,7 @@ export function getNextBatch(side, now = new Date()) {
         const blocked = sw && sw.byUid && isOverdue(runnerUnsettled[sw.byUid], now);
         if (!blocked && accepting(opt, sw, 'inside', now)) {
           const start = switchStartDate(opt, sw);
-          return { next: { batch: opt, start, startText: startTextOf(start), by: sw.by || '', payTo: sw.payTo || null }, note: '' };
+          return { next: { batch: opt, start, startText: startTextOf(start), by: sw.by || '', payTo: runnerPay[sw.byUid] || sw.payTo || null }, note: '' };
         }
         if (sw && sw.note) notes.push(sw.note);
       } else {
@@ -481,33 +483,45 @@ export async function setOperatorAdminOff(uid, off) {
 let catalogCache = null;
 let catalogAt = 0;
 
+// catalog/main holds your catalog. catalog/extra holds products runners and operators added by quoting
+// a student's request; they go live at once. Reads merge both. Any admin save folds them into main.
 async function readCatalog(force = false) {
   if (!force && catalogCache && Date.now() - catalogAt < 60000) return catalogCache;
   try {
-    const snap = await getDoc(doc(db, 'catalog', 'main'));
-    if (snap.exists()) {
-      const d = snap.data();
-      catalogCache = { categories: d.categories || INITIAL_CATEGORIES, products: d.products || INITIAL_PRODUCTS };
-    } else {
-      catalogCache = { categories: INITIAL_CATEGORIES, products: INITIAL_PRODUCTS };
-    }
+    const [snap, extraSnap] = await Promise.all([getDoc(doc(db, 'catalog', 'main')), getDoc(doc(db, 'catalog', 'extra')).catch(() => null)]);
+    const d = snap.exists() ? snap.data() : {};
+    const main = d.products || INITIAL_PRODUCTS;
+    const ids = new Set(main.map((p) => p.id));
+    const extra = (extraSnap && extraSnap.exists() ? extraSnap.data().products || [] : []).filter((p) => p && !ids.has(p.id));
+    catalogCache = { categories: d.categories || INITIAL_CATEGORIES, products: [...main, ...extra], extraCount: extra.length };
   } catch (e) {
     console.error('Catalog read failed:', e);
-    catalogCache = catalogCache || { categories: INITIAL_CATEGORIES, products: INITIAL_PRODUCTS };
+    catalogCache = catalogCache || { categories: INITIAL_CATEGORIES, products: INITIAL_PRODUCTS, extraCount: 0 };
   }
   catalogAt = Date.now();
   return catalogCache;
 }
 
 async function writeCatalog(cat) {
-  const data = slim(cat);
+  const data = slim({ categories: cat.categories, products: cat.products });
   if (JSON.stringify(data).length > 900000) {
     const msg = 'The catalog is too big to save. Use photo links or connect Cloudinary for photos (see src/cloudinary.ts).';
     window.alert(msg);
     throw new Error(msg);
   }
   await setDoc(doc(db, 'catalog', 'main'), data);
-  catalogCache = data;
+  // Products from quotes are now part of main: keep in extra only any added in the meantime
+  if (cat.extraCount) {
+    try {
+      const ids = new Set(data.products.map((p) => p.id));
+      const ex = await getDoc(doc(db, 'catalog', 'extra'));
+      const left = (ex.exists() ? ex.data().products || [] : []).filter((p) => p && !ids.has(p.id));
+      await setDoc(doc(db, 'catalog', 'extra'), { products: left });
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  catalogCache = { ...data, extraCount: 0 };
   catalogAt = Date.now();
 }
 
@@ -1663,10 +1677,12 @@ export async function savePayAccount(acc) {
   }
   await updateDoc(doc(db, 'staff', staff.email), { payAccount: clean });
   pushStaff({ ...staffState, staff: { ...staff, payAccount: clean } });
-  // Operators: show it on their status record right away
+  // Show it on new orders right away (operators: their status record; runners: the inside batches record)
   const uid = auth.currentUser?.uid;
   if (uid && (staff.role === 'store' || staff.role === 'food')) {
     await setDoc(doc(db, 'operatorStatus', uid), { payTo: clean }, { merge: true });
+  } else if (uid && staff.role === 'runner') {
+    await setDoc(doc(db, 'availability', 'inside'), { runnerPay: { [uid]: clean } }, { merge: true });
   }
 }
 
@@ -1825,4 +1841,149 @@ export async function decideCatalogRequest(r, approve, adminNote = '') {
     adminNote: String(adminNote || '').slice(0, 200),
     decidedAt: new Date().toISOString(),
   });
+}
+
+/* ---------------- product requests from students (Fix batch 1) ----------------
+ * productRequests/{id}: a student asks for products not in the store (name, estimated price, optional photo).
+ * It goes to runners (inside), store operators or food operators. The first to reply sets the cost price;
+ * the student sees only the price with the margin added, and the products go live in the store at once.
+ */
+
+const SIDE_SOURCE = { inside: 'school', store: 'outside', food: 'food' };
+
+/** Student: send a request. items = [{ name, estimate, photoUrl }] */
+/** @returns {Promise<string>} the request id */
+export async function createProductRequest({ side, items, note, category, phone, name }) {
+  const clean = (items || [])
+    .map((i) => ({
+      name: String(i.name || '').trim().slice(0, 80),
+      estimate: Math.max(0, Math.round(Number(i.estimate) || 0)),
+      photoUrl: String(i.photoUrl || '').slice(0, 500),
+    }))
+    .filter((i) => i.name);
+  if (!clean.length) throw new Error('Add at least one product name');
+  if (clean.length > 15) throw new Error('Up to 15 products per request');
+  const p = normalizePhone(phone || '');
+  const ref = await addDoc(
+    collection(db, 'productRequests'),
+    slim({
+      side: ['inside', 'store', 'food'].includes(side) ? side : 'inside',
+      items: clean,
+      note: String(note || '').trim().slice(0, 300),
+      category: String(category || '').slice(0, 60),
+      phone: isValidNigerianPhone(p) ? p : '',
+      name: String(name || '').trim().slice(0, 60),
+      status: 'open',
+      createdAt: new Date().toISOString(),
+    })
+  );
+  return ref.id;
+}
+
+/** Student: live updates for one request (the id is the key, like an order id) */
+/** @returns {() => void} */
+export function subscribeProductRequest(id, cb) {
+  return onSnapshot(
+    doc(db, 'productRequests', id),
+    (s) => cb(s.exists() ? { ...s.data(), id: s.id } : null),
+    () => cb(null)
+  );
+}
+
+/** Runners / operators: recent requests for their side (open first) */
+/** @returns {() => void} */
+export function subscribeSideRequests(side, cb) {
+  const q = query(collection(db, 'productRequests'), where('side', '==', side), limit(40));
+  return onSnapshot(
+    q,
+    (snap) =>
+      cb(
+        snap.docs
+          .map((d) => ({ ...d.data(), id: d.id }))
+          .sort((a, b) => (a.status === b.status ? String(b.createdAt).localeCompare(String(a.createdAt)) : a.status === 'open' ? -1 : 1))
+      ),
+    () => cb([])
+  );
+}
+
+/** Which side the signed-in staff member quotes for */
+export function mySide() {
+  const r = getCurrentStaff()?.role;
+  return r === 'store' ? 'store' : r === 'food' ? 'food' : 'inside';
+}
+
+/**
+ * Runner / operator: quote a request. costs[i] = cost price for item i (0 = not available), category for the new products.
+ * First reply wins. Each priced item becomes a live product with the margin added.
+ */
+/** @returns {Promise<void>} */
+export async function quoteProductRequest(reqId, costs, category) {
+  const staff = getCurrentStaff();
+  const uid = auth.currentUser?.uid;
+  if (!staff || !uid) throw new Error('Sign in first');
+  const ref = doc(db, 'productRequests', reqId);
+  let quoted = null;
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error('Request not found');
+    const r = snap.data();
+    if (r.status !== 'open') throw new Error('The price quote for this product has already been sent to the customer.');
+    const source = SIDE_SOURCE[r.side] || 'school';
+    const quotes = r.items.map((it, i) => {
+      const cost = Math.max(0, Math.round(Number(costs[i]) || 0));
+      if (!cost) return { name: it.name, available: false, price: 0, productId: '' };
+      return { name: it.name, available: true, price: sellingPrice(cost, source), productId: `prod-req-${reqId}-${i}`, cost };
+    });
+    if (!quotes.some((q) => q.available)) throw new Error('Enter a cost price for at least one product');
+    quoted = { r, quotes, source };
+    tx.update(ref, {
+      status: 'quoted',
+      quotes: quotes.map(({ cost, ...q }) => q), // the student never sees cost or margin
+      quotedBy: { uid, name: staff.name || '' },
+      quotedAt: new Date().toISOString(),
+    });
+  });
+  // The priced products go live for everyone, in the section and category requested
+  const { r, quotes, source } = quoted;
+  const cat = String(category || r.category || '').trim();
+  const fresh = quotes
+    .map((q, i) =>
+      q.available
+        ? slim({
+            id: q.productId,
+            name: q.name,
+            category: cat || (r.side === 'food' ? 'Food' : 'Everyday'),
+            subcategory: 'All',
+            price: q.price,
+            costPrice: q.cost,
+            source,
+            imageUrl: r.items[i].photoUrl || '',
+            emoji: '🛍️',
+            gradient: 'from-slate-400/20 to-zinc-500/20',
+            isAvailable: true,
+            addedBy: staff.name || '',
+          })
+        : null
+    )
+    .filter(Boolean);
+  await setDoc(doc(db, 'catalog', 'extra'), { products: arrayUnion(...fresh) }, { merge: true });
+  catalogAt = 0; // next read picks them up
+}
+
+/** Student: ask an inside runner to bring an outside order from the gate to the room (₦600, ₦1,000 if heavy) */
+/** @returns {Promise<any>} */
+export async function requestGatePickup(orderId) {
+  try {
+    return await patchOrder(orderId, (o) => {
+      if (o.cart !== 'store' && o.cart !== 'food') throw new Error('Only outside orders');
+      if (o.gatePickup && o.gatePickup.status !== 'refused' && o.gatePickup.status !== 'refunded') return;
+      const now = new Date().toISOString();
+      o.gateReq = true;
+      o.gatePickup = { status: 'pending', fee: GATE_PICKUP_FEES.normal, heavy: false, updatedAt: now };
+      o.history.push({ status: o.status, timestamp: now, note: 'Student asked for gate to room pickup', updatedBy: o.name || 'Customer' });
+    });
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
 }

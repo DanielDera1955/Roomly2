@@ -55,10 +55,11 @@ export const STORE_CONFIG = {
   deliveryFeeBatch: 1000,
   paymentTimeoutMinutes: 15,
   adminPin: '1234',
+  // Roomly's own account: runners and operators send what they owe here. Students never see it.
   bankDetails: {
-    bankName: 'Kuda Microfinance Bank',
-    accountNumber: '2048913401',
-    accountName: 'Roomly Campus Logistics',
+    bankName: 'Opay',
+    accountNumber: '8141850484',
+    accountName: 'Chidera Ugwu Daniel',
     instructions: 'Use your Order ID as payment narration/reference',
   },
   supportPhone: '08012345678',
@@ -269,19 +270,18 @@ export function formatRemaining(ms: number): string {
 }
 
 // ---------- Outside school schedule ----------
-/** Outside store items: 10 to 11am, 2 to 3pm, 5 to 6pm. The store stops taking orders 30 mins before sending. */
+/** Outside store items: two batches a day, 12:30 to 1:30pm and 5:00 to 6:30pm */
 export const OUTSIDE_STORE_BATCHES: BatchSlotDef[] = [
-  { id: 'morning', name: 'Morning store batch', startMin: T(10), endMin: T(11), orderByMin: T(9, 30) },
-  { id: 'afternoon', name: 'Afternoon store batch', startMin: T(14), endMin: T(15), orderByMin: T(13, 30) },
-  { id: 'late', name: 'Evening store batch', startMin: T(17), endMin: T(18), orderByMin: T(16, 30) },
+  { id: 'afternoon', name: 'Afternoon store batch', startMin: T(12, 30), endMin: T(13, 30), orderByMin: T(12) },
+  { id: 'late', name: 'Evening store batch', startMin: T(17), endMin: T(18, 30), orderByMin: T(16, 30) },
 ];
-/** Outside food: one evening batch, arriving about 5:30 to 7pm. Ordering closes at 6:30pm. */
+/** Outside food: one batch a day, arriving about 5:30 to 6:30pm */
 export const OUTSIDE_FOOD_BATCH: BatchSlotDef = {
   id: 'evening',
-  name: 'Evening food batch',
+  name: 'Food batch',
   startMin: T(17, 30),
-  endMin: T(19),
-  orderByMin: T(18, 30),
+  endMin: T(18, 30),
+  orderByMin: T(17),
 };
 
 /** Next outside batch still taking orders. kind 'store' or 'food'. */
@@ -356,6 +356,31 @@ export function shopGroupLabel(group: ShopGroup, side: 'inside' | 'outside'): st
   return side === 'outside' ? 'Cooked Food and Drinks' : 'Cooked Food';
 }
 export const ITEMS_PER_PAGE = 10;
+
+/** Store Items categories, in the order students see them */
+export const INSIDE_CATEGORIES: { name: string; emoji: string }[] = [
+  { name: 'Bread & Pastries', emoji: '🥖' },
+  { name: 'Drinks', emoji: '🥤' },
+  { name: 'Snacks & Treats', emoji: '🍪' },
+  { name: 'Breakfast & Provisions', emoji: '🥣' },
+  { name: 'Local Food Items', emoji: '🌾' },
+  { name: 'Toiletries & Care', emoji: '🧼' },
+  { name: 'Laundry & Room', emoji: '🧺' },
+];
+export const OUTSIDE_CATEGORIES: { name: string; emoji: string }[] = [
+  { name: 'Foodstuff', emoji: '🍚' },
+  { name: 'Cooking Essentials', emoji: '🌶️' },
+  { name: 'Kitchen & Stove', emoji: '🔥' },
+  { name: 'Provisions in Bulk', emoji: '📦' },
+  { name: 'Toiletries & Laundry Packs', emoji: '🧴' },
+  { name: 'Drinks in Bulk', emoji: '🧃' },
+];
+/** Sort category names by the standard order; anything else goes last */
+export function categoryRank(name: string, side: 'inside' | 'outside'): number {
+  const list = side === 'outside' ? OUTSIDE_CATEGORIES : INSIDE_CATEGORIES;
+  const i = list.findIndex((c) => c.name.toLowerCase() === String(name).toLowerCase());
+  return i < 0 ? 999 : i;
+}
 
 // Initial Categories & Subcategories
 export const INITIAL_CATEGORIES: CategoryDefinition[] = [
