@@ -47,7 +47,7 @@ interface CartSheetProps {
     subtotal: number;
     deliveryFee: number;
     totalAmount: number;
-  }) => void;
+  }) => void | Promise<void>;
 }
 
 export const CartSheet: React.FC<CartSheetProps> = ({
@@ -135,7 +135,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const hasCustomRequest = Boolean(customRequest && customRequest.trim().length > 0);
   const isPhoneValid = isValidNigerianPhone(phone);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
@@ -179,7 +179,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
 
     setSubmitting(true);
     try {
-      onPlaceOrder({
+      await onPlaceOrder({
         phone: normalizePhone(phone),
         name: name.trim(),
         area: customMode ? 'Custom' : area,
@@ -196,6 +196,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
         deliveryFee,
         totalAmount: grandTotal,
       });
+      setSubmitting(false);
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to place order');
       setSubmitting(false);
