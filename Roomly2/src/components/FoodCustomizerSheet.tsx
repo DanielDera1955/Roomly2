@@ -77,6 +77,7 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
       imageUrl: product.imageUrl,
       emoji: isProteinOnly ? '' : product.emoji,
       isFood: true,
+      source: product.source,
       plates: plates,
       extras: selectedExtrasList,
       specialNote: specialNote.trim() || undefined,
