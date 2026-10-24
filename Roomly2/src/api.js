@@ -17,16 +17,7 @@ import {
   deliveryFeeFor,
   nextBatchId,
   getBookableSlots,
-  slotsForDay,
-  timeLabel,
-  SWITCH_CUTOFF_MIN,
-  PRICING,
-  GATE_PICKUP_FEES,
-  SETTLE_BY_HOUR,
-  RUNNER_SHARE,
-  sellingPrice,
-  STORE_CATEGORIES,
-  STORE_SOURCE,
+  getCheckoutSchedule as buildCheckoutSchedule,
 } from './config.ts';
 import { db, auth } from './firebase.ts';
 import { CLOUDINARY } from './cloudinary.ts';
@@ -46,11 +37,6 @@ import {
   increment,
   addDoc,
   where,
-  deleteField,
-  runTransaction,
-  documentId,
-  arrayUnion,
-  arrayRemove,
 } from 'firebase/firestore';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 
@@ -112,7 +98,6 @@ onAuthStateChanged(auth, async (user) => {
           role: d.role === 'store' || d.role === 'food' ? d.role : 'runner',
           name: d.name || 'Runner',
           phone: d.phone || '',
-          payAccount: d.payAccount || null,
         },
         denied: false,
       });
@@ -227,6 +212,11 @@ export function getBatchOff() {
   return batchOff;
 }
 
+/** The batch an order will join, plus plain notes when nearer batches are closed or switched off */
+export function getCheckoutSchedule(hasOutside = false) {
+  return buildCheckoutSchedule(new Date(), hasOutside, batchOff);
+}
+
 /** Batches students can still order into right now (respects runner and admin switches) */
 export function getBookableBatches(hasOutside = false) {
   return getBookableSlots(new Date(), hasOutside, batchOff);
@@ -246,400 +236,38 @@ export async function setBatchOff(key, off) {
   await setDoc(doc(db, 'settings', 'batches'), { off: keep });
 }
 
-/* ---------------- availability switches (Phase 2) ----------------
- * availability/inside           runners + admin: one switch per inside batch
- * operatorStatus/{auth uid}     each store or food operator: one switch per batch, plus adminOff
- * A switch: { on, start (minutes after midnight), note, by, at (ms) }
- * A batch accepts orders while its switch is on, the night cut-off has not passed,
- * and the "start sending" time has not arrived. Customers only ever see the next one.
- */
-
-let insideSwitches = {};
-let runnerUnsettled = {}; // runner uid -> dates not yet settled
-let runnerPay = {}; // runner uid -> payment account students pay into
-let operatorDocs = {};
-const fireBatches = () => window.dispatchEvent(new Event('roomly-batches'));
-try {
-  onSnapshot(
-    doc(db, 'availability', 'inside'),
-    (s) => {
-      insideSwitches = s.exists() ? s.data().slots || {} : {};
-      runnerUnsettled = s.exists() ? s.data().runnerUnsettled || {} : {};
-      runnerPay = s.exists() ? s.data().runnerPay || {} : {};
-      fireBatches();
-    },
-    () => {}
-  );
-  onSnapshot(
-    collection(db, 'operatorStatus'),
-    (snap) => {
-      const next = {};
-      snap.forEach((d) => {
-        next[d.id] = { ...d.data(), id: d.id };
-      });
-      operatorDocs = next;
-      fireBatches();
-    },
-    () => {}
-  );
-} catch (e) {
-  /* ignore */
-}
-
-const ymdOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-/** On, and not yet turned off by the night cut-off (10pm inside, 8pm outside). Switching on after the cut-off lasts until the next night. */
-export function switchIsLive(sw, side, now = new Date()) {
-  if (!sw || !sw.on) return false;
-  const at = new Date(sw.at || 0);
-  const cut = new Date(at);
-  cut.setHours(0, 0, 0, 0);
-  cut.setMinutes(side === 'inside' ? SWITCH_CUTOFF_MIN.inside : SWITCH_CUTOFF_MIN.outside);
-  if (at.getTime() >= cut.getTime()) cut.setDate(cut.getDate() + 1);
-  return now.getTime() < cut.getTime();
-}
-
-/** The moment a batch stops accepting: the day of the batch at the start time the runner or operator set */
-export function switchStartDate(opt, sw) {
-  const day = new Date(opt.date + 'T00:00:00');
-  const min = sw && Number.isFinite(sw.start) ? sw.start : opt.startMin;
-  return new Date(day.getTime() + min * 60000);
-}
-
-/**
- * A batch keeps taking late orders after its start time until the runner / operator switches it OFF.
- * The last moment it can: the next batch's start the same day, or the night cut-off.
- */
-export function batchCloseDate(opt, side) {
-  const day = new Date(opt.date + 'T00:00:00');
-  const cut = side === 'inside' ? SWITCH_CUTOFF_MIN.inside : SWITCH_CUTOFF_MIN.outside;
-  const later = slotsForDay(side, day, 0)
-    .map((o) => o.startMin)
-    .filter((m) => m > opt.startMin)
-    .sort((a, b) => a - b)[0];
-  return new Date(day.getTime() + Math.min(later ?? cut, cut) * 60000);
-}
-
-/** Switched ON and not past the batch's last moment. side: 'inside' | 'store' | 'food' */
-export function batchOpen(opt, sw, side, now = new Date()) {
-  return switchIsLive(sw, side === 'inside' ? 'inside' : 'outside', now) && now.getTime() < batchCloseDate(opt, side).getTime();
-}
-const accepting = (opt, sw, side, now) => batchOpen(opt, sw, side, now);
-
-/** Past the start time: still open, but the student gets 15 minutes to pay */
-const LATE_PAY_MS = 15 * 60000;
-const payDeadline = (start, now) => (start.getTime() > now.getTime() ? start : new Date(now.getTime() + LATE_PAY_MS));
-
-/** Someone opened this batch and has since switched it OFF: it is done for the day */
-function closedByStaff(opt, side) {
-  if (side === 'inside') {
-    const sw = insideSwitches[opt.key];
-    return Boolean(sw && sw.on === false && sw.at);
-  }
-  return activeOperators(side).some((op) => {
-    const sw = (op.slots || {})[opt.key];
-    return sw && sw.on === false && sw.at;
-  });
-}
-
-/** A day must be cleared before 6am the next morning; after that the provider is hidden from checkout */
-export function isOverdue(dates, now = new Date()) {
-  return (dates || []).some((d) => {
-    const due = new Date(d + 'T00:00:00');
-    due.setDate(due.getDate() + 1);
-    due.setHours(SETTLE_BY_HOUR, 0, 0, 0);
-    return now.getTime() >= due.getTime();
-  });
-}
-
-/** Operators of one kind that the admin has not switched off */
-function activeOperators(kind) {
-  return Object.values(operatorDocs).filter((o) => o.kind === kind && !o.adminOff && !isOverdue(o.unsettled));
-}
-
-/**
- * Next batch still taking orders for 'inside', 'store' or 'food'.
- * Returns { next: { batch, start, startText, by }, note } — next is null when ordering is paused.
- */
-export function getNextBatch(side, now = new Date()) {
-  const notes = [];
-  for (let d = 0; d < 3; d++) {
-    for (const opt of slotsForDay(side, now, d)) {
-      if (side === 'inside') {
-        const sw = insideSwitches[opt.key];
-        const blocked = sw && sw.byUid && isOverdue(runnerUnsettled[sw.byUid], now);
-        if (!blocked && accepting(opt, sw, 'inside', now)) {
-          const start = switchStartDate(opt, sw);
-          return {
-            next: { batch: opt, start: payDeadline(start, now), startText: startTextOf(start), late: start <= now, by: sw.by || '', payTo: runnerPay[sw.byUid] || sw.payTo || null },
-            note: '',
-          };
-        }
-        if (sw && sw.note) notes.push(sw.note);
-      } else {
-        // Any one operator accepting makes the batch open. The earliest start is the safe deadline.
-        let best = null;
-        for (const op of activeOperators(side)) {
-          const sw = (op.slots || {})[opt.key];
-          if (accepting(opt, sw, side, now)) {
-            const start = switchStartDate(opt, sw);
-            if (!best || start < best.start) best = { start, by: op.name || '' };
-          } else if (sw && sw.note) notes.push(sw.note);
-        }
-        if (best)
-          return {
-            next: { batch: opt, start: payDeadline(best.start, now), startText: startTextOf(best.start), late: best.start <= now, by: best.by },
-            note: '',
-          };
-      }
-    }
-  }
-  // Nobody has opened a batch: students can still order. The order joins the next scheduled batch
-  // and goes to a runner / operator who can take it; the student is told it is not opened yet.
-  const fb = scheduledNext(side, now);
-  if (!fb) return { next: null, note: notes[0] || '' };
-  const who = side === 'inside' ? fallbackRunner(now) : fallbackOperators(side)[0];
-  if (!who) return { next: null, note: notes[0] || '' };
-  return {
-    next: {
-      batch: fb.opt,
-      start: payDeadline(fb.start, now),
-      startText: startTextOf(fb.start),
-      late: fb.start <= now,
-      by: who.name || '',
-      payTo: who.payTo || null,
-      unconfirmed: true,
-    },
-    note: notes[0] || '',
-  };
-}
-
-/** The next batch on the timetable still open: not closed by staff and not past its last moment */
-function scheduledNext(side, now = new Date()) {
-  for (let d = 0; d < 3; d++) {
-    for (const opt of slotsForDay(side, now, d)) {
-      if (now.getTime() >= batchCloseDate(opt, side).getTime()) continue;
-      if (closedByStaff(opt, side)) continue;
-      return { opt, start: switchStartDate(opt, null) };
-    }
-  }
-  return null;
-}
-
-/** Inside: the runner who most recently opened a batch (settled up, with a payment account) */
-function fallbackRunner(now = new Date()) {
-  const seen = new Set();
-  const list = Object.values(insideSwitches)
-    .filter((sw) => sw && sw.byUid)
-    .sort((a, b) => (b.at || 0) - (a.at || 0));
-  for (const sw of list) {
-    if (seen.has(sw.byUid)) continue;
-    seen.add(sw.byUid);
-    if (isOverdue(runnerUnsettled[sw.byUid], now)) continue;
-    const payTo = runnerPay[sw.byUid] || sw.payTo;
-    if (payTo) return { uid: sw.byUid, name: sw.by || 'Runner', payTo };
-  }
-  return null;
-}
-
-/** Outside: operators who can take orders (not switched off by you, settled, with an account), fewest orders first */
-function fallbackOperators(kind) {
-  const today = ymdOf(new Date());
-  return activeOperators(kind)
-    .filter((o) => o.payTo)
-    .map((o) => ({ uid: o.id, name: o.name || 'Operator', payTo: o.payTo, load: o.load && o.load.date === today ? o.load.count || 0 : 0 }))
-    .sort((a, b) => a.load - b.load);
-}
-
-/**
- * Outside checkout: the next batch any operator of this kind is accepting, and every operator accepting it.
- * Each operator: { uid, name, start, startText, load } where load = orders today (fewer = suggested).
- */
-export function getOutsideChoices(kind, now = new Date()) {
-  const today = ymdOf(now);
-  for (let d = 0; d < 3; d++) {
-    for (const opt of slotsForDay(kind, now, d)) {
-      const ops = [];
-      for (const op of activeOperators(kind)) {
-        const sw = (op.slots || {})[opt.key];
-        if (accepting(opt, sw, kind, now)) {
-          const start = switchStartDate(opt, sw);
-          const load = op.load && op.load.date === today ? op.load.count || 0 : 0;
-          ops.push({ uid: op.id, name: op.name || 'Operator', start: payDeadline(start, now), startText: startTextOf(start), late: start <= now, load, payTo: op.payTo || null });
-        }
-      }
-      if (ops.length) return { batch: opt, operators: ops.sort((a, b) => a.load - b.load) };
-    }
-  }
-  // Nobody has opened a batch yet: still let the student order into the next scheduled batch
-  const { note } = getNextBatch(kind, now);
-  const fb = scheduledNext(kind, now);
-  const ops = fallbackOperators(kind).map((o) => ({
-    ...o,
-    start: fb ? payDeadline(fb.start, now) : null,
-    startText: fb ? startTextOf(fb.start) : '',
-    late: fb ? fb.start <= now : false,
-  }));
-  if (fb && ops.length) return { batch: fb.opt, operators: ops, note, unconfirmed: true };
-  return { batch: null, operators: [], note };
-}
-
-/** Count today's orders per operator, so the next student is pointed at the one with fewer. Best effort. */
-async function bumpOperatorLoad(uid) {
-  const today = ymdOf(new Date());
-  const cur = operatorDocs[uid]?.load;
-  const count = cur && cur.date === today ? (cur.count || 0) + 1 : 1;
-  try {
-    await setDoc(doc(db, 'operatorStatus', uid), { load: { date: today, count } }, { merge: true });
-  } catch (e) {
-    /* someone else counted at the same moment; not important */
-  }
-}
-
-const startTextOf = (d) => {
-  const min = d.getHours() * 60 + d.getMinutes();
-  return timeLabel(min);
-};
-
-/** Switches for runners (inside) — today and later only */
-export function getInsideSwitches() {
-  return insideSwitches;
-}
-
-/** Login uid of the signed-in staff member */
-export function getMyUid() {
-  return auth.currentUser?.uid || '';
-}
-
-/** The signed-in operator's own switches */
-export function getMyOperatorStatus() {
-  const uid = auth.currentUser?.uid;
-  return uid ? operatorDocs[uid] || null : null;
-}
-
-/** Every operator, for the admin override panel */
-export function getAllOperatorStatus() {
-  return Object.values(operatorDocs);
-}
-
-function staleKeys(map) {
-  const today = ymdOf(new Date());
-  const out = {};
-  Object.keys(map || {}).forEach((k) => {
-    if (String(k).split('|')[0] < today) out[k] = deleteField();
-  });
-  return out;
-}
-
-/** Runners and admin: set one inside batch. patch = { on, start, note } */
-/** @returns {Promise<void>} */
-export async function setInsideSwitch(key, patch) {
-  const staff = getCurrentStaff();
-  const prev = insideSwitches[key] || {};
-  const sw = slim({ ...prev, ...patch, by: staff?.name || 'Runner', byPhone: staff?.phone || '', byUid: auth.currentUser?.uid || '', payTo: staff?.payAccount || null, at: Date.now() });
-  insideSwitches = { ...insideSwitches, [key]: sw };
-  fireBatches();
-  await setDoc(doc(db, 'availability', 'inside'), { slots: { ...staleKeys(insideSwitches), [key]: sw } }, { merge: true });
-}
-
-/** Store and food operators: set one of their own batches. patch = { on, start, note } */
-/** @returns {Promise<void>} */
-export async function setOperatorSwitch(key, patch) {
-  const staff = getCurrentStaff();
-  const uid = auth.currentUser?.uid;
-  if (!uid || !staff || (staff.role !== 'store' && staff.role !== 'food')) throw new Error('Operators only');
-  const mine = operatorDocs[uid] || {};
-  const prev = (mine.slots || {})[key] || {};
-  const sw = slim({ ...prev, ...patch, at: Date.now() });
-  operatorDocs = { ...operatorDocs, [uid]: { ...mine, id: uid, kind: staff.role, name: staff.name, slots: { ...(mine.slots || {}), [key]: sw } } };
-  fireBatches();
-  await setDoc(
-    doc(db, 'operatorStatus', uid),
-    { kind: staff.role, name: staff.name || 'Operator', payTo: staff.payAccount || null, slots: { ...staleKeys(mine.slots), [key]: sw }, updatedAt: Date.now() },
-    { merge: true }
-  );
-}
-
-/** Create the operator's status record on first visit, so the admin can see them */
-/** @returns {Promise<void>} */
-export async function ensureOperatorStatus() {
-  const staff = getCurrentStaff();
-  const uid = auth.currentUser?.uid;
-  if (!uid || !staff || (staff.role !== 'store' && staff.role !== 'food')) return;
-  if (operatorDocs[uid]) return;
-  try {
-    await setDoc(doc(db, 'operatorStatus', uid), { kind: staff.role, name: staff.name || 'Operator', updatedAt: Date.now() }, { merge: true });
-  } catch (e) {
-    /* ignore */
-  }
-}
-
-/** Admin only: switch an operator off (or allow them again) */
-/** @returns {Promise<void>} */
-export async function setOperatorAdminOff(uid, off) {
-  operatorDocs = { ...operatorDocs, [uid]: { ...(operatorDocs[uid] || {}), adminOff: Boolean(off) } };
-  fireBatches();
-  await setDoc(doc(db, 'operatorStatus', uid), { adminOff: Boolean(off), adminAt: Date.now() }, { merge: true });
-}
-
 /* ---------- catalog (one document: categories + products) ---------- */
 
 let catalogCache = null;
 let catalogAt = 0;
 
-// catalog/main holds your catalog. catalog/extra holds products runners and operators added by quoting
-// a student's request; they go live at once. Reads merge both. Any admin save folds them into main.
 async function readCatalog(force = false) {
   if (!force && catalogCache && Date.now() - catalogAt < 60000) return catalogCache;
   try {
-    const [snap, extraSnap, ovSnap] = await Promise.all([
-      getDoc(doc(db, 'catalog', 'main')),
-      getDoc(doc(db, 'catalog', 'extra')).catch(() => null),
-      getDoc(doc(db, 'catalog', 'overrides')).catch(() => null),
-    ]);
-    const d = snap.exists() ? snap.data() : {};
-    const main = d.products || INITIAL_PRODUCTS;
-    const ids = new Set(main.map((p) => p.id));
-    const extra = (extraSnap && extraSnap.exists() ? extraSnap.data().products || [] : []).filter((p) => p && !ids.has(p.id));
-    // Operators' price changes and runners' out-of-stock switches win over the saved catalog
-    const ov = ovSnap && ovSnap.exists() ? ovSnap.data() : {};
-    const prices = ov.prices || {};
-    const stock = ov.stock || {};
-    const products = [...main, ...extra].map((p) => {
-      let q = p;
-      if (prices[p.id]) q = { ...q, costPrice: prices[p.id].cost, price: prices[p.id].price };
-      if (typeof stock[p.id] === 'boolean') q = { ...q, isAvailable: stock[p.id] };
-      return q;
-    });
-    catalogCache = { categories: d.categories || INITIAL_CATEGORIES, products, extraCount: extra.length, overrideIds: new Set([...Object.keys(prices), ...Object.keys(stock)]) };
+    const snap = await getDoc(doc(db, 'catalog', 'main'));
+    if (snap.exists()) {
+      const d = snap.data();
+      catalogCache = { categories: d.categories || INITIAL_CATEGORIES, products: d.products || INITIAL_PRODUCTS };
+    } else {
+      catalogCache = { categories: INITIAL_CATEGORIES, products: INITIAL_PRODUCTS };
+    }
   } catch (e) {
     console.error('Catalog read failed:', e);
-    catalogCache = catalogCache || { categories: INITIAL_CATEGORIES, products: INITIAL_PRODUCTS, extraCount: 0 };
+    catalogCache = catalogCache || { categories: INITIAL_CATEGORIES, products: INITIAL_PRODUCTS };
   }
   catalogAt = Date.now();
   return catalogCache;
 }
 
 async function writeCatalog(cat) {
-  const data = slim({ categories: cat.categories, products: cat.products });
+  const data = slim(cat);
   if (JSON.stringify(data).length > 900000) {
     const msg = 'The catalog is too big to save. Use photo links or connect Cloudinary for photos (see src/cloudinary.ts).';
     window.alert(msg);
     throw new Error(msg);
   }
   await setDoc(doc(db, 'catalog', 'main'), data);
-  // Products from quotes are now part of main: keep in extra only any added in the meantime
-  if (cat.extraCount) {
-    try {
-      const ids = new Set(data.products.map((p) => p.id));
-      const ex = await getDoc(doc(db, 'catalog', 'extra'));
-      const left = (ex.exists() ? ex.data().products || [] : []).filter((p) => p && !ids.has(p.id));
-      await setDoc(doc(db, 'catalog', 'extra'), { products: left });
-    } catch (e) {
-      console.error(e);
-    }
-  }
-  catalogCache = { ...data, extraCount: 0, overrideIds: cat.overrideIds };
+  catalogCache = data;
   catalogAt = Date.now();
 }
 
@@ -649,7 +277,7 @@ export async function getCategories() {
 }
 
 /** @returns {Promise<any>} */
-export async function addCategory(name, emoji = '📦', initialSubcategories = ['All'], stores = []) {
+export async function addCategory(name, emoji = '📦', initialSubcategories = ['All']) {
   const cat = await readCatalog(true);
   const trimmed = name.trim();
   if (!trimmed) return cat.categories;
@@ -661,7 +289,6 @@ export async function addCategory(name, emoji = '📦', initialSubcategories = [
       name: trimmed,
       emoji: emoji || '📦',
       subcategories: initialSubcategories.includes('All') ? initialSubcategories : ['All', ...initialSubcategories],
-      stores,
     },
   ];
   await writeCatalog(cat);
@@ -678,18 +305,6 @@ export async function addSubcategory(categoryName, subcategoryName) {
     c.subcategories = [...c.subcategories, sub];
     await writeCatalog(cat);
   }
-  return cat.categories;
-}
-
-/** Remove a main category. Refused while any product still uses it (move those products first). */
-/** @returns {Promise<any>} */
-export async function deleteCategory(categoryName) {
-  const cat = await readCatalog(true);
-  const name = String(categoryName).toLowerCase();
-  const inUse = cat.products.filter((p) => String(p.category).toLowerCase() === name).length;
-  if (inUse > 0) throw new Error(`${inUse} product(s) still use "${categoryName}". Move them to another category first.`);
-  cat.categories = cat.categories.filter((c) => c.name.toLowerCase() !== name);
-  await writeCatalog(cat);
   return cat.categories;
 }
 
@@ -727,18 +342,6 @@ export async function saveProduct(productData) {
   }
   cat.products = products;
   await writeCatalog(cat);
-  // Your edit is now the price and stock for this product
-  if (productData.id && cat.overrideIds && cat.overrideIds.has(productData.id)) {
-    try {
-      await setDoc(
-        doc(db, 'catalog', 'overrides'),
-        { prices: { [productData.id]: deleteField() }, stock: { [productData.id]: deleteField() } },
-        { merge: true }
-      );
-    } catch (e) {
-      console.error(e);
-    }
-  }
   return products;
 }
 
@@ -968,25 +571,17 @@ export async function createOrder(orderPayload) {
 
   const subtotal = Number(orderPayload.subtotal || 0);
   const batchId = orderPayload.deliveryBatch && orderPayload.deliveryBatch !== 'premium' ? orderPayload.deliveryBatch : nextBatchId();
-  const cart = ['inside', 'store', 'food'].includes(orderPayload.cart) ? orderPayload.cart : '';
-  const hasStore = cart ? cart === 'store' : (orderPayload.items || []).some((i) => i.source === 'outside');
-  const hasFood = cart ? cart === 'food' : (orderPayload.items || []).some((i) => i.source === 'food');
+  const hasStore = (orderPayload.items || []).some((i) => i.source === 'outside');
+  const hasFood = (orderPayload.items || []).some((i) => i.source === 'food');
   const hasOutside = hasStore || hasFood;
   const deliveryFee = deliveryFeeFor(subtotal, hasOutside);
   const totalAmount = subtotal + deliveryFee;
 
-  // Everyone pays first (pay on delivery has been removed)
-  const paymentMethod = 'pay_now';
+  let paymentMethod = orderPayload.paymentMethod;
+  if ((isRepeatCustomer || hasOutside) && paymentMethod === 'pay_on_delivery') paymentMethod = 'pay_now';
 
   const now = new Date();
   const createdAtIso = now.toISOString();
-  // Payment deadline follows the switch: the moment the batch stops accepting (falls back to 15 minutes)
-  const askedDeadline = Date.parse(orderPayload.paymentDeadline || '');
-  const deadline =
-    Number.isFinite(askedDeadline) && askedDeadline > now.getTime() && askedDeadline < now.getTime() + 3 * 86400000
-      ? new Date(askedDeadline)
-      : new Date(now.getTime() + 15 * 60 * 1000);
-  const deadlineText = deadline.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const batchMeta = DELIVERY_BATCHES.find((b) => b.id === batchId);
 
   const newOrder = {
@@ -1000,24 +595,12 @@ export async function createOrder(orderPayload) {
     customRequest: orderPayload.customRequest || '',
     hasStore,
     hasFood,
-    cart,
-    operatorId: orderPayload.operatorId || '',
-    operatorName: orderPayload.operatorName || '',
-    turnRunner: orderPayload.turnRunner || '',
-    lateBatch: Boolean(orderPayload.lateBatch),
-    payTo: orderPayload.payTo || null,
-    outOfStock: orderPayload.outOfStock || 'refund',
-    gateReq: Boolean(orderPayload.gatePickup && (cart === 'store' || cart === 'food')),
-    gatePickup:
-      orderPayload.gatePickup && (cart === 'store' || cart === 'food')
-        ? { status: 'pending', fee: GATE_PICKUP_FEES.normal, heavy: false, updatedAt: createdAtIso }
-        : null,
     payReady: false,
     storeStatus: hasStore ? 'pending' : '',
     foodStatus: hasFood ? 'pending' : '',
     paymentMethod,
     paymentStatus: paymentMethod === 'pay_on_delivery' ? 'pay_on_delivery' : 'unpaid',
-    paymentDeadline: deadline.toISOString(),
+    paymentDeadline: new Date(now.getTime() + 15 * 60 * 1000).toISOString(),
     isFirstTimeCustomer: !isRepeatCustomer,
     deliveryBatch: batchId,
     deliveryTime: orderPayload.deliveryTime || (batchMeta ? `${batchMeta.name} (${batchMeta.timeWindow})` : 'Next delivery batch'),
@@ -1032,7 +615,7 @@ export async function createOrder(orderPayload) {
     runnerName: '',
     runnerPhone: '',
     runnerCurrentLocation:
-      paymentMethod === 'pay_now' ? `Awaiting student bank transfer (pay before ${deadlineText})` : 'Unassigned. Ready for packaging',
+      paymentMethod === 'pay_now' ? 'Awaiting student bank transfer (15m window)' : 'Unassigned. Ready for packaging',
     runnerLocationUpdatedAt: createdAtIso,
     history: [
       {
@@ -1040,7 +623,7 @@ export async function createOrder(orderPayload) {
         timestamp: createdAtIso,
         note:
           paymentMethod === 'pay_now'
-            ? `Order received. Pay before ${deadlineText} to join this batch.`
+            ? 'Order received. Complete bank transfer within 15 minutes to initiate packaging.'
             : 'Order placed by first-time customer (Pay on Delivery). Ready for runner packaging.',
         updatedBy: 'System',
       },
@@ -1076,37 +659,13 @@ export async function createOrder(orderPayload) {
     console.error('Failed to create order:', err);
     throw new Error('Could not place order');
   }
-  if (newOrder.operatorId) bumpOperatorLoad(newOrder.operatorId);
   return newOrder;
-}
-
-/**
- * Unpaid orders: 'open' until the batch deadline, then 'missed' (paying now joins the next batch),
- * then 'expired' once the day the order was placed has ended.
- */
-export function paymentState(o, now = new Date()) {
-  if (!o || o.paymentStatus !== 'unpaid') return 'paid';
-  if (o.createdAt && ymdOf(new Date(o.createdAt)) < ymdOf(now)) return 'expired';
-  if (o.paymentDeadline && Date.parse(o.paymentDeadline) <= now.getTime()) return 'missed';
-  return 'open';
 }
 
 /** @returns {Promise<any>} */
 export async function markPaymentSent(orderId) {
   try {
     return await patchOrder(orderId, (o) => {
-      if (paymentState(o) === 'expired') throw new Error('This order expired at the end of the day it was placed.');
-      if (paymentState(o) === 'missed') {
-        // Missed the batch: the order joins the next batch that is taking orders
-        const side = o.cart === 'store' || o.cart === 'food' ? o.cart : 'inside';
-        const { next } = getNextBatch(side);
-        if (next) {
-          o.deliveryBatch = next.batch.id;
-          o.deliveryTime = next.batch.label;
-          o.deliveryDate = next.batch.date;
-          o.paymentDeadline = next.start.toISOString();
-        }
-      }
       const now = new Date().toISOString();
       o.paymentStatus = 'payment_sent';
       o.paymentSentAt = now;
@@ -1199,9 +758,6 @@ export async function updateOrderStatus(orderId, newStatus, updatedBy = 'Admin',
         o.runnerLocationUpdatedAt = now;
       }
     });
-    if (updated && becameDelivered) {
-      recordRunnerDelivery(updated).catch((e) => console.error('Runner summary not saved:', e));
-    }
     if (updated && becameDelivered && phone) {
       try {
         await updateDoc(doc(db, 'phones', await phoneKey(phone)), { deliveredCount: increment(1) });
@@ -1410,1193 +966,14 @@ export async function updatePartStatus(orderId, kind, status, who = 'Operator') 
   const field = kind === 'food' ? 'foodStatus' : 'storeStatus';
   const label = kind === 'food' ? 'Food' : 'Store';
   try {
-    let wasSent = false;
-    const updated = await patchOrder(orderId, (o) => {
-      wasSent = o[field] === 'sent';
+    return await patchOrder(orderId, (o) => {
       o[field] = status;
-      // An outside cart is finished once it reaches the school gate
-      if (status === 'sent' && o.cart === kind && o.status !== 'Delivered') {
-        o.status = 'Delivered';
-        o.deliveredAt = new Date().toISOString();
-      }
       o.history.push({
         status: o.status,
         timestamp: new Date().toISOString(),
         note: `${label} items ${status === 'sent' ? 'sent to the school gate' : 'packed'} by ${who}`,
         updatedBy: who,
       });
-    });
-    // A completed order goes into this operator's small daily summary (counted once)
-    if (updated && status === 'sent' && !wasSent) {
-      recordOperatorDelivery(updated, kind).catch((e) => console.error('Daily summary not saved:', e));
-    }
-    return updated;
-  } catch (e) {
-    console.error(e);
-    return null;
-  }
-}
-
-/* ---------------- daily statements and settlement (Phases 3 + 5) ----------------
- * settlements/{uid}_{yyyy-mm-dd}: one small record per provider (store, food or runner) per day.
- *   Operators keep the standard (cost) price + ₦600 per cart; they owe the margin + ₦200 per cart.
- *   Runners keep what they spent on items + 30% of the day's profit (item margin + delivery fees);
- *   they owe the other 70%. Gate pickup fees are shown but kept by the runner.
- * due = what the provider owes for that day. They tap "I have sent"; the admin confirms or overrides.
- * A day not settled by 6am next morning hides that provider from checkout.
- */
-
-const OP_KEEP_PER_CART = 600;
-const OP_OWE_PER_CART = 200;
-
-/** Cost (standard price) of one cart line. Uses the cost price you entered; otherwise works it back from the margin. */
-function costOf(item, products, inside = false) {
-  const p = products.find((x) => x.id === item.productId);
-  if (p && p.costPrice > 0 && !item.isFood) return { cost: p.costPrice * item.quantity, estimated: false };
-  if (p && p.costPrice > 0 && item.isFood && item.plates > 0 && !(item.extras || []).length) {
-    return { cost: p.costPrice * item.plates * item.quantity, estimated: false };
-  }
-  const price = item.totalPrice || 0;
-  const per = item.quantity > 0 ? price / item.quantity : price;
-  const rate = inside
-    ? PRICING.schoolMargin
-    : per / (1 + PRICING.outsideMargin) >= PRICING.outsideBigFrom
-    ? PRICING.outsideBigMargin
-    : PRICING.outsideMargin;
-  return { cost: Math.round(price / (1 + rate)), estimated: true };
-}
-
-const dayId = (uid, day) => `${uid}_${day}`;
-
-/** Add one delivered order (or gate fee) to the signed-in provider's record for today. Counted once per key. */
-async function addToMyDay(kind, key, add, estimated, day = ymdOf(new Date()), cart = null) {
-  const uid = auth.currentUser?.uid;
-  const staff = getCurrentStaff();
-  if (!uid || !staff) return;
-  const ref = doc(db, 'settlements', dayId(uid, day));
-  let created = false;
-  await runTransaction(db, async (tx) => {
-    const snap = await tx.get(ref);
-    const d = snap.exists()
-      ? snap.data()
-      : {
-          uid,
-          kind,
-          name: staff.name || '',
-          date: day,
-          orders: 0,
-          paid: 0,
-          keep: 0,
-          due: 0,
-          sentTotal: 0,
-          confirmed: 0,
-          settled: false,
-          payments: [],
-          keys: [],
-          carts: [],
-          objections: {},
-          cleared: false,
-          estimated: false,
-        };
-    if ((d.keys || []).includes(key)) return;
-    created = !snap.exists();
-    const next = { ...d, keys: [...(d.keys || []), key], estimated: Boolean(d.estimated || estimated), updatedAt: Date.now() };
-    // One line per completed cart, so the provider and the admin see the maths cart by cart
-    if (cart) {
-      next.carts = [...(d.carts || []), slim(cart)];
-      next.cleared = false; // a new cart needs clearing again
-    }
-    Object.entries(add).forEach(([k, v]) => {
-      next[k] = Math.round(((next[k] || 0) + v) * 100) / 100;
-    });
-    tx.set(ref, next);
-  });
-  // Remember the open day publicly so checkout can hide a provider who has not cleared it.
-  // Only when money is owed: a day that owes nothing (gate fees, help shares) must never block anyone.
-  if ((add.due || 0) > 0) {
-    try {
-      if (kind === 'runner') {
-        await setDoc(doc(db, 'availability', 'inside'), { runnerUnsettled: { [uid]: arrayUnion(day) } }, { merge: true });
-      } else {
-        await setDoc(doc(db, 'operatorStatus', uid), { unsettled: arrayUnion(day) }, { merge: true });
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  }
-}
-
-/** Operator: their part of an outside order reached the gate */
-/** @returns {Promise<void>} */
-async function recordOperatorDelivery(order, kind) {
-  const staff = getCurrentStaff();
-  if (!staff || staff.role !== kind) return;
-  const source = kind === 'food' ? 'food' : 'outside';
-  const items = (order.items || []).filter((i) => i.source === source);
-  const products = (await readCatalog()).products || [];
-  let paid = 0;
-  let keep = 0;
-  let estimated = false;
-  for (const i of items) {
-    const c = costOf(i, products);
-    paid += i.totalPrice || 0;
-    keep += c.cost;
-    estimated = estimated || c.estimated;
-  }
-  const share = order.hasStore && order.hasFood ? 0.5 : 1; // only older mixed orders
-  const deliveryKeep = OP_KEEP_PER_CART * share;
-  const deliveryOwe = OP_OWE_PER_CART * share;
-  const cartPaid = paid + deliveryKeep + deliveryOwe;
-  const cartKeep = keep + deliveryKeep;
-  const cartOwed = Math.max(0, paid - keep) + deliveryOwe;
-  await addToMyDay(
-    kind,
-    order.id,
-    {
-      orders: 1,
-      paid: cartPaid,
-      itemsPaid: paid,
-      itemsCost: keep,
-      deliveryKeep,
-      keep: keep + deliveryKeep,
-      due: cartOwed,
-    },
-    estimated,
-    undefined,
-    { orderId: order.id, customer: order.name || '', paid: cartPaid, keep: cartKeep, owed: cartOwed, estimated }
-  );
-}
-
-/** Profit on an inside order: item margin + delivery fee */
-async function insideProfitOf(order) {
-  const items = (order.items || []).filter((i) => !i.source || i.source === 'school');
-  const products = (await readCatalog()).products || [];
-  let paid = 0;
-  let spent = 0;
-  let estimated = false;
-  for (const i of items) {
-    const c = costOf(i, products, true);
-    paid += i.totalPrice || 0;
-    spent += c.cost;
-    estimated = estimated || c.estimated;
-  }
-  const fee = order.deliveryFee || 0;
-  return { paid, spent, fee, profit: Math.max(0, paid - spent) + fee, estimated };
-}
-
-/**
- * Runner: an inside order was delivered. 30% of the profit is the runners', 70% is owed to Roomly.
- * Shared delivery (Phase 6): with a helper, the 30% splits 50/50; the 70% does not change.
- */
-/** @returns {Promise<void>} */
-async function recordRunnerDelivery(order) {
-  const staff = getCurrentStaff();
-  if (!staff || staff.role !== 'runner') return; // admin taps are not a runner's delivery
-  if (order.cart && order.cart !== 'inside') return;
-  const { paid, spent, fee, profit, estimated } = await insideProfitOf(order);
-  const share = profit * RUNNER_SHARE;
-  const helperShare = order.helperEmail ? Math.round(share / 2) : 0;
-  await addToMyDay(
-    'runner',
-    order.id,
-    {
-      orders: 1,
-      paid: paid + fee,
-      itemsPaid: paid,
-      itemsCost: spent,
-      deliveryFees: fee,
-      profit,
-      keep: spent + share - helperShare,
-      due: profit * (1 - RUNNER_SHARE),
-      owedToHelpers: helperShare,
-      sharedOrders: order.helperEmail ? 1 : 0,
-    },
-    estimated,
-    undefined,
-    {
-      orderId: order.id,
-      customer: order.name || '',
-      paid: paid + fee,
-      keep: spent + share - helperShare,
-      owed: Math.round(profit * (1 - RUNNER_SHARE) * 100) / 100,
-      helper: order.helperName || '',
-      estimated,
-    }
-  );
-  // Keep the numbers on the order, so the helper's share and a later helper can be worked out exactly
-  try {
-    await updateDoc(doc(db, 'orders', order.id), { runnerProfit: profit, helperShare });
-  } catch (e) {
-    console.error(e);
-  }
-}
-
-/**
- * Runner on the order records who helped (max two runners per order). No acceptance step.
- * helper = { email, name } or null. Before delivery it can be changed; after delivery it can be set once.
- */
-/** @returns {Promise<void>} */
-export async function setOrderHelper(orderId, helper) {
-  const staff = getCurrentStaff();
-  if (!staff || (staff.role !== 'runner' && staff.role !== 'admin')) throw new Error('Runners only');
-  const ref = doc(db, 'orders', orderId);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) throw new Error('Order not found');
-  const o = { ...snap.data(), id: snap.id };
-  if (helper && helper.email === o.runnerId) throw new Error('The helper must be a different runner');
-  const delivered = o.status === 'Delivered';
-  if (delivered && o.helperEmail) throw new Error('A helper is already recorded on this delivery');
-  if (delivered && !helper) return;
-  if (delivered && staff.id !== o.runnerId) throw new Error('Only the runner who delivered it can add a helper now');
-  const now = new Date().toISOString();
-  const patch = {
-    helperEmail: helper ? helper.email : '',
-    helperName: helper ? helper.name : '',
-    history: [
-      ...(o.history || []),
-      {
-        status: o.status,
-        timestamp: now,
-        note: helper ? `${helper.name} helped with this delivery (30% share split 50/50)` : 'Helper removed',
-        updatedBy: staff.name || 'Runner',
-      },
-    ],
-  };
-  // Helper added after delivery: move half of the delivering runner's 30% to the helper
-  if (delivered && helper) {
-    const profit = Number.isFinite(o.runnerProfit) ? o.runnerProfit : (await insideProfitOf(o)).profit;
-    const half = Math.round((profit * RUNNER_SHARE) / 2);
-    patch.helperShare = half;
-    patch.runnerProfit = profit;
-    if (staff.role === 'runner' && staff.id === o.runnerId) {
-      const day = ymdOf(new Date(o.deliveredAt || now));
-      await addToMyDay('runner', 'helpadj-' + o.id, { keep: -half, owedToHelpers: half, sharedOrders: 1 }, false, day);
-    }
-  }
-  await updateDoc(ref, slim(patch));
-}
-
-/**
- * Helper's side: deliveries this runner helped with are added to their own record (on the delivery day).
- * They owe nothing on these; the delivering runner hands over the share.
- */
-/** @returns {() => void} */
-export function syncMyHelpCredits() {
-  const staff = getCurrentStaff();
-  if (!staff || staff.role !== 'runner' || !staff.email) return () => {};
-  const done = new Set();
-  const q = query(collection(db, 'orders'), where('helperEmail', '==', staff.email), limit(40));
-  return onSnapshot(
-    q,
-    (snap) => {
-      const since = Date.now() - 3 * 86400000;
-      snap.docs.forEach((d) => {
-        const o = d.data();
-        if (o.status !== 'Delivered' || !(o.helperShare > 0) || done.has(d.id)) return;
-        if (Date.parse(o.deliveredAt || '') < since) return;
-        done.add(d.id);
-        const day = ymdOf(new Date(o.deliveredAt));
-        addToMyDay('runner', 'help-' + d.id, { helpShare: o.helperShare, keep: o.helperShare, helpedOrders: 1 }, false, day).catch((e) =>
-          console.error(e)
-        );
-      });
-    },
-    () => {}
-  );
-}
-
-/** Runner: a gate pickup they brought to a room (they keep the whole fee) */
-async function recordGateFee(order) {
-  const staff = getCurrentStaff();
-  if (!staff || staff.role !== 'runner' || !order.gatePickup) return;
-  await addToMyDay('runner', 'gate-' + order.id, { gateFees: order.gatePickup.fee || 0, keep: order.gatePickup.fee || 0 }, false);
-}
-
-/** Live record for today (one document). cb(record | null) */
-/** @returns {() => void} */
-export function subscribeMyTodaySummary(cb) {
-  const uid = auth.currentUser?.uid;
-  if (!uid) {
-    cb(null);
-    return () => {};
-  }
-  return onSnapshot(
-    doc(db, 'settlements', dayId(uid, ymdOf(new Date()))),
-    (s) => cb(s.exists() ? s.data() : null),
-    () => cb(null)
-  );
-}
-
-/** Records between two dates (yyyy-mm-dd, inclusive). One small read per day with orders. */
-/** @returns {Promise<any[]>} */
-export async function getMySummaries(from, to) {
-  const uid = auth.currentUser?.uid;
-  if (!uid) return [];
-  try {
-    const q = query(
-      collection(db, 'settlements'),
-      where('uid', '==', uid),
-      where(documentId(), '>=', dayId(uid, from)),
-      where(documentId(), '<=', dayId(uid, to))
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ ...d.data(), id: d.id }));
-  } catch (e) {
-    console.error(e);
-    return [];
-  }
-}
-
-/** Provider: their days not yet settled (oldest first) */
-/** @returns {() => void} */
-export function subscribeMyOpenSettlements(cb) {
-  const uid = auth.currentUser?.uid;
-  if (!uid) {
-    cb([]);
-    return () => {};
-  }
-  const q = query(collection(db, 'settlements'), where('uid', '==', uid), where('settled', '==', false), limit(60));
-  return onSnapshot(
-    q,
-    (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => String(a.date).localeCompare(String(b.date)))),
-    (e) => {
-      console.error(e);
-      cb([]);
-    }
-  );
-}
-
-/** Provider: "I have sent" (partial payments allowed, with a note) */
-/** @returns {Promise<void>} */
-export async function sendSettlement(id, amount, note) {
-  const amt = Math.round(Number(amount) || 0);
-  if (amt <= 0) throw new Error('Enter the amount you sent');
-  const ref = doc(db, 'settlements', id);
-  await runTransaction(db, async (tx) => {
-    const snap = await tx.get(ref);
-    if (!snap.exists()) throw new Error('Record not found');
-    const d = snap.data();
-    tx.update(ref, {
-      sentTotal: (d.sentTotal || 0) + amt,
-      payments: [...(d.payments || []), { amount: amt, note: String(note || '').slice(0, 200), at: new Date().toISOString() }],
-      updatedAt: Date.now(),
-    });
-  });
-}
-
-/** Admin: every day not yet settled, across all providers */
-/** @returns {() => void} */
-export function subscribeOpenSettlements(cb) {
-  const q = query(collection(db, 'settlements'), where('settled', '==', false), limit(200));
-  return onSnapshot(
-    q,
-    (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => String(a.date).localeCompare(String(b.date)))),
-    (e) => {
-      console.error(e);
-      cb([]);
-    }
-  );
-}
-
-/** Admin: confirm money received. override = mark the day settled (paid outside the app). */
-/** @returns {Promise<void>} */
-export async function adminConfirmSettlement(id, amount, override = false) {
-  const ref = doc(db, 'settlements', id);
-  let rec = null;
-  await runTransaction(db, async (tx) => {
-    const snap = await tx.get(ref);
-    if (!snap.exists()) throw new Error('Record not found');
-    const d = snap.data();
-    const confirmed = (d.confirmed || 0) + Math.max(0, Math.round(Number(amount) || 0));
-    const settled = override || confirmed >= Math.round(d.due || 0);
-    rec = { ...d, confirmed, settled };
-    tx.update(ref, {
-      confirmed,
-      settled,
-      override: Boolean(override),
-      settledBy: settled ? getCurrentStaff()?.name || 'Admin' : '',
-      settledAt: settled ? new Date().toISOString() : '',
-      updatedAt: Date.now(),
-    });
-  });
-  // Cleared: the provider shows at checkout again (if no other day is overdue)
-  if (rec && rec.settled) {
-    if (rec.kind === 'runner') {
-      await setDoc(doc(db, 'availability', 'inside'), { runnerUnsettled: { [rec.uid]: arrayRemove(rec.date) } }, { merge: true });
-    } else {
-      await setDoc(doc(db, 'operatorStatus', rec.uid), { unsettled: arrayRemove(rec.date) }, { merge: true });
-    }
-  }
-}
-
-/** Staff: where students pay them (shown to the student on their order) */
-/** @returns {Promise<void>} */
-export async function savePayAccount(acc) {
-  const staff = getCurrentStaff();
-  if (!staff || staff.role === 'admin') throw new Error('Staff only');
-  const clean = {
-    bankName: String(acc.bankName || '').trim().slice(0, 60),
-    accountNumber: String(acc.accountNumber || '').replace(/\D/g, '').slice(0, 10),
-    accountName: String(acc.accountName || '').trim().slice(0, 80),
-  };
-  if (!clean.bankName || clean.accountNumber.length !== 10 || !clean.accountName) {
-    throw new Error('Enter the bank name, the 10-digit account number and the account name');
-  }
-  await updateDoc(doc(db, 'staff', staff.email), { payAccount: clean });
-  pushStaff({ ...staffState, staff: { ...staff, payAccount: clean } });
-  // Show it on new orders right away (operators: their status record; runners: the inside batches record)
-  const uid = auth.currentUser?.uid;
-  if (uid && (staff.role === 'store' || staff.role === 'food')) {
-    await setDoc(doc(db, 'operatorStatus', uid), { payTo: clean }, { merge: true });
-  } else if (uid && staff.role === 'runner') {
-    await setDoc(doc(db, 'availability', 'inside'), { runnerPay: { [uid]: clean } }, { merge: true });
-  }
-}
-
-/* ---------------- gate pickup (Phase 4) ----------------
- * An outside order can ask an inside runner to bring the parcel from the gate to the room.
- * Runners read the items, tick heavy (₦1,000) or not (₦600), then accept or refuse.
- * After accepting they can mark it delivered, or refund if the job turned out too small.
- */
-
-/** Runners: live list of gate pickup requests (newest first) */
-/** @returns {() => void} */
-export function subscribeGatePickups(cb) {
-  const q = query(collection(db, 'orders'), where('gateReq', '==', true), limit(60));
-  return onSnapshot(
-    q,
-    (snap) =>
-      cb(
-        snap.docs
-          .map((d) => ({ ...d.data(), id: d.id }))
-          .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
-      ),
-    () => cb([])
-  );
-}
-
-/** Runners: action = 'accept' | 'refuse' | 'delivered' | 'refund'. heavy only matters on accept. */
-/** @returns {Promise<any>} */
-export async function updateGatePickup(orderId, action, heavy = false) {
-  const staff = getCurrentStaff();
-  const who = staff?.name || 'Runner';
-  const status = { accept: 'accepted', refuse: 'refused', delivered: 'delivered', refund: 'refunded' }[action];
-  if (!status) return null;
-  let gateDone = null;
-  try {
-    const res = await patchOrder(orderId, (o) => {
-      const gp = o.gatePickup || { status: 'pending', fee: GATE_PICKUP_FEES.normal };
-      if (action === 'accept') {
-        gp.heavy = Boolean(heavy);
-        gp.fee = heavy ? GATE_PICKUP_FEES.heavy : GATE_PICKUP_FEES.normal;
-        gp.runnerName = who;
-        gp.runnerPhone = staff?.phone || '';
-        gp.runnerPay = staff?.payAccount || null; // the student pays the runner this account
-        gp.paid = false;
-      }
-      gp.status = status;
-      gp.updatedAt = new Date().toISOString();
-      o.gatePickup = gp;
-      gateDone = action === 'delivered' ? o : null;
-      o.history.push({
-        status: o.status,
-        timestamp: gp.updatedAt,
-        note: `Gate pickup ${status}${action === 'accept' ? ` (₦${gp.fee.toLocaleString()}${gp.heavy ? ', heavy' : ''})` : ''} by ${who}`,
-        updatedBy: who,
-      });
-    });
-    if (gateDone) recordGateFee(gateDone).catch((e) => console.error(e));
-    return res;
-  } catch (e) {
-    console.error(e);
-    return null;
-  }
-}
-
-/* ---------------- product requests and price changes (Phase 7) ----------------
- * catalogRequests/{id}: an operator asks to change the cost price of one of their products,
- * or to add a new product. The admin approves (the catalog is updated, margin added) or rejects.
- */
-
-/** Operator: send a request. req = { type: 'price' | 'new', productId?, productName, newCost, category?, unit?, imageUrl?, note? } */
-/** @returns {Promise<void>} */
-export async function sendCatalogRequest(req) {
-  const staff = getCurrentStaff();
-  const uid = auth.currentUser?.uid;
-  if (!uid || !staff || (staff.role !== 'store' && staff.role !== 'food')) throw new Error('Operators only');
-  const newCost = Math.round(Number(req.newCost) || 0);
-  if (newCost <= 0) throw new Error('Enter the cost price you pay');
-  if (!String(req.productName || '').trim()) throw new Error('Enter the product name');
-  const source = staff.role === 'food' ? 'food' : 'outside';
-  const products = (await readCatalog()).products || [];
-  const current = req.productId ? products.find((p) => p.id === req.productId) : null;
-  if (req.type === 'price' && !current) throw new Error('Choose one of your products');
-  await addDoc(
-    collection(db, 'catalogRequests'),
-    slim({
-      type: req.type === 'price' ? 'price' : 'new',
-      status: 'pending',
-      operatorUid: uid,
-      operatorName: staff.name || 'Operator',
-      kind: staff.role,
-      source,
-      productId: current ? current.id : '',
-      productName: String(req.productName).trim().slice(0, 80),
-      currentCost: current ? current.costPrice || 0 : 0,
-      currentPrice: current ? current.price || 0 : 0,
-      newCost,
-      newPrice: sellingPrice(newCost, source),
-      category: String(req.category || (current ? current.category : '') || '').slice(0, 60),
-      unit: String(req.unit || '').slice(0, 60),
-      imageUrl: String(req.imageUrl || '').slice(0, 500),
-      note: String(req.note || '').slice(0, 200),
-      createdAt: new Date().toISOString(),
-    })
-  );
-}
-
-/** Operator: their own requests, newest first */
-/** @returns {() => void} */
-export function subscribeMyCatalogRequests(cb) {
-  const uid = auth.currentUser?.uid;
-  if (!uid) {
-    cb([]);
-    return () => {};
-  }
-  const q = query(collection(db, 'catalogRequests'), where('operatorUid', '==', uid), limit(30));
-  return onSnapshot(
-    q,
-    (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))),
-    () => cb([])
-  );
-}
-
-/** Admin: requests waiting for a decision */
-/** @returns {() => void} */
-export function subscribePendingCatalogRequests(cb) {
-  const q = query(collection(db, 'catalogRequests'), where('status', '==', 'pending'), limit(50));
-  return onSnapshot(
-    q,
-    (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))),
-    () => cb([])
-  );
-}
-
-/** Admin: approve (updates the catalog) or reject a request */
-/** @returns {Promise<void>} */
-export async function decideCatalogRequest(r, approve, adminNote = '') {
-  if (approve) {
-    if (r.type === 'price') {
-      await saveProduct({ id: r.productId, costPrice: r.newCost, price: sellingPrice(r.newCost, r.source) });
-    } else {
-      const isFoodCat = String(r.category).toLowerCase() === 'food';
-      await saveProduct({
-        name: r.productName,
-        category: r.category || '',
-        subcategory: 'All',
-        costPrice: r.newCost,
-        price: sellingPrice(r.newCost, r.source),
-        source: r.source,
-        unit: r.unit || '',
-        imageUrl: r.imageUrl || '',
-        isFood: r.kind === 'food' && isFoodCat,
-        description: r.note || '',
-        isAvailable: true,
-      });
-    }
-  }
-  await updateDoc(doc(db, 'catalogRequests', r.id), {
-    status: approve ? 'approved' : 'rejected',
-    adminNote: String(adminNote || '').slice(0, 200),
-    decidedAt: new Date().toISOString(),
-  });
-}
-
-/* ---------------- product requests from students (Fix batch 1) ----------------
- * productRequests/{id}: a student asks for products not in the store (name, estimated price, optional photo).
- * It goes to runners (inside), store operators or food operators. The first to reply sets the cost price;
- * the student sees only the price with the margin added, and the products go live in the store at once.
- */
-
-const SIDE_SOURCE = { inside: 'school', store: 'outside', food: 'food' };
-
-/** Student: send a request. items = [{ name, estimate, photoUrl }] */
-/** @returns {Promise<string>} the request id */
-export async function createProductRequest({ side, items, note, category, phone, name }) {
-  const clean = (items || [])
-    .map((i) => ({
-      name: String(i.name || '').trim().slice(0, 80),
-      estimate: Math.max(0, Math.round(Number(i.estimate) || 0)),
-      photoUrl: String(i.photoUrl || '').slice(0, 500),
-    }))
-    .filter((i) => i.name);
-  if (!clean.length) throw new Error('Add at least one product name');
-  if (clean.length > 15) throw new Error('Up to 15 products per request');
-  const p = normalizePhone(phone || '');
-  const ref = await addDoc(
-    collection(db, 'productRequests'),
-    slim({
-      side: ['inside', 'store', 'food'].includes(side) ? side : 'inside',
-      items: clean,
-      note: String(note || '').trim().slice(0, 300),
-      category: String(category || '').slice(0, 60),
-      phone: isValidNigerianPhone(p) ? p : '',
-      name: String(name || '').trim().slice(0, 60),
-      status: 'open',
-      createdAt: new Date().toISOString(),
-    })
-  );
-  return ref.id;
-}
-
-/** Student: live updates for one request (the id is the key, like an order id) */
-/** @returns {() => void} */
-export function subscribeProductRequest(id, cb) {
-  return onSnapshot(
-    doc(db, 'productRequests', id),
-    (s) => cb(s.exists() ? { ...s.data(), id: s.id } : null),
-    () => cb(null)
-  );
-}
-
-/** Runners / operators: recent requests for their side (open first) */
-/** @returns {() => void} */
-export function subscribeSideRequests(side, cb) {
-  const q = query(collection(db, 'productRequests'), where('side', '==', side), limit(40));
-  return onSnapshot(
-    q,
-    (snap) =>
-      cb(
-        snap.docs
-          .map((d) => ({ ...d.data(), id: d.id }))
-          .sort((a, b) => (a.status === b.status ? String(b.createdAt).localeCompare(String(a.createdAt)) : a.status === 'open' ? -1 : 1))
-      ),
-    () => cb([])
-  );
-}
-
-/** Which side the signed-in staff member quotes for */
-export function mySide() {
-  const r = getCurrentStaff()?.role;
-  return r === 'store' ? 'store' : r === 'food' ? 'food' : 'inside';
-}
-
-/**
- * Runner / operator: quote a request. costs[i] = cost price for item i (0 = not available), category for the new products.
- * First reply wins. Each priced item becomes a live product with the margin added.
- */
-/** @returns {Promise<void>} */
-export async function quoteProductRequest(reqId, costs, category) {
-  const staff = getCurrentStaff();
-  const uid = auth.currentUser?.uid;
-  if (!staff || !uid) throw new Error('Sign in first');
-  const ref = doc(db, 'productRequests', reqId);
-  let quoted = null;
-  await runTransaction(db, async (tx) => {
-    const snap = await tx.get(ref);
-    if (!snap.exists()) throw new Error('Request not found');
-    const r = snap.data();
-    if (r.status !== 'open') throw new Error('The price quote for this product has already been sent to the customer.');
-    const source = SIDE_SOURCE[r.side] || 'school';
-    const quotes = r.items.map((it, i) => {
-      const cost = Math.max(0, Math.round(Number(costs[i]) || 0));
-      if (!cost) return { name: it.name, available: false, price: 0, productId: '' };
-      return { name: it.name, available: true, price: sellingPrice(cost, source), productId: `prod-req-${reqId}-${i}`, cost };
-    });
-    if (!quotes.some((q) => q.available)) throw new Error('Enter a cost price for at least one product');
-    quoted = { r, quotes, source };
-    tx.update(ref, {
-      status: 'quoted',
-      quotes: quotes.map(({ cost, ...q }) => q), // the student never sees cost or margin
-      quotedBy: { uid, name: staff.name || '' },
-      quotedAt: new Date().toISOString(),
-    });
-  });
-  // The priced products go live for everyone, in the section and category requested
-  const { r, quotes, source } = quoted;
-  const cat = String(category || r.category || '').trim();
-  const fresh = quotes
-    .map((q, i) =>
-      q.available
-        ? slim({
-            id: q.productId,
-            name: q.name,
-            category: cat, // empty = no category (shows under All)
-            subcategory: 'All',
-            price: q.price,
-            costPrice: q.cost,
-            source,
-            imageUrl: r.items[i].photoUrl || '',
-            emoji: '🛍️',
-            gradient: 'from-slate-400/20 to-zinc-500/20',
-            isAvailable: true,
-            addedBy: staff.name || '',
-          })
-        : null
-    )
-    .filter(Boolean);
-  await setDoc(doc(db, 'catalog', 'extra'), { products: arrayUnion(...fresh) }, { merge: true });
-  catalogAt = 0; // next read picks them up
-}
-
-/** Student: ask an inside runner to bring an outside order from the gate to the room (₦600, ₦1,000 if heavy) */
-/** @returns {Promise<any>} */
-export async function requestGatePickup(orderId, building = '', room = '') {
-  try {
-    return await patchOrder(orderId, (o) => {
-      if (o.cart !== 'store' && o.cart !== 'food') throw new Error('Only outside orders');
-      if (o.gatePickup && o.gatePickup.status !== 'refused' && o.gatePickup.status !== 'refunded') return;
-      const now = new Date().toISOString();
-      // Where the runner should bring it
-      if (building && room) {
-        o.area = 'Hostels';
-        o.building = String(building).slice(0, 40);
-        o.room = String(room).replace(/\s+/g, '').toUpperCase().slice(0, 8);
-      }
-      o.gateReq = true;
-      o.gatePickup = { status: 'pending', fee: GATE_PICKUP_FEES.normal, heavy: false, updatedAt: now };
-      o.history.push({ status: o.status, timestamp: now, note: 'Student asked for gate to room pickup', updatedBy: o.name || 'Customer' });
-    });
-  } catch (e) {
-    console.error(e);
-    return null;
-  }
-}
-
-/* ---------------- Fix batch 2: order stages, clear / object settlement, admin views ----------------
- * Stages: Active (student says paid) -> Payment Confirmed (provider checked their account) -> Completed.
- * Settlement: each provider's day lists its completed carts (paid - keep = owed). The provider taps
- * All cleared, or objects to a cart with a reason; the admin corrects the amount or dismisses it.
- * After clearing, the provider sends the money and taps "I have sent"; the admin confirms receipt.
- */
-
-/** Which stage an order is in: 'unpaid' | 'active' | 'confirmed' | 'completed' | 'cancelled' */
-export function orderStage(o) {
-  if (!o) return 'unpaid';
-  if (o.status === 'Cancelled') return 'cancelled';
-  if (o.status === 'Delivered') return 'completed';
-  if (o.paymentStatus === 'payment_confirmed') return 'confirmed';
-  if (o.paymentStatus === 'payment_sent' || o.paymentStatus === 'pay_on_delivery') return 'active';
-  return 'unpaid';
-}
-
-/** Store / food operator: they checked their account and the student's money arrived */
-/** @returns {Promise<any>} */
-export async function operatorConfirmPayment(orderId) {
-  const staff = getCurrentStaff();
-  const who = staff?.name || 'Operator';
-  try {
-    return await patchOrder(orderId, (o) => {
-      if (o.paymentStatus !== 'payment_sent') return;
-      const now = new Date().toISOString();
-      o.paymentStatus = 'payment_confirmed';
-      o.paymentConfirmedAt = now;
-      o.paymentConfirmedBy = who;
-      o.history.push({ status: o.status, timestamp: now, note: `Payment confirmed by ${who}`, updatedBy: who });
-    });
-  } catch (e) {
-    console.error(e);
-    return null;
-  }
-}
-
-/** Provider: agree with the day's statement. Not allowed while an objection is open. */
-/** @returns {Promise<void>} */
-export async function clearMyDay(id) {
-  const ref = doc(db, 'settlements', id);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) throw new Error('Record not found');
-  const open = Object.values(snap.data().objections || {}).filter((x) => x && x.status === 'open').length;
-  if (open) throw new Error('You have an open objection. Wait for Roomly to answer it first.');
-  await updateDoc(ref, { cleared: true, clearedAt: new Date().toISOString() });
-}
-
-/** Provider: object to one cart, with the reason */
-/** @returns {Promise<void>} */
-export async function objectToCart(id, orderId, reason) {
-  const r = String(reason || '').trim().slice(0, 300);
-  if (!r) throw new Error('Say why this cart is wrong');
-  await updateDoc(doc(db, 'settlements', id), {
-    [`objections.${orderId}`]: { reason: r, status: 'open', at: new Date().toISOString(), reply: '' },
-    cleared: false,
-  });
-}
-
-/**
- * Admin: answer an objection. newOwed = corrected amount owed on that cart (null = dismiss, amount stays).
- */
-/** @returns {Promise<void>} */
-export async function adminResolveObjection(id, orderId, newOwed, reply) {
-  const ref = doc(db, 'settlements', id);
-  await runTransaction(db, async (tx) => {
-    const snap = await tx.get(ref);
-    if (!snap.exists()) throw new Error('Record not found');
-    const d = snap.data();
-    const obj = (d.objections || {})[orderId];
-    if (!obj) throw new Error('No objection on this cart');
-    const patch = {
-      [`objections.${orderId}`]: {
-        ...obj,
-        status: newOwed === null ? 'dismissed' : 'corrected',
-        reply: String(reply || '').slice(0, 300),
-        answeredAt: new Date().toISOString(),
-      },
-    };
-    if (newOwed !== null) {
-      const amt = Math.max(0, Math.round(Number(newOwed) || 0));
-      const carts = (d.carts || []).map((c) => (c.orderId === orderId ? { ...c, owed: amt, keep: Math.max(0, (c.paid || 0) - amt) } : c));
-      const old = (d.carts || []).find((c) => c.orderId === orderId);
-      const delta = amt - (old ? old.owed || 0 : 0);
-      patch.carts = carts;
-      patch.due = Math.max(0, Math.round(((d.due || 0) + delta) * 100) / 100);
-      patch.keep = Math.round(((d.keep || 0) - delta) * 100) / 100;
-    }
-    tx.update(ref, patch);
-  });
-}
-
-/** Admin: every provider's record for one day */
-/** @returns {() => void} */
-export function subscribeSettlementsByDate(day, cb) {
-  const q = query(collection(db, 'settlements'), where('date', '==', day), limit(200));
-  return onSnapshot(
-    q,
-    (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id }))),
-    (e) => {
-      console.error(e);
-      cb([]);
-    }
-  );
-}
-
-/** Admin: records between two dates (for the Money tab) */
-/** @returns {Promise<any[]>} */
-export async function getSettlementsRange(from, to) {
-  try {
-    const q = query(collection(db, 'settlements'), where('date', '>=', from), where('date', '<=', to), limit(2000));
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ ...d.data(), id: d.id }));
-  } catch (e) {
-    console.error(e);
-    return [];
-  }
-}
-
-/* ---------------- three stores: categories, operator prices, runner stock (Fix batch 3a) ---------------- */
-
-/**
- * Admin: give every store its standard categories and remove the old ones.
- * Products in a removed category are kept and move to "no category" (they still show under All).
- */
-/** @returns {Promise<{ categories: any[], removed: string[], moved: number }>} */
-export async function setupStoreCategories() {
-  const cat = await readCatalog(true);
-  const want = new Map(); // lower name -> { name, emoji, stores }
-  Object.entries(STORE_CATEGORIES).forEach(([store, list]) =>
-    list.forEach((c) => {
-      const k = c.name.toLowerCase();
-      const cur = want.get(k) || { name: c.name, emoji: c.emoji, stores: [] };
-      cur.stores = Array.from(new Set([...cur.stores, store]));
-      want.set(k, cur);
-    })
-  );
-  const removed = [];
-  const kept = [];
-  for (const c of cat.categories) {
-    const k = c.name.toLowerCase();
-    const w = want.get(k);
-    if (w) {
-      kept.push({ ...c, stores: Array.from(new Set([...(c.stores || []), ...w.stores])) });
-      want.delete(k);
-    } else if ((c.stores || []).length > 0) {
-      kept.push(c); // a category you created for a store yourself
-    } else {
-      removed.push(c.name);
-    }
-  }
-  want.forEach((w) => kept.push({ id: `cat-${w.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, name: w.name, emoji: w.emoji, subcategories: ['All'], stores: w.stores }));
-  const gone = new Set(removed.map((n) => n.toLowerCase()));
-  let moved = 0;
-  cat.products = cat.products.map((p) => {
-    if (gone.has(String(p.category || '').toLowerCase())) {
-      moved++;
-      return { ...p, category: '', subcategory: 'All' };
-    }
-    return p;
-  });
-  cat.categories = kept;
-  await writeCatalog(cat);
-  return { categories: kept, removed, moved };
-}
-
-const myStore = () => {
-  const r = getCurrentStaff()?.role;
-  return r === 'store' ? 'store' : r === 'food' ? 'food' : r === 'runner' ? 'inside' : '';
-};
-
-/** Operator: change the cost price of one of their products. The student price is worked out with your margin. */
-/** @returns {Promise<void>} */
-export async function operatorSetPrice(productId, cost) {
-  const store = myStore();
-  if (store !== 'store' && store !== 'food') throw new Error('Operators only');
-  const c = Math.round(Number(cost) || 0);
-  if (c <= 0) throw new Error('Enter your cost price');
-  const p = (await readCatalog(true)).products.find((x) => x.id === productId);
-  if (!p || p.source !== STORE_SOURCE[store]) throw new Error('You can only change your own store\'s products');
-  const price = sellingPrice(c, p.source);
-  await setDoc(
-    doc(db, 'catalog', 'overrides'),
-    { prices: { [productId]: { cost: c, price, by: getCurrentStaff()?.name || '', at: new Date().toISOString() } } },
-    { merge: true }
-  );
-  catalogAt = 0;
-}
-
-/** Operator: add a product they sell. It goes live at once in their store. */
-/** @returns {Promise<void>} */
-export async function operatorAddProduct({ name, category, cost, unit, imageUrl, group = '' }) {
-  const store = myStore();
-  if (store !== 'store' && store !== 'food') throw new Error('Operators only');
-  const n = String(name || '').trim().slice(0, 80);
-  const c = Math.round(Number(cost) || 0);
-  if (!n) throw new Error('Enter the product name');
-  if (c <= 0) throw new Error('Enter your cost price');
-  const source = STORE_SOURCE[store];
-  const product = slim({
-    id: `prod-op-${Date.now()}`,
-    name: n,
-    category: String(category || ''),
-    subcategory: String(group || '').trim().slice(0, 40) || 'All',
-    costPrice: c,
-    price: sellingPrice(c, source),
-    source,
-    unit: String(unit || '').slice(0, 60),
-    imageUrl: String(imageUrl || '').slice(0, 500),
-    emoji: '🛍️',
-    gradient: 'from-slate-400/20 to-zinc-500/20',
-    isAvailable: true,
-    isFood: store === 'food' && String(category).toLowerCase() === 'food',
-    addedBy: getCurrentStaff()?.name || '',
-  });
-  await setDoc(doc(db, 'catalog', 'extra'), { products: arrayUnion(product) }, { merge: true });
-  catalogAt = 0;
-}
-
-/** Runner: mark an inside product out of stock (false) or back in stock (true) */
-/** @returns {Promise<void>} */
-export async function runnerSetStock(productId, inStock) {
-  if (myStore() !== 'inside') throw new Error('Runners only');
-  await setDoc(doc(db, 'catalog', 'overrides'), { stock: { [productId]: Boolean(inStock) } }, { merge: true });
-  catalogAt = 0;
-}
-
-/** Fresh product list (skips the 1-minute cache), for staff screens */
-/** @returns {Promise<any[]>} */
-export async function getProductsFresh() {
-  return (await readCatalog(true)).products;
-}
-
-/* ---------------- Admin dashboard (Fix batch 3b) ----------------
- * statsDaily/{yyyy-mm-dd}: one small summary per day, built from that day's orders.
- * Days older than 2 days are saved once and then just read; the last 2 days are counted live
- * (orders can still complete). The first open imports past orders the same way.
- */
-
-const STORE_OF_ORDER = (o) =>
-  o.cart === 'store' || o.cart === 'food'
-    ? o.cart
-    : o.cart === 'inside'
-    ? 'inside'
-    : o.hasStore && !o.hasFood
-    ? 'store'
-    : o.hasFood && !o.hasStore
-    ? 'food'
-    : 'inside';
-
-const emptyStore = () => ({
-  placed: 0,
-  unpaid: 0,
-  completed: 0,
-  sales: 0,
-  earnings: 0,
-  late: 0,
-  firstTime: 0,
-  products: {},
-  categories: {},
-  hours: {},
-  hostels: {},
-  batches: {},
-  customers: {},
-  oos: {},
-  team: {},
-});
-
-/** Your earnings on one completed order, and per product line (estimated where no cost price is set) */
-function orderMoney(o, products) {
-  const store = STORE_OF_ORDER(o);
-  const lines = [];
-  let margin = 0;
-  for (const i of o.items || []) {
-    const inside = store === 'inside';
-    if (!inside && i.source !== (store === 'food' ? 'food' : 'outside')) continue;
-    if (inside && i.source && i.source !== 'school') continue;
-    const c = costOf(i, products, inside);
-    const m = Math.max(0, (i.totalPrice || 0) - c.cost);
-    margin += m;
-    lines.push({ i, m: inside ? m * (1 - RUNNER_SHARE) : m });
-  }
-  const earnings =
-    store === 'inside' ? (margin + (o.deliveryFee || 0)) * (1 - RUNNER_SHARE) : margin + (o.cart === store ? OP_OWE_PER_CART : OP_OWE_PER_CART / 2);
-  return { store, earnings, lines };
-}
-
-/** Pure: turn a list of orders into per-day summaries. Exported so the maths can be tested. */
-export function summarizeOrders(orders, products) {
-  const days = {};
-  for (const o of orders) {
-    if (!o || !o.createdAt || o.status === 'Cancelled') continue;
-    const d = new Date(o.createdAt);
-    const day = ymdOf(d);
-    const s = (days[day] = days[day] || { date: day, stores: { inside: emptyStore(), store: emptyStore(), food: emptyStore() } });
-    const { store, earnings, lines } = orderMoney(o, products);
-    const t = s.stores[store];
-    t.placed++;
-    if (o.paymentStatus === 'unpaid') {
-      t.unpaid++;
-      continue;
-    }
-    if (o.lateBatch) t.late++;
-    const batch = (String(o.deliveryTime || '').match(/\(([^)]+)\)/) || [])[1] || 'Other';
-    t.batches[batch] = (t.batches[batch] || 0) + 1;
-    t.hours[d.getHours()] = (t.hours[d.getHours()] || 0) + 1;
-    if (o.area !== 'Custom' && o.building) t.hostels[o.building] = (t.hostels[o.building] || 0) + 1;
-    t.customers[o.phone] = (t.customers[o.phone] || 0) + 1;
-    if (o.isFirstTimeCustomer) t.firstTime++;
-    if (o.outOfStock) t.oos[o.outOfStock] = (t.oos[o.outOfStock] || 0) + 1;
-    if (o.status !== 'Delivered') continue;
-    // Completed: money, products, team
-    t.completed++;
-    t.sales += o.totalAmount || 0;
-    t.earnings += earnings;
-    for (const { i, m } of lines) {
-      const key = String(i.productId || i.name).replace(/[.#$/\[\]]/g, '_');
-      const p = products.find((x) => x.id === i.productId);
-      const name = p ? p.name : String(i.name).replace(/\s*\(\d+ plates?\)$/, '');
-      const cur = (t.products[key] = t.products[key] || { name, category: (p && p.category) || '', qty: 0, sales: 0, earnings: 0 });
-      cur.qty += i.quantity || 1;
-      cur.sales += i.totalPrice || 0;
-      cur.earnings += m;
-      const ck = (p && p.category) || 'No category';
-      const cc = (t.categories[ck] = t.categories[ck] || { qty: 0, sales: 0, earnings: 0 });
-      cc.qty += i.quantity || 1;
-      cc.sales += i.totalPrice || 0;
-      cc.earnings += m;
-    }
-    const who = store === 'inside' ? o.runnerName || o.turnRunner || 'Unknown runner' : o.operatorName || 'Unknown operator';
-    const tm = (t.team[who] = t.team[who] || { orders: 0, confirmMins: 0, confirmed: 0 });
-    tm.orders++;
-    if (o.paymentSentAt && o.paymentConfirmedAt) {
-      const mins = (Date.parse(o.paymentConfirmedAt) - Date.parse(o.paymentSentAt)) / 60000;
-      if (mins >= 0 && mins < 24 * 60) {
-        tm.confirmMins += mins;
-        tm.confirmed++;
-      }
-    }
-  }
-  return days;
-}
-
-/**
- * Admin: summaries for every day from `from` to `to` (yyyy-mm-dd). Saved days are read; the rest are
- * counted from orders, and days older than 2 days are saved for next time.
- */
-/** @returns {Promise<any[]>} */
-export async function getDaySummaries(from, to) {
-  const saved = {};
-  try {
-    const snap = await getDocs(query(collection(db, 'statsDaily'), where(documentId(), '>=', from), where(documentId(), '<=', to)));
-    snap.forEach((d) => (saved[d.id] = d.data()));
-  } catch (e) {
-    console.error(e);
-  }
-  const today = new Date();
-  const liveFrom = new Date(today);
-  liveFrom.setDate(today.getDate() - 2);
-  const liveDay = ymdOf(liveFrom);
-  // Days to count from orders: not saved yet, or still live
-  const need = [];
-  for (let d = new Date(from + 'T00:00:00'); ymdOf(d) <= to; d.setDate(d.getDate() + 1)) {
-    const k = ymdOf(d);
-    if (!saved[k] || k >= liveDay) need.push(k);
-  }
-  if (need.length) {
-    const start = new Date(need[0] + 'T00:00:00');
-    const end = new Date(need[need.length - 1] + 'T00:00:00');
-    end.setDate(end.getDate() + 1);
-    const snap = await getDocs(
-      query(collection(db, 'orders'), where('createdAt', '>=', start.toISOString()), where('createdAt', '<', end.toISOString()), limit(5000))
-    );
-    const orders = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
-    const products = (await readCatalog()).products || [];
-    const counted = summarizeOrders(orders, products);
-    for (const k of need) {
-      const sum = counted[k] || { date: k, stores: { inside: emptyStore(), store: emptyStore(), food: emptyStore() } };
-      saved[k] = sum;
-      if (k < liveDay) setDoc(doc(db, 'statsDaily', k), slim(sum)).catch((e) => console.error(e));
-    }
-  }
-  return Object.keys(saved)
-    .filter((k) => k >= from && k <= to)
-    .sort()
-    .map((k) => saved[k]);
-}
-
-/** Admin: phone -> name, from saved student profiles (one read per profile) */
-/** @returns {Promise<Record<string, string>>} */
-export async function getCustomerNames() {
-  const names = {};
-  try {
-    const snap = await getDocs(collection(db, 'customers'));
-    snap.forEach((d) => {
-      const c = d.data();
-      if (c.phone && c.name) names[c.phone] = c.name;
-    });
-  } catch (e) {
-    console.error(e);
-  }
-  return names;
-}
-
-/** Admin: student product requests in a date range (for "demand you're missing") */
-/** @returns {Promise<any[]>} */
-export async function getRequestsRange(from, to) {
-  try {
-    const end = new Date(to + 'T00:00:00');
-    end.setDate(end.getDate() + 1);
-    const snap = await getDocs(
-      query(
-        collection(db, 'productRequests'),
-        where('createdAt', '>=', new Date(from + 'T00:00:00').toISOString()),
-        where('createdAt', '<', end.toISOString()),
-        limit(1000)
-      )
-    );
-    return snap.docs.map((d) => d.data());
-  } catch (e) {
-    console.error(e);
-    return [];
-  }
-}
-
-/** Student: they paid the runner for gate to room pickup */
-/** @returns {Promise<any>} */
-export async function markGatePickupPaid(orderId) {
-  try {
-    return await patchOrder(orderId, (o) => {
-      if (!o.gatePickup || o.gatePickup.status !== 'accepted' || o.gatePickup.paid) return;
-      const now = new Date().toISOString();
-      o.gatePickup = { ...o.gatePickup, paid: true, paidAt: now };
-      o.history.push({ status: o.status, timestamp: now, note: 'Student paid the runner for gate to room pickup', updatedBy: o.name || 'Customer' });
     });
   } catch (e) {
     console.error(e);
