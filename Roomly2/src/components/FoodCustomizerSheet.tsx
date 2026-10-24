@@ -124,15 +124,15 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
         <div className="overflow-y-auto p-5 space-y-5 flex-1">
           {/* Visual Showcase */}
           {product.imageUrl && !imageError ? (
-            <div className="w-full h-36 rounded-2xl overflow-hidden relative shadow-inner">
+            <div className="w-full h-36 rounded-2xl overflow-hidden relative shadow-inner bg-white dark:bg-slate-800">
               <img
                 src={product.imageUrl}
                 alt={product.name}
                 onError={() => setImageError(true)}
                 referrerPolicy="no-referrer"
-                className="w-full h-full object-cover"
+                className="w-full h-full object-contain"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
               <div className="absolute bottom-2.5 left-3 text-white">
                 <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-[#0e9f55]">
                   Hot & Fresh
