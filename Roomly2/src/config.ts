@@ -319,8 +319,8 @@ export const startLabel = (opt: BatchOption): string => {
   return /(am|pm)$/.test(t) ? t : `${t}${end}`;
 };
 
-/** Inside school: ₦390 when the items come to under ₦3,200, ₦500 from ₦3,200 up. Outside-school items: ₦800. */
-export const DELIVERY_FEES = { small: 390, large: 500, threshold: 3200 };
+/** Inside school: ₦400 when the items come to under ₦2,000, ₦300 from ₦2,000 up (bigger baskets pay less). Outside-school items: ₦800. */
+export const DELIVERY_FEES = { small: 400, large: 300, threshold: 2000 };
 export function deliveryFeeFor(itemTotal: number, hasOutside: boolean = false): number {
   if (hasOutside) return OUTSIDE_DELIVERY_FEE;
   return itemTotal < DELIVERY_FEES.threshold ? DELIVERY_FEES.small : DELIVERY_FEES.large;

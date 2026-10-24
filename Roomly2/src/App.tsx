@@ -693,6 +693,12 @@ export default function App() {
       .slice(0, 6);
   }, [signedInCustomer, screenOrders, sideProducts]);
 
+  // Water add-on for the inside cart: an in-stock inside product named "water", a bag preferred
+  const waterProduct = useMemo(() => {
+    const list = products.filter((p) => p.isAvailable !== false && !isOutsideSource(p.source) && !p.isFood && /water/i.test(p.name));
+    return list.find((p) => /bag/i.test(p.name)) || list[0] || null;
+  }, [products]);
+
   // Tap a product: details and similar items
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
 
@@ -981,7 +987,7 @@ export default function App() {
           onAddToCart={handleAddCustomizedFood}
         />
 
-        {/* Cart & Checkout Sheet (with 500/1000 fee and no-cancellation verification) */}
+        {/* Cart & Checkout Sheet (delivery fee, basket nudge, water add-on, no-cancellation check) */}
         <CartSheet
           isOpen={isCartOpen}
           onClose={() => setIsCartOpen(false)}
@@ -989,6 +995,8 @@ export default function App() {
           cartCounts={cartCounts}
           onSwitchCart={setCartKind}
           allItems={cartItems}
+          suggestWater={waterProduct}
+          onAddSuggested={() => waterProduct && handleAddSimpleProduct(waterProduct)}
           items={cartItems.filter((i) => cartOf(i) === cartKind)}
           customRequest={cartKind === 'inside' ? customRequest : ''}
           onUpdateQuantity={handleUpdateCartQuantity}
