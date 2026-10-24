@@ -16,11 +16,14 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
-import { HOSTELS, deliveryFeeFor, CartKind, CART_LABEL, GATE_PICKUP_FEES, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf } from '../config';
+import { HOSTELS, DELIVERY_FEES, deliveryFeeFor, CartKind, CART_LABEL, GATE_PICKUP_FEES, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf } from '../config';
 import { getNextBatch, getOutsideChoices } from '../api.js';
 import { isValidNigerianPhone, normalizePhone } from '../api.js';
 
 interface CartSheetProps {
+  /** Inside cart: a bag of water to suggest when the cart has none */
+  suggestWater?: { id: string; name: string; price: number } | null;
+  onAddSuggested?: () => void;
   isOpen: boolean;
   onClose: () => void;
   /** Which of the three carts is open; items are only that cart's items */
@@ -72,6 +75,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   cartCounts,
   onSwitchCart,
   allItems,
+  suggestWater = null,
+  onAddSuggested,
   items,
   customRequest,
   onUpdateQuantity,
@@ -820,6 +825,33 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               </span>
             </div>
           </div>
+
+          {/* Water add-on: inside cart without water */}
+          {cart === 'inside' &&
+            suggestWater &&
+            !items.some((i) => i.productId === suggestWater.id || /water/i.test(i.name)) && (
+              <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-900/60">
+                <span className="min-w-0 text-xs text-sky-900 dark:text-sky-100">
+                  <strong className="block">💧 {suggestWater.name}? ₦{suggestWater.price.toLocaleString()}</strong>
+                  <span className="text-[11px] text-sky-700 dark:text-sky-300">Goes with this delivery. No extra fee.</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={onAddSuggested}
+                  className="shrink-0 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold cursor-pointer"
+                >
+                  + Add
+                </button>
+              </div>
+            )}
+
+          {/* Basket nudge: bigger inside baskets pay less delivery */}
+          {cart === 'inside' && itemTotal > 0 && itemTotal < DELIVERY_FEES.threshold && (
+            <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 text-[11px] font-semibold text-emerald-800 dark:text-emerald-200">
+              🚚 Add ₦{(DELIVERY_FEES.threshold - itemTotal).toLocaleString()} more and pay <strong>₦{DELIVERY_FEES.large}</strong> delivery instead of ₦
+              {DELIVERY_FEES.small}.
+            </div>
+          )}
 
           {/* MANDATORY WARNING BEFORE FINAL CHECKOUT */}
           <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 space-y-2.5">
