@@ -55,14 +55,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     >
       <div>
         {/* Product Visual Area */}
-        <div className="relative w-full aspect-[4/3] rounded-xl overflow-hidden bg-gradient-to-b from-emerald-50 via-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-800 ring-1 ring-inset ring-slate-200/80 dark:ring-slate-700">
+        <div className="relative w-full aspect-[4/3] rounded-xl overflow-hidden bg-gradient-to-b from-emerald-50 via-slate-50 to-slate-100 dark:from-slate-50 dark:via-slate-50 dark:to-slate-200 ring-1 ring-inset ring-slate-200/80 dark:ring-slate-600">
           {hasRealImage ? (
             <img
               src={product.imageUrl}
               alt={product.name}
               onError={() => setImageError(true)}
               referrerPolicy="no-referrer"
-              className="w-full h-full object-contain mix-blend-multiply dark:mix-blend-normal"
+              className="w-full h-full object-contain mix-blend-multiply"
             />
           ) : (
             <div

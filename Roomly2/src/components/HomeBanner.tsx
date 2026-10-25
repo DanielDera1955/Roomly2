@@ -27,7 +27,6 @@ interface HomeBannerProps {
   onOpenOrders: () => void;
   onAnnouncementAction: (a: Announcement) => void;
   onDismissAnnouncement: () => void;
-  onNotYou: () => void;
 }
 
 /**
@@ -47,7 +46,6 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
   onOpenOrders,
   onAnnouncementAction,
   onDismissAnnouncement,
-  onNotYou,
 }) => {
   const morning = dayPart === 'Good morning';
   const afternoon = dayPart === 'Good afternoon';
@@ -142,13 +140,11 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
         {/* top strip: day part on the left, who is signed in on the right */}
         <div className="flex items-center justify-between gap-2">
           <p className={`text-[11px] font-extrabold uppercase tracking-[0.14em] ${morning ? 'text-orange-800' : 'opacity-90'}`}>{dayPart}</p>
-          <button
-            type="button"
-            onClick={onNotYou}
-            className={`text-[11px] font-semibold px-2.5 py-1 rounded-full cursor-pointer backdrop-blur-sm ${morning ? 'bg-white/45' : 'bg-white/20'}`}
-          >
-            {name ? `Hi ${name}` : 'Signed in'} · Not you?
-          </button>
+          {name && (
+            <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full backdrop-blur-sm ${morning ? 'bg-white/45' : 'bg-white/20'}`}>
+              Hi {name}
+            </span>
+          )}
         </div>
 
         {trackOrder ? (
