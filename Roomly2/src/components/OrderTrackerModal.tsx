@@ -545,13 +545,13 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                     </div>
                     <div>
                       <h4 className="text-xs font-bold text-emerald-950 dark:text-emerald-200">
-                        Order Delivered & Handed Over!
+                        {currentOrder.cart === 'store' || currentOrder.cart === 'food' ? 'Your order is sent!' : 'Order Delivered & Handed Over!'}
                       </h4>
                       <p className="text-[11px] text-emerald-800 dark:text-emerald-400">
                         {currentOrder.cart === 'store' || currentOrder.cart === 'food'
                           ? currentOrder.gatePickup && currentOrder.gatePickup.status !== 'refused' && currentOrder.gatePickup.status !== 'refunded'
                             ? 'Your items are at the school gate, and the runner is bringing them to your room.'
-                            : 'Your items are at the school gate. Please collect them.'
+                            : 'Your order is sent and will arrive in less than 20 minutes. Please be at the school gate to collect it.'
                           : `Delivered to ${shortLocation(currentOrder)}. Enjoy your order!`}
                       </p>
                     </div>
@@ -578,7 +578,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                     Order Progress
                   </h3>
                   <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-[#0e9f55] dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800/40">
-                    {currentOrder.status === 'Packing' ? 'Being Packaged' : currentOrder.status}
+                    {currentOrder.status === 'Packing' ? 'Being Packaged' : currentOrder.status === 'Delivered' && ['store', 'food'].includes((currentOrder as any).cart) ? 'Sent' : currentOrder.status}
                   </span>
                 </div>
 

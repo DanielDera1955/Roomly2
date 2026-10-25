@@ -16,7 +16,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
-import { HOSTELS, DELIVERY_FEES, deliveryFeeFor, CartKind, CART_LABEL, GATE_PICKUP_FEES, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf } from '../config';
+import { HOSTELS, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, GATE_PICKUP_FEES, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf } from '../config';
 import { getNextBatch, getOutsideChoices } from '../api.js';
 import { isValidNigerianPhone, normalizePhone } from '../api.js';
 
@@ -138,7 +138,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const itemTotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
   const hasOutside = cart !== 'inside';
   const mustPrepay = isRepeatCustomer || hasOutside;
-  const deliveryFee = deliveryFeeFor(itemTotal, hasOutside);
+  const hasBag = items.some((i) => isBagOfWater(i.name));
+  const deliveryFee = deliveryFeeFor(itemTotal, hasOutside, hasBag);
   const grandTotal = itemTotal + deliveryFee;
 
   // Batches that are still open, refreshed when a runner switches one on or off
@@ -818,7 +819,11 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-900/60">
                 <span className="min-w-0 text-xs text-sky-900 dark:text-sky-100">
                   <strong className="block">💧 {suggestWater.name}? ₦{suggestWater.price.toLocaleString()}</strong>
-                  <span className="text-[11px] text-sky-700 dark:text-sky-300">Goes with this delivery. No extra fee.</span>
+                  <span className="text-[11px] text-sky-700 dark:text-sky-300">
+                    {isBagOfWater(suggestWater.name) && deliveryFee === DELIVERY_FEES.small
+                      ? `A bag is heavy: delivery goes from ₦${DELIVERY_FEES.small} to ₦${DELIVERY_FEES.large}.`
+                      : 'Goes with this delivery. No extra fee.'}
+                  </span>
                 </span>
                 <button
                   type="button"
@@ -830,12 +835,25 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               </div>
             )}
 
-          {/* Basket nudge: bigger inside baskets pay less delivery */}
-          {cart === 'inside' && itemTotal > 0 && itemTotal < DELIVERY_FEES.threshold && (
-            <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 text-[11px] font-semibold text-emerald-800 dark:text-emerald-200">
-              🚚 Add ₦{(DELIVERY_FEES.threshold - itemTotal).toLocaleString()} more and pay <strong>₦{DELIVERY_FEES.large}</strong> delivery instead of ₦
-              {DELIVERY_FEES.small}.
-            </div>
+          {/* Late outside orders: the school stops parcels at the gate after 6pm */}
+          {hasOutside && (() => {
+            const d = new Date();
+            const m = d.getHours() * 60 + d.getMinutes();
+            return m >= 17 * 60 + 30 ? (
+              <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 text-[11px] text-amber-900 dark:text-amber-200 leading-snug">
+                <strong>It is close to 6pm.</strong> The school can refuse parcels at the gate after 6pm. If this order is turned back, or arrives
+                after 6pm, it will not be refunded.
+              </div>
+            ) : null;
+          })()}
+
+          {/* Why the inside delivery fee is what it is */}
+          {cart === 'inside' && itemTotal > 0 && deliveryFee === DELIVERY_FEES.large && (
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              {hasBag
+                ? `A bag of water is heavy, so delivery is ₦${DELIVERY_FEES.large.toLocaleString()}.`
+                : `Orders from ₦${DELIVERY_FEES.threshold.toLocaleString()} pay ₦${DELIVERY_FEES.large.toLocaleString()} delivery.`}
+            </p>
           )}
 
           {/* MANDATORY WARNING BEFORE FINAL CHECKOUT */}

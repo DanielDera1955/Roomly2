@@ -181,7 +181,7 @@ export const BatchSwitches: React.FC<BatchSwitchesProps> = ({ side = 'inside' })
   const mine = side === 'inside' ? null : getMyOperatorStatus();
   const switches: Record<string, any> = side === 'inside' ? getInsideSwitches() : mine?.slots || {};
   const days = [slotsForDay(side, now, 0), slotsForDay(side, now, 1)];
-  const cutoff = side === 'inside' ? '10pm' : '7:30pm';
+  const cutoff = side === 'inside' ? '10pm' : '6pm';
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 overflow-hidden">
@@ -214,6 +214,17 @@ export const BatchSwitches: React.FC<BatchSwitchesProps> = ({ side = 'inside' })
             Tap ON when you are ready to take a batch. After the batch time, leave it ON while you still take late orders, and tap OFF when you
             stop. Students then see the next batch. Switches turn OFF by themselves after {cutoff}.
           </p>
+          {side !== 'inside' && (
+            <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-snug">
+              The school does not want outside parcels at the gate after 6pm. Outside orders stop at 6pm by default. Anything that reaches the gate
+              after 6pm may be turned back by the school, and that is at your own risk.
+            </p>
+          )}
+          {side !== 'inside' && now.getHours() * 60 + now.getMinutes() >= 17 * 60 + 30 && (
+            <p className="text-[11px] font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-lg p-2 leading-snug">
+              It is almost 6pm. Only send what will reach the gate before 6pm. Late parcels can be refused at the gate and Roomly will not refund them.
+            </p>
+          )}
         </div>
       )}
     </div>
