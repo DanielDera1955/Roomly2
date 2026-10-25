@@ -241,7 +241,7 @@ export function listDaySlots(base: Date, dayOffset: number): BatchOption[] {
   return (WEEKLY_BATCHES[day.getDay()] || []).map((s) => buildOption(day, dayOffset, s));
 }
 
-/** Batches a student can still order into, soonest first. Outside-school orders stop at 7pm delivery. */
+/** Batches a student can still order into, soonest first. Outside-school orders stop at 6pm (school rule). */
 export function getBookableSlots(now: Date = new Date(), hasOutside: boolean = false, off: Iterable<string> = []): BatchOption[] {
   const offSet = new Set(off);
   const out: BatchOption[] = [];
@@ -250,7 +250,7 @@ export function getBookableSlots(now: Date = new Date(), hasOutside: boolean = f
     day.setHours(0, 0, 0, 0);
     day.setDate(day.getDate() + d);
     for (const s of WEEKLY_BATCHES[day.getDay()] || []) {
-      if (hasOutside && s.endMin > T(19)) continue;
+      if (hasOutside && s.endMin > T(18)) continue;
       const opt = buildOption(day, d, s);
       if (opt.orderBy.getTime() <= now.getTime()) continue;
       if (offSet.has(opt.key)) continue;
@@ -270,17 +270,17 @@ export function formatRemaining(ms: number): string {
 }
 
 // ---------- Outside school schedule ----------
-/** Outside store items: two batches a day, 12:30 to 1:30pm and 5 to 7pm */
+/** Outside store items: two batches a day, 12:30 to 1:30pm and 5 to 6pm */
 export const OUTSIDE_STORE_BATCHES: BatchSlotDef[] = [
   { id: 'afternoon', name: 'Afternoon store batch', startMin: T(12, 30), endMin: T(13, 30), orderByMin: T(12) },
-  { id: 'late', name: 'Evening store batch', startMin: T(17), endMin: T(19), orderByMin: T(16, 30) },
+  { id: 'late', name: 'Evening store batch', startMin: T(17), endMin: T(18), orderByMin: T(16, 30) },
 ];
-/** Outside food: one batch a day, 4:30 to 7pm */
+/** Outside food: one batch a day, 4:30 to 6pm */
 export const OUTSIDE_FOOD_BATCH: BatchSlotDef = {
   id: 'evening',
   name: 'Food batch',
   startMin: T(16, 30),
-  endMin: T(19),
+  endMin: T(18),
   orderByMin: T(16),
 };
 
@@ -309,8 +309,8 @@ export function slotsForDay(side: SwitchSide, base: Date, dayOffset: number): Ba
   const defs = side === 'food' ? [OUTSIDE_FOOD_BATCH] : OUTSIDE_STORE_BATCHES;
   return defs.map((s) => buildOption(day, dayOffset, s));
 }
-/** Switches turn themselves off at night: 10pm inside, 7:30pm outside (safety net for a forgotten switch) */
-export const SWITCH_CUTOFF_MIN = { inside: T(22), outside: T(19, 30) };
+/** Switches turn themselves off at night: 10pm inside, 6pm outside (the school does not want outside parcels at the gate after 6pm) */
+export const SWITCH_CUTOFF_MIN = { inside: T(22), outside: T(18) };
 
 /** "will start sending by 2pm" style label for a batch */
 export const startLabel = (opt: BatchOption): string => {
@@ -319,11 +319,16 @@ export const startLabel = (opt: BatchOption): string => {
   return /(am|pm)$/.test(t) ? t : `${t}${end}`;
 };
 
-/** Inside school: ₦400 when the items come to under ₦2,000, ₦300 from ₦2,000 up (bigger baskets pay less). Outside-school items: ₦800. */
-export const DELIVERY_FEES = { small: 400, large: 300, threshold: 2000 };
-export function deliveryFeeFor(itemTotal: number, hasOutside: boolean = false): number {
+/**
+ * Inside school: ₦390 under ₦4,000. ₦500 from ₦4,000 up, or whenever the order has a bag of water (heavy), even if it is the only item.
+ * Outside-school items: ₦800.
+ */
+export const DELIVERY_FEES = { small: 390, large: 500, threshold: 4000 };
+/** A bag of water, by name: it has "bag" and "water" in it (for example "Sachet Water (Full Bag of 20)") */
+export const isBagOfWater = (name?: string): boolean => /bag/i.test(name || '') && /water/i.test(name || '');
+export function deliveryFeeFor(itemTotal: number, hasOutside: boolean = false, hasBagOfWater: boolean = false): number {
   if (hasOutside) return OUTSIDE_DELIVERY_FEE;
-  return itemTotal < DELIVERY_FEES.threshold ? DELIVERY_FEES.small : DELIVERY_FEES.large;
+  return hasBagOfWater || itemTotal >= DELIVERY_FEES.threshold ? DELIVERY_FEES.large : DELIVERY_FEES.small;
 }
 
 export function nextBatchId(now: Date = new Date()): DeliveryBatchId {

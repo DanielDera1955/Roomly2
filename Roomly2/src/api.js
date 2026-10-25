@@ -15,6 +15,7 @@ import {
   STORE_CONFIG,
   DELIVERY_BATCHES,
   deliveryFeeFor,
+  isBagOfWater,
   nextBatchId,
   getBookableSlots,
   slotsForDay,
@@ -288,7 +289,7 @@ try {
 
 const ymdOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-/** On, and not yet turned off by the night cut-off (10pm inside, 8pm outside). Switching on after the cut-off lasts until the next night. */
+/** On, and not yet turned off by the night cut-off (10pm inside, 6pm outside). Switching on after the cut-off lasts until the next night. */
 export function switchIsLive(sw, side, now = new Date()) {
   if (!sw || !sw.on) return false;
   const at = new Date(sw.at || 0);
@@ -999,7 +1000,7 @@ export async function createOrder(orderPayload) {
   const hasStore = cart ? cart === 'store' : (orderPayload.items || []).some((i) => i.source === 'outside');
   const hasFood = cart ? cart === 'food' : (orderPayload.items || []).some((i) => i.source === 'food');
   const hasOutside = hasStore || hasFood;
-  const deliveryFee = deliveryFeeFor(subtotal, hasOutside);
+  const deliveryFee = deliveryFeeFor(subtotal, hasOutside, (orderPayload.items || []).some((i) => isBagOfWater(i.name)));
   const totalAmount = subtotal + deliveryFee;
 
   // Everyone pays first (pay on delivery has been removed)
