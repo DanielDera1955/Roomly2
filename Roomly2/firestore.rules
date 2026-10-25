@@ -74,6 +74,13 @@ service cloud.firestore {
       allow write: if isStaff();
     }
 
+    // ---------- home announcement ----------
+    // Everyone can read it, only the admin can write it.
+    match /announcements/{doc} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // ---------- availability switches ----------
     // Inside batches: runners and admin. Everyone can read (students see the next batch).
     match /availability/{doc} {
