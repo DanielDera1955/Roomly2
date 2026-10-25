@@ -864,7 +864,6 @@ export default function App() {
                 onOpenOrders={handleOpenHistory}
                 onAnnouncementAction={handleAnnouncementAction}
                 onDismissAnnouncement={handleDismissAnnouncement}
-                onNotYou={handleSignOut}
               />
             ) : (
               <p className="font-semibold text-[#0b8044] dark:text-[#0e9f55] leading-snug text-sm mb-1">{heroGreeting}</p>
