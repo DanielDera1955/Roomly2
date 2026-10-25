@@ -8,6 +8,7 @@ import {
   getProducts,
   getCategories,
   getCustomerByPhone,
+  subscribeAnnouncement,
   createOrder,
   getOrderById,
   getMyOrders,
@@ -19,7 +20,7 @@ import {
   createProductRequest,
   subscribeProductRequest,
 } from './api.js';
-import { Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, FOOD_EXTRAS } from './config';
+import { Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, FOOD_EXTRAS, Announcement, announcementActive, announcementKey } from './config';
 import { MessageCircle } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
@@ -33,7 +34,8 @@ import { DeliveryPromiseBanner } from './components/DeliveryPromiseBanner';
 import { CategoryNav, ShopTab } from './components/CategoryNav';
 import { ProductCard } from './components/ProductCard';
 import { FoodCustomizerSheet } from './components/FoodCustomizerSheet';
-import { ProductSheet, OrderAgainRow, GreetingCard } from './components/ShopExtras';
+import { ProductSheet, OrderAgainRow } from './components/ShopExtras';
+import { HomeBanner } from './components/HomeBanner';
 import { RequestTab, RequestSide, RequestItemInput } from './components/RequestTab';
 import { FloatingCartBar } from './components/FloatingCartBar';
 import { CartSheet } from './components/CartSheet';
@@ -95,6 +97,10 @@ export default function App() {
   })();
   const [phone, setPhone] = useState<string>(savedSession.phone || '');
   const [pin, setPin] = useState<string>(savedSession.pin || '');
+  // A new student can type a name at sign-in (optional). It is kept on this device only until their first order saves a profile.
+  const [localName, setLocalName] = useState<string>(savedSession.name || '');
+  const [introPhone, setIntroPhone] = useState<string>(savedSession.intro || '');
+  const [customerLoaded, setCustomerLoaded] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyOrders, setHistoryOrders] = useState<OrderRecord[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -175,25 +181,43 @@ export default function App() {
 
   // Look up customer when valid phone number is entered
   useEffect(() => {
+    setCustomerLoaded(false);
     if (isValidNigerianPhone(phone)) {
+      let stale = false;
       getCustomerByPhone(phone, pin).then((cust) => {
+        if (stale) return;
         setCustomer(cust);
+        setCustomerLoaded(true);
       });
-    } else {
-      setCustomer(null);
+      return () => {
+        stale = true;
+      };
     }
+    setCustomer(null);
   }, [phone, pin]);
 
   // Save the login on this device once the PIN is confirmed
   useEffect(() => {
     if (customer && !customer.wrongPin && /^\d{6}$/.test(pin) && phone) {
       try {
-        localStorage.setItem('roomly_customer', JSON.stringify({ phone, pin }));
+        localStorage.setItem('roomly_customer', JSON.stringify({ phone, pin, name: localName, intro: introPhone }));
       } catch (e) {
         /* ignore */
       }
     }
-  }, [customer, pin, phone]);
+  }, [customer, pin, phone, localName, introPhone]);
+
+  // "Continue" for a new number: remember the phone, PIN and optional name on this device
+  const handleContinueNew = () => {
+    const nm = localName.trim();
+    setLocalName(nm);
+    setIntroPhone(phone);
+    try {
+      localStorage.setItem('roomly_customer', JSON.stringify({ phone, pin, name: nm, intro: phone }));
+    } catch (e) {
+      /* ignore */
+    }
+  };
 
   const handleSignOut = () => {
     try {
@@ -203,6 +227,8 @@ export default function App() {
     }
     setPhone('');
     setPin('');
+    setLocalName('');
+    setIntroPhone('');
     setCustomer(null);
     setHistoryOrders([]);
   };
@@ -647,18 +673,58 @@ export default function App() {
   const activeOrderCount = screenOrders.filter((o) => o.status !== 'Delivered' && o.status !== 'Cancelled').length;
 
   // Hero greeting: guests, signed-in students without a finished order, and returning students
-  const signedInCustomer = Boolean(customer?.name) && !customer?.wrongPin && isValidNigerianPhone(phone) && /^\d{6}$/.test(pin);
-  const firstName = String(customer?.name || '').trim().split(/\s+/)[0] || '';
+  const signedInCustomer =
+    (Boolean(customer?.name) || (introPhone !== '' && introPhone === phone)) &&
+    !customer?.wrongPin &&
+    isValidNigerianPhone(phone) &&
+    /^\d{6}$/.test(pin);
+  const firstName = String(customer?.name || localName || '').trim().split(/\s+/)[0] || '';
   const hasCompletedOrder =
     signedInCustomer &&
     ((customer?.deliveredOrdersCount || 0) > 0 || screenOrders.some((o) => o.status === 'Delivered' && o.paymentStatus !== 'unpaid'));
   const hour = new Date().getHours();
   const dayPart = hour >= 5 && hour < 12 ? 'Good morning' : hour >= 12 && hour < 17 ? 'Good afternoon' : 'Good evening';
-  const heroGreeting = hasCompletedOrder
-    ? `${dayPart}, ${firstName}. It's nice to have you back.`
-    : signedInCustomer && firstName
-    ? `Hi ${firstName}, we've got you covered.`
-    : "Hi there, we've got you covered.";
+  const heroGreeting = "Hi there, we've got you covered.";
+
+  // Home announcement: one at a time, set by the admin. A student can dismiss it.
+  const [announcement, setAnnouncement] = useState<Announcement | null>(null);
+  const [dismissedKey, setDismissedKey] = useState<string>(() => {
+    try {
+      return localStorage.getItem('roomly_ann_dismissed') || '';
+    } catch (e) {
+      return '';
+    }
+  });
+  useEffect(() => {
+    const unsub = subscribeAnnouncement((a: Announcement | null) => setAnnouncement(a));
+    return () => {
+      if (typeof unsub === 'function') unsub();
+    };
+  }, []);
+  const liveAnnouncement =
+    announcement && announcementActive(announcement) && announcementKey(announcement) !== dismissedKey ? announcement : null;
+  const handleDismissAnnouncement = () => {
+    if (!announcement) return;
+    const k = announcementKey(announcement);
+    setDismissedKey(k);
+    try {
+      localStorage.setItem('roomly_ann_dismissed', k);
+    } catch (e) {
+      /* ignore */
+    }
+  };
+  const handleAnnouncementAction = (a: Announcement) => {
+    const target = String(a.buttonTarget || '').trim();
+    if (!target) return;
+    if (a.buttonType === 'search') {
+      setSearchQuery(target);
+    } else if (a.buttonType === 'whatsapp') {
+      const digits = target.replace(/[^\d]/g, '');
+      if (digits) window.open(`https://wa.me/${digits}`, '_blank', 'noopener');
+    } else if (/^https?:\/\//i.test(target)) {
+      window.open(target, '_blank', 'noopener');
+    }
+  };
 
   // Signed-in students: load their order history once, for "Order again" and the greeting
   const historyLoadedFor = useRef('');
@@ -783,18 +849,27 @@ export default function App() {
 
           {/* Phone Number Input & Customer Recognition */}
           <div className="-mx-4 -mt-4 px-4 pt-5 pb-3 bg-gradient-to-b from-emerald-100/70 to-transparent dark:from-emerald-950/40">
-            {hasCompletedOrder ? (
-              <GreetingCard
+            {signedInCustomer ? (
+              <HomeBanner
                 dayPart={dayPart as 'Good morning' | 'Good afternoon' | 'Good evening'}
                 name={firstName}
+                isNew={!hasCompletedOrder}
                 hasUsuals={orderAgain.length > 0}
-                activeOrders={activeOrderCount}
+                orders={screenOrders}
+                announcement={liveAnnouncement}
+                onOpenOrder={(o) => {
+                  setActiveOrder(o);
+                  setIsTrackerOpen(true);
+                }}
                 onOpenOrders={handleOpenHistory}
+                onAnnouncementAction={handleAnnouncementAction}
+                onDismissAnnouncement={handleDismissAnnouncement}
+                onNotYou={handleSignOut}
               />
             ) : (
               <p className="font-semibold text-[#0b8044] dark:text-[#0e9f55] leading-snug text-sm mb-1">{heroGreeting}</p>
             )}
-            {!hasCompletedOrder && (
+            {!signedInCustomer && (
               <>
                 <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-snug">
                   Order Food and Other Items Within and Outside School
@@ -817,6 +892,10 @@ export default function App() {
               onOpenHistory={handleOpenHistory}
               onSignOut={handleSignOut}
               cartCount={cartItems.reduce((n, i) => n + i.quantity, 0)}
+              isNewNumber={customerLoaded && !customer}
+              name={localName}
+              onNameChange={setLocalName}
+              onContinue={handleContinueNew}
             />
           )}
 
@@ -852,6 +931,7 @@ export default function App() {
               qtyOf={(id) => productQuantityMap[id] || 0}
               onAdd={handleAddSimpleProduct}
               onOpen={setDetailProduct}
+              ownerKey={phone}
             />
           )}
 
@@ -1003,6 +1083,7 @@ export default function App() {
           onRemoveItem={handleRemoveCartItem}
           onRemoveCustomRequest={() => setCustomRequest('')}
           customer={customer}
+          guestName={localName}
           phone={phone}
           onPhoneChange={setPhone}
           onPlaceOrder={handlePlaceOrder}

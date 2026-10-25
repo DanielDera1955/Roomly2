@@ -1237,3 +1237,35 @@ export const INITIAL_PRODUCTS: Product[] = [
     isAvailable: true,
   },
 ];
+
+
+// ---------- Home announcement ----------
+export interface Announcement {
+  on?: boolean;
+  title?: string;
+  message?: string;
+  buttonLabel?: string;
+  buttonType?: 'search' | 'whatsapp' | 'link';
+  buttonTarget?: string;
+  startDate?: string; // yyyy-mm-dd, optional
+  endDate?: string; // yyyy-mm-dd, optional
+  repeatFriday?: boolean; // shows Thursday from 5pm to Friday 12 noon, every week
+  updatedAt?: string;
+}
+/** Is this announcement showing right now? */
+export function announcementActive(a: Announcement | null | undefined, now: Date = new Date()): boolean {
+  if (!a || a.on === false || !(a.title || a.message)) return false;
+  const today = ymd(now);
+  if (a.startDate && today < a.startDate) return false;
+  if (a.endDate && today > a.endDate) return false;
+  if (a.repeatFriday) {
+    const mins = now.getHours() * 60 + now.getMinutes();
+    const day = now.getDay();
+    return (day === 4 && mins >= 17 * 60) || (day === 5 && mins < 12 * 60);
+  }
+  return true;
+}
+/** Dismissal key: a dismissed announcement returns when it is edited, or the next day for weekly ones */
+export function announcementKey(a: Announcement, now: Date = new Date()): string {
+  return `${a.updatedAt || ''}|${a.repeatFriday ? ymd(new Date(now.getTime() - (now.getDay() === 5 ? 86400000 : 0))) : 'once'}`;
+}

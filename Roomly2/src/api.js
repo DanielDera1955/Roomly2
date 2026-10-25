@@ -171,6 +171,29 @@ export function verifyAdminPin(pin) {
   return false;
 }
 
+/* ------------------- home announcement (one at a time, admin writes, everyone reads) ------------------- */
+
+export function subscribeAnnouncement(cb) {
+  try {
+    return onSnapshot(
+      doc(db, 'announcements', 'current'),
+      (s) => cb(s.exists() ? s.data() : null),
+      () => cb(null)
+    );
+  } catch (e) {
+    cb(null);
+    return () => {};
+  }
+}
+
+export async function saveAnnouncement(a) {
+  await setDoc(doc(db, 'announcements', 'current'), { ...a, on: true, updatedAt: new Date().toISOString() });
+}
+
+export async function clearAnnouncement() {
+  await setDoc(doc(db, 'announcements', 'current'), { on: false, updatedAt: new Date().toISOString() });
+}
+
 /* ------------------- store open/closed (shared) ------------------- */
 
 let storeOverride = null;
