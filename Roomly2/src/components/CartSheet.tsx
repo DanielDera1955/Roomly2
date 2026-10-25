@@ -195,17 +195,6 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const [lateAccepted, setLateAccepted] = useState(false);
   useEffect(() => setLateAccepted(false), [selectedBatch?.key]);
 
-  // Tell the student when the batch they saw stops accepting and the order moves to the next one
-  const lastBatch = useRef<{ key: string; window: string } | null>(null);
-  const [batchNotice, setBatchNotice] = useState('');
-  useEffect(() => {
-    const prev = lastBatch.current;
-    if (prev && selectedBatch && prev.key !== selectedBatch.key) {
-      setBatchNotice(`The ${prev.window} batch has stopped taking orders. Your order will join the next batch: ${selectedBatch.dayLabel}, ${selectedBatch.window}.`);
-    }
-    if (selectedBatch) lastBatch.current = { key: selectedBatch.key, window: selectedBatch.window };
-  }, [selectedBatch?.key]);
-
   const hasCustomRequest = Boolean(customRequest && customRequest.trim().length > 0);
   const isPhoneValid = isValidNigerianPhone(phone);
 
@@ -546,8 +535,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               <span>{cart === 'inside' ? 'Delivered to your room' : 'Your details'}</span>
             </h3>
             {cart !== 'inside' && (
-              <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200">
-                <strong>Delivered to the school gate.</strong> Collect it there. Once it arrives, you can ask an inside runner to bring it
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-200">
+                <strong className="text-slate-900 dark:text-white">Delivered to the school gate.</strong> Collect it there. Once it arrives, you can ask an inside runner to bring it
                 to your room from your order screen. The runner will tell you the amount.
               </div>
             )}
@@ -698,11 +687,6 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                   Your order will go in the next batch: {selectedBatch.dayLabel.toLowerCase()}, {selectedBatch.window}. Tick to accept.
                 </span>
               </label>
-            )}
-            {batchNotice && (
-              <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 text-[11px] text-blue-800 dark:text-blue-200">
-                {batchNotice}
-              </div>
             )}
             {selectedBatch && chosen ? (
               <div className="p-3 rounded-2xl border border-slate-900 dark:border-white bg-slate-50 dark:bg-slate-800/60">
