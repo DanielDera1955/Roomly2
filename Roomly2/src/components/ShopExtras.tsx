@@ -114,7 +114,25 @@ export const OrderAgainRow: React.FC<{
   qtyOf: (id: string) => number;
   onAdd: (p: Product) => void;
   onOpen: (p: Product) => void;
-}> = ({ items, qtyOf, onAdd, onOpen }) => {
+}> = ({ items: allItems, qtyOf, onAdd, onOpen }) => {
+  const KEY = 'roomly_hidden_usuals';
+  const [hidden, setHidden] = useState<string[]>(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem(KEY) || '[]');
+      return Array.isArray(v) ? v : [];
+    } catch {
+      return [];
+    }
+  });
+  const save = (next: string[]) => {
+    setHidden(next);
+    try {
+      localStorage.setItem(KEY, JSON.stringify(next));
+    } catch {
+      /* storage can be blocked; the change still holds for this visit */
+    }
+  };
+  const items = allItems.filter((p) => !hidden.includes(p.id));
   if (!items.length) return null;
   const missing = items.filter((p) => qtyOf(p.id) === 0);
   return (
@@ -123,21 +141,38 @@ export const OrderAgainRow: React.FC<{
         <p className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
           <RotateCcw className="w-3.5 h-3.5 text-[#0e9f55]" /> Order again
         </p>
-        {missing.length > 0 && (
+        <div className="flex items-center gap-1">
+          {missing.length > 0 && (
+            <button
+              type="button"
+              onClick={() => missing.forEach((p) => onAdd(p))}
+              className="text-xs font-bold text-[#0e9f55] px-2 py-1 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
+            >
+              Add all
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => missing.forEach((p) => onAdd(p))}
-            className="text-xs font-bold text-[#0e9f55] px-2 py-1 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
+            onClick={() => save(Array.from(new Set([...hidden, ...items.map((p) => p.id)])))}
+            className="text-xs font-semibold text-slate-400 px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
           >
-            Add all
+            Hide
           </button>
-        )}
+        </div>
       </div>
       <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-3 px-3">
         {items.map((p) => {
           const q = qtyOf(p.id);
           return (
-            <div key={p.id} className="shrink-0 w-28 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-1.5">
+            <div key={p.id} className="relative shrink-0 w-28 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-1.5">
+              <button
+                type="button"
+                aria-label={`Remove ${p.name} from Order again`}
+                onClick={() => save([...hidden, p.id])}
+                className="absolute top-1 right-1 z-10 w-5 h-5 rounded-full bg-white/90 dark:bg-slate-900/90 text-slate-500 flex items-center justify-center shadow-sm cursor-pointer"
+              >
+                <X className="w-3 h-3" />
+              </button>
               <button type="button" onClick={() => onOpen(p)} className="block w-full text-left cursor-pointer">
                 <Thumb p={p} />
                 <span className="block mt-1 text-[11px] font-bold text-slate-900 dark:text-white leading-tight line-clamp-2">{p.name}</span>
