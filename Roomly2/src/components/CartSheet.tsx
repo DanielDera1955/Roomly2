@@ -38,6 +38,8 @@ interface CartSheetProps {
   onRemoveItem: (cartItemId: string) => void;
   onRemoveCustomRequest: () => void;
   customer: CustomerProfile | null;
+  /** Name typed at sign-in by a student with no saved profile yet. The checkout name still wins. */
+  guestName?: string;
   phone: string;
   onPhoneChange: (phone: string) => void;
   onPlaceOrder: (orderPayload: {
@@ -83,6 +85,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   onRemoveItem,
   onRemoveCustomRequest,
   customer,
+  guestName = '',
   phone,
   onPhoneChange,
   onPlaceOrder,
@@ -90,7 +93,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   if (!isOpen) return null;
 
   // Form states
-  const [name, setName] = useState(customer?.name || '');
+  const [name, setName] = useState(customer?.name || guestName || '');
   // Location: hostel (JV, TA, New Hostel) plus a typed room number
   const area = 'Hostels';
   const savedHostel = (b?: string) => (b && HOSTELS.includes(b) ? b : HOSTELS[0]);

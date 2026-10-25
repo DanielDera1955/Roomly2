@@ -12,6 +12,11 @@ interface PhoneLookupBarProps {
   onOpenHistory: () => void;
   onSignOut: () => void;
   cartCount?: number;
+  /** True once the lookup finished and this number has no saved profile yet */
+  isNewNumber?: boolean;
+  name?: string;
+  onNameChange?: (name: string) => void;
+  onContinue?: () => void;
 }
 
 export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
@@ -23,6 +28,10 @@ export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
   onOpenHistory,
   onSignOut,
   cartCount = 0,
+  isNewNumber = false,
+  name = '',
+  onNameChange,
+  onContinue,
 }) => {
   const [inputValue, setInputValue] = useState(phone || '');
   const isValid = isValidNigerianPhone(inputValue);
@@ -99,6 +108,33 @@ export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
               maxLength={6}
               className="mt-1 w-full px-3 py-2 text-sm font-mono tracking-[0.4em] bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55]"
             />
+          </div>
+        )}
+
+        {isValid && !customer && isNewNumber && /^\d{6}$/.test(pin) && onContinue && (
+          <div className="mt-2 space-y-2">
+            <div>
+              <label htmlFor="name-input" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                What should we call you? <span className="font-normal text-slate-400">(optional)</span>
+              </label>
+              <input
+                id="name-input"
+                type="text"
+                autoComplete="given-name"
+                value={name}
+                onChange={(e) => onNameChange && onNameChange(e.target.value.slice(0, 30))}
+                placeholder="e.g. Chioma"
+                maxLength={30}
+                className="mt-1 w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55]"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={onContinue}
+              className="px-4 py-2 rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer"
+            >
+              Continue
+            </button>
           </div>
         )}
 

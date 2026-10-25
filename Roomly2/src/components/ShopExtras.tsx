@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Plus, Minus, X, RotateCcw } from 'lucide-react';
 import { Product } from '../config';
 
@@ -114,16 +114,23 @@ export const OrderAgainRow: React.FC<{
   qtyOf: (id: string) => number;
   onAdd: (p: Product) => void;
   onOpen: (p: Product) => void;
-}> = ({ items: allItems, qtyOf, onAdd, onOpen }) => {
-  const KEY = 'roomly_hidden_usuals';
-  const [hidden, setHidden] = useState<string[]>(() => {
+  /** Whose hidden items these are (their phone number), so a different student on the same phone starts fresh */
+  ownerKey?: string;
+}> = ({ items: allItems, qtyOf, onAdd, onOpen, ownerKey = '' }) => {
+  const KEY = `roomly_hidden_usuals_${ownerKey}`;
+  const read = (): string[] => {
     try {
       const v = JSON.parse(localStorage.getItem(KEY) || '[]');
       return Array.isArray(v) ? v : [];
     } catch {
       return [];
     }
-  });
+  };
+  const [hidden, setHidden] = useState<string[]>(read);
+  useEffect(() => {
+    setHidden(read());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [KEY]);
   const save = (next: string[]) => {
     setHidden(next);
     try {
@@ -133,7 +140,19 @@ export const OrderAgainRow: React.FC<{
     }
   };
   const items = allItems.filter((p) => !hidden.includes(p.id));
-  if (!items.length) return null;
+  const hiddenCount = allItems.length - items.length;
+  if (!items.length) {
+    if (!hiddenCount) return null;
+    return (
+      <button
+        type="button"
+        onClick={() => save([])}
+        className="text-xs font-semibold text-[#0e9f55] px-1 py-0.5 cursor-pointer"
+      >
+        Show my usuals
+      </button>
+    );
+  }
   const missing = items.filter((p) => qtyOf(p.id) === 0);
   return (
     <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 shadow-[0_2px_10px_-4px_rgba(15,60,40,0.15)] space-y-2">
@@ -149,6 +168,15 @@ export const OrderAgainRow: React.FC<{
               className="text-xs font-bold text-[#0e9f55] px-2 py-1 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
             >
               Add all
+            </button>
+          )}
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              onClick={() => save([])}
+              className="text-xs font-semibold text-[#0e9f55] px-2 py-1 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
+            >
+              Show hidden
             </button>
           )}
           <button

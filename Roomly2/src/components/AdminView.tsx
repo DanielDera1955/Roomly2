@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { OrderChat } from './OrderChat';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { AdminSettlementsPanel } from './SettlementPanel';
+import { AnnouncementsPanel } from './AnnouncementsPanel';
 import { playChime } from '../sound';
 import { Phone as PhoneIcon, ChevronDown as ChevronDownIcon } from 'lucide-react';
 import {
@@ -557,7 +558,14 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
       {/* Main Container */}
       <div className="p-4 space-y-4 max-w-[540px] mx-auto">
         {/* ================= DASHBOARD: performance and decisions ================= */}
-        {currentTab === 'dashboard' && <AdminInsights />}
+        {currentTab === 'dashboard' && (
+          <>
+            <AdminInsights />
+            <div className="mt-4">
+              <AnnouncementsPanel />
+            </div>
+          </>
+        )}
 
         {/* ================= ORDERS & DISPATCH: Inside / Outside Store / Food ================= */}
         {currentTab === 'orders' && <AdminDispatch />}
