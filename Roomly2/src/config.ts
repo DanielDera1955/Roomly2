@@ -55,14 +55,17 @@ export const STORE_CONFIG = {
   deliveryFeeBatch: 1000,
   paymentTimeoutMinutes: 15,
   adminPin: '1234',
+  // Roomly's own account: runners and operators send what they owe here. Students never see it.
   bankDetails: {
-    bankName: 'Kuda Microfinance Bank',
-    accountNumber: '2048913401',
-    accountName: 'Roomly Campus Logistics',
+    bankName: 'Opay',
+    accountNumber: '8141850484',
+    accountName: 'Chidera Ugwu Daniel',
     instructions: 'Use your Order ID as payment narration/reference',
   },
   supportPhone: '08012345678',
   supportWhatsApp: '+2348012345678',
+  // Students use this to suggest a feature or send a complaint (08141850484)
+  feedbackWhatsApp: '2348141850484',
 };
 
 export interface DeliveryBatchOption {
@@ -100,8 +103,31 @@ export const PRICING = {
   outsideBigFrom: 10000,
 };
 
-/** Delivery for any order that contains outside-school items (runner gets 600, 200 is yours) */
+/** Outside delivery to the school gate: ₦800 (₦600 to the operator, ₦200 to you) */
 export const OUTSIDE_DELIVERY_FEE = 800;
+
+// ---------- Three carts (Phase 4) ----------
+/** inside = one cart for inside store items and cooked food (runner); store / food = the two outside carts */
+export type CartKind = 'inside' | 'store' | 'food';
+export const cartOf = (i: { source?: string }): CartKind => (i.source === 'outside' ? 'store' : i.source === 'food' ? 'food' : 'inside');
+export const CART_LABEL: Record<CartKind, string> = {
+  inside: 'Inside school',
+  store: 'Outside: store items',
+  food: 'Outside: cooked food and drinks',
+};
+/** Daily settlement: a day must be cleared before this hour the next morning */
+export const SETTLE_BY_HOUR = 6;
+/** Inside runners keep 30% of the day's profit and owe 70% */
+export const RUNNER_SHARE = 0.3;
+/** Gate pickup: an inside runner brings the parcel from the gate to the room. Paid to the runner. */
+export const GATE_PICKUP_FEES = { normal: 600, heavy: 1000 };
+/** What the student wants if an item is out of stock */
+export type OutOfStockChoice = 'refund' | 'tomorrow' | 'swap';
+export const OUT_OF_STOCK_LABEL: Record<OutOfStockChoice, string> = {
+  refund: 'Refund that item',
+  tomorrow: "Get it in tomorrow's batch (no extra delivery)",
+  swap: 'Buy a same-category item at the same price',
+};
 
 const roundUp10 = (n: number) => Math.ceil((n - 0.000001) / 10) * 10;
 
@@ -142,14 +168,21 @@ const slot = (id: DeliveryBatchId, start: number, end: number, orderBy: number):
 const SCHOOL_DAY = [slot('afternoon', T(14), T(15), T(12, 30)), slot('late', T(17), T(18), T(15, 30)), slot('evening', T(20), T(21), T(18, 30))];
 /** 0 = Sunday ... 6 = Saturday. Runners and admin can switch any batch off for a day. */
 export const WEEKLY_BATCHES: Record<number, BatchSlotDef[]> = {
-  0: [slot('midday', T(12), T(12, 30), T(11)), slot('evening', T(20), T(21), T(19))],
+  // Sunday: four batches, delivered by 12pm, 4pm, 6pm and 9pm
+  0: [
+    slot('midday', T(11), T(12), T(10)),
+    slot('afternoon', T(15), T(16), T(13, 30)),
+    slot('late', T(17), T(18), T(15, 30)),
+    slot('evening', T(20), T(21), T(18, 30)),
+  ],
   1: SCHOOL_DAY,
   2: SCHOOL_DAY,
   3: SCHOOL_DAY,
   4: SCHOOL_DAY,
   5: SCHOOL_DAY,
+  // Saturday: 9 to 10am, 1 to 2pm, 4 to 5pm, 8 to 9pm
   6: [
-    slot('morning', T(10), T(11), T(9)),
+    slot('morning', T(9), T(10), T(8)),
     slot('midday', T(13), T(14), T(11, 30)),
     slot('late', T(16), T(17), T(14, 30)),
     slot('evening', T(20), T(21), T(18, 30)),
@@ -165,6 +198,7 @@ export interface BatchOption {
   window: string; // "2 to 3pm"
   label: string; // "Today, Afternoon Batch (2 to 3pm)"
   orderBy: Date;
+  startMin: number; // scheduled start, minutes after midnight
 }
 
 export const timeLabel = (min: number): string => {
@@ -195,6 +229,7 @@ function buildOption(day: Date, dayOffset: number, s: BatchSlotDef): BatchOption
     window,
     label: `${dayLabel}, ${s.name} (${window})`,
     orderBy: new Date(day.getTime() + s.orderByMin * 60000),
+    startMin: s.startMin,
   };
 }
 
@@ -225,47 +260,6 @@ export function getBookableSlots(now: Date = new Date(), hasOutside: boolean = f
   return out.slice(0, 8);
 }
 
-export interface CheckoutSchedule {
-  batch: BatchOption;
-  notes: string[];
-  allOff: boolean;
-}
-
-/**
- * Checkout never blocks. The order always joins the next batch that is still taking orders.
- * If the nearer batches have closed or been switched off, the notes say so and the order moves to the following batch.
- */
-export function getCheckoutSchedule(now: Date = new Date(), hasOutside: boolean = false, off: Iterable<string> = []): CheckoutSchedule {
-  const offSet = new Set(off);
-  const upcoming: BatchOption[] = [];
-  const notes: string[] = [];
-  for (let d = 0; d < 8; d++) {
-    const day = new Date(now);
-    day.setHours(0, 0, 0, 0);
-    day.setDate(day.getDate() + d);
-    for (const s of WEEKLY_BATCHES[day.getDay()] || []) {
-      if (hasOutside && s.endMin > T(19)) continue;
-      const opt = buildOption(day, d, s);
-      const endsAt = day.getTime() + s.endMin * 60000;
-      if (opt.orderBy.getTime() <= now.getTime()) {
-        if (endsAt > now.getTime()) notes.push(`Today's ${s.name} (${opt.window}) is no longer taking orders.`);
-        continue;
-      }
-      upcoming.push(opt);
-    }
-    if (upcoming.length >= 6) break;
-  }
-  const open = upcoming.find((o) => !offSet.has(o.key));
-  const batch = open || upcoming[0];
-  if (open) {
-    for (const o of upcoming) {
-      if (o.key === open.key) break;
-      notes.push(`${o.dayLabel === 'Today' ? "Today's" : `${o.dayLabel}'s`} ${o.name} (${o.window}) is switched off.`);
-    }
-  }
-  return { batch, notes, allOff: !open };
-}
-
 export function formatRemaining(ms: number): string {
   const totalMin = Math.max(0, Math.floor(ms / 60000));
   if (totalMin < 1) return 'under 1 minute';
@@ -275,8 +269,58 @@ export function formatRemaining(ms: number): string {
   return h ? `${h}h ${m}m` : `${m}m`;
 }
 
-/** Inside school: ₦300 when the items come to under ₦1,600, ₦500 from ₦1,600 up. Outside-school items: ₦800. */
-export const DELIVERY_FEES = { small: 300, large: 500, threshold: 1600 };
+// ---------- Outside school schedule ----------
+/** Outside store items: two batches a day, 12:30 to 1:30pm and 5 to 7pm */
+export const OUTSIDE_STORE_BATCHES: BatchSlotDef[] = [
+  { id: 'afternoon', name: 'Afternoon store batch', startMin: T(12, 30), endMin: T(13, 30), orderByMin: T(12) },
+  { id: 'late', name: 'Evening store batch', startMin: T(17), endMin: T(19), orderByMin: T(16, 30) },
+];
+/** Outside food: one batch a day, 4:30 to 7pm */
+export const OUTSIDE_FOOD_BATCH: BatchSlotDef = {
+  id: 'evening',
+  name: 'Food batch',
+  startMin: T(16, 30),
+  endMin: T(19),
+  orderByMin: T(16),
+};
+
+/** Next outside batch still taking orders. kind 'store' or 'food'. */
+export function getNextOutsideSlot(kind: 'store' | 'food', now: Date = new Date()): BatchOption | null {
+  const slots = kind === 'food' ? [OUTSIDE_FOOD_BATCH] : OUTSIDE_STORE_BATCHES;
+  for (let d = 0; d < 3; d++) {
+    const day = new Date(now);
+    day.setHours(0, 0, 0, 0);
+    day.setDate(day.getDate() + d);
+    for (const s of slots) {
+      const opt = buildOption(day, d, s);
+      if (opt.orderBy.getTime() > now.getTime()) return opt;
+    }
+  }
+  return null;
+}
+
+/** Every slot on a day for one side: inside batches, outside store batches, or the food batch */
+export type SwitchSide = 'inside' | 'store' | 'food';
+export function slotsForDay(side: SwitchSide, base: Date, dayOffset: number): BatchOption[] {
+  if (side === 'inside') return listDaySlots(base, dayOffset);
+  const day = new Date(base);
+  day.setHours(0, 0, 0, 0);
+  day.setDate(day.getDate() + dayOffset);
+  const defs = side === 'food' ? [OUTSIDE_FOOD_BATCH] : OUTSIDE_STORE_BATCHES;
+  return defs.map((s) => buildOption(day, dayOffset, s));
+}
+/** Switches turn themselves off at night: 10pm inside, 7:30pm outside (safety net for a forgotten switch) */
+export const SWITCH_CUTOFF_MIN = { inside: T(22), outside: T(19, 30) };
+
+/** "will start sending by 2pm" style label for a batch */
+export const startLabel = (opt: BatchOption): string => {
+  const t = opt.window.split(' to ')[0];
+  const end = opt.window.match(/(am|pm)$/)?.[1] || '';
+  return /(am|pm)$/.test(t) ? t : `${t}${end}`;
+};
+
+/** Inside school: ₦400 when the items come to under ₦2,000, ₦300 from ₦2,000 up (bigger baskets pay less). Outside-school items: ₦800. */
+export const DELIVERY_FEES = { small: 400, large: 300, threshold: 2000 };
 export function deliveryFeeFor(itemTotal: number, hasOutside: boolean = false): number {
   if (hasOutside) return OUTSIDE_DELIVERY_FEE;
   return itemTotal < DELIVERY_FEES.threshold ? DELIVERY_FEES.small : DELIVERY_FEES.large;
@@ -293,11 +337,83 @@ export function calculateDeliveryFee(batchId: string = 'morning'): number {
   return STORE_CONFIG.deliveryFeeBatch;
 }
 
-// Campus buildings
+// Campus hostels (students type their own room, e.g. A12)
+export const HOSTELS = ['JV', 'TA', 'New Hostel'];
 export const CAMPUS_LOCATIONS: Record<string, string[]> = {
-  Hostels: ['Hostel A', 'Hostel B', 'Hostel C', 'Hostel D'],
-  Lodge: ['Lodge 1', 'Lodge 2', 'Lodge 3'],
+  Hostels: HOSTELS,
 };
+
+// ---------- Home screen categories (two per side) ----------
+export type ShopGroup = 'store' | 'food';
+/** Cooked food goes to Food, everything else to Store Items, decided from the product itself */
+export function shopGroupOf(p: Product): ShopGroup {
+  // Outside school: the tab follows the store, so Cooked Food always goes to the Food cart
+  if (p.source === 'food') return 'food';
+  if (p.source === 'outside') return 'store';
+  // Inside school: one cart, so the tab follows the product
+  if (p.isFood || String(p.category).toLowerCase() === 'food') return 'food';
+  return 'store';
+}
+export function shopGroupLabel(group: ShopGroup, side: 'inside' | 'outside'): string {
+  if (group === 'store') return 'Store Items';
+  return 'Cooked Food';
+}
+export const ITEMS_PER_PAGE = 10;
+
+/** Store Items categories, in the order students see them */
+export const INSIDE_CATEGORIES: { name: string; emoji: string }[] = [
+  { name: 'Bread & Pastries', emoji: '🥖' },
+  { name: 'Drinks', emoji: '🥤' },
+  { name: 'Snacks & Treats', emoji: '🍪' },
+  { name: 'Breakfast & Provisions', emoji: '🥣' },
+  { name: 'Local Food Items', emoji: '🌾' },
+  { name: 'Toiletries & Care', emoji: '🧼' },
+  { name: 'Laundry & Room', emoji: '🧺' },
+];
+export const OUTSIDE_CATEGORIES: { name: string; emoji: string }[] = [
+  { name: 'Foodstuff', emoji: '🍚' },
+  { name: 'Cooking Essentials', emoji: '🌶️' },
+  { name: 'Kitchen & Stove', emoji: '🔥' },
+  { name: 'Provisions in Bulk', emoji: '📦' },
+  { name: 'Toiletries & Laundry Packs', emoji: '🧴' },
+  { name: 'Drinks in Bulk', emoji: '🧃' },
+];
+export const FOOD_CATEGORIES: { name: string; emoji: string }[] = [
+  { name: 'Food', emoji: '🍛' },
+  { name: 'Soft Drinks', emoji: '🥤' },
+];
+
+// ---------- Three stores (Fix batch 3a) ----------
+/** inside = inside school, store = outside store items, food = outside cooked food and drinks */
+export type StoreKey = 'inside' | 'store' | 'food';
+export const STORE_LABEL: Record<StoreKey, string> = { inside: 'Inside School', store: 'Outside Store', food: 'Outside Food' };
+export const STORE_SOURCE: Record<StoreKey, 'school' | 'outside' | 'food'> = { inside: 'school', store: 'outside', food: 'food' };
+/** Each store's standard categories. Inside also keeps "Food" for its Cooked Food tab. */
+export const STORE_CATEGORIES: Record<StoreKey, { name: string; emoji: string }[]> = {
+  inside: [...INSIDE_CATEGORIES, { name: 'Food', emoji: '🍛' }],
+  store: OUTSIDE_CATEGORIES,
+  food: FOOD_CATEGORIES,
+};
+/** Which store a product belongs to, from where it is sold */
+export const storeOfSource = (source?: string): StoreKey => (source === 'outside' ? 'store' : source === 'food' ? 'food' : 'inside');
+/** A store's categories: the standard ones first (in order), then any extra you created for that store */
+export function categoriesForStore<T extends { name: string; stores?: string[] }>(cats: T[], store: StoreKey): T[] {
+  const std = STORE_CATEGORIES[store].map((c) => c.name.toLowerCase());
+  return cats
+    .filter((c) => (c.stores || []).includes(store) || std.includes(c.name.toLowerCase()))
+    .sort((a, b) => {
+      const ia = std.indexOf(a.name.toLowerCase());
+      const ib = std.indexOf(b.name.toLowerCase());
+      return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
+    });
+}
+
+/** Sort category names by the standard order; anything else goes last */
+export function categoryRank(name: string, side: 'inside' | 'outside' | 'food'): number {
+  const list = side === 'food' ? FOOD_CATEGORIES : side === 'outside' ? OUTSIDE_CATEGORIES : INSIDE_CATEGORIES;
+  const i = list.findIndex((c) => c.name.toLowerCase() === String(name).toLowerCase());
+  return i < 0 ? 999 : i;
+}
 
 // Initial Categories & Subcategories
 export const INITIAL_CATEGORIES: CategoryDefinition[] = [

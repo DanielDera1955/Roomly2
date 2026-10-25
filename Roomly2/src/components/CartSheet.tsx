@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Plus,
@@ -16,13 +16,22 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
-import { CAMPUS_LOCATIONS, STORE_CONFIG, deliveryFeeFor, isOutsideSource } from '../config';
-import { getCheckoutSchedule } from '../api.js';
+import { HOSTELS, DELIVERY_FEES, deliveryFeeFor, CartKind, CART_LABEL, GATE_PICKUP_FEES, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf } from '../config';
+import { getNextBatch, getOutsideChoices } from '../api.js';
 import { isValidNigerianPhone, normalizePhone } from '../api.js';
 
 interface CartSheetProps {
+  /** Inside cart: a bag of water to suggest when the cart has none */
+  suggestWater?: { id: string; name: string; price: number } | null;
+  onAddSuggested?: () => void;
   isOpen: boolean;
   onClose: () => void;
+  /** Which of the three carts is open; items are only that cart's items */
+  cart: CartKind;
+  cartCounts: Record<CartKind, number>;
+  onSwitchCart: (c: CartKind) => void;
+  /** Every item in every cart, for the "all carts" overview */
+  allItems: CartItem[];
   items: CartItem[];
   customRequest: string;
   onUpdateQuantity: (cartItemId: string, delta: number) => void;
@@ -43,16 +52,31 @@ interface CartSheetProps {
     deliveryBatch: DeliveryBatchId;
     deliveryTime: string;
     deliveryDate?: string;
+    paymentDeadline?: string;
     paymentMethod: 'pay_now' | 'pay_on_delivery';
     subtotal: number;
     deliveryFee: number;
     totalAmount: number;
+    cart: CartKind;
+    operatorId?: string;
+    operatorName?: string;
+    turnRunner?: string;
+    outOfStock: OutOfStockChoice;
+    gatePickup?: boolean;
+    payTo?: { bankName: string; accountNumber: string; accountName: string } | null;
+    lateBatch?: boolean;
   }) => void | Promise<void>;
 }
 
 export const CartSheet: React.FC<CartSheetProps> = ({
   isOpen,
   onClose,
+  cart,
+  cartCounts,
+  onSwitchCart,
+  allItems,
+  suggestWater = null,
+  onAddSuggested,
   items,
   customRequest,
   onUpdateQuantity,
@@ -67,18 +91,26 @@ export const CartSheet: React.FC<CartSheetProps> = ({
 
   // Form states
   const [name, setName] = useState(customer?.name || '');
-  const [area, setArea] = useState<'Hostels' | 'Lodge'>((customer?.area as any) || 'Hostels');
-  const [building, setBuilding] = useState(customer?.building || CAMPUS_LOCATIONS['Hostels'][0]);
+  // Location: hostel (JV, TA, New Hostel) plus a typed room number
+  const area = 'Hostels';
+  const savedHostel = (b?: string) => (b && HOSTELS.includes(b) ? b : HOSTELS[0]);
+  const [building, setBuilding] = useState(savedHostel(customer?.building));
   const [room, setRoom] = useState(customer?.room || '');
   const [customMode, setCustomMode] = useState(false);
   const [customLocation, setCustomLocation] = useState('');
 
-  // 4 Delivery Options: 1 Premium (₦1,500) + 3 Batches (₦1,000 each)
-  const [batchTick, setBatchTick] = useState(0);
+  // The order always joins the next batch (no batch picker)
+  const [, setBatchTick] = useState(0);
   const [paymentChoice, setPaymentChoice] = useState<'pay_now' | 'pay_on_delivery'>('pay_now');
   const [acknowledgedNoCancel, setAcknowledgedNoCancel] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [outOfStock, setOutOfStock] = useState<OutOfStockChoice | ''>('');
+  // With items in more than one cart, start on the overview of all carts
+  const filledCarts = (['inside', 'store', 'food'] as CartKind[]).filter((k) => cartCounts[k] > 0);
+  const [overview, setOverview] = useState(filledCarts.length > 1);
+  const [gatePickup, setGatePickup] = useState(false);
+  const [operatorId, setOperatorId] = useState('');
 
   // Is repeat customer?
   const isRepeatCustomer = Boolean(customer && (customer.isReturning || (customer.ordersCount && customer.ordersCount > 0)));
@@ -87,34 +119,23 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   useEffect(() => {
     if (customer) {
       if (customer.name) setName(customer.name);
-      if (customer.area && CAMPUS_LOCATIONS[customer.area]) {
-        setArea(customer.area);
-        setBuilding(customer.building || CAMPUS_LOCATIONS[customer.area][0]);
-      }
-      if (customer.room) setRoom(customer.room);
+      // Older saved locations (Hostel A, Lodge 1...) fall back to the first hostel
+      if (customer.building) setBuilding(savedHostel(customer.building));
+      if (customer.room && HOSTELS.includes(customer.building)) setRoom(customer.room);
     }
   }, [customer]);
 
   // Repeat customer payment rule enforcement:
   // "phone number will be used to detect a reap customer who won't be able to order without making payment and clicking they have made the payment."
   useEffect(() => {
-    if (isRepeatCustomer || items.some((i) => isOutsideSource(i.source))) {
+    if (isRepeatCustomer || cart !== 'inside') {
       setPaymentChoice('pay_now');
     }
-  }, [isRepeatCustomer, items]);
-
-  // Adjust building options when area toggles
-  const handleAreaChange = (newArea: 'Hostels' | 'Lodge') => {
-    setArea(newArea);
-    const availableBuildings = CAMPUS_LOCATIONS[newArea] || [];
-    if (!availableBuildings.includes(building)) {
-      setBuilding(availableBuildings[0] || '');
-    }
-  };
+  }, [isRepeatCustomer, cart]);
 
   // Financial calculations
   const itemTotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
-  const hasOutside = items.some((i) => isOutsideSource(i.source));
+  const hasOutside = cart !== 'inside';
   const mustPrepay = isRepeatCustomer || hasOutside;
   const deliveryFee = deliveryFeeFor(itemTotal, hasOutside);
   const grandTotal = itemTotal + deliveryFee;
@@ -129,8 +150,60 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       window.clearInterval(id);
     };
   }, []);
-  const schedule = getCheckoutSchedule(hasOutside);
-  const selectedBatch = schedule.batch;
+  // Next batch only. Inside: the runner whose turn it is. Outside: the operators taking that batch;
+  // the student picks one (the one with fewer orders today is suggested).
+  const insideNext = cart === 'inside' ? getNextBatch('inside') : null;
+  const outside = cart !== 'inside' ? getOutsideChoices(cart) : null;
+  const operators = outside?.operators || [];
+  const chosenOp = operators.find((o) => o.uid === operatorId) || operators[0];
+  const chosen: any = cart === 'inside'
+    ? insideNext?.next || null
+    : outside?.batch && chosenOp
+    ? { batch: outside.batch, start: chosenOp.start, startText: chosenOp.startText, late: Boolean(chosenOp.late), by: chosenOp.name, unconfirmed: Boolean(outside.unconfirmed) }
+    : outside?.batch && (outside as any).start
+    ? { batch: outside.batch, start: (outside as any).start, startText: (outside as any).startText, late: Boolean((outside as any).late), by: '', unconfirmed: true, noProvider: true }
+    : null;
+  // Nobody has switched this batch on and nobody can take it yet: ordering still works
+  const noProvider = Boolean(chosen?.noProvider);
+  // The batch has not been opened by a runner / operator yet: ordering still works, the student just accepts it
+  const unconfirmed = Boolean((chosen as any)?.unconfirmed);
+  const selectedBatch = chosen?.batch;
+  const payBy = chosen ? chosen.start : null;
+  const payByText = payBy ? payBy.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+  const pauseNote = cart === 'inside' ? insideNext?.note : outside?.note;
+  const pausedText = chosen
+    ? ''
+    : `${cart === 'food' ? 'Food orders are' : cart === 'store' ? 'Store orders are' : 'Ordering is'} paused right now.${
+        pauseNote ? ' ' + pauseNote : ' Please check back soon.'
+      }`;
+  const otherCarts = (['inside', 'store', 'food'] as CartKind[]).filter((k) => k !== cart && cartCounts[k] > 0);
+  const atGate = cart !== 'inside' && !gatePickup;
+
+  // Requested products still waiting for a price: the cart cannot be checked out yet
+  const waitingCount = items.filter((i) => i.pendingQuote).length;
+
+  // Late order: a batch earlier today has already gone, or the next batch is another day.
+  // The student must accept that the order joins the next batch.
+  const nowDate = new Date();
+  const dayStart = new Date(nowDate);
+  dayStart.setHours(0, 0, 0, 0);
+  // Done for today: the batch is closed (switched OFF or past its last moment), so the order goes to another day
+  const isLate = Boolean(selectedBatch && selectedBatch.dayLabel !== 'Today');
+  const pastBatchTime = Boolean((chosen as any)?.late);
+  void dayStart;
+  const [lateAccepted, setLateAccepted] = useState(false);
+  useEffect(() => setLateAccepted(false), [selectedBatch?.key]);
+
+  // Tell the student when the batch they saw stops accepting and the order moves to the next one
+  const lastBatch = useRef<{ key: string; window: string } | null>(null);
+  const [batchNotice, setBatchNotice] = useState('');
+  useEffect(() => {
+    const prev = lastBatch.current;
+    if (prev && selectedBatch && prev.key !== selectedBatch.key) {
+      setBatchNotice(`The ${prev.window} batch has stopped taking orders. Your order will join the next batch: ${selectedBatch.dayLabel}, ${selectedBatch.window}.`);
+    }
+    if (selectedBatch) lastBatch.current = { key: selectedBatch.key, window: selectedBatch.window };
+  }, [selectedBatch?.key]);
 
   const hasCustomRequest = Boolean(customRequest && customRequest.trim().length > 0);
   const isPhoneValid = isValidNigerianPhone(phone);
@@ -149,13 +222,18 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       return;
     }
 
+    if (!selectedBatch || !payBy) {
+      setErrorMessage(pausedText || 'No delivery batch is open right now. Please check back soon.');
+      return;
+    }
+
     if (customMode && !customLocation.trim()) {
       setErrorMessage('Please tell us where to deliver (for example: Faculty of Science gate)');
       return;
     }
 
-    if (!customMode && !room.trim()) {
-      setErrorMessage('Please enter your exact room number/floor for delivery');
+    if ((cart === 'inside' || gatePickup) && !customMode && !/\d/.test(room)) {
+      setErrorMessage('Please type your room, for example A12');
       return;
     }
 
@@ -164,10 +242,18 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       return;
     }
 
-    // Repeat customer validation
-    if ((isRepeatCustomer || hasOutside) && paymentChoice === 'pay_on_delivery') {
-      setErrorMessage('Repeat customers must select Pay Now (Bank Transfer) before orders can be packaged.');
-      setPaymentChoice('pay_now');
+    if (waitingCount > 0) {
+      setErrorMessage(`Waiting for the price of ${waitingCount} requested item(s). You can check out once it comes back.`);
+      return;
+    }
+
+    if ((isLate || unconfirmed) && !lateAccepted) {
+      setErrorMessage('Please tick that you accept your order coming in the next batch.');
+      return;
+    }
+
+    if (!outOfStock) {
+      setErrorMessage('Please choose what we should do if an item is out of stock.');
       return;
     }
 
@@ -182,25 +268,35 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       await onPlaceOrder({
         phone: normalizePhone(phone),
         name: name.trim(),
-        area: customMode ? 'Custom' : area,
-        building: customMode ? customLocation.trim() : building,
-        room: customMode ? '-' : room.trim(),
-        isCustomLocation: customMode,
+        // Outside orders stop at the school gate unless a runner is bringing them to the room
+        area: atGate ? 'Custom' : customMode ? 'Custom' : area,
+        building: atGate ? 'School gate' : customMode ? customLocation.trim() : building,
+        room: atGate || customMode ? '-' : room.replace(/\s+/g, '').toUpperCase(),
+        isCustomLocation: atGate || customMode,
         items,
         customRequest: customRequest.trim(),
         deliveryBatch: (selectedBatch?.id || 'afternoon') as DeliveryBatchId,
         deliveryTime: selectedBatch?.label || '',
         deliveryDate: selectedBatch?.date,
-        paymentMethod: paymentChoice,
+        paymentDeadline: payBy?.toISOString(),
+        paymentMethod: 'pay_now',
         subtotal: itemTotal,
         deliveryFee,
         totalAmount: grandTotal,
+        cart,
+        operatorId: cart !== 'inside' ? chosenOp?.uid : undefined,
+        operatorName: cart !== 'inside' ? chosenOp?.name : undefined,
+        turnRunner: cart === 'inside' ? insideNext?.next?.by || '' : undefined,
+        outOfStock,
+        lateBatch: isLate || unconfirmed, // for the dashboard: student accepted the next batch
+        gatePickup: cart !== 'inside' && gatePickup,
+        // Students pay the runner or operator handling the order (Roomly's account if they have not set one)
+        payTo: (cart === 'inside' ? insideNext?.next?.payTo : chosenOp?.payTo) || null,
       });
-      setSubmitting(false);
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to place order');
-      setSubmitting(false);
     }
+    setSubmitting(false);
   };
 
   return (
@@ -215,7 +311,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 dark:border-slate-800 shrink-0">
           <div>
             <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
-              Roomly Checkout
+              {overview ? 'Your carts' : CART_LABEL[cart]}
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               {items.length} {items.length === 1 ? 'item' : 'items'}
@@ -232,7 +328,68 @@ export const CartSheet: React.FC<CartSheetProps> = ({
           </button>
         </div>
 
+        {/* With several carts: back to the overview of all carts */}
+        {filledCarts.length > 1 && !overview && (
+          <div className="px-5 py-2 border-b border-slate-100 dark:border-slate-800 shrink-0">
+            <button type="button" onClick={() => setOverview(true)} className="text-xs font-bold text-[#0e9f55] cursor-pointer">
+              ← All carts ({filledCarts.length})
+            </button>
+          </div>
+        )}
+
+        {/* All carts at once: each with its items, prices and its own checkout */}
+        {overview && (
+          <div className="overflow-y-auto p-5 space-y-4 flex-1">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Your items are in {filledCarts.length} carts. Each one is delivered and paid for separately. Check out one at a time.
+            </p>
+            {filledCarts.map((k) => {
+              const list = allItems.filter((i) => cartOf(i) === k);
+              const subtotal = list.reduce((t, i) => t + (i.totalPrice || 0), 0);
+              const waiting = list.some((i) => i.pendingQuote);
+              return (
+                <div key={k} className="rounded-2xl border border-slate-200 dark:border-slate-800 p-3.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">{CART_LABEL[k]}</h3>
+                    <span className="text-[11px] text-slate-500">{k === 'inside' ? 'To your room' : 'To the school gate'}</span>
+                  </div>
+                  {list.map((i) => (
+                    <div key={i.id} className="flex justify-between gap-2 text-xs">
+                      <span className="truncate text-slate-700 dark:text-slate-200">
+                        {i.quantity}x {i.name}
+                      </span>
+                      <span className="shrink-0 font-mono font-semibold">
+                        {i.pendingQuote ? <span className="text-amber-600">Waiting for price</span> : `₦${i.totalPrice.toLocaleString()}`}
+                      </span>
+                    </div>
+                  ))}
+                  {k === 'inside' && customRequest && (
+                    <p className="text-[11px] italic text-amber-700 dark:text-amber-300">Request: "{customRequest}"</p>
+                  )}
+                  <div className="flex justify-between text-xs font-bold pt-1.5 border-t border-slate-100 dark:border-slate-800">
+                    <span>Items subtotal</span>
+                    <span className="font-mono">₦{subtotal.toLocaleString()}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400">Delivery fee is added at checkout.</p>
+                  <button
+                    type="button"
+                    disabled={waiting}
+                    onClick={() => {
+                      onSwitchCart(k);
+                      setOverview(false);
+                    }}
+                    className="w-full py-2.5 rounded-xl bg-[#0e9f55] hover:bg-[#0b8044] disabled:opacity-50 text-white text-xs font-bold cursor-pointer"
+                  >
+                    {waiting ? 'Waiting for a price before checkout' : 'Check out this cart'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {/* Scrollable Checkout Content */}
+        {!overview && (
         <form onSubmit={handleSubmit} className="overflow-y-auto p-5 space-y-5 flex-1">
 
           {/* Cart Items Summary */}
@@ -274,19 +431,45 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                         <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
                           {item.name}
                         </h4>
-                        {item.extras && item.extras.length > 0 && (
-                          <p className="text-[10px] text-amber-700 dark:text-amber-400 truncate">
-                            +{item.extras.map((e) => `${e.quantity || 1}x ${e.name}`).join(', ')}
-                          </p>
-                        )}
-                        {item.plates !== undefined && item.plates > 0 && (
+                        {item.extras && item.extras.length > 0 && (() => {
+                          const extrasCost = item.extras.reduce((s, e) => s + e.price * (e.quantity || 1), 0);
+                          const dishCost = item.unitPrice - extrasCost;
+                          return (
+                            <div className="mt-0.5 space-y-0.5 text-[10px]">
+                              {item.plates !== undefined && item.plates > 0 && (
+                                <div className="flex justify-between gap-2 text-slate-500 dark:text-slate-400">
+                                  <span>
+                                    {item.plates} {item.plates === 1 ? 'plate' : 'plates'}
+                                  </span>
+                                  <span className="font-mono">₦{dishCost.toLocaleString()}</span>
+                                </div>
+                              )}
+                              {item.extras.map((e) => (
+                                <div key={e.id} className="flex justify-between gap-2 text-amber-700 dark:text-amber-400">
+                                  <span className="break-words">
+                                    + {e.quantity || 1}x {e.name}
+                                  </span>
+                                  <span className="font-mono shrink-0">₦{(e.price * (e.quantity || 1)).toLocaleString()}</span>
+                                </div>
+                              ))}
+                              {item.quantity > 1 && (
+                                <span className="block text-slate-400">× {item.quantity} of this dish</span>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        {(!item.extras || item.extras.length === 0) && item.plates !== undefined && item.plates > 0 && (
                           <span className="text-[10px] text-slate-400 block">
                             {item.plates} {item.plates === 1 ? 'plate' : 'plates'}
                           </span>
                         )}
-                        <p className="text-xs font-mono font-semibold text-[#0e9f55]">
-                          ₦{item.totalPrice.toLocaleString()}
-                        </p>
+                        {item.pendingQuote ? (
+                          <p className="text-[11px] font-bold text-amber-600 dark:text-amber-400">Waiting for price</p>
+                        ) : (
+                          <p className="text-xs font-mono font-semibold text-[#0e9f55]">
+                            ₦{item.totalPrice.toLocaleString()}
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -359,8 +542,31 @@ export const CartSheet: React.FC<CartSheetProps> = ({
           <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
               <MapPin className="w-3.5 h-3.5 text-[#0e9f55]" />
-              <span>Campus Delivery Destination</span>
+              <span>{cart === 'inside' ? 'Delivered to your room' : 'Your details'}</span>
             </h3>
+            {cart !== 'inside' && (
+              <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200">
+                <strong>Delivered to the school gate.</strong> Collect it there, or ask an inside runner to bring it to your room
+                (you can also ask later from your order screen).
+              </div>
+            )}
+            {cart !== 'inside' && (
+              <label className="flex items-start gap-2.5 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={gatePickup}
+                  onChange={(e) => setGatePickup(e.target.checked)}
+                  className="w-4 h-4 mt-0.5 accent-[#0e9f55]"
+                />
+                <span>
+                  <strong className="block text-slate-900 dark:text-white">Bring it from the gate to my room</strong>
+                  <span className="text-slate-500 dark:text-slate-400">
+                    ₦{GATE_PICKUP_FEES.normal.toLocaleString()}, or ₦{GATE_PICKUP_FEES.heavy.toLocaleString()} if heavy. A runner accepts it,
+                    then you pay the runner. Add your hostel and room below.
+                  </span>
+                </span>
+              </label>
+            )}
 
             <div className="grid grid-cols-1 gap-2.5">
               <div>
@@ -389,57 +595,47 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                 />
               </div>
 
-              {!customMode && (
+              {(cart === 'inside' || gatePickup) && !customMode && (
               <>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Area
-                  </label>
-                  <select
-                    value={area}
-                    onChange={(e) => handleAreaChange(e.target.value as 'Hostels' | 'Lodge')}
-                    className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55] cursor-pointer"
-                  >
-                    <option value="Hostels">Hostels</option>
-                    <option value="Lodge">Lodge</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Building
+                    Hostel
                   </label>
                   <select
                     value={building}
                     onChange={(e) => setBuilding(e.target.value)}
                     className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55] cursor-pointer"
                   >
-                    {(CAMPUS_LOCATIONS[area] || []).map((b) => (
+                    {HOSTELS.map((b) => (
                       <option key={b} value={b}>
                         {b}
                       </option>
                     ))}
                   </select>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Room Number / Floor (Exact Door Location)
-                </label>
-                <input
-                  type="text"
-                  value={room}
-                  onChange={(e) => setRoom(e.target.value)}
-                  placeholder="e.g. Room 12, Floor 2"
-                  className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55]"
-                />
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Room number
+                  </label>
+                  <input
+                    type="text"
+                    value={room}
+                    onChange={(e) => setRoom(e.target.value.toUpperCase().slice(0, 8))}
+                    placeholder="e.g. A12"
+                    autoCapitalize="characters"
+                    className="w-full px-3 py-2 text-sm font-mono bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55]"
+                  />
+                </div>
               </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 -mt-1">
+                Enter the room where you will be when the delivery arrives.
+              </p>
               </>
               )}
 
-              {customMode && (
+              {cart === 'inside' && customMode && (
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Where should we deliver?
@@ -454,6 +650,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                 </div>
               )}
 
+              {cart === 'inside' && (
               <button
                 type="button"
                 onClick={() => setCustomMode(!customMode)}
@@ -461,144 +658,170 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               >
                 {customMode ? 'Deliver to my room instead' : 'Not in your room? Deliver somewhere else'}
               </button>
-            </div>
-          </div>
-
-          {/* DELIVERY SCHEDULE (orders always go through; they join the next open batch) */}
-          <div className="space-y-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-[#0e9f55]" />
-              <span>When you will get it</span>
-            </h3>
-            <div className="p-3 rounded-2xl border border-slate-900 dark:border-white bg-slate-50 dark:bg-slate-800/60">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <span className="text-xs font-extrabold text-slate-900 dark:text-white">
-                    {selectedBatch.dayLabel}, {selectedBatch.window}
-                  </span>
-                  <span className="block text-[11px] text-slate-500 dark:text-slate-400">
-                    {selectedBatch.name} · pay before {selectedBatch.orderBy.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} to make it
-                  </span>
-                </div>
-                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">₦{deliveryFee.toLocaleString()}</span>
-              </div>
-            </div>
-            {schedule.notes.length > 0 && (
-              <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200 space-y-1">
-                {schedule.notes.map((n, i) => (
-                  <p key={i}>{n}</p>
-                ))}
-                <p className="font-semibold">So your order is scheduled for {selectedBatch.dayLabel.toLowerCase()}, {selectedBatch.name} ({selectedBatch.window}).</p>
-              </div>
-            )}
-            {schedule.allOff && (
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Nobody is accepting this batch yet. Your order is saved and will be delivered once a runner switches it on.
-              </p>
-            )}
-          </div>
-
-          {/* PAYMENT CHOICE WITH REPEAT CUSTOMER ENFORCEMENT */}
-          <div className="space-y-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-              <CreditCard className="w-3.5 h-3.5 text-[#0e9f55]" />
-              <span>Payment Method</span>
-            </h3>
-
-            {/* Option 1: Pay Now by Bank Transfer (Mandatory for repeat customers) */}
-            <button
-              type="button"
-              onClick={() => setPaymentChoice('pay_now')}
-              className={`w-full p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
-                paymentChoice === 'pay_now'
-                  ? 'border-[#0e9f55] bg-emerald-50/60 dark:bg-emerald-950/40 shadow-xs'
-                  : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                      paymentChoice === 'pay_now'
-                        ? 'border-[#0e9f55] bg-[#0e9f55]'
-                        : 'border-slate-300'
-                    }`}
-                  >
-                    {paymentChoice === 'pay_now' && (
-                      <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                    )}
-                  </div>
-                  <span className="text-xs font-bold text-slate-900 dark:text-white">
-                    Pay Now (Instant Bank Transfer)
-                  </span>
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#0e9f55]/10 text-[#0e9f55]">
-                  15m confirmation
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 pl-6">
-                Transfer to Kuda Bank and click "Payment Made" so runners confirm and start packaging immediately.
-              </p>
-            </button>
-
-            {/* Option 2: Pay on Delivery (ONLY ALLOWED FOR FIRST-TIME CUSTOMERS!) */}
-            <div
-              onClick={() => {
-                if (!mustPrepay) setPaymentChoice('pay_on_delivery');
-              }}
-              className={`p-3.5 rounded-2xl border transition-all ${
-                mustPrepay
-                  ? 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 opacity-60 cursor-not-allowed'
-                  : paymentChoice === 'pay_on_delivery'
-                  ? 'border-[#0e9f55] bg-emerald-50/60 dark:bg-emerald-950/40 shadow-xs cursor-pointer'
-                  : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 cursor-pointer'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                      paymentChoice === 'pay_on_delivery'
-                        ? 'border-[#0e9f55] bg-[#0e9f55]'
-                        : 'border-slate-300'
-                    }`}
-                  >
-                    {paymentChoice === 'pay_on_delivery' && (
-                      <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                    )}
-                  </div>
-                  <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                    <Banknote className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Pay on Delivery</span>
-                  </span>
-                </div>
-                {mustPrepay ? (
-                  <span className="text-[10px] font-bold text-rose-500 flex items-center gap-1">
-                    <Lock className="w-3 h-3" />
-                    <span>{hasOutside ? 'Not for outside items' : 'First-timers only'}</span>
-                  </span>
-                ) : (
-                  <span className="text-xs font-mono font-bold text-slate-600 dark:text-slate-300">
-                    Cash or Transfer
-                  </span>
-                )}
-              </div>
-
-              {mustPrepay ? (
-                <div className="mt-2 pl-6 text-[11px] text-rose-600 dark:text-rose-400 flex items-start gap-1">
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                  <span>
-                    {hasOutside
-                      ? 'Outside-school items are paid for first, then packed and sent.'
-                      : "Repeat customer detected: You won't be able to order without making payment and clicking payment has been made."}
-                  </span>
-                </div>
-              ) : (
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 pl-6">
-                  Available for your first order! Pay the runner when package arrives at your hostel room.
-                </p>
               )}
             </div>
+          </div>
+
+          {/* DELIVERY BATCHES & PREMIUM DELIVERY (User prompt requirement) */}
+          <div className="space-y-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-[#0e9f55]" />
+                <span>Your delivery batch</span>
+              </h3>
+            </div>
+
+            {unconfirmed && !isLate && selectedBatch && (
+              <label className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-xs text-amber-900 dark:text-amber-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={lateAccepted}
+                  onChange={(e) => setLateAccepted(e.target.checked)}
+                  className="w-4 h-4 mt-0.5 accent-[#0e9f55]"
+                />
+                <span>
+                  {noProvider ? (
+                    <>
+                      <strong>
+                        No {cart === 'inside' ? 'runner' : 'operator'} has switched on this batch yet.
+                      </strong>{' '}
+                      You can still order. Your order is scheduled for{' '}
+                      {selectedBatch.dayLabel === 'Today' ? 'today' : selectedBatch.dayLabel.toLowerCase()}, {selectedBatch.window}. The
+                      account to pay will show on your order screen as soon as a {cart === 'inside' ? 'runner' : 'operator'} takes it. If
+                      nobody does, your order moves to the batch after. Tick to accept.
+                    </>
+                  ) : (
+                    <>
+                      <strong>This batch is not open yet.</strong> You can still order now. Your order will come in the next batch:{' '}
+                      {selectedBatch.dayLabel === 'Today' ? 'today' : selectedBatch.dayLabel.toLowerCase()}, {selectedBatch.window}, once
+                      the {cart === 'inside' ? 'runner' : 'operator'} starts it (or the batch after). Tick to accept.
+                    </>
+                  )}
+                </span>
+              </label>
+            )}
+            {isLate && selectedBatch && (
+              <label className="flex items-start gap-2 p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 text-xs text-blue-900 dark:text-blue-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={lateAccepted}
+                  onChange={(e) => setLateAccepted(e.target.checked)}
+                  className="w-4 h-4 mt-0.5 accent-[#0e9f55]"
+                />
+                <span>
+                  <strong>
+                    {cart === 'inside' ? 'The runners have' : 'This operator has'} stopped taking orders for today.
+                  </strong>{' '}
+                  Your order will go in the next batch: {selectedBatch.dayLabel.toLowerCase()}, {selectedBatch.window}. Tick to accept.
+                </span>
+              </label>
+            )}
+            {batchNotice && (
+              <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 text-[11px] text-blue-800 dark:text-blue-200">
+                {batchNotice}
+              </div>
+            )}
+            {selectedBatch && chosen ? (
+              <div className="p-3 rounded-2xl border border-slate-900 dark:border-white bg-slate-50 dark:bg-slate-800/60">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <span className="text-xs font-extrabold text-slate-900 dark:text-white">
+                      {selectedBatch.dayLabel}, {selectedBatch.window}
+                    </span>
+                    <span className="block text-[11px] text-slate-500 dark:text-slate-400">
+                      {pastBatchTime
+                        ? "It's past the batch time, but orders are still being accepted."
+                        : unconfirmed
+                        ? `Not opened yet. Usually starts around ${chosen.startText}.`
+                        : `Taking orders now. Starts sending around ${chosen.startText}.`}
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    ₦{deliveryFee.toLocaleString()}
+                  </span>
+                </div>
+                <p className="mt-2 text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                  {pastBatchTime
+                    ? `Pay within 15 minutes (before ${payByText}) to join this batch.`
+                    : `Pay before ${payByText} to join the ${selectedBatch.window} batch.`}
+                </p>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Every order joins the next batch.{cart !== 'inside' ? ' Delivery is to the school gate.' : ''}
+                </p>
+              </div>
+            ) : (
+              <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200">
+                {pausedText || 'No delivery batch is open right now. Please check back soon.'}
+              </div>
+            )}
+          </div>
+
+          {/* WHO HANDLES THIS ORDER */}
+          {chosen && cart === 'inside' && chosen.by && (
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 text-xs">
+              Your order goes to <strong>{chosen.by}</strong>, the runner on this batch.
+            </div>
+          )}
+          {chosen && cart !== 'inside' && operators.length > 0 && (
+            <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                {cart === 'food' ? 'Food partner' : 'Store'}
+              </h3>
+              {operators.length === 1 ? (
+                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 text-xs">
+                  Your order goes to <strong>{operators[0].name}</strong>.
+                </div>
+              ) : (
+                operators.map((op, idx) => {
+                  const on = (chosenOp?.uid || '') === op.uid;
+                  return (
+                    <button
+                      key={op.uid}
+                      type="button"
+                      onClick={() => setOperatorId(op.uid)}
+                      className={`w-full p-3 rounded-2xl border text-left text-xs cursor-pointer ${
+                        on ? 'border-[#0e9f55] bg-emerald-50/60 dark:bg-emerald-950/40' : 'border-slate-200 dark:border-slate-800'
+                      }`}
+                    >
+                      <span className="font-bold text-slate-900 dark:text-white">{op.name}</span>
+                      {idx === 0 && <span className="ml-1.5 text-[10px] font-bold text-[#0e9f55]">Fewer orders now</span>}
+                      <span className="block text-[11px] text-slate-500">Will start sending by {op.startText}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          )}
+
+          {/* OUT OF STOCK */}
+          <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              If an item is out of stock
+            </h3>
+            {((cart === 'inside' ? ['refund', 'swap'] : ['refund', 'tomorrow', 'swap']) as OutOfStockChoice[]).map((k) => (
+              <label key={k} className="flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-200 cursor-pointer">
+                <input
+                  type="radio"
+                  name="oos"
+                  checked={outOfStock === k}
+                  onChange={() => setOutOfStock(k)}
+                  className="w-4 h-4 accent-[#0e9f55]"
+                />
+                <span>{OUT_OF_STOCK_LABEL[k]}</span>
+              </label>
+            ))}
+          </div>
+
+          {/* PAYMENT: everyone pays first */}
+          <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+              <CreditCard className="w-3.5 h-3.5 text-[#0e9f55]" />
+              <span>Payment</span>
+            </h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Pay first by bank transfer. After you place the order you'll see the {cart === 'inside' ? "runner's" : "operator's"} account. Transfer
+              {payByText ? ` before ${payByText}` : ''}, then tap <strong>"I have made payment"</strong>.
+            </p>
           </div>
 
           {/* Price Breakdown */}
@@ -620,6 +843,33 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               </span>
             </div>
           </div>
+
+          {/* Water add-on: inside cart without water */}
+          {cart === 'inside' &&
+            suggestWater &&
+            !items.some((i) => i.productId === suggestWater.id || /water/i.test(i.name)) && (
+              <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-900/60">
+                <span className="min-w-0 text-xs text-sky-900 dark:text-sky-100">
+                  <strong className="block">💧 {suggestWater.name}? ₦{suggestWater.price.toLocaleString()}</strong>
+                  <span className="text-[11px] text-sky-700 dark:text-sky-300">Goes with this delivery. No extra fee.</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={onAddSuggested}
+                  className="shrink-0 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold cursor-pointer"
+                >
+                  + Add
+                </button>
+              </div>
+            )}
+
+          {/* Basket nudge: bigger inside baskets pay less delivery */}
+          {cart === 'inside' && itemTotal > 0 && itemTotal < DELIVERY_FEES.threshold && (
+            <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 text-[11px] font-semibold text-emerald-800 dark:text-emerald-200">
+              🚚 Add ₦{(DELIVERY_FEES.threshold - itemTotal).toLocaleString()} more and pay <strong>₦{DELIVERY_FEES.large}</strong> delivery instead of ₦
+              {DELIVERY_FEES.small}.
+            </div>
+          )}
 
           {/* MANDATORY WARNING BEFORE FINAL CHECKOUT */}
           <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 space-y-2.5">
@@ -656,17 +906,22 @@ export const CartSheet: React.FC<CartSheetProps> = ({
           <div className="pt-1">
             <button
               type="submit"
-              disabled={submitting || !acknowledgedNoCancel}
+              disabled={submitting || !acknowledgedNoCancel || !selectedBatch || waitingCount > 0 || ((isLate || unconfirmed) && !lateAccepted)}
               className="w-full h-12 bg-[#0e9f55] hover:bg-[#0b8044] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold flex items-center justify-between px-5 shadow-lg shadow-[#0e9f55]/20 active:scale-[0.98] transition-all cursor-pointer"
             >
               <span>{submitting ? 'Placing Order...' : 'Confirm & Place Order'}</span>
               <span className="font-mono text-base">₦{grandTotal.toLocaleString()}</span>
             </button>
             <p className="text-[10px] text-center text-slate-400 mt-2">
-              Dispatches directly to campus delivery runners
+              {waitingCount > 0
+                ? `Waiting for the price of ${waitingCount} requested item(s). You can check out once it comes back.`
+                : cart === 'inside'
+                ? 'Goes to the runner on this batch'
+                : `Goes to ${chosenOp?.name || 'the operator'}, delivered to the school gate`}
             </p>
           </div>
         </form>
+        )}
       </div>
     </div>
   );

@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { OrderRecord, locationText, shortLocation, roomText, partLabel } from '../types';
 import { STORE_CONFIG, OUT_OF_STOCK_LABEL, HOSTELS } from '../config';
-import { markPaymentSent, paymentState, requestGatePickup, markGatePickupPaid } from '../api.js';
+import { markPaymentSent, paymentState, requestGatePickup, markGatePickupPaid, getPayProvider } from '../api.js';
 
 interface OrderTrackerModalProps {
   isOpen: boolean;
@@ -164,7 +164,20 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
   const stepIndex = getCurrentStepIndex();
   // Students pay the runner or operator on this order; older orders use Roomly's account
   // Students only ever see the runner's or operator's own account (never Roomly's)
-  const payAcct = (currentOrder as any)?.payTo || null;
+  // An order placed while nobody was available shows the account of whoever has taken the batch since
+  const [provTick, setProvTick] = useState(0);
+  useEffect(() => {
+    const h = () => setProvTick((n) => n + 1);
+    window.addEventListener('roomly-batches', h);
+    const id = window.setInterval(h, 30000);
+    return () => {
+      window.removeEventListener('roomly-batches', h);
+      window.clearInterval(id);
+    };
+  }, []);
+  void provTick;
+  const liveProvider = currentOrder && !(currentOrder as any).payTo ? getPayProvider(currentOrder) : null;
+  const payAcct = (currentOrder as any)?.payTo || liveProvider?.payTo || null;
   const [askingGate, setAskingGate] = useState(false);
   // Gate to room: where to bring it, then pay the runner who accepts
   const [gateHostel, setGateHostel] = useState(HOSTELS[0]);
@@ -432,14 +445,14 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                       </div>
                     ) : (
                       <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/40 text-xs">
-                        Payment details are missing on this order. Message your {currentOrder.cart === 'inside' || !currentOrder.cart ? 'runner' : 'operator'} below for their account.
+                        Nobody has taken your batch yet, so there is no account to pay. Your order is saved and scheduled. The account will show here as soon as a {currentOrder.cart === 'inside' || !currentOrder.cart ? 'runner' : 'operator'} takes it. Check back soon.
                       </div>
                     )}
                     <button
                       type="button"
                       onClick={handleStudentClickPaymentMade}
-                      disabled={markingPayment}
-                      className="w-full py-2.5 bg-[#0e9f55] hover:bg-[#0b8044] text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      disabled={markingPayment || !payAcct}
+                      className="w-full py-2.5 disabled:opacity-50 disabled:cursor-not-allowed bg-[#0e9f55] hover:bg-[#0b8044] text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <Send className="w-3.5 h-3.5" />
                       <span>I have made payment</span>

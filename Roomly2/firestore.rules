@@ -195,7 +195,11 @@ service cloud.firestore {
       // Operators may only change the status of their own part, on paid orders.
       allow update: if isStaff() ||
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'paymentSentAt', 'history', 'payReady',
-             'deliveryBatch', 'deliveryTime', 'deliveryDate', 'paymentDeadline'])
+             'deliveryBatch', 'deliveryTime', 'deliveryDate', 'paymentDeadline',
+             'payTo', 'operatorId', 'operatorName', 'turnRunner'])
+         // The provider can only be attached to an order that had nobody assigned when it was placed
+         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['payTo', 'operatorId', 'operatorName', 'turnRunner'])
+             || resource.data.get('payTo', null) == null)
          && resource.data.paymentStatus == 'unpaid'
          && request.resource.data.paymentStatus == 'payment_sent'
          && request.resource.data.payReady == true) ||
