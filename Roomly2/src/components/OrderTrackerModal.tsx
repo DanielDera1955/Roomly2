@@ -267,10 +267,11 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
               {/* Outside orders come to the gate; the student can ask a runner to bring it to the room */}
               {(currentOrder.cart === 'store' || currentOrder.cart === 'food') &&
                 currentOrder.paymentStatus !== 'unpaid' &&
+                currentOrder.status === 'Delivered' &&
                 (!currentOrder.gatePickup || currentOrder.gatePickup.status === 'refused' || currentOrder.gatePickup.status === 'refunded') && (
                   <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs space-y-2">
                     <p className="text-slate-700 dark:text-slate-200">
-                      This order comes to the <strong>school gate</strong>. Want it brought to your room? An inside runner can collect it for ₦600 (₦1,000 if heavy), paid to the runner.
+                      Your order has reached the <strong>school gate</strong>. Want it brought to your room? An inside runner can collect it for ₦600 (₦1,000 if heavy). The runner checks the parcel, tells you the amount, and you pay the runner.
                     </p>
                     {!gateFormOpen ? (
                       <button

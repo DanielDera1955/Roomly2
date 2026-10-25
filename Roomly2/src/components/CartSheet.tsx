@@ -109,7 +109,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   // With items in more than one cart, start on the overview of all carts
   const filledCarts = (['inside', 'store', 'food'] as CartKind[]).filter((k) => cartCounts[k] > 0);
   const [overview, setOverview] = useState(filledCarts.length > 1);
-  const [gatePickup, setGatePickup] = useState(false);
+  // Bringing a parcel from the gate to the room is requested later, from the order screen, once the order has reached the gate
+  const gatePickup = false;
   const [operatorId, setOperatorId] = useState('');
 
   // Is repeat customer?
@@ -546,28 +547,10 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             </h3>
             {cart !== 'inside' && (
               <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200">
-                <strong>Delivered to the school gate.</strong> Collect it there, or ask an inside runner to bring it to your room
-                (you can also ask later from your order screen).
+                <strong>Delivered to the school gate.</strong> Collect it there. Once it arrives, you can ask an inside runner to bring it
+                to your room from your order screen. The runner will tell you the amount.
               </div>
             )}
-            {cart !== 'inside' && (
-              <label className="flex items-start gap-2.5 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={gatePickup}
-                  onChange={(e) => setGatePickup(e.target.checked)}
-                  className="w-4 h-4 mt-0.5 accent-[#0e9f55]"
-                />
-                <span>
-                  <strong className="block text-slate-900 dark:text-white">Bring it from the gate to my room</strong>
-                  <span className="text-slate-500 dark:text-slate-400">
-                    ₦{GATE_PICKUP_FEES.normal.toLocaleString()}, or ₦{GATE_PICKUP_FEES.heavy.toLocaleString()} if heavy. A runner accepts it,
-                    then you pay the runner. Add your hostel and room below.
-                  </span>
-                </span>
-              </label>
-            )}
-
             <div className="grid grid-cols-1 gap-2.5">
               <div>
                 <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
