@@ -34,10 +34,15 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
     <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 via-teal-700 to-emerald-800 text-white p-4 shadow-md shadow-emerald-950/10">
       <div className="absolute -right-4 -bottom-4 w-28 h-28 bg-white/10 rounded-full blur-xl pointer-events-none" />
       <div className="relative z-10 space-y-1">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-200 flex items-center gap-1.5">
-          <Icon className="w-3.5 h-3.5" />
-          {title} · {todayCount} {todayCount === 1 ? 'batch' : 'batches'} today
-        </p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="min-w-0 text-[11px] font-bold uppercase tracking-wider text-emerald-200 flex items-center gap-1.5">
+            <Icon className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">{title}</span>
+          </p>
+          <span className="shrink-0 px-2 py-0.5 rounded-full bg-white/15 text-[10px] font-bold text-white whitespace-nowrap">
+            {todayCount} {todayCount === 1 ? 'batch' : 'batches'} today
+          </span>
+        </div>
         {next && next.batch.dayLabel !== 'Today' ? (
           <>
             <h2 className="text-lg font-extrabold tracking-tight">{todayCount > 0 ? 'Done for today' : 'No batch today'}</h2>
