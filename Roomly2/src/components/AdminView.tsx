@@ -29,7 +29,7 @@ import {
   BarChart3,
   MessageSquare,
 } from 'lucide-react';
-import { sellingPrice } from '../config';
+import { sellingPrice, isOutsideSource } from '../config';
 import { OrderRecord, CategoryDefinition, DeliveryRunner, locationText, shortLocation, roomText } from '../types';
 import { Product, FoodExtraOption, PRESET_PRODUCT_IMAGES, StoreKey, STORE_LABEL, STORE_SOURCE, categoriesForStore, storeOfSource } from '../config';
 import { AdminDispatch, AdminTeam, AdminMoney } from './AdminDispatch';
@@ -1295,6 +1295,71 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                           </button>
                         ))}
                       </div>
+                    </div>
+
+                    {/* Featured on the homepage + "Goes well with" suggestions */}
+                    <div className="space-y-2 p-3 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/40">
+                      <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(editingProduct.featured)}
+                          onChange={(e) => setEditingProduct({ ...editingProduct, featured: e.target.checked || undefined })}
+                          className="w-4 h-4 accent-[#0e9f55]"
+                        />
+                        Featured on the homepage
+                        <span className="font-normal text-slate-500">
+                          ({products.filter((x) => x.featured && isOutsideSource(x.source) === isOutsideSource(editingProduct.source)).length} featured on this side, first 8 show)
+                        </span>
+                      </label>
+                      <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 pt-1">Goes well with (up to 4)</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(editingProduct.pairsWith || []).map((id) => {
+                          const pp = products.find((x) => x.id === id);
+                          return (
+                            <span key={id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px]">
+                              {pp ? pp.name : 'Deleted product'}
+                              <button
+                                type="button"
+                                aria-label="Remove"
+                                onClick={() => setEditingProduct({ ...editingProduct, pairsWith: (editingProduct.pairsWith || []).filter((x) => x !== id) })}
+                                className="w-4 h-4 rounded text-slate-400 hover:text-rose-500 cursor-pointer"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                      {(editingProduct.pairsWith || []).length < 4 && (
+                        <select
+                          value=""
+                          onChange={(e) =>
+                            e.target.value &&
+                            setEditingProduct({ ...editingProduct, pairsWith: [...(editingProduct.pairsWith || []), e.target.value] })
+                          }
+                          className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
+                        >
+                          <option value="">+ Add a product to suggest…</option>
+                          {products
+                            .filter(
+                              (x) =>
+                                x.id !== editingProduct.id &&
+                                !(editingProduct.pairsWith || []).includes(x.id) &&
+                                // same cart only, so a suggestion never adds a second delivery fee
+                                (x.source || 'school') === (editingProduct.source || 'school')
+                            )
+                            .sort((a, b) => a.name.localeCompare(b.name))
+                            .map((x) => (
+                              <option key={x.id} value={x.id}>
+                                {x.name}
+                                {x.unit ? ` (${x.unit})` : ''}
+                              </option>
+                            ))}
+                        </select>
+                      )}
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                        Shown to students right after they add this product. Out-of-stock suggestions hide themselves.
+                      </p>
                     </div>
 
                     <div className="flex items-center gap-2 pt-1">
