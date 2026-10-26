@@ -32,7 +32,7 @@ import {
   SETTLE_BY_HOUR,
   RUNNER_SHARE,
   sellingPrice,
-  STORE_CATEGORIES,
+  CATEGORY_SETUP,
   STORE_SOURCE,
 } from './config.ts';
 import { db, auth } from './firebase.ts';
@@ -1628,8 +1628,15 @@ const OP_OWE_PER_CART = 200;
 function costOf(item, products, inside = false) {
   const p = products.find((x) => x.id === item.productId);
   if (p && p.costPrice > 0 && !item.isFood) return { cost: p.costPrice * item.quantity, estimated: false };
-  if (p && p.costPrice > 0 && item.isFood && item.plates > 0 && !(item.extras || []).length) {
-    return { cost: p.costPrice * item.plates * item.quantity, estimated: false };
+  if (p && item.isFood) {
+    // Food: plates at the dish's cost + each extra (and swallow choice) at the cost you entered for it
+    const opts = [...(p.extras || []), ...(p.choices || []).map((c) => ({ ...c, id: `choice-${c.id}` }))];
+    const extras = (item.extras || []).map((e) => ({ ...e, cost: opts.find((o) => o.id === e.id)?.cost }));
+    const platesKnown = !(item.plates > 0) || p.costPrice > 0;
+    if (platesKnown && extras.every((e) => typeof e.cost === 'number')) {
+      const per = (item.plates > 0 ? p.costPrice * item.plates : 0) + extras.reduce((s, e) => s + e.cost * (e.quantity || 0), 0);
+      if (per > 0) return { cost: per * (item.quantity || 1), estimated: false };
+    }
   }
   const price = item.totalPrice || 0;
   const per = item.quantity > 0 ? price / item.quantity : price;
@@ -2511,48 +2518,45 @@ export async function getSettlementsRange(from, to) {
 /* ---------------- three stores: categories, operator prices, runner stock (Fix batch 3a) ---------------- */
 
 /**
- * Admin: give every store its standard categories and remove the old ones.
- * Products in a removed category are kept and move to "no category" (they still show under All).
+ * Admin: add Roomly's standard categories and subcategories (CATEGORY_SETUP) to every store.
+ * Only adds what is missing. Nothing is deleted and no product is moved.
  */
-/** @returns {Promise<{ categories: any[], removed: string[], moved: number }>} */
+/** @returns {Promise<{ categories: any[], added: string[], subsAdded: number }>} */
 export async function setupStoreCategories() {
   const cat = await readCatalog(true);
-  const want = new Map(); // lower name -> { name, emoji, stores }
-  Object.entries(STORE_CATEGORIES).forEach(([store, list]) =>
+  const categories = [...cat.categories];
+  const added = [];
+  let subsAdded = 0;
+  Object.entries(CATEGORY_SETUP).forEach(([store, list]) =>
     list.forEach((c) => {
-      const k = c.name.toLowerCase();
-      const cur = want.get(k) || { name: c.name, emoji: c.emoji, stores: [] };
-      cur.stores = Array.from(new Set([...cur.stores, store]));
-      want.set(k, cur);
+      const i = categories.findIndex((x) => String(x.name).toLowerCase() === c.name.toLowerCase());
+      if (i < 0) {
+        categories.push({
+          id: `cat-${c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+          name: c.name,
+          emoji: c.emoji,
+          subcategories: ['All', ...c.subs],
+          stores: [store],
+        });
+        added.push(c.name);
+        subsAdded += c.subs.length;
+        return;
+      }
+      const cur = categories[i];
+      const subs = [...(cur.subcategories || ['All'])];
+      if (!subs.includes('All')) subs.unshift('All');
+      c.subs.forEach((s) => {
+        if (!subs.some((x) => String(x).toLowerCase() === s.toLowerCase())) {
+          subs.push(s);
+          subsAdded++;
+        }
+      });
+      categories[i] = { ...cur, subcategories: subs, stores: Array.from(new Set([...(cur.stores || []), store])) };
     })
   );
-  const removed = [];
-  const kept = [];
-  for (const c of cat.categories) {
-    const k = c.name.toLowerCase();
-    const w = want.get(k);
-    if (w) {
-      kept.push({ ...c, stores: Array.from(new Set([...(c.stores || []), ...w.stores])) });
-      want.delete(k);
-    } else if ((c.stores || []).length > 0) {
-      kept.push(c); // a category you created for a store yourself
-    } else {
-      removed.push(c.name);
-    }
-  }
-  want.forEach((w) => kept.push({ id: `cat-${w.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, name: w.name, emoji: w.emoji, subcategories: ['All'], stores: w.stores }));
-  const gone = new Set(removed.map((n) => n.toLowerCase()));
-  let moved = 0;
-  cat.products = cat.products.map((p) => {
-    if (gone.has(String(p.category || '').toLowerCase())) {
-      moved++;
-      return { ...p, category: '', subcategory: 'All' };
-    }
-    return p;
-  });
-  cat.categories = kept;
+  cat.categories = categories;
   await writeCatalog(cat);
-  return { categories: kept, removed, moved };
+  return { categories, added, subsAdded };
 }
 
 const myStore = () => {

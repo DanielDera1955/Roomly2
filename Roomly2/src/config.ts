@@ -19,13 +19,19 @@ export interface Product {
   description?: string;
   isAvailable?: boolean;
   costPrice?: number; // what you pay (admin only)
+  /** Food only: this item's own extras (chicken, egg...). Students can pick any number of each. */
+  extras?: FoodExtraOption[];
+  /** Food only: pick exactly one per plate (e.g. Swallow: fufu, garri, semo). Price is added per plate. */
+  choiceTitle?: string;
+  choices?: FoodExtraOption[];
   source?: 'school' | 'outside' | 'food'; // school = canteen, outside = store, food = food operator
 }
 
 export interface FoodExtraOption {
   id: string;
   name: string;
-  price: number;
+  price: number; // what the student pays
+  cost?: number; // what you pay (kept on the product, not in the cart)
 }
 
 export interface PresetImageOption {
@@ -395,28 +401,49 @@ export function shopGroupLabel(group: ShopGroup, side: 'inside' | 'outside'): st
 }
 export const ITEMS_PER_PAGE = 10;
 
+/** Roomly's standard categories and subcategories for each store, in the order students see them.
+ *  Admin > Categories > "Set up Roomly categories" adds any that are missing (it never deletes). */
+export interface CategorySetup { name: string; emoji: string; subs: string[] }
+const FOOD_MENU_SUBS = ['Rice Meals', 'Swallow & Soup', 'Beans, Yam & Plantain', 'Pasta & Noodles', 'Local Specials', 'Small Chops & Snacks'];
+export const CATEGORY_SETUP: Record<'inside' | 'store' | 'food', CategorySetup[]> = {
+  inside: [
+    { name: 'Bread & Pastries', emoji: '🥖', subs: [] },
+    { name: 'Drinks', emoji: '🥤', subs: ['Water', 'Soft Drinks', 'Juice', 'Malt & Yoghurt', 'Energy Drinks'] },
+    { name: 'Sweets & Treats', emoji: '🍬', subs: [] },
+    { name: 'Biscuits & Snacks', emoji: '🍪', subs: ['Biscuits', 'Crunchy Snacks'] },
+    { name: 'Breakfast & Quick Meals', emoji: '🥣', subs: ['Noodles & Pasta', 'Beverages', 'Milk', 'Cereal & Pap', 'Eggs & Spreads'] },
+    { name: 'Cooking Items', emoji: '🍳', subs: ['Grains & Swallow', 'Cooking Oil', 'Seasoning & Spices', 'Soup Ingredients', 'Fire & Fuel', 'Kitchen Items'] },
+    { name: 'Toiletries & Care', emoji: '🧼', subs: ['Bath & Skin', 'Oral Care', 'Fragrance', 'Hygiene & Paper'] },
+    { name: 'Laundry & Room', emoji: '🧺', subs: ['Laundry', 'Cleaning', 'Pest Control', 'Room Essentials'] },
+    { name: 'Stationery', emoji: '✏️', subs: [] },
+    { name: 'Phone & Gadgets', emoji: '🔌', subs: ['Chargers & Cords', 'Power', 'Audio'] },
+    { name: 'Food', emoji: '🍛', subs: FOOD_MENU_SUBS },
+  ],
+  store: [
+    { name: 'Foodstuff', emoji: '🍚', subs: ['Rice', 'Beans & Grains', 'Garri & Flour', 'Tubers & Plantain', 'Pasta & Noodles'] },
+    { name: 'Cooking Essentials', emoji: '🌶️', subs: ['Cooking Oil', 'Seasoning & Spices', 'Soup Ingredients', 'Fresh Produce', 'Protein'] },
+    { name: 'Kitchen & Stove', emoji: '🔥', subs: ['Stove & Fuel', 'Cookware', 'Food Storage', 'Plates & Cutlery'] },
+    { name: 'Provisions', emoji: '📦', subs: ['Beverages & Spreads', 'Cereal & Breakfast', 'Biscuits & Snacks', 'Sweets & Chocolate'] },
+    { name: 'Toiletries & Laundry', emoji: '🧴', subs: ['Bath & Skin', 'Oral Care', 'Hygiene & Paper', 'Laundry', 'Cleaning & Pest Control'] },
+    { name: 'Drinks', emoji: '🥤', subs: ['Water', 'Soft Drinks', 'Juice', 'Malt & Yoghurt', 'Energy Drinks'] },
+    { name: 'Clothing & Wear', emoji: '👕', subs: ["Sportswear", "Men's Underwear", "Women's Underwear", 'Socks & Nightwear', 'Other Accessories'] },
+    { name: 'Phone & Gadgets', emoji: '🔌', subs: ['Chargers & Cords', 'Power', 'Audio', 'Phone Accessories'] },
+  ],
+  food: [
+    { name: 'Rice Meals', emoji: '🍚', subs: [] },
+    { name: 'Swallow & Soup', emoji: '🥣', subs: [] },
+    { name: 'Beans, Yam & Plantain', emoji: '🍠', subs: [] },
+    { name: 'Pasta & Noodles', emoji: '🍝', subs: [] },
+    { name: 'Local Specials', emoji: '🫔', subs: [] },
+    { name: 'Small Chops & Snacks', emoji: '🌯', subs: [] },
+    { name: 'Drinks', emoji: '🥤', subs: ['Water', 'Soft Drinks', 'Juice', 'Malt & Yoghurt', 'Zobo & Kunu'] },
+  ],
+};
+const plainCats = (list: CategorySetup[]) => list.map(({ name, emoji }) => ({ name, emoji }));
 /** Store Items categories, in the order students see them */
-export const INSIDE_CATEGORIES: { name: string; emoji: string }[] = [
-  { name: 'Bread & Pastries', emoji: '🥖' },
-  { name: 'Drinks', emoji: '🥤' },
-  { name: 'Snacks & Treats', emoji: '🍪' },
-  { name: 'Breakfast & Provisions', emoji: '🥣' },
-  { name: 'Local Food Items', emoji: '🌾' },
-  { name: 'Toiletries & Care', emoji: '🧼' },
-  { name: 'Laundry & Room', emoji: '🧺' },
-];
-export const OUTSIDE_CATEGORIES: { name: string; emoji: string }[] = [
-  { name: 'Foodstuff', emoji: '🍚' },
-  { name: 'Cooking Essentials', emoji: '🌶️' },
-  { name: 'Kitchen & Stove', emoji: '🔥' },
-  { name: 'Provisions in Bulk', emoji: '📦' },
-  { name: 'Toiletries & Laundry Packs', emoji: '🧴' },
-  { name: 'Drinks in Bulk', emoji: '🧃' },
-];
-export const FOOD_CATEGORIES: { name: string; emoji: string }[] = [
-  { name: 'Food', emoji: '🍛' },
-  { name: 'Soft Drinks', emoji: '🥤' },
-];
+export const INSIDE_CATEGORIES: { name: string; emoji: string }[] = plainCats(CATEGORY_SETUP.inside.filter((c) => c.name !== 'Food'));
+export const OUTSIDE_CATEGORIES: { name: string; emoji: string }[] = plainCats(CATEGORY_SETUP.store);
+export const FOOD_CATEGORIES: { name: string; emoji: string }[] = plainCats(CATEGORY_SETUP.food);
 
 // ---------- Three stores (Fix batch 3a) ----------
 /** inside = inside school, store = outside store items, food = outside cooked food and drinks */
@@ -425,7 +452,7 @@ export const STORE_LABEL: Record<StoreKey, string> = { inside: 'Inside School', 
 export const STORE_SOURCE: Record<StoreKey, 'school' | 'outside' | 'food'> = { inside: 'school', store: 'outside', food: 'food' };
 /** Each store's standard categories. Inside also keeps "Food" for its Cooked Food tab. */
 export const STORE_CATEGORIES: Record<StoreKey, { name: string; emoji: string }[]> = {
-  inside: [...INSIDE_CATEGORIES, { name: 'Food', emoji: '🍛' }],
+  inside: plainCats(CATEGORY_SETUP.inside),
   store: OUTSIDE_CATEGORIES,
   food: FOOD_CATEGORIES,
 };
@@ -488,16 +515,6 @@ export const INITIAL_CATEGORIES: CategoryDefinition[] = [
     emoji: '✨',
     subcategories: ['All'],
   },
-];
-
-// Food extras for food orders (protein and sides customization)
-export const FOOD_EXTRAS: FoodExtraOption[] = [
-  { id: 'chicken', name: 'Fried Chicken Portion', price: 1500 },
-  { id: 'beef', name: 'Seasoned Beef Cut', price: 500 },
-  { id: 'fish', name: 'Crispy Fried Fish', price: 800 },
-  { id: 'egg', name: 'Boiled / Fried Egg', price: 300 },
-  { id: 'plantain', name: 'Dodo (Fried Plantain)', price: 300 },
-  { id: 'turkey', name: 'Peppered Turkey', price: 2200 },
 ];
 
 export const DELIVERY_TIMES = [

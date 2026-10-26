@@ -20,7 +20,7 @@ import {
   createProductRequest,
   subscribeProductRequest,
 } from './api.js';
-import { SCHOOL_NAME, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, FOOD_EXTRAS, Announcement, announcementActive, announcementKey } from './config';
+import { SCHOOL_NAME, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
 import { MessageCircle } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
@@ -358,7 +358,8 @@ export default function App() {
           if (!p || it.pendingQuote) return it;
           let unit = p.price;
           if (it.isFood && (it.plates !== undefined || it.extras?.length)) {
-            const extras = (it.extras || []).map((e) => ({ ...e, price: FOOD_EXTRAS.find((f) => f.id === e.id)?.price ?? e.price }));
+            const opts = [...(p.extras || []), ...(p.choices || []).map((c) => ({ ...c, id: `choice-${c.id}` }))];
+            const extras = (it.extras || []).map((e) => ({ ...e, price: opts.find((f) => f.id === e.id)?.price ?? e.price }));
             unit = (it.plates || 0) * p.price + extras.reduce((sum, e) => sum + e.price * (e.quantity || 0), 0);
             if (unit === it.unitPrice) return it;
             changed = true;
