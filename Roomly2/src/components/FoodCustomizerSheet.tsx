@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Plus, Minus, Utensils, AlertCircle } from 'lucide-react';
-import { Product, FOOD_EXTRAS } from '../config';
+import { Product } from '../config';
 import { CartItem } from '../types';
 
 interface FoodCustomizerSheetProps {
@@ -20,6 +20,14 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
   const [plates, setPlates] = useState<number>(1);
   const [extraQuantities, setExtraQuantities] = useState<Record<string, number>>({});
   const [specialNote, setSpecialNote] = useState<string>('');
+  const [choiceId, setChoiceId] = useState<string>('');
+
+  // This item's own extras and its "pick one" choice (e.g. Swallow), set in Admin
+  const extrasList = product.extras || [];
+  const choices = product.choices || [];
+  const choiceTitle = (product.choiceTitle || 'Choose one').trim();
+  const chosen = choices.find((c) => c.id === choiceId);
+  const canZeroPlate = extrasList.length > 0;
   const [imageError, setImageError] = useState(false);
 
   const updateExtraQty = (extraId: string, delta: number) => {
@@ -36,10 +44,12 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
   };
 
   // Calculations
-  const baseFoodCost = plates * product.price;
+  const baseFoodCost = plates * product.price + (chosen && plates > 0 ? chosen.price * plates : 0);
 
-  const selectedExtrasList = FOOD_EXTRAS.map((extra) => ({
-    ...extra,
+  const selectedExtrasList = extrasList.map((extra) => ({
+    id: extra.id,
+    name: extra.name,
+    price: extra.price,
     quantity: extraQuantities[extra.id] || 0,
   })).filter((e) => e.quantity > 0);
 
@@ -50,7 +60,8 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
 
   const totalPrice = baseFoodCost + extrasCost;
   const totalItemCount = plates + selectedExtrasList.reduce((sum, e) => sum + e.quantity, 0);
-  const isValidOrder = plates > 0 || selectedExtrasList.length > 0;
+  const choiceMissing = plates > 0 && choices.length > 0 && !chosen;
+  const isValidOrder = plates > 0 ? !choiceMissing : selectedExtrasList.length > 0;
 
   const handleAdd = () => {
     if (!isValidOrder) return;
@@ -58,10 +69,15 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
     // Build custom title and id
     const isProteinOnly = plates === 0;
     const itemName = isProteinOnly
-      ? `Proteins & Sides Only (${selectedExtrasList.map((e) => `${e.quantity}x ${e.name}`).join(', ')})`
-      : `${product.name} (${plates} ${plates === 1 ? 'plate' : 'plates'})`;
+      ? `Extras only, ${product.name} (${selectedExtrasList.map((e) => `${e.quantity}x ${e.name}`).join(', ')})`
+      : `${product.name}${chosen ? ` with ${chosen.name}` : ''} (${plates} ${plates === 1 ? 'plate' : 'plates'})`;
+    // The choice goes in as a line of its own (one per plate) so the cart and the vendor can see it
+    const cartExtras = [
+      ...(chosen && plates > 0 ? [{ id: `choice-${chosen.id}`, name: `${choiceTitle}: ${chosen.name}`, price: chosen.price, quantity: plates }] : []),
+      ...selectedExtrasList,
+    ];
 
-    const extrasKey = selectedExtrasList
+    const extrasKey = cartExtras
       .map((e) => `${e.id}x${e.quantity}`)
       .sort()
       .join('-');
@@ -79,7 +95,7 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
       isFood: true,
       source: product.source,
       plates: plates,
-      extras: selectedExtrasList,
+      extras: cartExtras,
       specialNote: specialNote.trim() || undefined,
     };
 
@@ -106,7 +122,7 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
                 {product.name}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                ₦{product.price.toLocaleString()} per plate · Zero-plate allowed for proteins only
+                ₦{product.price.toLocaleString()} per plate{canZeroPlate ? ' · Extras can be ordered alone' : ''}
               </p>
             </div>
           </div>
@@ -163,8 +179,8 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
               <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-1 shadow-xs">
                 <button
                   type="button"
-                  onClick={() => setPlates((p) => Math.max(0, p - 1))}
-                  disabled={plates === 0}
+                  onClick={() => setPlates((p) => Math.max(canZeroPlate ? 0 : 1, p - 1))}
+                  disabled={plates === (canZeroPlate ? 0 : 1)}
                   className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
                   aria-label="Decrease plates"
                 >
@@ -186,12 +202,44 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
 
             {plates === 0 && (
               <p className="text-[11px] text-[#0e9f55] dark:text-emerald-400 font-medium">
-                Set to 0 plates: You can now pick just chicken, fish, beef, or plantain below.
+                Set to 0 plates: you can pick just the extras below.
               </p>
             )}
           </div>
 
+          {/* Pick one (e.g. Swallow), added per plate */}
+          {choices.length > 0 && plates > 0 && (
+            <div className="space-y-2.5">
+              <h3 className={`text-xs font-bold uppercase tracking-wider ${choiceMissing ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                {choiceTitle} (pick one)
+              </h3>
+              <div className="grid grid-cols-2 gap-2">
+                {choices.map((c) => {
+                  const on = c.id === choiceId;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setChoiceId(c.id)}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                        on
+                          ? 'border-[#0e9f55] bg-emerald-50/60 dark:bg-emerald-950/40 text-slate-900 dark:text-white'
+                          : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      <span className="text-sm font-semibold block">{c.name}</span>
+                      <span className="text-xs font-mono font-bold text-[#0e9f55]">
+                        {c.price > 0 ? `+₦${c.price.toLocaleString()} per plate` : 'No extra charge'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Proteins & Extras with individual quantity steppers */}
+          {extrasList.length > 0 && (
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -209,7 +257,7 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
             </div>
 
             <div className="grid grid-cols-1 gap-2">
-              {FOOD_EXTRAS.map((extra) => {
+              {extrasList.map((extra) => {
                 const qty = extraQuantities[extra.id] || 0;
                 const isSelected = qty > 0;
 
@@ -257,6 +305,7 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
               })}
             </div>
           </div>
+          )}
 
           {/* Special Instructions Note */}
           <div className="space-y-1.5">
@@ -287,9 +336,11 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
           >
             <span>
               {!isValidOrder
-                ? 'Select plates or protein extras'
+                ? choiceMissing
+                  ? `Pick your ${choiceTitle.toLowerCase()}`
+                  : 'Select plates or extras'
                 : plates === 0
-                ? 'Add Proteins Only to Cart'
+                ? 'Add extras only to cart'
                 : `Add to cart (${plates} ${plates === 1 ? 'plate' : 'plates'})`}
             </span>
             <span className="font-mono text-base">₦{totalPrice.toLocaleString()}</span>

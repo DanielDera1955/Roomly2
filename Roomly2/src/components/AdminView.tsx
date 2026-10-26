@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import { sellingPrice } from '../config';
 import { OrderRecord, CategoryDefinition, DeliveryRunner, locationText, shortLocation, roomText } from '../types';
-import { Product, PRESET_PRODUCT_IMAGES, StoreKey, STORE_LABEL, STORE_SOURCE, categoriesForStore, storeOfSource } from '../config';
+import { Product, FoodExtraOption, PRESET_PRODUCT_IMAGES, StoreKey, STORE_LABEL, STORE_SOURCE, categoriesForStore, storeOfSource } from '../config';
 import { AdminDispatch, AdminTeam, AdminMoney } from './AdminDispatch';
 import { AdminInsights } from './AdminInsights';
 import { AdminFeedbackPanel } from './FeedbackPanels';
@@ -64,6 +64,83 @@ interface AdminViewProps {
   onBackToStore: () => void;
   onOrderUpdated?: () => void;
 }
+
+type FoodOptions = Pick<Product, 'extras' | 'choiceTitle' | 'choices'>;
+
+/** "Chicken, 1200" per line -> extras. The number is what YOU pay; the student price adds your margin. */
+function parseFoodLines(text: string, source: Product['source']): FoodExtraOption[] {
+  const out: FoodExtraOption[] = [];
+  text.split('\n').forEach((line) => {
+    const m = line.trim().match(/^(.+?)[,\s]+₦?([\d,]+)$/);
+    if (!m) return;
+    const name = m[1].trim().replace(/[,\s]+$/, '');
+    const cost = Number(m[2].replace(/,/g, ''));
+    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    if (!name || !id || out.some((o) => o.id === id)) return;
+    out.push({ id, name, cost, price: cost > 0 ? sellingPrice(cost, source || 'school') : 0 });
+  });
+  return out;
+}
+const foodLinesOf = (list?: FoodExtraOption[]) => (list || []).map((o) => `${o.name}, ${o.cost ?? o.price}`).join('\n');
+
+/** Admin: one food item's own extras and its "pick one" choice (e.g. Swallow) */
+const FoodOptionsEditor: React.FC<{ value: FoodOptions; source: Product['source']; onChange: (v: FoodOptions) => void }> = ({ value, source, onChange }) => {
+  const [extrasText, setExtrasText] = useState(foodLinesOf(value.extras));
+  const [choicesText, setChoicesText] = useState(foodLinesOf(value.choices));
+  const [title, setTitle] = useState(value.choiceTitle || '');
+  const extras = parseFoodLines(extrasText, source);
+  const choices = parseFoodLines(choicesText, source);
+  const push = (e: string, c: string, t: string) =>
+    onChange({ extras: parseFoodLines(e, source), choices: parseFoodLines(c, source), choiceTitle: t.trim() || undefined });
+  const box = 'w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white';
+  const preview = (list: FoodExtraOption[]) =>
+    list.length > 0 && (
+      <p className="text-[10px] text-slate-500 dark:text-slate-400">
+        Student pays: {list.map((o) => `${o.name} ${o.price > 0 ? `₦${o.price.toLocaleString()}` : 'free'}`).join(' · ')}
+      </p>
+    );
+  return (
+    <div className="space-y-2 p-3 rounded-xl bg-orange-50/60 dark:bg-orange-950/20 border border-orange-200/70 dark:border-orange-900/40">
+      <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200">Extras for this food (one per line: name, your cost)</p>
+      <textarea
+        rows={4}
+        value={extrasText}
+        onChange={(e) => {
+          setExtrasText(e.target.value);
+          push(e.target.value, choicesText, title);
+        }}
+        placeholder={'Chicken, 1200\nBeef, 400\nEgg, 250\nDodo, 250'}
+        className={box}
+      />
+      {preview(extras)}
+      <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 pt-1">Pick one per plate (optional, e.g. swallow)</p>
+      <input
+        type="text"
+        value={title}
+        onChange={(e) => {
+          setTitle(e.target.value);
+          push(extrasText, choicesText, e.target.value);
+        }}
+        placeholder="Title, e.g. Swallow"
+        className={box}
+      />
+      <textarea
+        rows={3}
+        value={choicesText}
+        onChange={(e) => {
+          setChoicesText(e.target.value);
+          push(extrasText, e.target.value, title);
+        }}
+        placeholder={'Fufu, 0\nGarri, 0\nSemo, 100\nWheat, 200'}
+        className={box}
+      />
+      {preview(choices)}
+      <p className="text-[10px] text-slate-500 dark:text-slate-400">
+        Use 0 for no extra charge. Leave both empty for food with no extras (e.g. okpa).
+      </p>
+    </div>
+  );
+};
 
 type AdminTab = 'dashboard' | 'orders' | 'team' | 'money' | 'feedback' | 'products' | 'categories' | 'customers';
 
@@ -112,6 +189,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
   const [newProdEmoji, setNewProdEmoji] = useState('');
   const [newProdImageUrl, setNewProdImageUrl] = useState('');
   const [newProdIsFood, setNewProdIsFood] = useState(false);
+  const [newProdFood, setNewProdFood] = useState<FoodOptions>({});
 
   // Full Edit Product Modal State
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -271,6 +349,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
       imageUrl: newProdImageUrl.trim() || undefined,
       gradient: 'from-emerald-500/20 to-teal-500/20',
       isFood: newProdIsFood,
+      ...(newProdIsFood ? newProdFood : {}),
       isAvailable: true,
     });
 
@@ -280,6 +359,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
     setNewProdName('');
     setNewProdUnit('');
     setNewProdImageUrl('');
+    setNewProdFood({});
   };
 
   const handleSaveEditedProduct = async (e: React.FormEvent) => {
@@ -860,9 +940,12 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                     htmlFor="isFoodCheck"
                     className="text-xs text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
                   >
-                    Enable plate & side protein customization for this food item
+                    This is a food item (plates, its own extras and pick-one choice)
                   </label>
                 </div>
+                {newProdIsFood && (
+                  <FoodOptionsEditor value={newProdFood} source={STORE_SOURCE[adminStore]} onChange={setNewProdFood} />
+                )}
 
                 <button
                   type="submit"
@@ -1225,9 +1308,17 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                         className="w-4 h-4 accent-[#0e9f55]"
                       />
                       <label htmlFor="editIsFood" className="text-xs text-slate-700 dark:text-slate-300">
-                        Is food item (supports 0-plate & side extras)
+                        This is a food item (plates, its own extras and pick-one choice)
                       </label>
                     </div>
+                    {editingProduct.isFood && (
+                      <FoodOptionsEditor
+                        key={editingProduct.id}
+                        value={editingProduct}
+                        source={editingProduct.source}
+                        onChange={(v) => setEditingProduct((cur) => (cur ? { ...cur, ...v } : cur))}
+                      />
+                    )}
 
                     <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                       <button
@@ -1274,22 +1365,22 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
               ))}
             </div>
 
-            {/* One tap: give each store its standard categories and remove the old ones */}
+            {/* One tap: add Roomly's standard categories and subcategories (never deletes) */}
             <div className="bg-emerald-50 dark:bg-emerald-950/30 rounded-2xl p-4 border border-emerald-200 dark:border-emerald-900/50 space-y-2">
               <p className="text-xs text-slate-700 dark:text-slate-200">
-                Set up the standard categories for all three stores and remove the old ones. Products in an old category are kept and move
-                to "No category" (they still show under All).
+                Add Roomly's categories and subcategories to all three stores. It only adds what is missing: nothing is deleted and no
+                product is moved. Move your products yourself, then delete the old categories once they are empty.
               </p>
               <button
                 type="button"
                 onClick={async () => {
-                  if (!window.confirm('Set up the standard categories and remove the old ones? No product is deleted.')) return;
+                  if (!window.confirm('Add the Roomly categories and subcategories? Nothing is deleted.')) return;
                   try {
                     const res = await setupStoreCategories();
                     setCategories(res.categories);
                     setProducts(await getProductsFresh());
                     window.alert(
-                      `Done. Removed: ${res.removed.length ? res.removed.join(', ') : 'nothing'}. ${res.moved} product(s) moved to No category.`
+                      `Done. New categories: ${res.added.length ? res.added.join(', ') : 'none'}. Subcategories added: ${res.subsAdded}.`
                     );
                   } catch (e: any) {
                     window.alert(e?.message || 'Could not update categories.');
@@ -1297,7 +1388,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                 }}
                 className="w-full py-2 rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer"
               >
-                Set up store categories (remove old ones)
+                Set up Roomly categories
               </button>
             </div>
             <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
