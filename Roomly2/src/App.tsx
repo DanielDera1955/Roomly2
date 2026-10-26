@@ -1170,7 +1170,7 @@ export default function App() {
           onOpenCart={openCart}
         />
 
-        {pairSource && (
+        {pairSource && !detailProduct && (
           <PairingsBar
             forName={pairSource.name}
             items={pairItems}
