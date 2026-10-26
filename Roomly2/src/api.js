@@ -485,40 +485,75 @@ function fallbackOperators(kind) {
 }
 
 /**
- * Outside checkout: the next batch any operator of this kind is accepting, and every operator accepting it.
- * Each operator: { uid, name, start, startText, load } where load = orders today (fewer = suggested).
+ * Outside checkout: every store (or food vendor) of this kind, with where they stand against "this batch".
+ * "This batch" = the next batch on the timetable that has not closed yet.
+ * Each operator: { uid, name, status, batch, start, startText, late, load, payTo }
+ *   status 'now'  = taking orders for this batch
+ *          'next' = not taking this batch, but switched on for a later one (batch = that later one)
+ *          'off'  = no batch switched on yet (shown, not selectable)
+ * The student picks one; the order joins that operator's batch.
+ * When nobody has switched anything on, students can still order into the next scheduled batch (as before).
  */
 export function getOutsideChoices(kind, now = new Date()) {
   const today = ymdOf(now);
-  for (let d = 0; d < 3; d++) {
+  // "This batch": the first timetable batch today or later that has not passed its last moment
+  let current = null;
+  for (let d = 0; d < 3 && !current; d++) {
     for (const opt of slotsForDay(kind, now, d)) {
-      const ops = [];
-      for (const op of activeOperators(kind)) {
+      if (now.getTime() < batchCloseDate(opt, kind).getTime()) {
+        current = opt;
+        break;
+      }
+    }
+  }
+  const ops = activeOperators(kind).map((op) => {
+    const load = op.load && op.load.date === today ? op.load.count || 0 : 0;
+    const base = { uid: op.id, name: op.name || 'Operator', load, payTo: op.payTo || null };
+    for (let d = 0; d < 3; d++) {
+      for (const opt of slotsForDay(kind, now, d)) {
         const sw = (op.slots || {})[opt.key];
         if (accepting(opt, sw, kind, now)) {
           const start = switchStartDate(opt, sw);
-          const load = op.load && op.load.date === today ? op.load.count || 0 : 0;
-          ops.push({ uid: op.id, name: op.name || 'Operator', start: payDeadline(start, now), startText: startTextOf(start), late: start <= now, load, payTo: op.payTo || null });
+          return {
+            ...base,
+            status: current && opt.key === current.key ? 'now' : 'next',
+            batch: opt,
+            start: payDeadline(start, now),
+            startText: startTextOf(start),
+            late: start <= now,
+          };
         }
       }
-      if (ops.length) return { batch: opt, operators: ops.sort((a, b) => a.load - b.load) };
     }
+    return { ...base, status: 'off', batch: null, start: null, startText: '', late: false };
+  });
+  const rank = { now: 0, next: 1, off: 2 };
+  ops.sort((a, b) => rank[a.status] - rank[b.status] || (a.start && b.start ? a.start - b.start : 0) || a.load - b.load);
+  const anyOn = ops.some((o) => o.status !== 'off');
+  const anyNow = ops.some((o) => o.status === 'now');
+  if (anyOn) {
+    const first = ops.find((o) => o.status !== 'off');
+    return { batch: anyNow ? current : first.batch, current, operators: ops, anyNow, note: '' };
   }
   // Nobody has opened a batch yet: still let the student order into the next scheduled batch
   const { note } = getNextBatch(kind, now);
   const fb = scheduledNext(kind, now);
-  const ops = fallbackOperators(kind).map((o) => ({
+  const fallback = fallbackOperators(kind).map((o) => ({
     ...o,
+    status: 'scheduled',
+    batch: fb ? fb.opt : null,
     start: fb ? payDeadline(fb.start, now) : null,
     startText: fb ? startTextOf(fb.start) : '',
     late: fb ? fb.start <= now : false,
   }));
-  if (fb && ops.length) return { batch: fb.opt, operators: ops, note, unconfirmed: true };
+  if (fb && fallback.length) return { batch: fb.opt, current, operators: fallback, others: ops, note, unconfirmed: true };
   // Nobody to take it yet: the order is still allowed and scheduled for the next batch
   if (fb)
     return {
       batch: fb.opt,
+      current,
       operators: [],
+      others: ops,
       note,
       unconfirmed: true,
       noProvider: true,
@@ -526,7 +561,7 @@ export function getOutsideChoices(kind, now = new Date()) {
       startText: startTextOf(fb.start),
       late: fb.start <= now,
     };
-  return { batch: null, operators: [], note };
+  return { batch: null, current, operators: [], others: ops, note };
 }
 
 /**
@@ -539,7 +574,7 @@ export function getPayProvider(order, now = new Date()) {
     const n = getNextBatch('inside', now).next;
     return n && n.payTo ? { payTo: n.payTo, operatorId: '', operatorName: '', turnRunner: n.by || '' } : null;
   }
-  const op = (getOutsideChoices(side, now).operators || []).find((o) => o.payTo);
+  const op = (getOutsideChoices(side, now).operators || []).find((o) => o.payTo && o.status !== 'off');
   return op ? { payTo: op.payTo, operatorId: op.uid, operatorName: op.name, turnRunner: '' } : null;
 }
 

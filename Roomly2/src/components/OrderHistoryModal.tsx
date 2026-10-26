@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Package, ChevronRight } from 'lucide-react';
-import { OrderRecord, locationText } from '../types';
+import { OrderRecord, locationText, isActiveOrder, stageLabel, orderStageOf } from '../types';
 
 interface OrderHistoryModalProps {
   isOpen: boolean;
@@ -12,19 +12,20 @@ interface OrderHistoryModalProps {
   onSelect: (order: OrderRecord) => void;
 }
 
-const isActive = (o: OrderRecord) => o.status !== 'Delivered' && o.status !== 'Cancelled';
-
-const statusText = (o: OrderRecord) => {
-  if (o.paymentStatus === 'unpaid') return 'Waiting for payment';
-  if (o.paymentStatus === 'payment_sent' && o.status === 'Received') return 'Payment being confirmed';
-  return o.status === 'Packing' ? 'Being packaged' : o.status;
-};
 
 /** Active Orders & History: any active order and its status first, then earlier orders, newest first. */
 export const OrderHistoryModal: React.FC<OrderHistoryModalProps> = ({ isOpen, onClose, orders, loading, signedIn = true, onSelect }) => {
+  // Re-check every 20 seconds so an order leaves Active once its 15-minute gate countdown ends
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!isOpen) return;
+    const id = window.setInterval(() => setNow(Date.now()), 20000);
+    return () => window.clearInterval(id);
+  }, [isOpen]);
   if (!isOpen) return null;
-  const active = orders.filter(isActive);
-  const past = orders.filter((o) => !isActive(o));
+  const active = orders.filter((o) => isActiveOrder(o, now));
+  const past = orders.filter((o) => !isActiveOrder(o, now));
+  const statusText = (o: OrderRecord) => stageLabel(o, now);
 
   const Row = ({ o, highlight }: { o: OrderRecord; highlight?: boolean }) => (
     <button
@@ -43,6 +44,8 @@ export const OrderHistoryModal: React.FC<OrderHistoryModalProps> = ({ isOpen, on
             className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
               o.paymentStatus === 'unpaid'
                 ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
+                : orderStageOf(o, now) === 'onway'
+                ? 'bg-[#0e9f55] text-white'
                 : 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300'
             }`}
           >

@@ -44,6 +44,9 @@ export const PRESET_PRODUCT_IMAGES: PresetImageOption[] = [
   { label: 'Engineering Textbook', url: '/images/math_textbook_1792245624167.jpg' },
 ];
 
+/** The school this Roomly runs at. Change this one word for each school (e.g. 'ESUT'). */
+export const SCHOOL_NAME = 'Caritas';
+
 export const STORE_CONFIG = {
   brandName: 'Roomly',
   tagline: 'Hostel & Lodge Room Delivery',

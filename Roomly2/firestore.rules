@@ -125,7 +125,10 @@ service cloud.firestore {
     // ---------- daily statements and settlement (one record per provider per day) ----------
     // Id = uid + '_' + date. Providers create and add to their own; only the admin confirms or settles.
     match /settlements/{id} {
-      allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      // A provider can open their own day by its id (uid_yyyy-mm-dd) even before it exists:
+      // the first delivery of the day has to read it before creating it.
+      allow get: if isAdmin() || (signedIn() && id.matches(request.auth.uid + '_[0-9]{4}-[0-9]{2}-[0-9]{2}'));
+      allow list: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
       allow create: if signedIn()
         && request.resource.data.uid == request.auth.uid
         && id == request.auth.uid + '_' + request.resource.data.date

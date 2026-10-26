@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Camera } from 'lucide-react';
+import { Camera, CheckCircle2, Loader2, X } from 'lucide-react';
 import {
   getProductsFresh,
   getCategories,
@@ -65,6 +65,17 @@ export const OperatorProductsPanel: React.FC = () => {
     setBusy('');
   };
 
+  const pickPhoto = async (f?: File) => {
+    if (!f) return;
+    setUploading(true);
+    try {
+      setImageUrl(await uploadProductImage(f));
+    } catch (err: any) {
+      window.alert(err?.message || 'Photo upload failed. You can still add the product without it.');
+    }
+    setUploading(false);
+  };
+
   const add = async () => {
     setBusy('add');
     try {
@@ -74,7 +85,7 @@ export const OperatorProductsPanel: React.FC = () => {
       setCost('');
       setUnit('');
       setImageUrl('');
-      window.alert('Added. Students can now order it.');
+      window.alert(`Added. Students can now order it${imageUrl ? ', with your photo' : ''}.`);
       await load();
     } catch (e: any) {
       window.alert(e?.message || 'Could not add.');
@@ -172,26 +183,34 @@ export const OperatorProductsPanel: React.FC = () => {
                   <option key={g} value={g} />
                 ))}
               </datalist>
-              <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300 cursor-pointer">
-                <Camera className="w-4 h-4 text-[#0e9f55]" />
-                <span>{uploading ? 'Uploading…' : imageUrl ? 'Photo added (tap to change)' : 'Add a photo (optional)'}</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={async (e) => {
-                    const f = e.target.files?.[0];
-                    if (!f) return;
-                    setUploading(true);
-                    try {
-                      setImageUrl(await uploadProductImage(f));
-                    } catch (err: any) {
-                      window.alert(err?.message || 'Photo upload failed.');
-                    }
-                    setUploading(false);
-                  }}
-                />
-              </label>
+              {/* Photo: a clear preview and tick once it has uploaded */}
+              {imageUrl && !uploading ? (
+                <div className="flex items-center gap-3 p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60">
+                  <img src={imageUrl} alt="Product photo" className="w-14 h-14 rounded-lg object-cover border border-emerald-200 dark:border-emerald-800 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-1 text-xs font-bold text-[#0e9f55]">
+                      <CheckCircle2 className="w-4 h-4" /> Photo uploaded
+                    </p>
+                    <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 underline cursor-pointer">
+                      Change photo
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => pickPhoto(e.target.files?.[0])} />
+                    </label>
+                  </div>
+                  <button type="button" onClick={() => setImageUrl('')} aria-label="Remove photo" className="p-1.5 text-slate-400 hover:text-rose-500 cursor-pointer">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <label
+                  className={`flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed text-xs font-semibold cursor-pointer ${
+                    uploading ? 'border-[#0e9f55] text-[#0e9f55]' : 'border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4 text-[#0e9f55]" />}
+                  <span>{uploading ? 'Uploading photo… please wait' : 'Add a photo (optional)'}</span>
+                  <input type="file" accept="image/*" className="hidden" disabled={uploading} onChange={(e) => pickPhoto(e.target.files?.[0])} />
+                </label>
+              )}
               <button
                 type="button"
                 disabled={busy === 'add' || uploading || !name.trim() || costNum <= 0}

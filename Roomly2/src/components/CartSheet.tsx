@@ -169,12 +169,18 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   // the student picks one (the one with fewer orders today is suggested).
   const insideNext = cart === 'inside' ? getNextBatch('inside') : null;
   const outside = cart !== 'inside' ? getOutsideChoices(cart) : null;
-  const operators = outside?.operators || [];
-  const chosenOp = operators.find((o) => o.uid === operatorId) || operators[0];
+  // Every store / food vendor with its status for this batch; 'off' ones are shown but can't be picked
+  const operators: any[] = outside?.operators || [];
+  const selectable = operators.filter((o) => o.status !== 'off');
+  const chosenOp = selectable.find((o) => o.uid === operatorId) || selectable[0];
+  const currentBatch = (outside as any)?.current || null;
+  const anyNow = Boolean((outside as any)?.anyNow);
+  // Picked an operator who isn't on this batch: the order joins their next batch, and the student ticks to accept
+  const nextBatch = cart !== 'inside' && chosenOp?.status === 'next';
   const chosen: any = cart === 'inside'
     ? insideNext?.next || null
-    : outside?.batch && chosenOp
-    ? { batch: outside.batch, start: chosenOp.start, startText: chosenOp.startText, late: Boolean(chosenOp.late), by: chosenOp.name, unconfirmed: Boolean(outside.unconfirmed) }
+    : (chosenOp?.batch || outside?.batch) && chosenOp
+    ? { batch: chosenOp.batch || outside!.batch, start: chosenOp.start, startText: chosenOp.startText, late: Boolean(chosenOp.late), by: chosenOp.name, unconfirmed: Boolean(outside!.unconfirmed) }
     : outside?.batch && (outside as any).start
     ? { batch: outside.batch, start: (outside as any).start, startText: (outside as any).startText, late: Boolean((outside as any).late), by: '', unconfirmed: true, noProvider: true }
     : null;
@@ -203,7 +209,9 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const dayStart = new Date(nowDate);
   dayStart.setHours(0, 0, 0, 0);
   // Done for today: the batch is closed (switched OFF or past its last moment), so the order goes to another day
-  const isLate = Boolean(selectedBatch && selectedBatch.dayLabel !== 'Today');
+  const isLate = Boolean(selectedBatch && selectedBatch.dayLabel !== 'Today') && !nextBatch;
+  // Any of these need the student to tick that the order comes in a later batch
+  const needTick = isLate || unconfirmed || nextBatch;
   const pastBatchTime = Boolean((chosen as any)?.late);
   void dayStart;
   const [lateAccepted, setLateAccepted] = useState(false);
@@ -251,7 +259,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       return;
     }
 
-    if (!isExpress && (isLate || unconfirmed) && !lateAccepted) {
+    if (!isExpress && needTick && !lateAccepted) {
       setErrorMessage('Please tick that you accept your order coming in the next batch.');
       return;
     }
@@ -292,7 +300,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
         operatorName: cart !== 'inside' ? chosenOp?.name : undefined,
         turnRunner: cart === 'inside' && !isExpress ? insideNext?.next?.by || '' : undefined,
         outOfStock,
-        lateBatch: !isExpress && (isLate || unconfirmed), // for the dashboard: student accepted the next batch
+        lateBatch: !isExpress && needTick, // for the dashboard: student accepted the next batch
         express: isExpress,
         gatePickup: cart !== 'inside' && gatePickup,
         // Students pay the runner or operator handling the order (Roomly's account if they have not set one)
@@ -704,6 +712,64 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             </div>
           )}
 
+          {/* Nobody has switched a batch on yet: the order is scheduled with whoever can take it */}
+          {cart !== 'inside' && (outside as any)?.unconfirmed && chosenOp && (
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 text-xs">
+              Your order goes to <strong>{chosenOp.name}</strong>.
+            </div>
+          )}
+
+          {/* STORE / FOOD VENDOR: every one, with whether they're on this batch or the next */}
+          {cart !== 'inside' && operators.length > 0 && !(outside as any)?.unconfirmed && (
+            <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                {cart === 'food' ? 'Choose a food vendor' : 'Choose a store'}
+              </h3>
+              {!anyNow && currentBatch && (
+                <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200">
+                  {cart === 'food'
+                    ? `No food vendor is taking ${currentBatch.dayLabel === 'Today' ? "today's" : currentBatch.dayLabel.toLowerCase() + "'s"} batch. You can order now for the next batch.`
+                    : `No store is taking the ${currentBatch.dayLabel === 'Today' ? '' : currentBatch.dayLabel.toLowerCase() + ' '}${currentBatch.window} batch. You can order now for the next batch.`}
+                </div>
+              )}
+              {operators.map((op) => {
+                const on = (chosenOp?.uid || '') === op.uid;
+                const off = op.status === 'off';
+                const suggested = !off && op.uid === selectable[0]?.uid && selectable.filter((o) => o.status === op.status).length > 1;
+                return (
+                  <button
+                    key={op.uid}
+                    type="button"
+                    disabled={off}
+                    onClick={() => setOperatorId(op.uid)}
+                    className={`w-full p-3 rounded-2xl border text-left text-xs ${
+                      off
+                        ? 'border-slate-200 dark:border-slate-800 opacity-50 cursor-not-allowed'
+                        : on
+                        ? 'border-[#0e9f55] bg-emerald-50/60 dark:bg-emerald-950/40 cursor-pointer'
+                        : 'border-slate-200 dark:border-slate-800 cursor-pointer'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        className={`w-2 h-2 rounded-full shrink-0 ${op.status === 'now' ? 'bg-[#0e9f55]' : op.status === 'next' ? 'bg-amber-500' : 'bg-slate-400'}`}
+                      />
+                      <span className="font-bold text-slate-900 dark:text-white">{op.name}</span>
+                      {suggested && <span className="text-[10px] font-bold text-[#0e9f55]">Fewer orders now</span>}
+                    </span>
+                    <span className="block text-[11px] text-slate-500 mt-0.5">
+                      {op.status === 'now'
+                        ? `Taking orders for this batch · starts sending by ${op.startText}`
+                        : op.status === 'next'
+                        ? `Not available for this batch · taking orders for the next batch: ${op.batch.dayLabel === 'Today' ? '' : op.batch.dayLabel + ', '}${op.batch.window}`
+                        : 'Not available yet'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {/* DELIVERY BATCHES (normal delivery) */}
           {!isExpress && (
           <div className="space-y-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
@@ -740,6 +806,22 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                       the {cart === 'inside' ? 'runner' : 'operator'} starts it (or the batch after). Tick to accept.
                     </>
                   )}
+                </span>
+              </label>
+            )}
+            {nextBatch && selectedBatch && (
+              <label className="flex items-start gap-2 p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 text-xs text-blue-900 dark:text-blue-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={lateAccepted}
+                  onChange={(e) => setLateAccepted(e.target.checked)}
+                  className="w-4 h-4 mt-0.5 accent-[#0e9f55]"
+                />
+                <span>
+                  <strong>
+                    {chosenOp?.name} isn't taking {currentBatch ? `the ${currentBatch.window} batch` : 'this batch'}.
+                  </strong>{' '}
+                  Your order joins their next batch: {selectedBatch.dayLabel.toLowerCase()}, {selectedBatch.window}. Tick to accept.
                 </span>
               </label>
             )}
@@ -801,37 +883,6 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               Your order goes to <strong>{chosen.by}</strong>, the runner on this batch.
             </div>
           )}
-          {chosen && cart !== 'inside' && operators.length > 0 && (
-            <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                {cart === 'food' ? 'Food partner' : 'Store'}
-              </h3>
-              {operators.length === 1 ? (
-                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 text-xs">
-                  Your order goes to <strong>{operators[0].name}</strong>.
-                </div>
-              ) : (
-                operators.map((op, idx) => {
-                  const on = (chosenOp?.uid || '') === op.uid;
-                  return (
-                    <button
-                      key={op.uid}
-                      type="button"
-                      onClick={() => setOperatorId(op.uid)}
-                      className={`w-full p-3 rounded-2xl border text-left text-xs cursor-pointer ${
-                        on ? 'border-[#0e9f55] bg-emerald-50/60 dark:bg-emerald-950/40' : 'border-slate-200 dark:border-slate-800'
-                      }`}
-                    >
-                      <span className="font-bold text-slate-900 dark:text-white">{op.name}</span>
-                      {idx === 0 && <span className="ml-1.5 text-[10px] font-bold text-[#0e9f55]">Fewer orders now</span>}
-                      <span className="block text-[11px] text-slate-500">Will start sending by {op.startText}</span>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          )}
-
           {/* OUT OF STOCK */}
           <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -968,7 +1019,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
           <div className="pt-1">
             <button
               type="submit"
-              disabled={submitting || !acknowledgedNoCancel || (!isExpress && !selectedBatch) || waitingCount > 0 || (!isExpress && (isLate || unconfirmed) && !lateAccepted)}
+              disabled={submitting || !acknowledgedNoCancel || (!isExpress && !selectedBatch) || waitingCount > 0 || (!isExpress && needTick && !lateAccepted)}
               className="w-full h-12 bg-[#0e9f55] hover:bg-[#0b8044] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold flex items-center justify-between px-5 shadow-lg shadow-[#0e9f55]/20 active:scale-[0.98] transition-all cursor-pointer"
             >
               <span>{submitting ? 'Placing Order...' : 'Confirm & Place Order'}</span>

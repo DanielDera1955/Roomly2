@@ -20,14 +20,14 @@ import {
   createProductRequest,
   subscribeProductRequest,
 } from './api.js';
-import { Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, FOOD_EXTRAS, Announcement, announcementActive, announcementKey } from './config';
+import { SCHOOL_NAME, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, FOOD_EXTRAS, Announcement, announcementActive, announcementKey } from './config';
 import { MessageCircle } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
 import { notify } from './notify';
 import { AdminSwitcher } from './components/AdminSwitcher';
 import { OperatorPortal } from './components/OperatorPortal';
-import { CartItem, CustomerProfile, OrderRecord, CategoryDefinition } from './types';
+import { CartItem, CustomerProfile, OrderRecord, CategoryDefinition, orderStageOf, isActiveOrder } from './types';
 import { Header, PortalMode } from './components/Header';
 import { PhoneLookupBar } from './components/PhoneLookupBar';
 import { SearchBar } from './components/SearchBar';
@@ -244,15 +244,43 @@ export default function App() {
     setHistoryLoading(false);
   };
 
+  // Each step of an order (packaging, on its way, delivered): a sound and a phone notification if allowed
+  const stageSeen = useRef<Record<string, string>>({});
+  const announceStage = (o: OrderRecord) => {
+    const st = orderStageOf(o);
+    const before = stageSeen.current[o.id];
+    stageSeen.current[o.id] = st;
+    if (!before || before === st) return;
+    const outside = o.cart === 'store' || o.cart === 'food';
+    const msg =
+      st === 'packaging'
+        ? 'Payment confirmed. Your order is being packaged.'
+        : st === 'onway'
+        ? outside
+          ? 'Your order is on its way to the gate. It will be there in under 15 minutes.'
+          : 'Your order is on its way to you.'
+        : st === 'delivered'
+        ? outside
+          ? 'Your order should be at the school gate now. Please collect it.'
+          : 'Your order has been delivered. Enjoy!'
+        : '';
+    if (!msg) return;
+    playChime('chat');
+    notify('Roomly', msg, 'roomly-order-' + o.id);
+  };
+  // One live order changed: update it everywhere it is shown
+  const applyLiveOrder = (o: OrderRecord) => {
+    announceStage(o);
+    setRecentOrders((prev) => prev.map((r) => (r.id === o.id ? o : r)));
+    setHistoryOrders((prev) => prev.map((r) => (r.id === o.id ? o : r)));
+  };
+
   // Live updates for the order the customer is tracking
   useEffect(() => {
     if (!activeOrder?.id) return;
-    let prevStatus: string | null = null;
     return subscribeOrder(activeOrder.id, (o: any) => {
-      if (prevStatus && prevStatus !== o.status) playChime('chat');
-      prevStatus = o.status;
       setActiveOrder(o as OrderRecord);
-      setRecentOrders((prev) => prev.map((r) => (r.id === o.id ? (o as OrderRecord) : r)));
+      applyLiveOrder(o as OrderRecord);
     });
   }, [activeOrder?.id]);
 
@@ -691,7 +719,28 @@ export default function App() {
       .filter((o) => o.paymentStatus !== 'unpaid' || o.id === activeOrder?.id)
       .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
   }, [historyOrders, recentOrders, activeOrder]);
-  const activeOrderCount = screenOrders.filter((o) => o.status !== 'Delivered' && o.status !== 'Cancelled').length;
+  const activeOrderCount = screenOrders.filter((o) => isActiveOrder(o)).length;
+
+  // Live updates for every active order (not only the one open), so each step shows the moment it happens
+  const liveIds = screenOrders
+    .filter((o) => o.paymentStatus !== 'unpaid' && isActiveOrder(o) && o.id !== activeOrder?.id)
+    .map((o) => o.id)
+    .slice(0, 8)
+    .join('|');
+  useEffect(() => {
+    if (!liveIds) return;
+    const subs = liveIds.split('|').map((id) => subscribeOrder(id, (o: any) => o && applyLiveOrder(o as OrderRecord)));
+    return () => subs.forEach((u: any) => typeof u === 'function' && u());
+  }, [liveIds]);
+
+  // The 15-minute gate countdown ends without any change to the order, so check the steps every 30 seconds
+  const screenRef = useRef<OrderRecord[]>([]);
+  screenRef.current = screenOrders;
+  useEffect(() => {
+    screenRef.current.forEach((o) => (stageSeen.current[o.id] = stageSeen.current[o.id] || orderStageOf(o)));
+    const id = window.setInterval(() => screenRef.current.forEach((o) => announceStage(o)), 30000);
+    return () => window.clearInterval(id);
+  }, []);
 
   // Hero greeting: guests, signed-in students without a finished order, and returning students
   const signedInCustomer =
@@ -910,10 +959,10 @@ export default function App() {
             {!signedInCustomer && (
               <>
                 <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-snug">
-                  Order Food and Other Items Within and Outside School
+                  Order Food, Provisions and Your Everyday Essentials
                 </h1>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  Delivered to your hostel room or the school gate in scheduled batches.
+                  From inside or outside {SCHOOL_NAME}, delivered to your room or the school gate.
                 </p>
               </>
             )}

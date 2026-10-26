@@ -197,6 +197,54 @@ export const shortLocation = (o: { area?: string; building?: string; room?: stri
 export const roomText = (o: { area?: string; building?: string; room?: string }) =>
   o.area === 'Custom' ? `${o.building}` : `Room ${cleanRoom(o.room)}`;
 
+/**
+ * Where an order stands, as the student sees it.
+ * Outside: unpaid -> received (student paid) -> packaging (operator confirmed payment)
+ *          -> onway (operator tapped "Order delivered", 15-minute countdown to the gate) -> delivered (countdown over)
+ * Inside:  unpaid -> received -> packaging -> onway (runner on the way) -> delivered
+ * Records for the operator and admin count an outside order at the operator's "Order delivered" tap.
+ */
+export type OrderStage = 'unpaid' | 'received' | 'packaging' | 'onway' | 'delivered' | 'cancelled';
+export const GATE_COUNTDOWN_MS = 15 * 60000;
+
+export function orderStageOf(o: OrderRecord, now: number = Date.now()): OrderStage {
+  if (!o) return 'unpaid';
+  if (o.status === 'Cancelled') return 'cancelled';
+  const outside = o.cart === 'store' || o.cart === 'food';
+  if (outside) {
+    const part = o.cart === 'food' ? o.foodStatus : o.storeStatus;
+    if (part === 'sent' || o.status === 'Delivered') {
+      const at = Date.parse(o.deliveredAt || '');
+      return Number.isFinite(at) && now - at < GATE_COUNTDOWN_MS ? 'onway' : 'delivered';
+    }
+    if (o.paymentStatus === 'payment_confirmed') return 'packaging';
+    if (o.paymentStatus === 'payment_sent') return 'received';
+    return 'unpaid';
+  }
+  if (o.status === 'Delivered') return 'delivered';
+  if (o.status === 'On the way') return 'onway';
+  if (o.status === 'Packing' || o.paymentStatus === 'payment_confirmed') return 'packaging';
+  if (o.paymentStatus === 'payment_sent' || o.paymentStatus === 'pay_on_delivery') return 'received';
+  return 'unpaid';
+}
+
+/** Still shown under Active Orders (outside orders stay there during the 15-minute gate countdown) */
+export const isActiveOrder = (o: OrderRecord, now: number = Date.now()) => {
+  const st = orderStageOf(o, now);
+  return st !== 'delivered' && st !== 'cancelled';
+};
+
+export function stageLabel(o: OrderRecord, now: number = Date.now()): string {
+  const st = orderStageOf(o, now);
+  const outside = o.cart === 'store' || o.cart === 'food';
+  if (st === 'unpaid') return 'Waiting for payment';
+  if (st === 'received') return 'Received';
+  if (st === 'packaging') return 'Confirmed & Packaging';
+  if (st === 'onway') return outside ? 'On its way to the gate' : 'On its way to you';
+  if (st === 'delivered') return 'Delivered';
+  return 'Cancelled';
+}
+
 /** Status of the outside-school part of an order, as the student and runners see it */
 export const partLabel = (s?: string) =>
   s === 'sent' ? 'Delivered: at the gate in under 15 minutes' : s === 'packed' ? 'Packed' : 'Waiting for the operator';

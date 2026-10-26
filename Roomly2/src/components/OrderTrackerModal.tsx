@@ -21,7 +21,7 @@ import {
   AlertTriangle,
   Zap,
 } from 'lucide-react';
-import { OrderRecord, locationText, shortLocation, roomText, partLabel, expressTiming } from '../types';
+import { OrderRecord, locationText, shortLocation, roomText, partLabel, expressTiming, orderStageOf } from '../types';
 import {
   STORE_CONFIG,
   OUT_OF_STOCK_LABEL,
@@ -702,7 +702,9 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                         <Truck className="w-5 h-5" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h4 className="text-xs font-bold text-emerald-950 dark:text-emerald-200">Your order has been delivered</h4>
+                        <h4 className="text-xs font-bold text-emerald-950 dark:text-emerald-200">
+                          {gateLeftMs !== null && gateLeftMs > 0 ? 'Your order is on its way to the gate' : 'Your order has been delivered'}
+                        </h4>
                         <p className="text-[11px] text-emerald-800 dark:text-emerald-400">
                           {currentOrder.gatePickup && currentOrder.gatePickup.status !== 'refused' && currentOrder.gatePickup.status !== 'refunded'
                             ? `It will be at the school gate in under ${GATE_ARRIVAL_MINUTES} minutes, and the runner will bring it to your room.`
@@ -810,23 +812,54 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
               </div>
               )}
 
-              {(currentOrder.hasStore || currentOrder.hasFood) && (
-                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs space-y-1.5">
-                  <p className="font-bold text-slate-700 dark:text-slate-200">Outside-school items</p>
-                  {currentOrder.hasStore && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Store items</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-100">{partLabel(currentOrder.storeStatus)}</span>
+              {/* OUTSIDE ORDERS: live steps, moving as the operator taps */}
+              {isOutside && currentOrder.paymentStatus !== 'unpaid' && (() => {
+                const st = orderStageOf(currentOrder, nowMs);
+                const steps = [
+                  { key: 'received', label: 'Received', desc: 'You told us you paid' },
+                  { key: 'packaging', label: 'Confirmed & Packaging', desc: `${currentOrder.operatorName || 'The operator'} confirmed your payment and is packing it` },
+                  {
+                    key: 'delivered',
+                    label: st === 'onway' ? 'On its way to the gate' : 'Delivered',
+                    desc: st === 'onway' ? `At the school gate in under ${GATE_ARRIVAL_MINUTES} minutes` : 'At the school gate',
+                  },
+                ];
+                const at = st === 'received' ? 0 : st === 'packaging' ? 1 : 2;
+                const done = st === 'delivered';
+                return (
+                  <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Order progress</h3>
+                      <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-[#0e9f55] dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800/40">
+                        {steps[at].label}
+                      </span>
                     </div>
-                  )}
-                  {currentOrder.hasFood && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Food</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-100">{partLabel(currentOrder.foodStatus)}</span>
+                    {/* Progress bar: fills a third per step */}
+                    <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                      <div className="h-full rounded-full bg-[#0e9f55] transition-all duration-700" style={{ width: `${done ? 100 : ((at + 1) / 3) * 100}%` }} />
                     </div>
-                  )}
-                </div>
-              )}
+                    <div className="grid grid-cols-3 gap-2">
+                      {steps.map((step, idx) => {
+                        const reached = idx < at || done || (idx === at);
+                        const current = idx === at && !done;
+                        return (
+                          <div key={step.key} className="text-center">
+                            <div
+                              className={`mx-auto w-6 h-6 rounded-full flex items-center justify-center ${
+                                reached ? 'bg-[#0e9f55] text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-400'
+                              } ${current ? 'ring-4 ring-emerald-100 dark:ring-emerald-900 animate-pulse' : ''}`}
+                            >
+                              {idx < at || done ? <Check className="w-3.5 h-3.5 stroke-[3]" /> : <span className="text-[10px] font-bold">{idx + 1}</span>}
+                            </div>
+                            <p className={`mt-1 text-[11px] font-bold leading-tight ${reached ? 'text-slate-900 dark:text-white' : 'text-slate-400'}`}>{step.label}</p>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">{step.desc}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Order Items Breakdown with Recognizable Product Photos */}
               <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 space-y-2.5">
