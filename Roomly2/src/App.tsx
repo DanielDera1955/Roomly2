@@ -41,6 +41,7 @@ import { RequestTab, RequestSide, RequestItemInput } from './components/RequestT
 import { FloatingCartBar } from './components/FloatingCartBar';
 import { CartSheet } from './components/CartSheet';
 import { OrderTrackerModal } from './components/OrderTrackerModal';
+import { InstallBanner } from './components/InstallPrompt';
 import { OrderHistoryModal } from './components/OrderHistoryModal';
 import { RunnerPortal } from './components/RunnerPortal';
 import { AdminView } from './components/AdminView';
@@ -1035,6 +1036,8 @@ export default function App() {
 
           {/* Search Bar */}
           <SearchBar query={searchQuery} onChange={setSearchQuery} />
+
+          {!searchQuery && <InstallBanner variant="home" />}
 
           {!searchQuery && (
             <FeaturedRow
