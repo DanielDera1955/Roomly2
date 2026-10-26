@@ -1,12 +1,19 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import { OrderRecord } from '../types';
+import { OrderRecord, orderStageOf, isActiveOrder, GATE_COUNTDOWN_MS } from '../types';
 import { Announcement } from '../config';
 import { paymentState } from '../api.js';
 
 type DayPart = 'Good morning' | 'Good afternoon' | 'Good evening';
 
-const STEPS = ['Received', 'Packing', 'On the way', 'Delivered'] as const;
+const isOutsideOrder = (o: OrderRecord) => o.cart === 'store' || o.cart === 'food';
+/** Inside: to the hostel (or the spot the student typed). Outside: to the school gate. */
+const wayLabel = (o: OrderRecord) => (isOutsideOrder(o) ? 'On its way to the gate' : o.area === 'Custom' ? `On the way to ${o.building}` : 'On the way to the hostel');
+const stepsFor = (o: OrderRecord) => ['Received', 'Confirmed & Packaging', wayLabel(o)];
+const mmss = (ms: number) => {
+  const t = Math.max(0, Math.round(ms / 1000));
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+};
 
 const firstWord = (s?: string) => String(s || '').trim().split(/\s+/)[0] || '';
 const clock = (iso?: string) => {
@@ -56,10 +63,16 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
     : 'linear-gradient(180deg,#1e1b4b 0%,#312e81 55%,#0e7490 100%)';
   const ink = morning ? 'text-orange-950' : 'text-white';
 
-  const now = new Date();
-  const onTheWay = orders.filter(
-    (o) => o.paymentStatus !== 'unpaid' && (o.status === 'Received' || o.status === 'Packing' || o.status === 'On the way')
-  );
+  // Ticks every second while an outside order is counting down to the gate (and every 30s otherwise)
+  const [nowMs, setNowMs] = useState(Date.now());
+  const counting = orders.some((o) => isOutsideOrder(o) && orderStageOf(o, nowMs) === 'onway');
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), counting ? 1000 : 30000);
+    return () => window.clearInterval(id);
+  }, [counting]);
+  const now = new Date(nowMs);
+  // Paid orders still in progress (outside ones stay until their 15-minute gate countdown ends)
+  const onTheWay = orders.filter((o) => o.paymentStatus !== 'unpaid' && isActiveOrder(o, nowMs));
   const trackOrder = onTheWay[0] || null;
   const waiting =
     !trackOrder
@@ -72,7 +85,24 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
         ) || null
       : null;
 
-  const stepIdx = trackOrder ? Math.max(0, STEPS.indexOf(trackOrder.status as (typeof STEPS)[number])) : 0;
+  const stage = trackOrder ? orderStageOf(trackOrder, nowMs) : 'received';
+  const stepIdx = stage === 'onway' ? 2 : stage === 'packaging' ? 1 : 0;
+  const STEPS = trackOrder ? stepsFor(trackOrder) : [];
+  const gateLeft =
+    trackOrder && isOutsideOrder(trackOrder) && stage === 'onway' && trackOrder.deliveredAt
+      ? GATE_COUNTDOWN_MS - (nowMs - Date.parse(trackOrder.deliveredAt))
+      : null;
+  const headline = !trackOrder
+    ? ''
+    : stage === 'onway'
+    ? isOutsideOrder(trackOrder)
+      ? 'Your order is on its way to the gate'
+      : trackOrder.area === 'Custom'
+      ? `Your order is on the way to ${trackOrder.building}`
+      : 'Your order is on the way to your hostel'
+    : stage === 'packaging'
+    ? 'Payment confirmed. Your order is being packaged'
+    : 'Your order is received';
   const carrier = trackOrder ? firstWord(trackOrder.runnerName || trackOrder.operatorName) : '';
   const stars: Array<[number, number, number]> = [
     [190, 40, 0],
@@ -156,22 +186,23 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="text-sm font-extrabold leading-tight">
-                  {trackOrder.status === 'On the way' ? 'Your order is on the way' : trackOrder.status === 'Packing' ? 'Your order is being packed' : 'Your order is received'}
-                </p>
+                <p className="text-sm font-extrabold leading-tight">{headline}</p>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                  {[carrier ? `With ${carrier}` : '', trackOrder.deliveryTime ? `Arriving ${trackOrder.deliveryTime}` : ''].filter(Boolean).join(' · ') || 'Tap to see the details'}
+                  {gateLeft !== null
+                    ? `At the school gate in under ${mmss(gateLeft)}`
+                    : [carrier ? `With ${carrier}` : '', trackOrder.deliveryTime ? `Arriving ${trackOrder.deliveryTime}` : ''].filter(Boolean).join(' · ') ||
+                      'Tap to see the details'}
                 </p>
               </div>
-              <span className="text-[11px] font-bold text-[#0e9f55] shrink-0">Open ›</span>
+              <span className="text-[11px] font-bold text-[#0e9f55] shrink-0">{gateLeft !== null ? <span className="font-mono">{mmss(gateLeft)}</span> : 'Open ›'}</span>
             </div>
             <div className="relative mt-3 mb-1">
-              <div className="absolute left-[12%] right-[12%] top-[9px] h-0.5 bg-slate-200 dark:bg-slate-700" />
+              <div className="absolute left-[16%] right-[16%] top-[9px] h-0.5 bg-slate-200 dark:bg-slate-700" />
               <div
-                className="absolute left-[12%] top-[9px] h-0.5 bg-[#0e9f55]"
-                style={{ width: `${(stepIdx / (STEPS.length - 1)) * 76}%` }}
+                className="absolute left-[16%] top-[9px] h-0.5 bg-[#0e9f55] transition-all duration-700"
+                style={{ width: `${(stepIdx / (STEPS.length - 1)) * 68}%` }}
               />
-              <div className="relative grid grid-cols-4">
+              <div className="relative grid grid-cols-3">
                 {STEPS.map((s, i) => (
                   <div key={s} className="flex flex-col items-center">
                     <div className="h-5 flex items-end">
@@ -186,7 +217,7 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
                       )}
                     </div>
                     <span
-                      className={`mt-1 text-[10px] leading-none ${i === stepIdx ? 'font-extrabold text-[#0b8044] dark:text-[#0e9f55]' : 'text-slate-500 dark:text-slate-400'}`}
+                      className={`mt-1 text-[10px] leading-tight text-center px-0.5 ${i === stepIdx ? 'font-extrabold text-[#0b8044] dark:text-[#0e9f55]' : 'text-slate-500 dark:text-slate-400'}`}
                     >
                       {s}
                     </span>

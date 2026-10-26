@@ -10,6 +10,7 @@ import {
   subscribeMyTodaySummary,
   getMySummaries,
   getMyUid,
+  getOperatorOrderMaths,
 } from '../api.js';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { ProviderSettlement, PayAccountForm } from './SettlementPanel';
@@ -167,6 +168,17 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState('');
   const seen = useRef<Set<string> | null>(null);
+  // Cost price and settlement maths for each opened order (same numbers as the daily settlement)
+  const [maths, setMaths] = useState<Record<string, any>>({});
+  useEffect(() => {
+    orders
+      .filter((o) => open[o.id] && !maths[o.id])
+      .forEach((o) =>
+        getOperatorOrderMaths(o, kind)
+          .then((m: any) => setMaths((p) => ({ ...p, [o.id]: m })))
+          .catch(() => {})
+      );
+  }, [open, orders, kind]);
 
   // Make sure the admin can see this operator in the override list
   useEffect(() => {
@@ -194,7 +206,8 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
   const count = (s: string) => orders.filter((o) => stageOf(o) === s).length;
   const shown = orders.filter((o) => stageOf(o) === filter);
   const confirmPaid = async (o: OrderRecord) => {
-    if (!window.confirm(`Confirm that ₦${(o.totalAmount || 0).toLocaleString()} from ${o.name} reached your account?`)) return;
+    const msg = `Confirm that ₦${(o.totalAmount || 0).toLocaleString()} from ${o.name} reached your account?\n\nItems ₦${(o.subtotal || 0).toLocaleString()} + delivery ₦${(o.deliveryFee || 0).toLocaleString()}.\n\nThe student will see "Confirmed & Packaging".`;
+    if (!window.confirm(msg)) return;
     setBusy(o.id);
     const res = await operatorConfirmPayment(o.id);
     if (!res) window.alert('Could not confirm. Check your connection and try again.');
@@ -317,7 +330,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="font-extrabold text-base">{o.name}</span>
                     <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-full ${pill(st)}`}>
-                      {o.paymentStatus !== 'payment_confirmed' && st !== 'sent' ? 'Check payment' : st === 'pending' ? 'Packaging' : st === 'packed' ? 'Packed' : 'Delivered'}
+                      {st === 'sent' ? 'Delivered' : o.paymentStatus !== 'payment_confirmed' ? 'Check payment' : 'Packaging'}
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">{o.deliveryTime}</p>
@@ -326,7 +339,10 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                   </p>
                 </div>
                 <div className="shrink-0 flex flex-col items-end gap-1.5">
-                  <span className="font-extrabold text-base text-[#0e9f55] whitespace-nowrap">₦{total.toLocaleString()}</span>
+                  <span className="text-right">
+                    <span className="block font-extrabold text-base text-[#0e9f55] whitespace-nowrap">₦{(o.totalAmount || total).toLocaleString()}</span>
+                    <span className="block text-[10px] text-slate-400">customer paid</span>
+                  </span>
                   <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                 </div>
               </button>
@@ -376,22 +392,54 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-bold leading-tight">{i.name}</p>
                           <p className="text-xs text-slate-500">
-                            {i.quantity} × ₦{(i.unitPrice || 0).toLocaleString()}
+                            {i.quantity} × ₦{(i.unitPrice || 0).toLocaleString()} customer price
                           </p>
+                          {maths[o.id]?.lines?.[idx] && (
+                            <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                              Your cost: ₦{Math.round(maths[o.id].lines[idx].cost).toLocaleString()}
+                              {maths[o.id].lines[idx].estimated ? ' (estimated)' : ''}
+                            </p>
+                          )}
                         </div>
-                        <span className="text-sm font-bold whitespace-nowrap">₦{(i.totalPrice || 0).toLocaleString()}</span>
+                        <span className="text-right whitespace-nowrap">
+                          <span className="block text-sm font-bold">₦{(i.totalPrice || 0).toLocaleString()}</span>
+                          <span className="block text-[10px] text-slate-400">customer paid</span>
+                        </span>
                       </div>
                     ))}
-                    <div className="flex justify-between text-sm font-extrabold pt-1 border-t border-slate-100 dark:border-slate-800">
-                      <span>Paid for these items</span>
-                      <span className="text-[#0e9f55]">₦{total.toLocaleString()}</span>
+                    {/* The money on this order: what the customer paid, what you keep, what you owe Roomly */}
+                    <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 text-xs space-y-1.5">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Customer paid (items ₦{total.toLocaleString()} + delivery ₦{(o.deliveryFee || 0).toLocaleString()})</span>
+                        <span className="font-bold">₦{(o.totalAmount || 0).toLocaleString()}</span>
+                      </div>
+                      {maths[o.id] ? (
+                        <>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">
+                              You keep: your cost ₦{Math.round(maths[o.id].itemsCost).toLocaleString()} + ₦{maths[o.id].deliveryKeep.toLocaleString()} delivery
+                            </span>
+                            <span className="font-bold">₦{Math.round(maths[o.id].keep).toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between pt-1.5 border-t border-slate-200 dark:border-slate-700 text-sm">
+                            <span className="font-extrabold">Owed to Roomly</span>
+                            <span className="font-extrabold text-amber-700 dark:text-amber-300">₦{Math.round(maths[o.id].owed).toLocaleString()}</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400">
+                            Roomly's margin on the items ₦{Math.round(maths[o.id].owed - maths[o.id].deliveryOwe).toLocaleString()} + ₦{maths[o.id].deliveryOwe.toLocaleString()} of the delivery fee. You pay this in your daily settlement.
+                            {maths[o.id].estimated ? ' Some costs are estimated because a cost price is missing.' : ''}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-[11px] text-slate-400">Working out your cost and what you owe…</p>
+                      )}
                     </div>
                   </div>
 
                   {o.paymentStatus !== 'payment_confirmed' && st !== 'sent' ? (
                     <div className="space-y-1.5">
                       <p className="text-[11px] text-slate-500">
-                        The student says they paid ₦{(o.totalAmount || 0).toLocaleString()} into your account. Check it, then confirm. The order moves to Packaging.
+                        The student says they paid ₦{(o.totalAmount || 0).toLocaleString()} (items + delivery) into your account. Check it, then confirm. The student sees "Confirmed & Packaging".
                       </p>
                       <button
                         type="button"
@@ -399,30 +447,20 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                         onClick={() => confirmPaid(o)}
                         className="w-full py-2.5 rounded-xl text-xs font-bold bg-amber-500 text-white disabled:opacity-40 cursor-pointer"
                       >
-                        Confirm payment received
+                        Confirm payment (₦{(o.totalAmount || 0).toLocaleString()} received)
                       </button>
                     </div>
                   ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      disabled={busy === o.id || st !== 'pending'}
-                      onClick={() => setStatus(o, 'packed')}
-                      className="py-2.5 rounded-xl text-xs font-bold bg-blue-600 text-white disabled:opacity-40 cursor-pointer"
-                    >
-                      Mark packed
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy === o.id || st === 'sent'}
-                      onClick={() => {
-                        if (window.confirm(`Mark ${o.name}'s order as delivered? The student sees it will be at the school gate in under 15 minutes, so only tap this as it leaves.`)) setStatus(o, 'sent');
-                      }}
-                      className="py-2.5 rounded-xl text-xs font-bold bg-[#0e9f55] text-white disabled:opacity-40 cursor-pointer"
-                    >
-                      Order delivered
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    disabled={busy === o.id || st === 'sent'}
+                    onClick={() => {
+                      if (window.confirm(`Mark ${o.name}'s order as delivered? The student sees it will be at the school gate in under 15 minutes, so only tap this as it leaves.`)) setStatus(o, 'sent');
+                    }}
+                    className="w-full py-3 rounded-xl text-sm font-bold bg-[#0e9f55] text-white disabled:opacity-40 cursor-pointer"
+                  >
+                    {st === 'sent' ? 'Delivered' : 'Order delivered'}
+                  </button>
                   )}
                   <a
                     href={`tel:${o.phone}`}
@@ -431,7 +469,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                     <Phone className="w-3.5 h-3.5" />
                     <span>Call {o.name}</span>
                   </a>
-                  <p className="text-[11px] text-slate-400 text-center">Status now: {partLabel(st)}</p>
+                  <p className="text-[11px] text-slate-400 text-center">Status now: {st === 'sent' ? 'Delivered (the student sees the 15-minute countdown)' : o.paymentStatus === 'payment_confirmed' ? 'Confirmed & Packaging' : 'Waiting for you to confirm payment'}</p>
                 </div>
               )}
             </div>

@@ -212,7 +212,8 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
     }
   };
 
-  const handleConfirmPayment = async (orderId: string) => {
+  // andPack: confirm the payment and start packaging in one tap (the order becomes the runner's)
+  const handleConfirmPayment = async (orderId: string, andPack = false) => {
     if (!activeRunner) return;
     // Express: ask when the money actually arrived (from the bank app). A later time moves the 20-minute start.
     let txAt = '';
@@ -237,6 +238,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
     setUpdatingId(orderId);
     try {
       await confirmPayment(orderId, activeRunner.name, txAt);
+      if (andPack) await startPackagingOrder(orderId, activeRunner.id, activeRunner.name, activeRunner.phone);
       await fetchOrdersAndRunners();
       if (onOrderUpdated) onOrderUpdated();
     } finally {
@@ -468,12 +470,12 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
             <div className="flex justify-end pt-1">
               <button
                 type="button"
-                onClick={() => handleConfirmPayment(ord.id)}
+                onClick={() => handleConfirmPayment(ord.id, true)}
                 disabled={updatingId === ord.id}
                 className="px-3 py-1.5 bg-[#0e9f55] hover:bg-[#0b8044] text-white rounded-xl text-xs font-black transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
               >
                 <Check className="w-3.5 h-3.5 stroke-[3]" />
-                <span>Confirm Payment Received</span>
+                <span>Confirm payment & start packaging</span>
               </button>
             </div>
           </div>
@@ -600,11 +602,11 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
           {!isAssignedToMe && ord.paymentStatus === 'payment_sent' && (
             <button
               type="button"
-              onClick={() => handleConfirmPayment(ord.id)}
+              onClick={() => handleConfirmPayment(ord.id, true)}
               disabled={updatingId === ord.id}
               className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl text-xs font-black shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
-              <span>Confirm payment received (₦{ord.totalAmount.toLocaleString()})</span>
+              <span>Confirm payment (₦{ord.totalAmount.toLocaleString()}) & start packaging</span>
             </button>
           )}
 

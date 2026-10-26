@@ -629,6 +629,8 @@ function staleKeys(map) {
 /** @returns {Promise<void>} */
 export async function setInsideSwitch(key, patch) {
   const staff = getCurrentStaff();
+  // Only runners switch inside batches, so students always pay the runner taking the batch
+  if (!staff || staff.role !== 'runner') throw new Error('Only runners can switch inside batches.');
   const prev = insideSwitches[key] || {};
   const sw = slim({ ...prev, ...patch, by: staff?.name || 'Runner', byPhone: staff?.phone || '', byUid: auth.currentUser?.uid || '', payTo: staff?.payAccount || null, at: Date.now() });
   insideSwitches = { ...insideSwitches, [key]: sw };
@@ -1699,44 +1701,70 @@ async function addToMyDay(kind, key, add, estimated, day = ymdOf(new Date()), ca
   }
 }
 
+/**
+ * One outside cart's maths, the same for the operator's order card and the daily settlement:
+ *   paid  = what the student paid (items + ₦800 delivery)
+ *   keep  = the operator's cost for the items + ₦600 delivery
+ *   owed  = Roomly's margin on the items + ₦200 delivery
+ */
+function operatorCartMaths(order, kind, products) {
+  const source = kind === 'food' ? 'food' : 'outside';
+  const items = (order.items || []).filter((i) => i.source === source);
+  let paid = 0;
+  let cost = 0;
+  let estimated = false;
+  const lines = items.map((i) => {
+    const c = costOf(i, products);
+    paid += i.totalPrice || 0;
+    cost += c.cost;
+    estimated = estimated || c.estimated;
+    return { name: i.name, quantity: i.quantity, paid: i.totalPrice || 0, cost: c.cost, estimated: c.estimated };
+  });
+  const share = order.hasStore && order.hasFood ? 0.5 : 1; // only older mixed orders
+  const deliveryKeep = OP_KEEP_PER_CART * share;
+  const deliveryOwe = OP_OWE_PER_CART * share;
+  return {
+    lines,
+    itemsPaid: paid,
+    itemsCost: cost,
+    deliveryKeep,
+    deliveryOwe,
+    paid: paid + deliveryKeep + deliveryOwe,
+    keep: cost + deliveryKeep,
+    owed: Math.max(0, paid - cost) + deliveryOwe,
+    estimated,
+  };
+}
+
+/** Operator: the maths for one order card (cost per item, what they keep, what they owe Roomly) */
+/** @returns {Promise<any>} */
+export async function getOperatorOrderMaths(order, kind) {
+  const products = (await readCatalog()).products || [];
+  return operatorCartMaths(order, kind, products);
+}
+
 /** Operator: their part of an outside order reached the gate */
 /** @returns {Promise<void>} */
 async function recordOperatorDelivery(order, kind) {
   const staff = getCurrentStaff();
   if (!staff || staff.role !== kind) return;
-  const source = kind === 'food' ? 'food' : 'outside';
-  const items = (order.items || []).filter((i) => i.source === source);
   const products = (await readCatalog()).products || [];
-  let paid = 0;
-  let keep = 0;
-  let estimated = false;
-  for (const i of items) {
-    const c = costOf(i, products);
-    paid += i.totalPrice || 0;
-    keep += c.cost;
-    estimated = estimated || c.estimated;
-  }
-  const share = order.hasStore && order.hasFood ? 0.5 : 1; // only older mixed orders
-  const deliveryKeep = OP_KEEP_PER_CART * share;
-  const deliveryOwe = OP_OWE_PER_CART * share;
-  const cartPaid = paid + deliveryKeep + deliveryOwe;
-  const cartKeep = keep + deliveryKeep;
-  const cartOwed = Math.max(0, paid - keep) + deliveryOwe;
+  const m = operatorCartMaths(order, kind, products);
   await addToMyDay(
     kind,
     order.id,
     {
       orders: 1,
-      paid: cartPaid,
-      itemsPaid: paid,
-      itemsCost: keep,
-      deliveryKeep,
-      keep: keep + deliveryKeep,
-      due: cartOwed,
+      paid: m.paid,
+      itemsPaid: m.itemsPaid,
+      itemsCost: m.itemsCost,
+      deliveryKeep: m.deliveryKeep,
+      keep: m.keep,
+      due: m.owed,
     },
-    estimated,
+    m.estimated,
     undefined,
-    { orderId: order.id, customer: order.name || '', paid: cartPaid, keep: cartKeep, owed: cartOwed, estimated }
+    { orderId: order.id, customer: order.name || '', paid: m.paid, keep: m.keep, cost: m.itemsCost, delivery: m.deliveryKeep, owed: m.owed, estimated: m.estimated }
   );
 }
 

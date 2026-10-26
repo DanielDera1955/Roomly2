@@ -884,10 +884,17 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             </div>
           )}
           {/* OUT OF STOCK */}
-          <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div
+            className={`space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800 ${
+              !outOfStock ? 'p-3 rounded-2xl border-2 border-amber-400 dark:border-amber-600 bg-amber-50/70 dark:bg-amber-950/30' : ''
+            }`}
+          >
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              If an item is out of stock
+              If an item is out of stock <span className="text-rose-600">*</span>
             </h3>
+            {!outOfStock && (
+              <p className="text-[11px] font-semibold text-amber-800 dark:text-amber-300">Choose one to continue. You can't check out without it.</p>
+            )}
             {((cart === 'inside' ? ['refund', 'swap'] : ['refund', 'tomorrow', 'swap']) as OutOfStockChoice[]).map((k) => (
               <label key={k} className="flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-200 cursor-pointer">
                 <input
@@ -1019,14 +1026,16 @@ export const CartSheet: React.FC<CartSheetProps> = ({
           <div className="pt-1">
             <button
               type="submit"
-              disabled={submitting || !acknowledgedNoCancel || (!isExpress && !selectedBatch) || waitingCount > 0 || (!isExpress && needTick && !lateAccepted)}
+              disabled={submitting || !outOfStock || !acknowledgedNoCancel || (!isExpress && !selectedBatch) || waitingCount > 0 || (!isExpress && needTick && !lateAccepted)}
               className="w-full h-12 bg-[#0e9f55] hover:bg-[#0b8044] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold flex items-center justify-between px-5 shadow-lg shadow-[#0e9f55]/20 active:scale-[0.98] transition-all cursor-pointer"
             >
               <span>{submitting ? 'Placing Order...' : 'Confirm & Place Order'}</span>
               <span className="font-mono text-base">₦{grandTotal.toLocaleString()}</span>
             </button>
             <p className="text-[10px] text-center text-slate-400 mt-2">
-              {waitingCount > 0
+              {!outOfStock
+                ? 'Choose what we should do if an item is out of stock, above.'
+                : waitingCount > 0
                 ? `You can't check out until your requested items are priced (${waitingCount} waiting). We'll update your cart total as soon as the price arrives.`
                 : isExpress
                 ? 'Goes to the express runners. One accepts, then you pay them.'

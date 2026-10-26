@@ -54,11 +54,11 @@ interface OrderTrackerModalProps {
   onOpenAll?: () => void;
 }
 
+// Inside orders: three steps the student follows (the runner taps Delivered at the end)
 const STATUS_STEPS = [
-  { key: 'Received', label: 'Received', icon: Clock, desc: 'Order received & registered' },
-  { key: 'Packing', label: 'Packaging', icon: Package, desc: 'Runner packaging your items at kitchen' },
-  { key: 'On the way', label: 'On the way', icon: Truck, desc: 'Runner walking to your hostel' },
-  { key: 'Delivered', label: 'Delivered', icon: Home, desc: 'Arrived at your room door' },
+  { key: 'received', label: 'Received', icon: Clock, desc: 'You told us you paid' },
+  { key: 'packaging', label: 'Confirmed & Packaging', icon: Package, desc: 'Your runner confirmed your payment and is packing it' },
+  { key: 'onway', label: 'On the way to the hostel', icon: Truck, desc: 'Your runner is bringing it to you' },
 ] as const;
 
 export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
@@ -173,8 +173,8 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
 
   const getCurrentStepIndex = () => {
     if (!currentOrder) return 0;
-    const index = STATUS_STEPS.findIndex((s) => s.key === currentOrder.status);
-    return index >= 0 ? index : 0;
+    const st = orderStageOf(currentOrder);
+    return st === 'onway' || st === 'delivered' ? 2 : st === 'packaging' ? 1 : 0;
   };
 
   const stepIndex = getCurrentStepIndex();
@@ -762,7 +762,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                     Order Progress
                   </h3>
                   <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-[#0e9f55] dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800/40">
-                    {currentOrder.status === 'Packing' ? 'Being Packaged' : currentOrder.status === 'Delivered' && ['store', 'food'].includes((currentOrder as any).cart) ? 'Sent' : currentOrder.status}
+                    {currentOrder.status === 'Delivered' ? 'Delivered' : STATUS_STEPS[stepIndex].key === 'onway' && currentOrder.area === 'Custom' ? `On the way to ${currentOrder.building}` : STATUS_STEPS[stepIndex].label}
                   </span>
                 </div>
 
@@ -799,7 +799,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                                 : 'text-slate-400 dark:text-slate-500'
                             }`}
                           >
-                            {step.label}
+                            {step.key === 'onway' && currentOrder.area === 'Custom' ? `On the way to ${currentOrder.building}` : step.label}
                           </h4>
                           <p className="text-[11px] text-slate-500 dark:text-slate-400">
                             {step.desc}

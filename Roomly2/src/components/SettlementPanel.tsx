@@ -75,22 +75,27 @@ const OpenDay: React.FC<{ d: any }> = ({ d }) => {
         </button>
       )}
       {showCarts && (
-        <div className="space-y-1.5">
-          <div className="grid grid-cols-4 gap-1 text-[10px] font-bold text-slate-500">
-            <span>Customer</span>
-            <span className="text-right">Paid</span>
-            <span className="text-right">You keep</span>
-            <span className="text-right">Owed</span>
-          </div>
+        <div className="space-y-2">
           {carts.map((c) => {
             const ob = objections[c.orderId];
+            // Operators: what they keep is their cost + ₦600 delivery. Older records only saved the total.
+            const isOp = d.kind !== 'runner' && !c.gate;
+            const delivery = isOp ? (c.delivery ?? 600) : 0;
+            const cost = isOp ? (c.cost ?? Math.max(0, (c.keep || 0) - delivery)) : 0;
             return (
-              <div key={c.orderId} className="space-y-1">
-                <div className="grid grid-cols-4 gap-1">
-                  <span className="truncate">{c.customer || c.orderId}</span>
-                  <span className="text-right font-mono">{naira(c.paid)}</span>
-                  <span className="text-right font-mono">{naira(c.keep)}</span>
-                  <span className="text-right font-mono font-bold">{naira(c.owed)}</span>
+              <div key={c.orderId} className="p-2.5 rounded-xl bg-white dark:bg-slate-900 space-y-1">
+                <p className="font-bold text-slate-900 dark:text-white truncate">{c.customer || c.orderId}</p>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Paid</span>
+                  <span className="font-mono">{naira(c.paid)}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-500">{isOp ? `Your cost ${naira(cost)} + ${naira(delivery)} delivery` : 'You keep'}</span>
+                  <span className="font-mono">{naira(c.keep)}</span>
+                </div>
+                <div className="flex justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
+                  <span className="font-bold">Owed to Roomly</span>
+                  <span className="font-mono font-bold text-amber-700 dark:text-amber-300">{naira(c.owed)}</span>
                 </div>
                 {ob ? (
                   <p className={`text-[11px] ${ob.status === 'open' ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500'}`}>

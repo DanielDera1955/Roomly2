@@ -40,7 +40,7 @@ const acceptLine = (side: SwitchSide, o: BatchOption, time: string) =>
     ? `Still accepting ${o.name.replace(' store batch', '').toLowerCase()} batch, and will start sending by ${time}`
     : `Still accepting the ${o.window} batch, and will start sending by ${time}`;
 
-const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?: boolean }> = ({ side, o, sw, adminOff }) => {
+const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?: boolean; readOnly?: boolean }> = ({ side, o, sw, adminOff, readOnly }) => {
   const now = new Date();
   const live = switchIsLive(sw, side === 'inside' ? 'inside' : 'outside', now);
   const startMin = sw && Number.isFinite(sw.start) ? sw.start : o.startMin;
@@ -70,7 +70,8 @@ const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?
   const turnOn = () => {
     // Students must always see the runner's or operator's own account, so it has to be saved first
     const staff = getCurrentStaff();
-    if (staff && staff.role !== 'admin' && !staff.payAccount) {
+    if (!staff || staff.role === 'admin') return; // only runners and operators switch batches
+    if (!staff.payAccount) {
       window.alert('Add your payment account first, under "Where students pay you", then switch on.');
       return;
     }
@@ -99,6 +100,10 @@ const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?
           <span className={`block text-[11px] font-bold ${started ? 'text-slate-500' : live ? 'text-[#0e9f55]' : 'text-rose-600 dark:text-rose-400'}`}>
             {started
               ? 'Sending now. New orders go to the next batch.'
+              : readOnly
+              ? live
+                ? `ON${sw?.by ? `: ${sw.by} is taking this batch` : ''}${pastTime ? ' (past the batch time, still taking late orders)' : ''}`
+                : 'OFF: no runner has opened this batch'
               : live
               ? pastTime
                 ? 'ON: past the batch time, still taking late orders. Tap OFF when you stop.'
@@ -106,7 +111,8 @@ const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?
               : 'OFF: students can still order, but they are told it is not opened yet'}
           </span>
         </div>
-        {/* Clear two-position switch: the highlighted side is the current state */}
+        {/* Clear two-position switch: the highlighted side is the current state (hidden for the admin) */}
+        {readOnly ? null : (
         <div className="shrink-0 grid grid-cols-2 rounded-xl overflow-hidden border border-slate-300 dark:border-slate-600">
           <button
             type="button"
@@ -131,9 +137,10 @@ const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?
             ON
           </button>
         </div>
+        )}
       </div>
 
-      {!started && (
+      {!started && !readOnly && (
         <>
           <label className="flex items-center justify-between gap-2">
             <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">Will start sending by</span>
@@ -182,6 +189,8 @@ export const BatchSwitches: React.FC<BatchSwitchesProps> = ({ side = 'inside' })
   const switches: Record<string, any> = side === 'inside' ? getInsideSwitches() : mine?.slots || {};
   const days = [slotsForDay(side, now, 0), slotsForDay(side, now, 1)];
   const cutoff = side === 'inside' ? '10pm' : '6pm';
+  // The admin only watches: runners and operators switch their own batches
+  const readOnly = getCurrentStaff()?.role === 'admin';
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 overflow-hidden">
@@ -190,7 +199,15 @@ export const BatchSwitches: React.FC<BatchSwitchesProps> = ({ side = 'inside' })
         onClick={() => setOpen(!open)}
         className="w-full flex items-center justify-between px-4 py-3 text-xs font-black uppercase tracking-wider text-slate-500 cursor-pointer"
       >
-        <span>{side === 'inside' ? 'Inside batches: my availability' : side === 'food' ? 'Food orders: my availability' : 'Store batches: my availability'}</span>
+        <span>
+          {readOnly
+            ? 'Inside batches: who is taking them'
+            : side === 'inside'
+            ? 'Inside batches: my availability'
+            : side === 'food'
+            ? 'Food orders: my availability'
+            : 'Store batches: my availability'}
+        </span>
         <span className="text-[#0e9f55]">{open ? 'Hide' : 'Show'}</span>
       </button>
       {open && (
@@ -206,14 +223,20 @@ export const BatchSwitches: React.FC<BatchSwitchesProps> = ({ side = 'inside' })
               {slots
                 .filter((o) => i > 0 || now.getTime() < batchCloseDate(o, side).getTime() || switchIsLive(switches[o.key], side === 'inside' ? 'inside' : 'outside', now))
                 .map((o) => (
-                  <SwitchRow key={o.key} side={side} o={o} sw={switches[o.key]} adminOff={mine?.adminOff} />
+                  <SwitchRow key={o.key} side={side} o={o} sw={switches[o.key]} adminOff={mine?.adminOff} readOnly={readOnly} />
                 ))}
             </div>
           ))}
+          {readOnly ? (
+            <p className="text-[11px] text-slate-400 leading-snug">
+              View only. Runners switch their own batches in the runner portal, so students always pay the runner who is taking the batch.
+            </p>
+          ) : (
           <p className="text-[11px] text-slate-400 leading-snug">
             Tap ON when you are ready to take a batch. After the batch time, leave it ON while you still take late orders, and tap OFF when you
             stop. Students then see the next batch. Switches turn OFF by themselves after {cutoff}.
           </p>
+          )}
           {side !== 'inside' && (
             <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-snug">
               The school does not want outside parcels at the gate after 6pm. Outside orders stop at 6pm by default. Anything that reaches the gate
