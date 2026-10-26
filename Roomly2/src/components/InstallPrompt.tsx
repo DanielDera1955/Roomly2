@@ -84,9 +84,9 @@ const hiddenNow = (variant: string) => {
     return false;
   }
 };
-const hideForDays = (variant: string) => {
+const hideForDays = (variant: string, days = HIDE_DAYS) => {
   try {
-    localStorage.setItem(hideKey(variant), String(Date.now() + HIDE_DAYS * 86400000));
+    localStorage.setItem(hideKey(variant), String(Date.now() + days * 86400000));
   } catch {
     /* storage blocked: it just shows again next visit */
   }
@@ -95,6 +95,13 @@ const hideForDays = (variant: string) => {
 const isRealChrome = () => {
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
   return /Chrome\//.test(ua) && !/(; wv\)|OPR\/|Opera|OPiOS|FBAN|FBAV|Instagram|WhatsApp|EdgA|SamsungBrowser|UCBrowser|MiuiBrowser)/i.test(ua);
+};
+
+const isAndroid = () => typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
+/** Android: open this same page in Chrome (falls back to the page itself if Chrome isn't there) */
+const openInChrome = () => {
+  const { host, pathname, search, href } = window.location;
+  window.location.href = `intent://${host}${pathname}${search}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(href)};end`;
 };
 
 /**
@@ -117,7 +124,8 @@ export const InstallBanner: React.FC<{ variant?: 'home' | 'order'; className?: s
   if (!mode) return null; // Chrome that isn't offering install (usually already installed)
 
   const dismiss = () => {
-    hideForDays(variant);
+    // Other browsers can't tell if Roomly is already installed, so × there hides the message for good
+    hideForDays(variant, mode === 'chrome' ? 3650 : HIDE_DAYS);
     setHidden(true);
   };
   const install = async () => {
@@ -170,9 +178,16 @@ export const InstallBanner: React.FC<{ variant?: 'home' | 'order'; className?: s
           </button>
         ))}
       {mode === 'chrome' && (
-        <p className="text-[12px]">
-          To install, open this page in <b>Chrome</b>, then tap <b>Install Roomly</b>.
-        </p>
+        <>
+          <p className="text-[12px]">
+            To install, open this page in <b>Chrome</b>, then tap <b>Install Roomly</b>. Already have it? Tap × to hide this.
+          </p>
+          {isAndroid() && (
+            <button type="button" onClick={openInChrome} className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-[#0e9f55] hover:bg-[#0b8044] text-white font-bold cursor-pointer">
+              <Download className="w-4 h-4" /> Open in Chrome
+            </button>
+          )}
+        </>
       )}
     </div>
   );
