@@ -24,6 +24,10 @@ export interface Product {
   /** Food only: pick exactly one per plate (e.g. Swallow: fufu, garri, semo). Price is added per plate. */
   choiceTitle?: string;
   choices?: FoodExtraOption[];
+  /** Shown in the Featured row at the top of the homepage (when in stock) */
+  featured?: boolean;
+  /** "Goes well with": up to 4 product ids suggested right after this one is added */
+  pairsWith?: string[];
   source?: 'school' | 'outside' | 'food'; // school = canteen, outside = store, food = food operator
 }
 

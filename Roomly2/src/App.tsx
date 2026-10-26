@@ -35,7 +35,7 @@ import { DeliveryPromiseBanner } from './components/DeliveryPromiseBanner';
 import { CategoryNav, ShopTab } from './components/CategoryNav';
 import { ProductCard } from './components/ProductCard';
 import { FoodCustomizerSheet } from './components/FoodCustomizerSheet';
-import { ProductSheet, OrderAgainRow } from './components/ShopExtras';
+import { ProductSheet, OrderAgainRow, FeaturedRow, PairingsBar } from './components/ShopExtras';
 import { HomeBanner } from './components/HomeBanner';
 import { RequestTab, RequestSide, RequestItemInput } from './components/RequestTab';
 import { FloatingCartBar } from './components/FloatingCartBar';
@@ -373,8 +373,23 @@ export default function App() {
     });
   }, [products, loadedOwner]);
 
+  // "Goes well with": which product's suggestions are showing (and a counter so each add restarts the timer)
+  const [pairFor, setPairFor] = useState<{ id: string; n: number } | null>(null);
+  const showPairs = (p?: Product | null) => {
+    if (p && (p.pairsWith || []).length) setPairFor((cur) => ({ id: p.id, n: (cur?.n || 0) + 1 }));
+  };
+  useEffect(() => {
+    if (!pairFor) return;
+    const t = window.setTimeout(() => setPairFor(null), 12000);
+    return () => window.clearTimeout(t);
+  }, [pairFor]);
+
   // Cart operations
   const handleAddSimpleProduct = (product: Product) => {
+    addSimpleToCart(product);
+    showPairs(product);
+  };
+  const addSimpleToCart = (product: Product) => {
     setCartItems((prev) => {
       const existing = prev.find((i) => i.productId === product.id && !i.isFood);
       if (existing) {
@@ -427,6 +442,7 @@ export default function App() {
     // Keep the product's source so outside food reaches the food operator
     const source = foodItem.source ?? customizingFood?.source;
     setCartItems((prev) => [...prev, source ? { ...foodItem, source } : foodItem]);
+    showPairs(products.find((p) => p.id === foodItem.productId));
   };
 
   const handleUpdateCartQuantity = (cartItemId: string, delta: number) => {
@@ -814,6 +830,13 @@ export default function App() {
   }, [signedInCustomer, phone, pin]);
 
   // "Order again": their most-bought items on this side, from delivered orders
+  const featured = useMemo(() => sideProducts.filter((p) => p.featured).slice(0, 8), [sideProducts]);
+  const pairSource = pairFor ? products.find((p) => p.id === pairFor.id) : undefined;
+  const pairItems = useMemo(() => {
+    if (!pairSource) return [] as Product[];
+    const byId = new Map(sideProducts.map((p) => [p.id, p])); // in stock and on this side only
+    return (pairSource.pairsWith || []).map((id) => byId.get(id)).filter((p): p is Product => Boolean(p)).slice(0, 4);
+  }, [pairSource, sideProducts]);
   const orderAgain = useMemo(() => {
     if (!signedInCustomer) return [] as Product[];
     const counts: Record<string, number> = {};
@@ -1014,6 +1037,15 @@ export default function App() {
           <SearchBar query={searchQuery} onChange={setSearchQuery} />
 
           {!searchQuery && (
+            <FeaturedRow
+              items={featured}
+              qtyOf={(id) => productQuantityMap[id] || 0}
+              onAdd={(p) => (p.isFood ? setCustomizingFood(p) : handleAddSimpleProduct(p))}
+              onOpen={(p) => (p.isFood ? setCustomizingFood(p) : setDetailProduct(p))}
+            />
+          )}
+
+          {!searchQuery && (
             <OrderAgainRow
               items={orderAgain}
               qtyOf={(id) => productQuantityMap[id] || 0}
@@ -1137,6 +1169,16 @@ export default function App() {
           hasCustomRequest={Boolean(customRequest)}
           onOpenCart={openCart}
         />
+
+        {pairSource && (
+          <PairingsBar
+            forName={pairSource.name}
+            items={pairItems}
+            qtyOf={(id) => productQuantityMap[id] || 0}
+            onAdd={(p) => (p.isFood ? setCustomizingFood(p) : addSimpleToCart(p))}
+            onClose={() => setPairFor(null)}
+          />
+        )}
 
         <ProductSheet
           product={detailProduct}

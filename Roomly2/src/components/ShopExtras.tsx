@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Minus, X, RotateCcw } from 'lucide-react';
+import { Plus, Minus, X, RotateCcw, Star, Sparkles } from 'lucide-react';
 import { Product } from '../config';
 
 const naira = (n: number) => `₦${Math.round(n || 0).toLocaleString()}`;
@@ -287,6 +287,95 @@ export const GreetingCard: React.FC<{
             🛍 {activeOrders} {activeOrders === 1 ? 'order' : 'orders'} on the way ›
           </button>
         )}
+      </div>
+    </div>
+  );
+};
+
+/** Homepage: products you ticked "Featured" in Admin (in stock only), one tap to add */
+export const FeaturedRow: React.FC<{
+  items: Product[];
+  qtyOf: (id: string) => number;
+  onAdd: (p: Product) => void;
+  onOpen: (p: Product) => void;
+}> = ({ items, qtyOf, onAdd, onOpen }) => {
+  if (!items.length) return null;
+  return (
+    <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 shadow-[0_2px_10px_-4px_rgba(15,60,40,0.15)] space-y-2">
+      <p className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+        <Star className="w-3.5 h-3.5 text-amber-500" /> Featured
+      </p>
+      <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-3 px-3">
+        {items.map((p) => {
+          const q = qtyOf(p.id);
+          return (
+            <div key={p.id} className="shrink-0 w-28 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-1.5">
+              <button type="button" onClick={() => onOpen(p)} className="block w-full text-left cursor-pointer">
+                <Thumb p={p} />
+                <span className="block mt-1 text-[11px] font-bold text-slate-900 dark:text-white leading-tight line-clamp-2">{p.name}</span>
+                <span className="block text-[11px] text-slate-500">{naira(p.price)}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onAdd(p)}
+                className={`w-full py-1 rounded-lg text-[11px] font-bold cursor-pointer ${q > 0 ? 'bg-[#0e9f55] text-white' : 'bg-[#0e9f55]/10 text-[#0e9f55]'}`}
+              >
+                {p.isFood ? 'Choose' : q > 0 ? `In cart (${q}) +` : '+ Add'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+/** Right after a product is added: its "Goes well with" items, one tap to add. Hides itself after a while. */
+export const PairingsBar: React.FC<{
+  forName: string;
+  items: Product[];
+  qtyOf: (id: string) => number;
+  onAdd: (p: Product) => void;
+  onClose: () => void;
+}> = ({ forName, items, qtyOf, onAdd, onClose }) => {
+  if (!items.length) return null;
+  return (
+    <div className="fixed inset-x-0 bottom-24 z-40 px-3 pointer-events-none">
+      <div className="pointer-events-auto max-w-[460px] mx-auto p-3 rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900/60 shadow-2xl space-y-2 animate-in fade-in slide-in-from-bottom-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 min-w-0">
+            <Sparkles className="w-3.5 h-3.5 text-[#0e9f55] shrink-0" />
+            <span className="truncate">Goes well with {forName}</span>
+          </p>
+          <button type="button" aria-label="Close suggestions" onClick={onClose} className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center cursor-pointer shrink-0">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        <div className="flex gap-2 overflow-x-auto no-scrollbar">
+          {items.map((p) => {
+            const q = qtyOf(p.id);
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => onAdd(p)}
+                className={`shrink-0 flex items-center gap-2 pl-1.5 pr-2.5 py-1.5 rounded-xl border text-left cursor-pointer ${
+                  q > 0 ? 'border-[#0e9f55] bg-emerald-50 dark:bg-emerald-950/40' : 'border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                <span className="w-8 h-8 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                  {p.imageUrl ? <img src={p.imageUrl} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" /> : <span>{p.emoji}</span>}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[11px] font-bold text-slate-900 dark:text-white max-w-[110px] truncate">{p.name}</span>
+                  <span className="block text-[11px] font-semibold text-[#0e9f55]">
+                    {p.isFood ? `${naira(p.price)} · Choose` : q > 0 ? `In cart (${q}) +` : `${naira(p.price)} +`}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
