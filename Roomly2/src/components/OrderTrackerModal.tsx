@@ -35,6 +35,7 @@ import {
 } from '../config';
 import { markPaymentSent, paymentState, requestGatePickup, markGatePickupPaid, getPayProvider, cancelExpress, markExpressReceived } from '../api.js';
 import { RateExperience } from './RateExperience';
+import { InstallBanner } from './InstallPrompt';
 
 const mmss = (ms: number) => {
   const t = Math.max(0, Math.round(ms / 1000));
@@ -301,6 +302,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
 
         {/* Content Body */}
         <div className="overflow-y-auto p-5 space-y-4 flex-1">
+          {currentOrder && <InstallBanner variant="order" />}
           {/* Active Order Card */}
           {currentOrder ? (
             <div className="space-y-4">
