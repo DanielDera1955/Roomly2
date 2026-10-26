@@ -58,7 +58,14 @@ interface SheetProps {
 export const ProductSheet: React.FC<SheetProps> = ({ product, pool, qtyOf, onAdd, onRemove, onOpen, onClose }) => {
   if (!product) return null;
   const group = groupOf(product);
-  const similar = pool.filter((p) => p.id !== product.id && !p.isFood && groupOf(p).toLowerCase() === group.toLowerCase()).slice(0, 12);
+  // "Goes well with" (set in Admin), in stock on this side only; then similar items from the same group
+  const pairs = (product.pairsWith || [])
+    .map((id) => pool.find((p) => p.id === id))
+    .filter((p): p is Product => Boolean(p) && !p!.isFood)
+    .slice(0, 4);
+  const similar = pool
+    .filter((p) => p.id !== product.id && !p.isFood && !pairs.includes(p) && groupOf(p).toLowerCase() === group.toLowerCase())
+    .slice(0, 12);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-xs">
@@ -81,6 +88,27 @@ export const ProductSheet: React.FC<SheetProps> = ({ product, pool, qtyOf, onAdd
             <Stepper qty={qtyOf(product.id)} onAdd={() => onAdd(product)} onRemove={() => onRemove(product.id)} />
           </div>
           {product.description && <p className="text-xs text-slate-500 dark:text-slate-400">{product.description}</p>}
+
+          {pairs.length > 0 && (
+            <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <p className="text-xs font-black uppercase tracking-wider text-[#0e9f55]">Goes well with</p>
+              {pairs.map((p) => (
+                <div key={p.id} className="flex items-center gap-3 p-2 rounded-2xl bg-slate-50 dark:bg-slate-800/60">
+                  <button type="button" onClick={() => onOpen(p)} className="flex items-center gap-3 min-w-0 flex-1 text-left cursor-pointer">
+                    <Thumb p={p} />
+                    <span className="min-w-0">
+                      <span className="block text-xs font-bold text-slate-900 dark:text-white truncate">{p.name}</span>
+                      <span className="block text-[11px] text-slate-500">
+                        {naira(p.price)}
+                        {p.unit ? ` · ${p.unit}` : ''}
+                      </span>
+                    </span>
+                  </button>
+                  <Stepper small qty={qtyOf(p.id)} onAdd={() => onAdd(p)} onRemove={() => onRemove(p.id)} />
+                </div>
+              ))}
+            </div>
+          )}
 
           {similar.length > 0 && (
             <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
