@@ -66,6 +66,13 @@ export default function App() {
       if (hash.includes('runner')) return 'runner';
       if (window.location.pathname.includes('/admin')) return 'admin';
       if (window.location.pathname.includes('/runner')) return 'runner';
+      // Staff reopen where they left off (only staff ever save a work screen here)
+      try {
+        const last = localStorage.getItem('roomly_last_portal');
+        if (last === 'runner' || last === 'operator' || last === 'admin') return last;
+      } catch {
+        /* storage blocked: start on the customer screen */
+      }
     }
     return 'customer';
   });
@@ -151,6 +158,15 @@ export default function App() {
     window.addEventListener('roomly-theme', sync);
     return () => window.removeEventListener('roomly-theme', sync);
   }, []);
+
+  // Remember the last screen (the staff link or switch), so staff reopen straight into their work screen
+  useEffect(() => {
+    try {
+      localStorage.setItem('roomly_last_portal', currentPortal);
+    } catch {
+      /* storage blocked: start on the customer screen next time */
+    }
+  }, [currentPortal]);
 
   // Sync hash routing
   useEffect(() => {
