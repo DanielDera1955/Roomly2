@@ -181,6 +181,23 @@ service cloud.firestore {
          request.resource.data.deliveredCount == resource.data.deliveredCount);
     }
 
+    // ---------- rate your experience (one rating per delivered cart, id = order id) ----------
+    // Students send it once; it can't be changed. The admin sees all; runners and operators see their own.
+    match /ratings/{orderId} {
+      allow get: if true;
+      allow list: if isAdmin()
+        || (signedIn() && (resource.data.providerKey == request.auth.uid || resource.data.providerKey == request.auth.token.email));
+      allow create: if request.resource.data.orderId == orderId
+        && exists(/databases/$(database)/documents/orders/$(orderId))
+        && get(/databases/$(database)/documents/orders/$(orderId)).data.status == 'Delivered'
+        && request.resource.data.score is int
+        && request.resource.data.score >= 1 && request.resource.data.score <= 5
+        && request.resource.data.reasons.size() <= 6
+        && request.resource.data.get('comment', '').size() <= 300;
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
     // ---------- orders ----------
     // Order ids are long and random (RM-1234-AB12), so a customer can only open
     // an order they were given the id for. Listing all orders is staff only.
@@ -194,9 +211,16 @@ service cloud.firestore {
       allow create: if request.resource.data.status == 'Received'
         && request.resource.data.runnerId == ''
         && request.resource.data.paymentStatus == 'unpaid'
-        && request.resource.data.deliveryFee in [300, 390, 400, 500, 800, 1000, 1500]
+        && request.resource.data.deliveryFee in [300, 390, 400, 500, 800, 1000, 1200, 1500]
         && request.resource.data.totalAmount == request.resource.data.subtotal + request.resource.data.deliveryFee
-        && request.resource.data.items.size() <= 60;
+        && request.resource.data.items.size() <= 60
+        // Express (₦1,200, inside only) starts as a request waiting for a runner, with no account attached yet
+        && (request.resource.data.get('express', null) == null
+            || (request.resource.data.express.status == 'requested'
+                && request.resource.data.deliveryFee == 1200
+                && request.resource.data.get('cart', 'inside') == 'inside'
+                && request.resource.data.get('payTo', null) == null))
+        && (request.resource.data.deliveryFee != 1200 || request.resource.data.get('express', null) != null);
 
       // Customers may only press "I have made payment". Runners and admin can update anything.
       // Operators may only change the status of their own part, on paid orders.
@@ -215,7 +239,22 @@ service cloud.firestore {
          && resource.data.get('cart', '') in ['store', 'food']
          && (resource.data.get('gatePickup', null) == null || resource.data.gatePickup.status in ['refused', 'refunded'])
          && request.resource.data.gatePickup.status == 'pending'
-         && request.resource.data.gatePickup.fee == 600) ||
+         && request.resource.data.gatePickup.fee == 1000) ||
+        // Express: nobody accepted in time, so the student switches to normal delivery (normal fee, next batch)
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['express', 'deliveryFee', 'totalAmount', 'history',
+             'deliveryBatch', 'deliveryTime', 'deliveryDate', 'paymentDeadline'])
+         && resource.data.get('express', null) != null
+         && resource.data.express.status == 'requested'
+         && resource.data.paymentStatus == 'unpaid'
+         && request.resource.data.express.status == 'cancelled'
+         && request.resource.data.deliveryFee in [390, 500]
+         && request.resource.data.totalAmount == resource.data.subtotal + request.resource.data.deliveryFee) ||
+        // Express: the student taps "Received" (only the time they received it changes)
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['express', 'history'])
+         && resource.data.get('express', null) != null
+         && resource.data.express.status == 'accepted'
+         && resource.data.express.get('receivedAt', null) == null
+         && request.resource.data.express.diff(resource.data.express).affectedKeys().hasOnly(['receivedAt'])) ||
         // Customers mark that they paid the runner who accepted their gate pickup (nothing else changes)
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['gatePickup', 'history'])
          && resource.data.get('gatePickup', null) != null

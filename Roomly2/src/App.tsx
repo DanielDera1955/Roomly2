@@ -24,6 +24,7 @@ import { Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, 
 import { MessageCircle } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
+import { notify } from './notify';
 import { AdminSwitcher } from './components/AdminSwitcher';
 import { OperatorPortal } from './components/OperatorPortal';
 import { CartItem, CustomerProfile, OrderRecord, CategoryDefinition } from './types';
@@ -507,6 +508,26 @@ export default function App() {
     openCart();
   };
 
+  // A price came back: tell the student (phone notification if allowed, plus a banner here)
+  const [priceReady, setPriceReady] = useState('');
+  const requestStatus = useRef<Record<string, string>>({});
+  useEffect(() => {
+    Object.entries(requests).forEach(([id, r]: [string, any]) => {
+      if (!r) return;
+      const before = requestStatus.current[id];
+      requestStatus.current[id] = r.status;
+      if (before === 'open' && r.status === 'quoted') {
+        const names = (r.quotes || []).filter((q: any) => q.available).map((q: any) => q.name);
+        const text = names.length
+          ? `${names.slice(0, 2).join(', ')}${names.length > 2 ? ' and more' : ''} priced and saved in your cart. You can check out now.`
+          : 'Sorry, your requested item is not available right now.';
+        setPriceReady(text);
+        playChime('chat');
+        notify('Your price is ready', text, 'roomly-price-' + id);
+      }
+    });
+  }, [requests]);
+
   // When a price comes back, fill it into the waiting cart items (or drop items that are not available)
   useEffect(() => {
     setCartItems((prev) => {
@@ -843,6 +864,24 @@ export default function App() {
           signedIn={signedInCustomer}
           onSignOut={handleSignOut}
         />
+
+        {/* A requested price just came back */}
+        {priceReady && (
+          <div className="mx-4 mt-3 p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-800 text-xs text-emerald-900 dark:text-emerald-100 flex items-start justify-between gap-2">
+            <span>
+              <strong className="block">Your price is ready</strong>
+              {priceReady}
+            </span>
+            <span className="shrink-0 flex flex-col items-end gap-1">
+              <button type="button" onClick={() => { setPriceReady(''); openCart(); }} className="font-bold text-[#0e9f55] cursor-pointer">
+                Open cart
+              </button>
+              <button type="button" onClick={() => setPriceReady('')} className="text-[11px] text-slate-500 cursor-pointer">
+                Dismiss
+              </button>
+            </span>
+          </div>
+        )}
 
         {/* Main Storefront Body */}
         <main className="p-4 space-y-4 flex-1">

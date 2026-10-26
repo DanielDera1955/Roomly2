@@ -4,6 +4,8 @@ import { ThemeToggle } from './ThemeToggle';
 import { SoundToggle } from './SoundToggle';
 import { BatchSwitches } from './BatchSwitches';
 import { GatePickupPanel } from './GatePickupPanel';
+import { ExpressPanel } from './ExpressPanel';
+import { MyRatingsPanel } from './FeedbackPanels';
 import { ProviderSettlement, PayAccountForm } from './SettlementPanel';
 import { ProductRequestsPanel } from './ProductRequestsPanel';
 import { RunnerStockPanel } from './StoreProducts';
@@ -212,9 +214,29 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
 
   const handleConfirmPayment = async (orderId: string) => {
     if (!activeRunner) return;
+    // Express: ask when the money actually arrived (from the bank app). A later time moves the 20-minute start.
+    let txAt = '';
+    const ord = orders.find((o) => o.id === orderId);
+    if (ord?.express?.status === 'accepted') {
+      const d = new Date();
+      const nowText = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      const answer = window.prompt(
+        'Express: what time did the money arrive in your account? Check your bank app (for example 14:05). The 20 minutes start from this time if it is later than the student\'s tap.',
+        nowText
+      );
+      if (answer === null) return;
+      const m = /^(\d{1,2}):(\d{2})$/.exec(answer.trim());
+      if (!m) {
+        window.alert('Type the time like 14:05');
+        return;
+      }
+      const at = new Date();
+      at.setHours(Number(m[1]), Number(m[2]), 0, 0);
+      txAt = at.toISOString();
+    }
     setUpdatingId(orderId);
     try {
-      await confirmPayment(orderId, activeRunner.name);
+      await confirmPayment(orderId, activeRunner.name, txAt);
       await fetchOrdersAndRunners();
       if (onOrderUpdated) onOrderUpdated();
     } finally {
@@ -244,7 +266,10 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
       o.status !== 'Delivered' &&
       o.status !== 'Cancelled' &&
       o.paymentStatus !== 'unpaid' && // only orders the student says they have paid (or pay on delivery)
-      (!o.runnerId || o.status === 'Received')
+      (!o.runnerId || o.status === 'Received') &&
+      // An express order belongs to the runner who accepted it
+      !(o.express?.status === 'accepted' && o.express.runnerId !== activeRunner?.id) &&
+      o.express?.status !== 'requested'
   );
 
   // 2. Active Orders Currently Assigned to Chosen Runner
@@ -318,6 +343,11 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
               </span>
               {isPaymentSent && (
                 <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-amber-500 text-white">Payment sent</span>
+              )}
+              {ord.express?.status === 'accepted' && (
+                <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-[#0e9f55] text-white flex items-center gap-1">
+                  <Zap className="w-3 h-3" /> Express
+                </span>
               )}
               {(ord as any).helperName && (
                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300">
@@ -742,6 +772,8 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
 
         <BatchSwitches />
 
+        {getCurrentStaff()?.role === 'runner' && <ExpressPanel orders={insideOrders} />}
+
         <GatePickupPanel />
 
         {/* Today's 70/30 statement, settlement and payment account (runners only) */}
@@ -749,6 +781,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
         {getCurrentStaff()?.role === 'runner' && <RunnerStockPanel />}
         {getCurrentStaff()?.role === 'runner' && <ProviderSettlement kind="runner" />}
         {getCurrentStaff()?.role === 'runner' && <PayAccountForm />}
+        {getCurrentStaff()?.role === 'runner' && <MyRatingsPanel />}
 
         {/* Filters */}
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">

@@ -22,7 +22,13 @@ import {
   timeLabel,
   SWITCH_CUTOFF_MIN,
   PRICING,
-  GATE_PICKUP_FEES,
+  GATE_PICKUP_FEE,
+  GATE_PICKUP_ROOMLY,
+  EXPRESS_FEE,
+  EXPRESS_RUNNER_SHARE,
+  EXPRESS_ROOMLY_SHARE,
+  EXPRESS_REFUND,
+  EXPRESS_CONFIRM_MINUTES,
   SETTLE_BY_HOUR,
   RUNNER_SHARE,
   sellingPrice,
@@ -281,6 +287,7 @@ export async function setBatchOff(key, off) {
 let insideSwitches = {};
 let runnerUnsettled = {}; // runner uid -> dates not yet settled
 let runnerPay = {}; // runner uid -> payment account students pay into
+let expressRunners = {}; // runner uid -> { on, name, phone, email, payTo, at }: runners taking express runs now
 let operatorDocs = {};
 const fireBatches = () => window.dispatchEvent(new Event('roomly-batches'));
 try {
@@ -290,6 +297,7 @@ try {
       insideSwitches = s.exists() ? s.data().slots || {} : {};
       runnerUnsettled = s.exists() ? s.data().runnerUnsettled || {} : {};
       runnerPay = s.exists() ? s.data().runnerPay || {} : {};
+      expressRunners = s.exists() ? s.data().express || {} : {};
       fireBatches();
     },
     () => {}
@@ -591,6 +599,39 @@ export async function setInsideSwitch(key, patch) {
   insideSwitches = { ...insideSwitches, [key]: sw };
   fireBatches();
   await setDoc(doc(db, 'availability', 'inside'), { slots: { ...staleKeys(insideSwitches), [key]: sw } }, { merge: true });
+}
+
+/* ---------------- express runs (inside school) ----------------
+ * A runner switches "Express available" on when they can deliver anywhere in school right now.
+ * Express shows at checkout only while at least one such runner is on (settled up, with a payment account).
+ * The switch turns itself off at the night cut-off, like the batch switches.
+ */
+
+/** Runners taking express runs right now: [{ uid, name, phone, email, payTo }] */
+export function getExpressRunners(now = new Date()) {
+  return Object.entries(expressRunners)
+    .filter(([uid, sw]) => sw && sw.on && sw.payTo && switchIsLive(sw, 'inside', now) && !isOverdue(runnerUnsettled[uid], now))
+    .map(([uid, sw]) => ({ uid, name: sw.name || 'Runner', phone: sw.phone || '', email: sw.email || '', payTo: sw.payTo }));
+}
+
+/** Is the signed-in runner's express switch on? */
+export function getMyExpress(now = new Date()) {
+  const uid = auth.currentUser?.uid;
+  const sw = uid ? expressRunners[uid] : null;
+  return Boolean(sw && sw.on && switchIsLive(sw, 'inside', now));
+}
+
+/** Runner: switch "Express available" on or off */
+/** @returns {Promise<void>} */
+export async function setMyExpress(on) {
+  const staff = getCurrentStaff();
+  const uid = auth.currentUser?.uid;
+  if (!uid || !staff || staff.role !== 'runner') throw new Error('Runners only');
+  if (on && !staff.payAccount?.accountNumber) throw new Error('Save your bank account first. Express students pay you directly.');
+  const sw = slim({ on: Boolean(on), name: staff.name || 'Runner', phone: staff.phone || '', email: staff.email, payTo: staff.payAccount || null, at: Date.now() });
+  expressRunners = { ...expressRunners, [uid]: sw };
+  fireBatches();
+  await setDoc(doc(db, 'availability', 'inside'), { express: { [uid]: sw } }, { merge: true });
 }
 
 /** Store and food operators: set one of their own batches. patch = { on, start, note } */
@@ -1023,7 +1064,10 @@ export async function createOrder(orderPayload) {
   const hasStore = cart ? cart === 'store' : (orderPayload.items || []).some((i) => i.source === 'outside');
   const hasFood = cart ? cart === 'food' : (orderPayload.items || []).some((i) => i.source === 'food');
   const hasOutside = hasStore || hasFood;
-  const deliveryFee = deliveryFeeFor(subtotal, hasOutside, (orderPayload.items || []).some((i) => isBagOfWater(i.name)));
+  // Express (inside only, while a runner has it on): ₦1,200 replaces the normal delivery fee
+  const isExpress = Boolean(orderPayload.express) && !hasOutside && getExpressRunners().length > 0;
+  if (orderPayload.express && !isExpress) throw new Error('Express is not available right now. Please choose normal delivery.');
+  const deliveryFee = isExpress ? EXPRESS_FEE : deliveryFeeFor(subtotal, hasOutside, (orderPayload.items || []).some((i) => isBagOfWater(i.name)));
   const totalAmount = subtotal + deliveryFee;
 
   // Everyone pays first (pay on delivery has been removed)
@@ -1033,8 +1077,10 @@ export async function createOrder(orderPayload) {
   const createdAtIso = now.toISOString();
   // Payment deadline follows the switch: the moment the batch stops accepting (falls back to 15 minutes)
   const askedDeadline = Date.parse(orderPayload.paymentDeadline || '');
-  const deadline =
-    Number.isFinite(askedDeadline) && askedDeadline > now.getTime() && askedDeadline < now.getTime() + 3 * 86400000
+  // Express: a runner accepts first, then the student pays; give them an hour before the order counts as missed
+  const deadline = isExpress
+    ? new Date(now.getTime() + 60 * 60 * 1000)
+    : Number.isFinite(askedDeadline) && askedDeadline > now.getTime() && askedDeadline < now.getTime() + 3 * 86400000
       ? new Date(askedDeadline)
       : new Date(now.getTime() + 15 * 60 * 1000);
   const deadlineText = deadline.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -1054,14 +1100,16 @@ export async function createOrder(orderPayload) {
     cart,
     operatorId: orderPayload.operatorId || '',
     operatorName: orderPayload.operatorName || '',
-    turnRunner: orderPayload.turnRunner || '',
-    lateBatch: Boolean(orderPayload.lateBatch),
-    payTo: orderPayload.payTo || null,
+    turnRunner: isExpress ? '' : orderPayload.turnRunner || '',
+    lateBatch: isExpress ? false : Boolean(orderPayload.lateBatch),
+    // Express: the account shows once a runner accepts
+    payTo: isExpress ? null : orderPayload.payTo || null,
+    express: isExpress ? { status: 'requested', requestedAt: createdAtIso } : null,
     outOfStock: orderPayload.outOfStock || 'refund',
     gateReq: Boolean(orderPayload.gatePickup && (cart === 'store' || cart === 'food')),
     gatePickup:
       orderPayload.gatePickup && (cart === 'store' || cart === 'food')
-        ? { status: 'pending', fee: GATE_PICKUP_FEES.normal, heavy: false, updatedAt: createdAtIso }
+        ? { status: 'pending', fee: GATE_PICKUP_FEE, heavy: false, updatedAt: createdAtIso }
         : null,
     payReady: false,
     storeStatus: hasStore ? 'pending' : '',
@@ -1071,7 +1119,9 @@ export async function createOrder(orderPayload) {
     paymentDeadline: deadline.toISOString(),
     isFirstTimeCustomer: !isRepeatCustomer,
     deliveryBatch: batchId,
-    deliveryTime: orderPayload.deliveryTime || (batchMeta ? `${batchMeta.name} (${batchMeta.timeWindow})` : 'Next delivery batch'),
+    deliveryTime: isExpress
+      ? 'Express: within 20 minutes of your payment'
+      : orderPayload.deliveryTime || (batchMeta ? `${batchMeta.name} (${batchMeta.timeWindow})` : 'Next delivery batch'),
     deliveryDate: orderPayload.deliveryDate || '',
     subtotal,
     deliveryFee,
@@ -1089,8 +1139,9 @@ export async function createOrder(orderPayload) {
       {
         status: 'Received',
         timestamp: createdAtIso,
-        note:
-          paymentMethod === 'pay_now'
+        note: isExpress
+          ? 'Express order received. Waiting for an express runner to accept before payment.'
+          : paymentMethod === 'pay_now'
             ? `Order received. Pay before ${deadlineText} to join this batch.`
             : 'Order placed by first-time customer (Pay on Delivery). Ready for runner packaging.',
         updatedBy: 'System',
@@ -1147,7 +1198,11 @@ export async function markPaymentSent(orderId) {
   try {
     return await patchOrder(orderId, (o) => {
       if (paymentState(o) === 'expired') throw new Error('This order expired at the end of the day it was placed.');
-      if (paymentState(o) === 'missed') {
+      if (o.express && o.express.status === 'requested') throw new Error('Wait for an express runner to accept before you pay.');
+      if (o.express && o.express.status === 'accepted') {
+        // Express: the runner who accepted is who the student pays; the 20 minutes start from this tap
+        if (!o.payTo && o.express.payTo) o.payTo = o.express.payTo;
+      } else if (paymentState(o) === 'missed') {
         // Missed the batch: the order joins the next batch that is taking orders
         const side = o.cart === 'store' || o.cart === 'food' ? o.cart : 'inside';
         const { next } = getNextBatch(side);
@@ -1176,7 +1231,9 @@ export async function markPaymentSent(orderId) {
       o.history.push({
         status: o.status,
         timestamp: now,
-        note: 'Student marked payment as sent via bank transfer. Awaiting runner/admin verification.',
+        note: o.express
+          ? 'Student marked payment as sent. The 20-minute express clock starts now.'
+          : 'Student marked payment as sent via bank transfer. Awaiting runner/admin verification.',
         updatedBy: o.name || 'Customer',
       });
     });
@@ -1186,18 +1243,30 @@ export async function markPaymentSent(orderId) {
   }
 }
 
+/**
+ * Runner / admin: the student's money arrived.
+ * txAt (express only, ISO time) = when the money actually reached the account, read from the bank app.
+ * If it is later than the student's "I've paid" tap, the 20 minutes start from it instead.
+ */
 /** @returns {Promise<any>} */
-export async function confirmPayment(orderId, confirmedBy = 'Runner / Admin') {
+export async function confirmPayment(orderId, confirmedBy = 'Runner / Admin', txAt = '') {
   try {
     return await patchOrder(orderId, (o) => {
       const now = new Date().toISOString();
       o.paymentStatus = 'payment_confirmed';
       o.paymentConfirmedAt = now;
       o.paymentConfirmedBy = confirmedBy;
+      let moved = '';
+      if (o.express && o.express.status === 'accepted' && txAt && Number.isFinite(Date.parse(txAt))) {
+        o.express = { ...o.express, txAt };
+        if (o.paymentSentAt && Date.parse(txAt) > Date.parse(o.paymentSentAt)) {
+          moved = ` The money arrived at ${new Date(txAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}, so the 20 minutes start from then.`;
+        }
+      }
       o.history.push({
         status: o.status,
         timestamp: now,
-        note: `Bank transfer payment confirmed received by ${confirmedBy}. Order attended to!`,
+        note: `Bank transfer payment confirmed received by ${confirmedBy}. Order attended to!${moved}`,
         updatedBy: confirmedBy,
       });
     });
@@ -1246,6 +1315,10 @@ export async function updateOrderStatus(orderId, newStatus, updatedBy = 'Admin',
 
       if (newStatus === 'Delivered') {
         o.deliveredAt = now;
+        // Express: the runner's time stands if the student forgets to tap "Received"
+        if (o.express && o.express.status === 'accepted' && !o.express.runnerDeliveredAt) {
+          o.express = { ...o.express, runnerDeliveredAt: now };
+        }
         o.runnerCurrentLocation = 'Package Handed over & Delivered';
         o.runnerLocationUpdatedAt = now;
         if (o.paymentMethod === 'pay_on_delivery') {
@@ -1484,7 +1557,10 @@ export async function updatePartStatus(orderId, kind, status, who = 'Operator') 
       o.history.push({
         status: o.status,
         timestamp: new Date().toISOString(),
-        note: `${label} items ${status === 'sent' ? 'sent to the school gate' : 'packed'} by ${who}`,
+        note:
+          status === 'sent'
+            ? `${label} order delivered by ${who}. It will be at the school gate in under 15 minutes.`
+            : `${label} items packed by ${who}`,
         updatedBy: who,
       });
     });
@@ -1656,7 +1732,11 @@ async function recordRunnerDelivery(order) {
   if (!staff || staff.role !== 'runner') return; // admin taps are not a runner's delivery
   if (order.cart && order.cart !== 'inside') return;
   const { paid, spent, fee, profit, estimated } = await insideProfitOf(order);
-  const share = profit * RUNNER_SHARE;
+  // Express: the item margin still splits 70/30, but the ₦1,200 fee splits 50/50 (₦600 each)
+  const express = Boolean(order.express && order.express.status === 'accepted');
+  const itemProfit = Math.max(0, paid - spent);
+  const share = express ? itemProfit * RUNNER_SHARE + EXPRESS_RUNNER_SHARE : profit * RUNNER_SHARE;
+  const owed = express ? itemProfit * (1 - RUNNER_SHARE) + EXPRESS_ROOMLY_SHARE : profit * (1 - RUNNER_SHARE);
   const helperShare = order.helperEmail ? Math.round(share / 2) : 0;
   await addToMyDay(
     'runner',
@@ -1669,19 +1749,22 @@ async function recordRunnerDelivery(order) {
       deliveryFees: fee,
       profit,
       keep: spent + share - helperShare,
-      due: profit * (1 - RUNNER_SHARE),
+      due: owed,
       owedToHelpers: helperShare,
       sharedOrders: order.helperEmail ? 1 : 0,
+      expressOrders: express ? 1 : 0,
+      expressOwed: express ? EXPRESS_ROOMLY_SHARE : 0,
     },
     estimated,
     undefined,
     {
       orderId: order.id,
-      customer: order.name || '',
+      customer: (order.name || '') + (express ? ' (express)' : ''),
       paid: paid + fee,
       keep: spent + share - helperShare,
-      owed: Math.round(profit * (1 - RUNNER_SHARE) * 100) / 100,
+      owed: Math.round(owed * 100) / 100,
       helper: order.helperName || '',
+      express,
       estimated,
     }
   );
@@ -1767,11 +1850,28 @@ export function syncMyHelpCredits() {
   );
 }
 
-/** Runner: a gate pickup they brought to a room (they keep the whole fee) */
+/** Runner: a gate pickup they brought to a room. Flat ₦1,000: they keep ₦800 and owe Roomly ₦200. */
 async function recordGateFee(order) {
   const staff = getCurrentStaff();
   if (!staff || staff.role !== 'runner' || !order.gatePickup) return;
-  await addToMyDay('runner', 'gate-' + order.id, { gateFees: order.gatePickup.fee || 0, keep: order.gatePickup.fee || 0 }, false);
+  const fee = order.gatePickup.fee || GATE_PICKUP_FEE;
+  const owed = Math.min(fee, GATE_PICKUP_ROOMLY);
+  await addToMyDay(
+    'runner',
+    'gate-' + order.id,
+    { gatePickups: 1, gateFees: fee, gateOwed: owed, paid: fee, keep: fee - owed, due: owed },
+    false,
+    undefined,
+    { orderId: 'gate-' + order.id, customer: `${order.name || ''} (gate pickup)`, paid: fee, keep: fee - owed, owed, gate: true, estimated: false }
+  );
+}
+
+/** Runner: they paid ₦600 back to the student of a late express order (it comes out of their own ₦600) */
+async function recordExpressRefund(order) {
+  const staff = getCurrentStaff();
+  if (!staff || staff.role !== 'runner') return;
+  const day = ymdOf(new Date(order.deliveredAt || Date.now()));
+  await addToMyDay('runner', 'exrefund-' + order.id, { expressRefunds: EXPRESS_REFUND, keep: -EXPRESS_REFUND }, false, day);
 }
 
 /** Live record for today (one document). cb(record | null) */
@@ -1917,7 +2017,7 @@ export async function savePayAccount(acc) {
 
 /* ---------------- gate pickup (Phase 4) ----------------
  * An outside order can ask an inside runner to bring the parcel from the gate to the room.
- * Runners read the items, tick heavy (₦1,000) or not (₦600), then accept or refuse.
+ * Flat ₦1,000. Runners read the items, then accept or refuse; the student pays only after a runner accepts.
  * After accepting they can mark it delivered, or refund if the job turned out too small.
  */
 
@@ -1947,10 +2047,11 @@ export async function updateGatePickup(orderId, action, heavy = false) {
   let gateDone = null;
   try {
     const res = await patchOrder(orderId, (o) => {
-      const gp = o.gatePickup || { status: 'pending', fee: GATE_PICKUP_FEES.normal };
+      const gp = o.gatePickup || { status: 'pending', fee: GATE_PICKUP_FEE };
       if (action === 'accept') {
-        gp.heavy = Boolean(heavy);
-        gp.fee = heavy ? GATE_PICKUP_FEES.heavy : GATE_PICKUP_FEES.normal;
+        // Flat fee: the runner checks the parcel and accepts, or declines it if they can't carry it
+        gp.heavy = false;
+        gp.fee = GATE_PICKUP_FEE;
         gp.runnerName = who;
         gp.runnerPhone = staff?.phone || '';
         gp.runnerPay = staff?.payAccount || null; // the student pays the runner this account
@@ -1963,7 +2064,7 @@ export async function updateGatePickup(orderId, action, heavy = false) {
       o.history.push({
         status: o.status,
         timestamp: gp.updatedAt,
-        note: `Gate pickup ${status}${action === 'accept' ? ` (₦${gp.fee.toLocaleString()}${gp.heavy ? ', heavy' : ''})` : ''} by ${who}`,
+        note: `Gate pickup ${status}${action === 'accept' ? ` (₦${gp.fee.toLocaleString()})` : ''} by ${who}`,
         updatedBy: who,
       });
     });
@@ -2201,7 +2302,7 @@ export async function quoteProductRequest(reqId, costs, category) {
   catalogAt = 0; // next read picks them up
 }
 
-/** Student: ask an inside runner to bring an outside order from the gate to the room (₦600, ₦1,000 if heavy) */
+/** Student: ask an inside runner to bring an outside order from the gate to the room (flat ₦1,000, asked before paying) */
 /** @returns {Promise<any>} */
 export async function requestGatePickup(orderId, building = '', room = '') {
   try {
@@ -2216,7 +2317,7 @@ export async function requestGatePickup(orderId, building = '', room = '') {
         o.room = String(room).replace(/\s+/g, '').toUpperCase().slice(0, 8);
       }
       o.gateReq = true;
-      o.gatePickup = { status: 'pending', fee: GATE_PICKUP_FEES.normal, heavy: false, updatedAt: now };
+      o.gatePickup = { status: 'pending', fee: GATE_PICKUP_FEE, heavy: false, updatedAt: now };
       o.history.push({ status: o.status, timestamp: now, note: 'Student asked for gate to room pickup', updatedBy: o.name || 'Customer' });
     });
   } catch (e) {
@@ -2664,4 +2765,184 @@ export async function markGatePickupPaid(orderId) {
     console.error(e);
     return null;
   }
+}
+
+/* ---------------- express runs: accept, switch to normal, received, refund ----------------
+ * 1. Student picks Express at checkout (only while a runner has it on). The order waits for a runner.
+ * 2. A runner with express on taps "I can do it now": their account is attached, the student pays.
+ * 3. The 20 minutes start when the student taps "I've paid" (moved to the bank time if the money came later).
+ * 4. The clock stops when the student taps "Received" (or at the runner's Delivered time after 10 minutes).
+ * 5. Over 20 minutes: the runner pays ₦600 back to the student.
+ */
+
+const EXPRESS_CONFIRM_MS = EXPRESS_CONFIRM_MINUTES * 60000;
+
+/** Runner: "I can do it now" on an express request */
+/** @returns {Promise<any>} */
+export async function acceptExpress(orderId) {
+  const staff = getCurrentStaff();
+  if (!staff || staff.role !== 'runner') throw new Error('Runners only');
+  if (!staff.payAccount?.accountNumber) throw new Error('Save your bank account first. The student pays you directly.');
+  // First runner wins: read and write in one transaction so two runners can't both take it
+  const ref = doc(db, 'orders', orderId);
+  let result = null;
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error('Order not found');
+    const o = { ...snap.data(), id: snap.id };
+    if (!o.history) o.history = [];
+    if (!o.express || o.express.status !== 'requested') throw new Error('Another runner has already taken this express order.');
+    const now = new Date().toISOString();
+    o.express = {
+      ...o.express,
+      status: 'accepted',
+      runnerId: staff.email,
+      runnerName: staff.name || 'Runner',
+      runnerPhone: staff.phone || '',
+      acceptedAt: now,
+      payTo: staff.payAccount,
+    };
+    o.payTo = staff.payAccount;
+    o.turnRunner = staff.name || 'Runner';
+    o.history.push({ status: o.status, timestamp: now, note: `${staff.name || 'A runner'} accepted this express order. The student can pay now.`, updatedBy: staff.name || 'Runner' });
+    tx.set(ref, slim(o));
+    result = o;
+  });
+  return result;
+}
+
+/** Student: no runner accepted in time, so switch to normal delivery (normal fee, next batch) */
+/** @returns {Promise<any>} */
+export async function cancelExpress(orderId) {
+  return patchOrder(orderId, (o) => {
+    if (!o.express || o.express.status !== 'requested' || o.paymentStatus !== 'unpaid') throw new Error('This order can no longer be changed.');
+    const now = new Date();
+    const fee = deliveryFeeFor(o.subtotal || 0, false, (o.items || []).some((i) => isBagOfWater(i.name)));
+    const { next } = getNextBatch('inside', now);
+    o.express = { ...o.express, status: 'cancelled' };
+    o.deliveryFee = fee;
+    o.totalAmount = (o.subtotal || 0) + fee;
+    if (next) {
+      o.deliveryBatch = next.batch.id;
+      o.deliveryTime = next.batch.label;
+      o.deliveryDate = next.batch.date;
+      o.paymentDeadline = next.start.toISOString();
+    }
+    o.history.push({ status: o.status, timestamp: now.toISOString(), note: 'No express runner was free. Switched to normal delivery.', updatedBy: o.name || 'Customer' });
+  });
+}
+
+/** Student: "Received" on an express order. This stops the 20-minute clock. */
+/** @returns {Promise<any>} */
+export async function markExpressReceived(orderId) {
+  try {
+    return await patchOrder(orderId, (o) => {
+      if (!o.express || o.express.status !== 'accepted' || o.express.receivedAt) return;
+      // Too late to stop the clock: the runner's Delivered time already stands after the confirm window
+      const del = Date.parse(o.express.runnerDeliveredAt || '');
+      if (Number.isFinite(del) && Date.now() - del >= EXPRESS_CONFIRM_MS) return;
+      const now = new Date().toISOString();
+      o.express = { ...o.express, receivedAt: now };
+      o.history.push({ status: o.status, timestamp: now, note: 'Student confirmed they received the express order', updatedBy: o.name || 'Customer' });
+    });
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
+}
+
+/** Runner: they paid the ₦600 back on a late express order */
+/** @returns {Promise<any>} */
+export async function markExpressRefunded(orderId) {
+  const staff = getCurrentStaff();
+  let done = null;
+  const res = await patchOrder(orderId, (o) => {
+    if (!o.express || o.express.status !== 'accepted' || o.express.refunded) return;
+    const now = new Date().toISOString();
+    o.express = { ...o.express, refunded: true, refundedAt: now };
+    o.history.push({ status: o.status, timestamp: now, note: `Express was late: ${staff?.name || 'the runner'} refunded ₦${EXPRESS_REFUND.toLocaleString()} to the student`, updatedBy: staff?.name || 'Runner' });
+    done = o;
+  });
+  if (done) recordExpressRefund(done).catch((e) => console.error(e));
+  return res;
+}
+
+/* ---------------- rate your experience (one rating per cart) ----------------
+ * ratings/{orderId}: the student rates the runner or operator who handled that cart.
+ * Ratings go straight to the admin. Runners and operators see their own scores and the reasons.
+ */
+
+/** Who a cart's rating is about: { key, name } (runner email, or the operator's login uid) */
+export function providerOf(o) {
+  if (!o) return { key: '', name: '' };
+  if (o.cart === 'store' || o.cart === 'food') return { key: o.operatorId || '', name: o.operatorName || 'Operator' };
+  const ex = o.express && o.express.status === 'accepted' ? o.express : null;
+  return { key: o.runnerId || (ex && ex.runnerId) || '', name: o.runnerName || (ex && ex.runnerName) || o.turnRunner || 'Runner' };
+}
+
+/** Student: has this cart been rated already? */
+/** @returns {Promise<any>} */
+export async function getRating(orderId) {
+  try {
+    const s = await getDoc(doc(db, 'ratings', orderId));
+    return s.exists() ? s.data() : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** Student: send the rating for one delivered cart */
+/** @returns {Promise<void>} */
+export async function submitRating(order, score, reasons, comment) {
+  const s = Math.round(Number(score) || 0);
+  if (s < 1 || s > 5) throw new Error('Tap a score from 1 to 5');
+  const p = providerOf(order);
+  const clean = (reasons || []).map((r) => String(r).slice(0, 30)).slice(0, 6);
+  const text = String(comment || '').trim().slice(0, 300);
+  if (clean.includes('Other') && !text) throw new Error('Tell us what happened in a few words');
+  await setDoc(
+    doc(db, 'ratings', order.id),
+    slim({
+      orderId: order.id,
+      cart: order.cart === 'store' || order.cart === 'food' ? order.cart : 'inside',
+      score: s,
+      reasons: clean,
+      comment: text,
+      providerKey: p.key,
+      providerName: p.name,
+      customer: order.name || '',
+      createdAt: new Date().toISOString(),
+    })
+  );
+}
+
+/** Admin: the latest ratings, newest first */
+/** @returns {() => void} */
+export function subscribeAllRatings(cb) {
+  const q = query(collection(db, 'ratings'), orderBy('createdAt', 'desc'), limit(300));
+  return onSnapshot(
+    q,
+    (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id }))),
+    (e) => {
+      console.error(e);
+      cb([]);
+    }
+  );
+}
+
+/** Runner / operator: ratings about them (runners by login email, operators by login uid) */
+/** @returns {() => void} */
+export function subscribeMyRatings(cb) {
+  const staff = getCurrentStaff();
+  const key = staff?.role === 'runner' ? staff.email : auth.currentUser?.uid;
+  if (!staff || !key) {
+    cb([]);
+    return () => {};
+  }
+  const q = query(collection(db, 'ratings'), where('providerKey', '==', key), limit(200));
+  return onSnapshot(
+    q,
+    (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))),
+    () => cb([])
+  );
 }

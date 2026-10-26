@@ -27,12 +27,14 @@ import {
   Upload,
   TrendingUp,
   BarChart3,
+  MessageSquare,
 } from 'lucide-react';
 import { sellingPrice } from '../config';
 import { OrderRecord, CategoryDefinition, DeliveryRunner, locationText, shortLocation, roomText } from '../types';
 import { Product, PRESET_PRODUCT_IMAGES, StoreKey, STORE_LABEL, STORE_SOURCE, categoriesForStore, storeOfSource } from '../config';
 import { AdminDispatch, AdminTeam, AdminMoney } from './AdminDispatch';
 import { AdminInsights } from './AdminInsights';
+import { AdminFeedbackPanel } from './FeedbackPanels';
 import {
   getOrders,
   updateOrderStatus,
@@ -63,7 +65,7 @@ interface AdminViewProps {
   onOrderUpdated?: () => void;
 }
 
-type AdminTab = 'dashboard' | 'orders' | 'team' | 'money' | 'products' | 'categories' | 'customers';
+type AdminTab = 'dashboard' | 'orders' | 'team' | 'money' | 'feedback' | 'products' | 'categories' | 'customers';
 
 export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpdated }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -516,6 +518,19 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
           <button
             type="button"
+            onClick={() => setCurrentTab('feedback')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+              currentTab === 'feedback'
+                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            <span>Feedback</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setCurrentTab('products')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
               currentTab === 'products'
@@ -575,6 +590,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
         {/* ================= MONEY: real totals from settlement records ================= */}
         {currentTab === 'money' && <AdminMoney />}
+
+        {/* ================= FEEDBACK: students' ratings of each runner and operator ================= */}
+        {currentTab === 'feedback' && <AdminFeedbackPanel />}
 
         {/* ================= TAB 3: PRODUCTS & PHOTOS (User prompt explicitly requested adding product images) ================= */}
         {currentTab === 'products' && (

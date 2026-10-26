@@ -21,9 +21,25 @@ import {
   AlertTriangle,
   Zap,
 } from 'lucide-react';
-import { OrderRecord, locationText, shortLocation, roomText, partLabel } from '../types';
-import { STORE_CONFIG, OUT_OF_STOCK_LABEL, HOSTELS } from '../config';
-import { markPaymentSent, paymentState, requestGatePickup, markGatePickupPaid, getPayProvider } from '../api.js';
+import { OrderRecord, locationText, shortLocation, roomText, partLabel, expressTiming } from '../types';
+import {
+  STORE_CONFIG,
+  OUT_OF_STOCK_LABEL,
+  HOSTELS,
+  GATE_PICKUP_FEE,
+  EXPRESS_MINUTES,
+  EXPRESS_REFUND,
+  EXPRESS_ACCEPT_MINUTES,
+  EXPRESS_CONFIRM_MINUTES,
+  GATE_ARRIVAL_MINUTES,
+} from '../config';
+import { markPaymentSent, paymentState, requestGatePickup, markGatePickupPaid, getPayProvider, cancelExpress, markExpressReceived } from '../api.js';
+import { RateExperience } from './RateExperience';
+
+const mmss = (ms: number) => {
+  const t = Math.max(0, Math.round(ms / 1000));
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+};
 
 interface OrderTrackerModalProps {
   isOpen: boolean;
@@ -176,7 +192,8 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
     };
   }, []);
   void provTick;
-  const liveProvider = currentOrder && !(currentOrder as any).payTo ? getPayProvider(currentOrder) : null;
+  // Express orders are paid to the runner who accepted, never to the batch runner
+  const liveProvider = currentOrder && !(currentOrder as any).payTo && !currentOrder.express ? getPayProvider(currentOrder) : null;
   const payAcct = (currentOrder as any)?.payTo || liveProvider?.payTo || null;
   const [askingGate, setAskingGate] = useState(false);
   // Gate to room: where to bring it, then pay the runner who accepts
@@ -203,6 +220,48 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
     else window.alert('Could not send the request. Please try again.');
     setAskingGate(false);
   };
+
+  // Live clock for express orders and the outside "at the gate in under 15 minutes" countdown
+  const [nowMs, setNowMs] = useState(Date.now());
+  const ex = currentOrder?.express || null;
+  const isOutside = currentOrder?.cart === 'store' || currentOrder?.cart === 'food';
+  const clockRunning = Boolean(
+    (ex && ex.status !== 'cancelled' && !ex.receivedAt) ||
+      (isOutside && currentOrder?.status === 'Delivered' && currentOrder?.deliveredAt && Date.now() - Date.parse(currentOrder.deliveredAt) < GATE_ARRIVAL_MINUTES * 60000)
+  );
+  useEffect(() => {
+    if (!clockRunning) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [clockRunning]);
+  const timing = currentOrder ? expressTiming(currentOrder, nowMs, EXPRESS_CONFIRM_MINUTES * 60000, EXPRESS_MINUTES * 60000) : null;
+  const [exBusy, setExBusy] = useState(false);
+  const switchToNormal = async () => {
+    if (!currentOrder) return;
+    if (!window.confirm('Switch to normal delivery? Your order joins the next batch with the normal delivery fee.')) return;
+    setExBusy(true);
+    try {
+      const updated = await cancelExpress(currentOrder.id);
+      if (updated) setCurrentOrder(updated as OrderRecord);
+    } catch (e: any) {
+      window.alert(e?.message || 'Could not change the order.');
+    }
+    setExBusy(false);
+  };
+  const confirmReceived = async () => {
+    if (!currentOrder) return;
+    setExBusy(true);
+    const updated = await markExpressReceived(currentOrder.id);
+    if (updated) setCurrentOrder(updated as OrderRecord);
+    else window.alert('Could not save. Please try again.');
+    setExBusy(false);
+  };
+  const waitingMs = ex && ex.status === 'requested' ? nowMs - Date.parse(ex.requestedAt) : 0;
+  // Outside: after "Order delivered", a 15-minute countdown to the gate
+  const gateLeftMs =
+    isOutside && currentOrder?.status === 'Delivered' && currentOrder?.deliveredAt
+      ? GATE_ARRIVAL_MINUTES * 60000 - (nowMs - Date.parse(currentOrder.deliveredAt))
+      : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs transition-opacity animate-in fade-in">
@@ -271,7 +330,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                 (!currentOrder.gatePickup || currentOrder.gatePickup.status === 'refused' || currentOrder.gatePickup.status === 'refunded') && (
                   <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs space-y-2">
                     <p className="text-slate-700 dark:text-slate-200">
-                      Your order has reached the <strong>school gate</strong>. Want it brought to your room? An inside runner can collect it for ₦600 (₦1,000 if heavy). The runner checks the parcel, tells you the amount, and you pay the runner.
+                      Want it brought from the <strong>school gate</strong> to your room? An inside runner can collect it for a flat ₦{GATE_PICKUP_FEE.toLocaleString()}. Ask first: a runner checks the parcel and accepts, then you pay the runner.
                     </p>
                     {!gateFormOpen ? (
                       <button
@@ -326,7 +385,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                       : currentOrder.gatePickup.status === 'accepted'
                       ? currentOrder.gatePickup.paid
                         ? `Paid. ${currentOrder.gatePickup.runnerName || 'The runner'} is bringing it to your room.`
-                        : `${currentOrder.gatePickup.runnerName || 'A runner'} accepted. Pay ₦${currentOrder.gatePickup.fee.toLocaleString()}${currentOrder.gatePickup.heavy ? ' (heavy parcel)' : ''} to the runner, then tap "I have paid the runner".`
+                        : `${currentOrder.gatePickup.runnerName || 'A runner'} accepted. Pay ₦${currentOrder.gatePickup.fee.toLocaleString()} to the runner, then tap "I have paid the runner".`
                       : currentOrder.gatePickup.status === 'delivered'
                       ? 'Brought to your room.'
                       : currentOrder.gatePickup.status === 'refunded'
@@ -380,8 +439,105 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                 </div>
               )}
 
+              {/* EXPRESS: waiting for a runner, the 20-minute clock, received, refund */}
+              {ex && ex.status !== 'cancelled' && (
+                <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800/60 text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 font-extrabold text-emerald-950 dark:text-emerald-100">
+                      <Zap className="w-4 h-4 text-[#0e9f55]" /> Express delivery
+                    </span>
+                    {timing && !timing.finished && (
+                      <span className={`font-mono font-bold px-2 py-0.5 rounded-md ${timing.late ? 'bg-rose-600 text-white' : 'bg-[#0e9f55] text-white'}`}>
+                        {timing.late ? `Late +${mmss(-timing.leftMs)}` : mmss(timing.leftMs)}
+                      </span>
+                    )}
+                  </div>
+
+                  {ex.status === 'requested' && (
+                    <>
+                      <p className="text-emerald-900 dark:text-emerald-200">
+                        Waiting for an express runner to accept. You don't pay anything until one does.
+                      </p>
+                      {waitingMs >= EXPRESS_ACCEPT_MINUTES * 60000 ? (
+                        <>
+                          <p className="text-amber-800 dark:text-amber-300 font-semibold">No express runner has accepted yet.</p>
+                          <button
+                            type="button"
+                            disabled={exBusy}
+                            onClick={switchToNormal}
+                            className="w-full py-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold disabled:opacity-50 cursor-pointer"
+                          >
+                            Switch to normal delivery
+                          </button>
+                        </>
+                      ) : (
+                        <p className="text-[11px] text-emerald-800 dark:text-emerald-300">
+                          If nobody accepts within {EXPRESS_ACCEPT_MINUTES} minutes, you can switch to normal delivery.
+                        </p>
+                      )}
+                    </>
+                  )}
+
+                  {ex.status === 'accepted' && (
+                    <>
+                      <p className="text-emerald-900 dark:text-emerald-200">
+                        <strong>{ex.runnerName || 'A runner'}</strong> accepted your express order.
+                        {currentOrder.paymentStatus === 'unpaid' ? ' Pay them below to start the clock.' : ''}
+                      </p>
+                      <p className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-300">
+                        The {EXPRESS_MINUTES} minutes starts from your payment time. If it arrives late, you get ₦{EXPRESS_REFUND.toLocaleString()} back.
+                      </p>
+                      {timing && !timing.finished && !timing.awaitingReceipt && (
+                        <p className="text-emerald-900 dark:text-emerald-200">
+                          {timing.late
+                            ? `It's past ${EXPRESS_MINUTES} minutes. You'll get ₦${EXPRESS_REFUND.toLocaleString()} back from the runner once it arrives.`
+                            : 'Your runner is on it.'}
+                        </p>
+                      )}
+                      {timing?.awaitingReceipt && (
+                        <div className="space-y-1.5">
+                          <p className="text-emerald-900 dark:text-emerald-200">The runner says it's delivered. Got it? Tap below to stop the clock.</p>
+                          <button
+                            type="button"
+                            disabled={exBusy}
+                            onClick={confirmReceived}
+                            className="w-full py-2.5 rounded-xl bg-[#0e9f55] text-white font-bold disabled:opacity-50 cursor-pointer"
+                          >
+                            I've received it
+                          </button>
+                        </div>
+                      )}
+                      {timing && !timing.finished && !timing.awaitingReceipt && currentOrder.status !== 'Delivered' && (
+                        <button
+                          type="button"
+                          disabled={exBusy}
+                          onClick={confirmReceived}
+                          className="w-full py-2 rounded-xl border border-emerald-400 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 font-bold disabled:opacity-50 cursor-pointer"
+                        >
+                          I've received it
+                        </button>
+                      )}
+                      {timing?.finished && (
+                        <p className={`font-bold ${timing.late ? 'text-rose-700 dark:text-rose-300' : 'text-[#0e9f55]'}`}>
+                          {timing.late
+                            ? ex.refunded
+                              ? `Arrived after ${Math.round(timing.usedMs / 60000)} minutes. ${ex.runnerName || 'The runner'} refunded your ₦${EXPRESS_REFUND.toLocaleString()}.`
+                              : `Arrived after ${Math.round(timing.usedMs / 60000)} minutes, so you get ₦${EXPRESS_REFUND.toLocaleString()} back. ${ex.runnerName || 'The runner'} will send it to you. Message them below if it doesn't arrive.`
+                            : `Delivered in ${Math.max(1, Math.round(timing.usedMs / 60000))} minutes. On time!`}
+                        </p>
+                      )}
+                      {ex.runnerPhone && (
+                        <a href={`tel:${ex.runnerPhone}`} className="inline-block font-bold text-[#0e9f55]">
+                          Call {ex.runnerName}
+                        </a>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
               {/* PAYMENT: bank details until the student taps "payment made", then a short note, then nothing once confirmed */}
-              {currentOrder.paymentMethod === 'pay_now' && paymentState(currentOrder) === 'expired' ? (
+              {ex && ex.status === 'requested' ? null : currentOrder.paymentMethod === 'pay_now' && paymentState(currentOrder) === 'expired' ? (
                 <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-xs text-rose-800 dark:text-rose-200 font-medium">
                   This order was not paid for and expired at the end of the day. Please place a new order.
                 </div>
@@ -538,29 +694,55 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                       Your order has been packaged and is en route to <strong>{shortLocation(currentOrder)}</strong>. Please listen for your runner!
                     </p>
                   </div>
+                ) : currentOrder.status === 'Delivered' && isOutside ? (
+                  // Outside: the operator tapped "Order delivered". A green bar counts down to the gate.
+                  <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800/60 space-y-2.5">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-[#0e9f55] text-white flex items-center justify-center font-bold shrink-0">
+                        <Truck className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="text-xs font-bold text-emerald-950 dark:text-emerald-200">Your order has been delivered</h4>
+                        <p className="text-[11px] text-emerald-800 dark:text-emerald-400">
+                          {currentOrder.gatePickup && currentOrder.gatePickup.status !== 'refused' && currentOrder.gatePickup.status !== 'refunded'
+                            ? `It will be at the school gate in under ${GATE_ARRIVAL_MINUTES} minutes, and the runner will bring it to your room.`
+                            : gateLeftMs !== null && gateLeftMs > 0
+                            ? `It will be at the school gate in under ${GATE_ARRIVAL_MINUTES} minutes. Head to the gate when the timer is nearly done.`
+                            : 'It should be at the school gate now. Please collect it.'}
+                        </p>
+                      </div>
+                      {gateLeftMs !== null && gateLeftMs > 0 && (
+                        <span className="shrink-0 font-mono text-sm font-extrabold text-[#0e9f55]">{mmss(gateLeftMs)}</span>
+                      )}
+                    </div>
+                    {gateLeftMs !== null && (
+                      <div className="h-2.5 rounded-full bg-emerald-100 dark:bg-emerald-950 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-[#0e9f55] transition-all duration-1000"
+                          style={{ width: `${Math.min(100, Math.max(4, 100 - (Math.max(0, gateLeftMs) / (GATE_ARRIVAL_MINUTES * 60000)) * 100))}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
                 ) : currentOrder.status === 'Delivered' ? (
                   <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800/60 flex items-center gap-3">
                     <div className="w-9 h-9 rounded-full bg-[#0e9f55] text-white flex items-center justify-center font-bold shrink-0">
                       <CheckCircle2 className="w-5 h-5" />
                     </div>
                     <div>
-                      <h4 className="text-xs font-bold text-emerald-950 dark:text-emerald-200">
-                        {currentOrder.cart === 'store' || currentOrder.cart === 'food' ? 'Your order is sent!' : 'Order Delivered & Handed Over!'}
-                      </h4>
-                      <p className="text-[11px] text-emerald-800 dark:text-emerald-400">
-                        {currentOrder.cart === 'store' || currentOrder.cart === 'food'
-                          ? currentOrder.gatePickup && currentOrder.gatePickup.status !== 'refused' && currentOrder.gatePickup.status !== 'refunded'
-                            ? 'Your items are at the school gate, and the runner is bringing them to your room.'
-                            : 'Your order is sent and will arrive in less than 20 minutes. Please be at the school gate to collect it.'
-                          : `Delivered to ${shortLocation(currentOrder)}. Enjoy your order!`}
-                      </p>
+                      <h4 className="text-xs font-bold text-emerald-950 dark:text-emerald-200">Order Delivered & Handed Over!</h4>
+                      <p className="text-[11px] text-emerald-800 dark:text-emerald-400">Delivered to {shortLocation(currentOrder)}. Enjoy your order!</p>
                     </div>
                   </div>
                 ) : (
                   <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 text-xs text-slate-600 dark:text-slate-300 flex items-center gap-2.5">
                     <Clock className="w-4 h-4 text-amber-500 shrink-0" />
                     <span>
-                      {currentOrder.paymentStatus === 'payment_sent'
+                      {currentOrder.paymentStatus === 'payment_confirmed'
+                        ? isOutside
+                          ? `Payment confirmed. ${currentOrder.operatorName || 'The operator'} is packaging your order.`
+                          : 'Payment confirmed. Your runner will start packaging soon.'
+                        : currentOrder.paymentStatus === 'payment_sent'
                         ? 'Payment submitted! Awaiting verification from runner/admin to start packaging.'
                         : currentOrder.paymentMethod === 'pay_on_delivery'
                         ? 'Order placed. Awaiting runner to accept and begin packaging.'
@@ -722,6 +904,9 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Rate your experience: one rating per delivered cart, straight to Roomly */}
+              {currentOrder.status === 'Delivered' && <RateExperience order={currentOrder} />}
 
               {/* Chat and call, under the items and total */}
               <div className="space-y-2">

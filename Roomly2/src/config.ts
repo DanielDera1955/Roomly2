@@ -119,8 +119,35 @@ export const CART_LABEL: Record<CartKind, string> = {
 export const SETTLE_BY_HOUR = 6;
 /** Inside runners keep 30% of the day's profit and owe 70% */
 export const RUNNER_SHARE = 0.3;
-/** Gate pickup: an inside runner brings the parcel from the gate to the room. Paid to the runner. */
-export const GATE_PICKUP_FEES = { normal: 600, heavy: 1000 };
+/**
+ * Gate pickup: an inside runner brings the parcel from the gate to the room for a flat ₦1,000.
+ * The student pays the runner; the runner keeps ₦800 and owes Roomly ₦200 in the daily settlement.
+ */
+export const GATE_PICKUP_FEE = 1000;
+export const GATE_PICKUP_ROOMLY = 200;
+/** Kept for older code: both are the flat fee now */
+export const GATE_PICKUP_FEES = { normal: GATE_PICKUP_FEE, heavy: GATE_PICKUP_FEE };
+
+/**
+ * Express (inside school only): ₦1,200 replaces the normal inside delivery fee.
+ * Split 50/50: the runner keeps ₦600 and owes Roomly ₦600 (outside the 70/30 split).
+ * The 20 minutes start from the student's payment time; if it arrives later, the runner refunds their ₦600.
+ */
+export const EXPRESS_FEE = 1200;
+export const EXPRESS_RUNNER_SHARE = 600;
+export const EXPRESS_ROOMLY_SHARE = 600;
+export const EXPRESS_REFUND = 600;
+export const EXPRESS_MINUTES = 20;
+/** No runner accepted an express request in this time: the student can switch to normal delivery */
+export const EXPRESS_ACCEPT_MINUTES = 5;
+/** The student forgot to tap "Received": the runner's "Delivered" time stands after this */
+export const EXPRESS_CONFIRM_MINUTES = 10;
+
+/** Outside orders: after the operator taps "Order delivered", they reach the school gate within this */
+export const GATE_ARRIVAL_MINUTES = 15;
+
+/** Rate your experience: the options a student can tick (plus Other with their own words) */
+export const RATING_REASONS = ['All good', 'Late', 'Wrong item', 'Damaged', 'Poor attitude', 'Other'] as const;
 /** What the student wants if an item is out of stock */
 export type OutOfStockChoice = 'refund' | 'tomorrow' | 'swap';
 export const OUT_OF_STOCK_LABEL: Record<OutOfStockChoice, string> = {

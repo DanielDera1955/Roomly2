@@ -15,6 +15,7 @@ import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { ProviderSettlement, PayAccountForm } from './SettlementPanel';
 import { OperatorProductsPanel } from './StoreProducts';
 import { ProductRequestsPanel } from './ProductRequestsPanel';
+import { MyRatingsPanel } from './FeedbackPanels';
 import { OrderRecord, partLabel, shortLocation } from '../types';
 import { OUT_OF_STOCK_LABEL } from '../config';
 import { playChime } from '../sound';
@@ -139,7 +140,7 @@ const OperatorOverview: React.FC = () => {
       <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
         {loading
           ? 'Loading…'
-          : `Total Sales is everything students paid on your completed carts (items ${naira(t.paid)} plus delivery). You keep ${naira(t.earnings)}. Counted when you tap "Sent to school gate".`}
+          : `Total Sales is everything students paid on your completed carts (items ${naira(t.paid)} plus delivery). You keep ${naira(t.earnings)}. Counted when you tap "Order delivered".`}
       </p>
       {t.estimated && (
         <p className="text-[11px] text-amber-700 dark:text-amber-300">
@@ -161,7 +162,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
   const [kind, setKind] = useState<Kind>(staff?.role === 'food' ? 'food' : 'store');
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  // Stages: Active (student says paid) -> Payment confirmed (pack and send) -> Completed (sent to the gate)
+  // Stages: All (student says paid, check your account) -> Packaging (payment confirmed) -> Delivered (sent to the gate)
   const [filter, setFilter] = useState<'active' | 'confirmed' | 'completed'>('active');
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState('');
@@ -214,9 +215,9 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
       : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300';
 
   const tabs: [typeof filter, string][] = [
-    ['active', `Active (${count('active')})`],
-    ['confirmed', `Payment confirmed (${count('confirmed')})`],
-    ['completed', `Completed (${count('completed')})`],
+    ['active', `All (${count('active')})`],
+    ['confirmed', `Packaging (${count('confirmed')})`],
+    ['completed', `Delivered (${count('completed')})`],
   ];
 
   return (
@@ -269,6 +270,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
         {!isAdmin && <ProviderSettlement kind="operator" />}
         {!isAdmin && <PayAccountForm />}
         {!isAdmin && <ProductRequestsPanel />}
+        {!isAdmin && <MyRatingsPanel />}
         {!isAdmin && <OperatorProductsPanel />}
 
         {/* Availability: operators set their own batches; the admin sees everyone and can switch them off */}
@@ -315,7 +317,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="font-extrabold text-base">{o.name}</span>
                     <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-full ${pill(st)}`}>
-                      {st === 'pending' ? 'To pack' : st === 'packed' ? 'Packed' : 'Sent'}
+                      {o.paymentStatus !== 'payment_confirmed' && st !== 'sent' ? 'Check payment' : st === 'pending' ? 'Packaging' : st === 'packed' ? 'Packed' : 'Delivered'}
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">{o.deliveryTime}</p>
@@ -389,7 +391,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                   {o.paymentStatus !== 'payment_confirmed' && st !== 'sent' ? (
                     <div className="space-y-1.5">
                       <p className="text-[11px] text-slate-500">
-                        The student says they paid ₦{(o.totalAmount || 0).toLocaleString()} into your account. Check it, then confirm. Packing unlocks after.
+                        The student says they paid ₦{(o.totalAmount || 0).toLocaleString()} into your account. Check it, then confirm. The order moves to Packaging.
                       </p>
                       <button
                         type="button"
@@ -413,10 +415,12 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                     <button
                       type="button"
                       disabled={busy === o.id || st === 'sent'}
-                      onClick={() => setStatus(o, 'sent')}
+                      onClick={() => {
+                        if (window.confirm(`Mark ${o.name}'s order as delivered? The student sees it will be at the school gate in under 15 minutes, so only tap this as it leaves.`)) setStatus(o, 'sent');
+                      }}
                       className="py-2.5 rounded-xl text-xs font-bold bg-[#0e9f55] text-white disabled:opacity-40 cursor-pointer"
                     >
-                      Sent to school gate
+                      Order delivered
                     </button>
                   </div>
                   )}

@@ -1,15 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { subscribeGatePickups, updateGatePickup, getCurrentStaff } from '../api.js';
 import { OrderRecord, shortLocation, partLabel } from '../types';
-import { GATE_PICKUP_FEES } from '../config';
+import { GATE_PICKUP_FEE, GATE_PICKUP_ROOMLY } from '../config';
 
 /**
  * Runners: requests to bring an outside parcel from the school gate to a room.
- * Read the items, tick heavy if needed (₦1,000 instead of ₦600), then accept or refuse.
+ * Flat ₦1,000. Read the items, then accept or refuse. The student pays you only after you accept.
+ * You keep ₦800; ₦200 goes to Roomly in your daily settlement.
  */
 export const GatePickupPanel: React.FC = () => {
   const [list, setList] = useState<OrderRecord[]>([]);
-  const [heavy, setHeavy] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState('');
   const [open, setOpen] = useState(true);
   const me = getCurrentStaff()?.name || '';
@@ -29,7 +29,7 @@ export const GatePickupPanel: React.FC = () => {
 
   const act = async (o: OrderRecord, action: 'accept' | 'refuse' | 'delivered' | 'refund') => {
     setBusy(o.id);
-    const res = await updateGatePickup(o.id, action, Boolean(heavy[o.id]));
+    const res = await updateGatePickup(o.id, action);
     if (!res) window.alert('Could not update. Check your connection and try again.');
     setBusy('');
   };
@@ -72,15 +72,10 @@ export const GatePickupPanel: React.FC = () => {
 
                 {gp.status === 'pending' && (
                   <>
-                    <label className="flex items-center gap-2 text-[11px] font-semibold cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(heavy[o.id])}
-                        onChange={(e) => setHeavy((p) => ({ ...p, [o.id]: e.target.checked }))}
-                        className="w-4 h-4 accent-[#0e9f55]"
-                      />
-                      Heavy or bulky (₦{GATE_PICKUP_FEES.heavy.toLocaleString()} instead of ₦{GATE_PICKUP_FEES.normal.toLocaleString()})
-                    </label>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                      Flat ₦{GATE_PICKUP_FEE.toLocaleString()}: you keep ₦{(GATE_PICKUP_FEE - GATE_PICKUP_ROOMLY).toLocaleString()}, ₦
+                      {GATE_PICKUP_ROOMLY.toLocaleString()} goes to Roomly in your settlement. Check the items first; refuse if you can't carry it.
+                    </p>
                     {!hasAccount && (
                       <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">
                         Save your bank account first (in your payout settings). The student pays you directly into it.
@@ -110,8 +105,7 @@ export const GatePickupPanel: React.FC = () => {
                 {gp.status === 'accepted' && (
                   <>
                     <p className="text-[11px] text-slate-500">
-                      Accepted by {gp.runnerName}
-                      {gp.heavy ? ' (heavy)' : ''}.{' '}
+                      Accepted by {gp.runnerName}.{' '}
                       {gp.paid ? (
                         <strong className="text-[#0e9f55]">Paid ₦{gp.fee.toLocaleString()}. Collect it from the gate.</strong>
                       ) : (

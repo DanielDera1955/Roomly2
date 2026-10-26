@@ -16,8 +16,8 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
-import { HOSTELS, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, GATE_PICKUP_FEES, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf } from '../config';
-import { getNextBatch, getOutsideChoices } from '../api.js';
+import { HOSTELS, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES } from '../config';
+import { getNextBatch, getOutsideChoices, getExpressRunners } from '../api.js';
 import { isValidNigerianPhone, normalizePhone } from '../api.js';
 
 interface CartSheetProps {
@@ -67,6 +67,8 @@ interface CartSheetProps {
     gatePickup?: boolean;
     payTo?: { bankName: string; accountNumber: string; accountName: string } | null;
     lateBatch?: boolean;
+    /** Express run: ₦1,200 instead of the normal delivery fee */
+    express?: boolean;
   }) => void | Promise<void>;
 }
 
@@ -142,7 +144,15 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const hasOutside = cart !== 'inside';
   const mustPrepay = isRepeatCustomer || hasOutside;
   const hasBag = items.some((i) => isBagOfWater(i.name));
-  const deliveryFee = deliveryFeeFor(itemTotal, hasOutside, hasBag);
+  // Express (inside only): shows only while a runner has "Express available" switched on
+  const [speed, setSpeed] = useState<'normal' | 'express'>('normal');
+  const expressRunners = cart === 'inside' ? getExpressRunners() : [];
+  const expressOn = expressRunners.length > 0;
+  const isExpress = speed === 'express' && expressOn;
+  useEffect(() => {
+    if (speed === 'express' && !expressOn) setSpeed('normal');
+  }, [speed, expressOn]);
+  const deliveryFee = isExpress ? EXPRESS_FEE : deliveryFeeFor(itemTotal, hasOutside, hasBag);
   const grandTotal = itemTotal + deliveryFee;
 
   // Batches that are still open, refreshed when a runner switches one on or off
@@ -216,7 +226,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       return;
     }
 
-    if (!selectedBatch || !payBy) {
+    if (!isExpress && (!selectedBatch || !payBy)) {
       setErrorMessage(pausedText || 'No delivery batch is open right now. Please check back soon.');
       return;
     }
@@ -237,11 +247,11 @@ export const CartSheet: React.FC<CartSheetProps> = ({
     }
 
     if (waitingCount > 0) {
-      setErrorMessage(`Waiting for the price of ${waitingCount} requested item(s). You can check out once it comes back.`);
+      setErrorMessage("You can't check out until your requested items are priced.");
       return;
     }
 
-    if ((isLate || unconfirmed) && !lateAccepted) {
+    if (!isExpress && (isLate || unconfirmed) && !lateAccepted) {
       setErrorMessage('Please tick that you accept your order coming in the next batch.');
       return;
     }
@@ -272,7 +282,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
         deliveryBatch: (selectedBatch?.id || 'afternoon') as DeliveryBatchId,
         deliveryTime: selectedBatch?.label || '',
         deliveryDate: selectedBatch?.date,
-        paymentDeadline: payBy?.toISOString(),
+        paymentDeadline: isExpress ? undefined : payBy?.toISOString(),
         paymentMethod: 'pay_now',
         subtotal: itemTotal,
         deliveryFee,
@@ -280,12 +290,14 @@ export const CartSheet: React.FC<CartSheetProps> = ({
         cart,
         operatorId: cart !== 'inside' ? chosenOp?.uid : undefined,
         operatorName: cart !== 'inside' ? chosenOp?.name : undefined,
-        turnRunner: cart === 'inside' ? insideNext?.next?.by || '' : undefined,
+        turnRunner: cart === 'inside' && !isExpress ? insideNext?.next?.by || '' : undefined,
         outOfStock,
-        lateBatch: isLate || unconfirmed, // for the dashboard: student accepted the next batch
+        lateBatch: !isExpress && (isLate || unconfirmed), // for the dashboard: student accepted the next batch
+        express: isExpress,
         gatePickup: cart !== 'inside' && gatePickup,
         // Students pay the runner or operator handling the order (Roomly's account if they have not set one)
-        payTo: (cart === 'inside' ? insideNext?.next?.payTo : chosenOp?.payTo) || null,
+        // Express: the account shows once a runner accepts
+        payTo: isExpress ? null : (cart === 'inside' ? insideNext?.next?.payTo : chosenOp?.payTo) || null,
       });
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to place order');
@@ -532,6 +544,17 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             )}
           </div>
 
+          {/* Requested items still waiting for a price: checkout is locked */}
+          {waitingCount > 0 && (
+            <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2">
+              <Lock className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+              <span>
+                <strong className="block">You can't check out until your requested items are priced.</strong>
+                As soon as the price arrives, it's saved into this cart and the total updates. Then you can pay as normal.
+              </span>
+            </div>
+          )}
+
           {/* Delivery Details */}
           <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
@@ -638,7 +661,51 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             </div>
           </div>
 
-          {/* DELIVERY BATCHES & PREMIUM DELIVERY (User prompt requirement) */}
+          {/* DELIVERY SPEED: express only while a runner has it switched on */}
+          {cart === 'inside' && expressOn && (
+            <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-[#0e9f55]" />
+                <span>Delivery speed</span>
+              </h3>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSpeed('normal')}
+                  className={`p-3 rounded-2xl border text-left text-xs cursor-pointer ${
+                    !isExpress ? 'border-[#0e9f55] bg-emerald-50/60 dark:bg-emerald-950/40' : 'border-slate-200 dark:border-slate-800'
+                  }`}
+                >
+                  <span className="block font-bold text-slate-900 dark:text-white">Normal batch</span>
+                  <span className="block text-[11px] text-slate-500">₦{deliveryFeeFor(itemTotal, false, hasBag).toLocaleString()} · next batch</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSpeed('express')}
+                  className={`p-3 rounded-2xl border text-left text-xs cursor-pointer ${
+                    isExpress ? 'border-[#0e9f55] bg-emerald-50/60 dark:bg-emerald-950/40' : 'border-slate-200 dark:border-slate-800'
+                  }`}
+                >
+                  <span className="block font-bold text-slate-900 dark:text-white">Express</span>
+                  <span className="block text-[11px] text-slate-500">₦{EXPRESS_FEE.toLocaleString()} · within {EXPRESS_MINUTES} minutes</span>
+                </button>
+              </div>
+              {isExpress && (
+                <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 text-[11px] text-emerald-900 dark:text-emerald-100 space-y-1">
+                  <p className="font-bold">
+                    The {EXPRESS_MINUTES} minutes starts from your payment time. If it arrives late, you get ₦{EXPRESS_REFUND.toLocaleString()} back.
+                  </p>
+                  <p>
+                    ₦{EXPRESS_FEE.toLocaleString()} replaces the normal delivery fee. A runner accepts first, then you pay them. When your order
+                    arrives, tap <strong>"I've received it"</strong> to stop the clock.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* DELIVERY BATCHES (normal delivery) */}
+          {!isExpress && (
           <div className="space-y-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
@@ -726,6 +793,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               </div>
             )}
           </div>
+          )}
 
           {/* WHO HANDLES THIS ORDER */}
           {chosen && cart === 'inside' && chosen.by && (
@@ -789,10 +857,16 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               <CreditCard className="w-3.5 h-3.5 text-[#0e9f55]" />
               <span>Payment</span>
             </h3>
-            <p className="text-xs text-slate-600 dark:text-slate-300">
-              Pay first by bank transfer. After you place the order you'll see the {cart === 'inside' ? "runner's" : "operator's"} account. Transfer
-              {payByText ? ` before ${payByText}` : ''}, then tap <strong>"I have made payment"</strong>.
-            </p>
+            {isExpress ? (
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                An express runner accepts your order first. Then you'll see their account: transfer and tap <strong>"I have made payment"</strong>.
+              </p>
+            ) : (
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                Pay first by bank transfer. After you place the order you'll see the {cart === 'inside' ? "runner's" : "operator's"} account. Transfer
+                {payByText ? ` before ${payByText}` : ''}, then tap <strong>"I have made payment"</strong>.
+              </p>
+            )}
           </div>
 
           {/* Price Breakdown */}
@@ -803,7 +877,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             </div>
             <div className="flex justify-between text-slate-600 dark:text-slate-400">
               <span>
-                Delivery
+                {isExpress ? 'Express delivery' : 'Delivery'}
               </span>
               <span className="font-mono tabular-nums">₦{deliveryFee.toLocaleString()}</span>
             </div>
@@ -894,7 +968,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
           <div className="pt-1">
             <button
               type="submit"
-              disabled={submitting || !acknowledgedNoCancel || !selectedBatch || waitingCount > 0 || ((isLate || unconfirmed) && !lateAccepted)}
+              disabled={submitting || !acknowledgedNoCancel || (!isExpress && !selectedBatch) || waitingCount > 0 || (!isExpress && (isLate || unconfirmed) && !lateAccepted)}
               className="w-full h-12 bg-[#0e9f55] hover:bg-[#0b8044] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold flex items-center justify-between px-5 shadow-lg shadow-[#0e9f55]/20 active:scale-[0.98] transition-all cursor-pointer"
             >
               <span>{submitting ? 'Placing Order...' : 'Confirm & Place Order'}</span>
@@ -902,7 +976,9 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             </button>
             <p className="text-[10px] text-center text-slate-400 mt-2">
               {waitingCount > 0
-                ? `Waiting for the price of ${waitingCount} requested item(s). You can check out once it comes back.`
+                ? `You can't check out until your requested items are priced (${waitingCount} waiting). We'll update your cart total as soon as the price arrives.`
+                : isExpress
+                ? 'Goes to the express runners. One accepts, then you pay them.'
                 : cart === 'inside'
                 ? 'Goes to the runner on this batch'
                 : `Goes to ${chosenOp?.name || 'the operator'}, delivered to the school gate`}

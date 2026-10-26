@@ -106,6 +106,68 @@ export interface OrderRecord {
     paid?: boolean;
     paidAt?: string;
   };
+  /** Express run (inside only): ₦1,200 instead of the normal delivery fee, delivered within 20 minutes of payment */
+  express?: ExpressInfo | null;
+}
+
+export interface ExpressInfo {
+  /** requested: waiting for a runner; accepted: a runner said "I can do it now"; cancelled: switched to normal delivery */
+  status: 'requested' | 'accepted' | 'cancelled';
+  requestedAt: string;
+  runnerId?: string; // runner login email
+  runnerName?: string;
+  runnerPhone?: string;
+  acceptedAt?: string;
+  payTo?: { bankName: string; accountNumber: string; accountName: string } | null;
+  /** When the money actually arrived (the runner reads it from their bank app). Moves the start if later than the tap. */
+  txAt?: string;
+  /** Runner tapped Delivered */
+  runnerDeliveredAt?: string;
+  /** Student tapped Received: this stops the clock */
+  receivedAt?: string;
+  /** Runner paid the ₦600 back to a late order's student */
+  refunded?: boolean;
+  refundedAt?: string;
+}
+
+/** Express clock: start = payment time (moved to the bank time if later), end = student's Received (or the runner's Delivered after 10 min) */
+export function expressTiming(o: { express?: ExpressInfo | null; paymentSentAt?: string }, now: number = Date.now(), confirmMs = 10 * 60000, limitMs = 20 * 60000) {
+  const ex = o.express;
+  if (!ex || ex.status !== 'accepted' || !o.paymentSentAt) return null;
+  const tap = Date.parse(o.paymentSentAt);
+  const tx = ex.txAt ? Date.parse(ex.txAt) : NaN;
+  const start = Number.isFinite(tx) && tx > tap ? tx : tap;
+  const received = ex.receivedAt ? Date.parse(ex.receivedAt) : NaN;
+  const delivered = ex.runnerDeliveredAt ? Date.parse(ex.runnerDeliveredAt) : NaN;
+  let end = NaN;
+  if (Number.isFinite(received)) end = received;
+  else if (Number.isFinite(delivered) && now - delivered >= confirmMs) end = delivered;
+  const finished = Number.isFinite(end);
+  const used = (finished ? end : now) - start;
+  return {
+    start,
+    end: finished ? end : null,
+    finished,
+    /** Delivered by the runner, waiting for the student to tap Received */
+    awaitingReceipt: !finished && Number.isFinite(delivered),
+    usedMs: used,
+    leftMs: limitMs - used,
+    late: used > limitMs,
+  };
+}
+
+/** One rating per cart, sent straight to the admin */
+export interface RatingRecord {
+  orderId: string;
+  cart: 'inside' | 'store' | 'food';
+  score: number; // 1 to 5
+  reasons: string[];
+  comment?: string;
+  /** Runner email or operator login uid: the person the rating is about */
+  providerKey: string;
+  providerName: string;
+  customer?: string;
+  createdAt: string;
 }
 
 export interface DeliveryRunner {
@@ -137,4 +199,4 @@ export const roomText = (o: { area?: string; building?: string; room?: string })
 
 /** Status of the outside-school part of an order, as the student and runners see it */
 export const partLabel = (s?: string) =>
-  s === 'sent' ? 'On the way to school' : s === 'packed' ? 'Packed' : 'Waiting for the operator';
+  s === 'sent' ? 'Delivered: at the gate in under 15 minutes' : s === 'packed' ? 'Packed' : 'Waiting for the operator';

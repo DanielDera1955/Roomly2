@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, Camera, Sparkles, Clock, Check } from 'lucide-react';
 import { uploadProductImage } from '../api.js';
+import { InstallPrompt } from './InstallPrompt';
 
 export type RequestSide = 'inside' | 'store' | 'food';
 
@@ -77,7 +78,7 @@ export const RequestTab: React.FC<RequestTabProps> = ({
       setItems([blank()]);
       setNote('');
       setSent(true);
-      setTimeout(() => setSent(false), 4000);
+      setTimeout(() => setSent(false), 6000);
     } catch (err: any) {
       window.alert(err?.message || 'Could not send. Check your connection and try again.');
     }
@@ -151,7 +152,7 @@ export const RequestTab: React.FC<RequestTabProps> = ({
         <label className="flex items-start gap-2 text-xs text-slate-700 dark:text-slate-200 cursor-pointer">
           <input type="checkbox" checked={addToCart} onChange={(e) => setAddToCart(e.target.checked)} className="w-4 h-4 mt-0.5 accent-[#0e9f55]" />
           <span>
-            Also add to my cart. <span className="text-slate-500">You can check out once the price comes back.</span>
+            Also add to my cart. <span className="text-slate-500">Checkout stays locked until the price comes back, then your cart totals it up.</span>
           </span>
         </label>
 
@@ -164,6 +165,9 @@ export const RequestTab: React.FC<RequestTabProps> = ({
         </button>
         {sent && <p className="text-xs text-[#0e9f55] font-semibold text-center">Sent. You'll see the price below as soon as someone replies.</p>}
       </form>
+
+      {/* Waiting for a price: install the app or turn on notifications, or check back before the next batch */}
+      {(sent || myRequests.some((r) => r.status === 'open')) && <InstallPrompt />}
 
       {myRequests.length > 0 && (
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 space-y-2.5">

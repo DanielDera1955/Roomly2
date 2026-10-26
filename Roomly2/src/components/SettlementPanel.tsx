@@ -11,7 +11,7 @@ import {
   clearMyDay,
   objectToCart,
 } from '../api.js';
-import { STORE_CONFIG, SETTLE_BY_HOUR, RUNNER_SHARE } from '../config';
+import { STORE_CONFIG, SETTLE_BY_HOUR, RUNNER_SHARE, GATE_PICKUP_ROOMLY, EXPRESS_ROOMLY_SHARE } from '../config';
 
 const naira = (n: number) => `₦${Math.round(n || 0).toLocaleString()}`;
 const dayText = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
@@ -191,7 +191,7 @@ export const ProviderSettlement: React.FC<{ kind: 'runner' | 'operator' }> = ({ 
             <span className="block text-[10px] font-bold uppercase text-emerald-700 dark:text-emerald-300">You keep</span>
             <span className="block text-base font-extrabold text-[#0e9f55]">{naira(today?.keep)}</span>
             <span className="block text-[10px] text-slate-400">
-              items + {Math.round(RUNNER_SHARE * 100)}% of profit{today?.gateFees ? ` + ${naira(today.gateFees)} gate` : ''}
+              items + {Math.round(RUNNER_SHARE * 100)}% of profit{today?.gateFees ? ` + ${naira((today.gateFees || 0) - (today.gateOwed || 0))} gate` : ''}
               {today?.helpShare ? ` + ${naira(today.helpShare)} for helping` : ''}
             </span>
             {today?.owedToHelpers > 0 && (
@@ -203,8 +203,32 @@ export const ProviderSettlement: React.FC<{ kind: 'runner' | 'operator' }> = ({ 
           <div className="rounded-2xl bg-amber-50 dark:bg-amber-950/30 p-2.5">
             <span className="block text-[10px] font-bold uppercase text-amber-700 dark:text-amber-300">Owed today</span>
             <span className="block text-base font-extrabold text-amber-700 dark:text-amber-300">{naira(today?.due)}</span>
-            <span className="block text-[10px] text-slate-400">{Math.round((1 - RUNNER_SHARE) * 100)}% of profit</span>
+            <span className="block text-[10px] text-slate-400">{Math.round((1 - RUNNER_SHARE) * 100)}% of profit{today?.gatePickups || today?.expressOrders ? ' + the lines below' : ''}</span>
           </div>
+        </div>
+      )}
+
+      {/* Gate pickups and express runs are settled on their own lines */}
+      {kind === 'runner' && (today?.gatePickups > 0 || today?.expressOrders > 0 || today?.expressRefunds > 0) && (
+        <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-[11px] text-slate-600 dark:text-slate-300 space-y-0.5">
+          {today?.gatePickups > 0 && (
+            <p className="flex justify-between">
+              <span>Gate pickups: {today.gatePickups} × ₦{GATE_PICKUP_ROOMLY.toLocaleString()} to Roomly</span>
+              <strong>{naira(today.gateOwed)}</strong>
+            </p>
+          )}
+          {today?.expressOrders > 0 && (
+            <p className="flex justify-between">
+              <span>Express runs: {today.expressOrders} × ₦{EXPRESS_ROOMLY_SHARE.toLocaleString()} to Roomly</span>
+              <strong>{naira(today.expressOwed)}</strong>
+            </p>
+          )}
+          {today?.expressRefunds > 0 && (
+            <p className="flex justify-between">
+              <span>Late express refunds you paid to students (doesn't change what you owe)</span>
+              <strong>{naira(today.expressRefunds)}</strong>
+            </p>
+          )}
         </div>
       )}
 
