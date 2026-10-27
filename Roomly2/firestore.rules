@@ -258,6 +258,14 @@ service cloud.firestore {
          && resource.data.express.status == 'accepted'
          && resource.data.express.get('receivedAt', null) == null
          && request.resource.data.express.diff(resource.data.express).affectedKeys().hasOnly(['receivedAt'])) ||
+        // Express: the student says "Not here yet" (only removes the runner's Delivered time and counts it)
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['express', 'history'])
+         && resource.data.get('express', null) != null
+         && resource.data.express.status == 'accepted'
+         && resource.data.express.get('receivedAt', null) == null
+         && resource.data.express.get('runnerDeliveredAt', null) != null
+         && request.resource.data.express.get('runnerDeliveredAt', null) == null
+         && request.resource.data.express.diff(resource.data.express).affectedKeys().hasOnly(['runnerDeliveredAt', 'notHereCount', 'lastNotHereAt'])) ||
         // Customers mark that they paid the runner who accepted their gate pickup (nothing else changes)
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['gatePickup', 'history'])
          && resource.data.get('gatePickup', null) != null
