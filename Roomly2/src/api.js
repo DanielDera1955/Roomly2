@@ -736,7 +736,13 @@ async function readCatalog(force = false) {
     const stock = ov.stock || {};
     const products = [...main, ...extra].map((p) => {
       let q = p;
-      if (prices[p.id]) q = { ...q, costPrice: prices[p.id].cost, price: prices[p.id].price };
+      if (prices[p.id]) {
+        q = { ...q, costPrice: prices[p.id].cost, price: prices[p.id].price };
+        const ops = prices[p.id].ops;
+        if (ops && typeof ops === 'object') {
+          q.opCosts = Object.fromEntries(Object.entries(ops).map(([uid, o]) => [uid, Number(o && o.cost) || 0]).filter(([, c]) => c > 0));
+        }
+      }
       if (typeof stock[p.id] === 'boolean') q = { ...q, isAvailable: stock[p.id] };
       return q;
     });
@@ -1625,8 +1631,11 @@ const OP_KEEP_PER_CART = 600;
 const OP_OWE_PER_CART = 200;
 
 /** Cost (standard price) of one cart line. Uses the cost price you entered; otherwise works it back from the margin. */
-function costOf(item, products, inside = false) {
-  const p = products.find((x) => x.id === item.productId);
+function costOf(item, products, inside = false, opId = '') {
+  const found = products.find((x) => x.id === item.productId);
+  // Outside: use the cost of the operator who served this order (students paid from the highest cost)
+  const own = found && opId && found.opCosts ? found.opCosts[opId] : 0;
+  const p = found && own > 0 ? { ...found, costPrice: own } : found;
   if (p && p.costPrice > 0 && !item.isFood) return { cost: p.costPrice * item.quantity, estimated: false };
   if (p && item.isFood) {
     // Food: plates at the dish's cost + each extra (and swallow choice) at the cost you entered for it
@@ -1714,14 +1723,14 @@ async function addToMyDay(kind, key, add, estimated, day = ymdOf(new Date()), ca
  *   keep  = the operator's cost for the items + ₦600 delivery
  *   owed  = Roomly's margin on the items + ₦200 delivery
  */
-function operatorCartMaths(order, kind, products) {
+function operatorCartMaths(order, kind, products, opId = order.operatorId || '') {
   const source = kind === 'food' ? 'food' : 'outside';
   const items = (order.items || []).filter((i) => i.source === source);
   let paid = 0;
   let cost = 0;
   let estimated = false;
   const lines = items.map((i) => {
-    const c = costOf(i, products);
+    const c = costOf(i, products, false, opId);
     paid += i.totalPrice || 0;
     cost += c.cost;
     estimated = estimated || c.estimated;
@@ -1747,7 +1756,7 @@ function operatorCartMaths(order, kind, products) {
 /** @returns {Promise<any>} */
 export async function getOperatorOrderMaths(order, kind) {
   const products = (await readCatalog()).products || [];
-  return operatorCartMaths(order, kind, products);
+  return operatorCartMaths(order, kind, products, order.operatorId || auth.currentUser?.uid || '');
 }
 
 /** Operator: their part of an outside order reached the gate */
@@ -1756,7 +1765,7 @@ async function recordOperatorDelivery(order, kind) {
   const staff = getCurrentStaff();
   if (!staff || staff.role !== kind) return;
   const products = (await readCatalog()).products || [];
-  const m = operatorCartMaths(order, kind, products);
+  const m = operatorCartMaths(order, kind, products, order.operatorId || auth.currentUser?.uid || '');
   await addToMyDay(
     kind,
     order.id,
@@ -2573,12 +2582,20 @@ export async function operatorSetPrice(productId, cost) {
   if (c <= 0) throw new Error('Enter your cost price');
   const p = (await readCatalog(true)).products.find((x) => x.id === productId);
   if (!p || p.source !== STORE_SOURCE[store]) throw new Error('You can only change your own store\'s products');
-  const price = sellingPrice(c, p.source);
-  await setDoc(
-    doc(db, 'catalog', 'overrides'),
-    { prices: { [productId]: { cost: c, price, by: getCurrentStaff()?.name || '', at: new Date().toISOString() } } },
-    { merge: true }
-  );
+  const uid = auth.currentUser?.uid || '';
+  const name = getCurrentStaff()?.name || '';
+  const at = new Date().toISOString();
+  // Each operator keeps their own cost. Students see one price, worked out from the highest cost.
+  const ovSnap = await getDoc(doc(db, 'catalog', 'overrides')).catch(() => null);
+  const cur = (ovSnap && ovSnap.exists() && (ovSnap.data().prices || {})[productId]) || {};
+  const ops = { ...(cur.ops || {}) };
+  if (!Object.keys(ops).length && p.addedByUid && p.addedByUid !== uid && p.costPrice > 0) {
+    ops[p.addedByUid] = { cost: p.costPrice, name: p.addedBy || '', at: '' }; // the operator who added it keeps their cost
+  }
+  ops[uid] = { cost: c, name, at };
+  const highest = Math.max(...Object.values(ops).map((o) => Number(o && o.cost) || 0));
+  const price = sellingPrice(highest, p.source);
+  await setDoc(doc(db, 'catalog', 'overrides'), { prices: { [productId]: { cost: highest, price, ops, by: name, at } } }, { merge: true });
   catalogAt = 0;
 }
 
@@ -2605,8 +2622,9 @@ export async function operatorAddProduct({ name, category, cost, unit, imageUrl,
     emoji: '🛍️',
     gradient: 'from-slate-400/20 to-zinc-500/20',
     isAvailable: true,
-    isFood: store === 'food' && String(category).toLowerCase() === 'food',
+    isFood: store === 'food' && String(category).toLowerCase() !== 'drinks',
     addedBy: getCurrentStaff()?.name || '',
+    addedByUid: auth.currentUser?.uid || '',
   });
   await setDoc(doc(db, 'catalog', 'extra'), { products: arrayUnion(product) }, { merge: true });
   catalogAt = 0;
@@ -2670,7 +2688,7 @@ function orderMoney(o, products) {
     const inside = store === 'inside';
     if (!inside && i.source !== (store === 'food' ? 'food' : 'outside')) continue;
     if (inside && i.source && i.source !== 'school') continue;
-    const c = costOf(i, products, inside);
+    const c = costOf(i, products, inside, inside ? '' : o.operatorId || '');
     const m = Math.max(0, (i.totalPrice || 0) - c.cost);
     margin += m;
     lines.push({ i, m: inside ? m * (1 - RUNNER_SHARE) : m });
@@ -2916,6 +2934,41 @@ export async function markExpressReceived(orderId) {
     console.error(e);
     return null;
   }
+}
+
+/**
+ * Student: the runner tapped Delivered but hasn't arrived. Undoes the runner's Delivered so the express clock keeps running.
+ * Only inside the same 10-minute window as "I've received it".
+ */
+/** @returns {Promise<any>} */
+export async function markExpressNotHere(orderId) {
+  try {
+    return await patchOrder(orderId, (o) => {
+      if (!o.express || o.express.status !== 'accepted' || o.express.receivedAt || !o.express.runnerDeliveredAt) return;
+      const del = Date.parse(o.express.runnerDeliveredAt);
+      if (Number.isFinite(del) && Date.now() - del >= EXPRESS_CONFIRM_MS) return;
+      const now = new Date().toISOString();
+      const { runnerDeliveredAt, ...rest } = o.express;
+      o.express = { ...rest, notHereCount: (o.express.notHereCount || 0) + 1, lastNotHereAt: now };
+      o.history.push({ status: o.status, timestamp: now, note: 'Student says the runner has not arrived yet (Delivered was tapped early). The clock keeps running.', updatedBy: o.name || 'Customer' });
+    });
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
+}
+
+/** Runner: after a student's "Not here yet", tap again once actually at the room (restarts the 10-minute window) */
+/** @returns {Promise<any>} */
+export async function markExpressArrived(orderId) {
+  const staff = getCurrentStaff();
+  if (!staff || staff.role !== 'runner') return null;
+  return patchOrder(orderId, (o) => {
+    if (!o.express || o.express.status !== 'accepted' || o.express.receivedAt || o.express.runnerDeliveredAt) return;
+    const now = new Date().toISOString();
+    o.express = { ...o.express, runnerDeliveredAt: now };
+    o.history.push({ status: o.status, timestamp: now, note: 'Runner says they have now arrived with the express order', updatedBy: staff.name || 'Runner' });
+  });
 }
 
 /** Runner: they paid the ₦600 back on a late express order */

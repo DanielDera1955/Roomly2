@@ -28,6 +28,10 @@ export interface Product {
   featured?: boolean;
   /** "Goes well with": up to 4 product ids suggested right after this one is added */
   pairsWith?: string[];
+  /** Outside: each operator's own cost (login uid -> cost). Students pay from the highest; settlement uses the serving operator's. */
+  opCosts?: Record<string, number>;
+  /** Outside: login uid of the operator who added it */
+  addedByUid?: string;
   source?: 'school' | 'outside' | 'food'; // school = canteen, outside = store, food = food operator
 }
 
