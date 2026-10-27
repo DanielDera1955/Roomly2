@@ -26,7 +26,7 @@ const input =
  */
 export const OperatorProductsPanel: React.FC = () => {
   const role = getCurrentStaff()?.role;
-  const store: StoreKey = role === 'food' ? 'food' : 'store';
+  const store: StoreKey = role === 'food' ? 'food' : role === 'runner' ? 'inside' : 'store';
   const source = STORE_SOURCE[store];
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<'prices' | 'add'>('prices');

@@ -2680,7 +2680,8 @@ const myStore = () => {
 /** @returns {Promise<void>} */
 export async function operatorSetPrice(productId, cost) {
   const store = myStore();
-  if (store !== 'store' && store !== 'food') throw new Error('Operators only');
+  // Runners change inside prices; operators change their own store's
+  if (store !== 'store' && store !== 'food' && store !== 'inside') throw new Error('Runners and operators only');
   const c = Math.round(Number(cost) || 0);
   if (c <= 0) throw new Error('Enter your cost price');
   const p = (await readCatalog(true)).products.find((x) => x.id === productId);
@@ -2706,7 +2707,7 @@ export async function operatorSetPrice(productId, cost) {
 /** @returns {Promise<void>} */
 export async function operatorAddProduct({ name, category, cost, unit, imageUrl, group = '' }) {
   const store = myStore();
-  if (store !== 'store' && store !== 'food') throw new Error('Operators only');
+  if (store !== 'store' && store !== 'food' && store !== 'inside') throw new Error('Runners and operators only');
   const n = String(name || '').trim().slice(0, 80);
   const c = Math.round(Number(cost) || 0);
   if (!n) throw new Error('Enter the product name');

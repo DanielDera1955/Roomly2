@@ -11,7 +11,6 @@ import {
   getMySummaries,
   getMyUid,
   getOperatorOrderMaths,
-  getMyHiddenReason,
   subscribeSideRequests,
   mySide,
 } from '../api.js';
@@ -204,41 +203,6 @@ export const ProviderOverview: React.FC<{ kind: 'runner' | 'operator' }> = ({ ki
   );
 };
 
-/** Only shows when something needs the operator: hidden from students, or student requests waiting for a price */
-const OperatorAlerts: React.FC<{ kind: Kind }> = ({ kind }) => {
-  const [, setTick] = useState(0);
-  const [open, setOpen] = useState(0);
-  useEffect(() => {
-    const h = () => setTick((n) => n + 1);
-    window.addEventListener('roomly-batches', h);
-    return () => window.removeEventListener('roomly-batches', h);
-  }, []);
-  useEffect(() => subscribeSideRequests(mySide(), (list: any[]) => setOpen((list || []).filter((r) => r.status === 'open').length)), [kind]);
-  const hidden = getMyHiddenReason();
-  const noAccount = !getCurrentStaff()?.payAccount;
-  if (!hidden && !open && !noAccount) return null;
-  return (
-    <div className="space-y-2">
-      {hidden && (
-        <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-xs text-rose-700 dark:text-rose-300 leading-snug">
-          <p className="font-black">Students cannot see you right now</p>
-          <p className="font-semibold">{hidden.text}</p>
-        </div>
-      )}
-      {noAccount && (
-        <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-xs text-amber-900 dark:text-amber-200 font-semibold">
-          Add the account students pay into, under "Where students pay you" at the bottom, before you switch a batch on.
-        </div>
-      )}
-      {open > 0 && (
-        <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-xs text-amber-900 dark:text-amber-200 font-semibold">
-          {open} student request{open === 1 ? '' : 's'} waiting for your price. Their cart can't check out until someone quotes, so answer it below your orders.
-        </div>
-      )}
-    </div>
-  );
-};
-
 interface OperatorPortalProps {
   onBack: () => void;
 }
@@ -247,6 +211,13 @@ interface OperatorPortalProps {
 export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
   const staff = getCurrentStaff();
   const isAdmin = staff?.role === 'admin';
+  const hasAccount = Boolean(staff?.payAccount?.accountNumber);
+  // Requests still waiting for a price: they move up to the top section
+  const [openRequests, setOpenRequests] = useState(0);
+  useEffect(() => {
+    if (isAdmin) return;
+    return subscribeSideRequests(mySide(), (list: any[]) => setOpenRequests((list || []).filter((r) => r.status === 'open').length));
+  }, [isAdmin]);
   const [kind, setKind] = useState<Kind>(staff?.role === 'food' ? 'food' : 'store');
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -365,13 +336,19 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
           </div>
         )}
 
-        {/* 1. Only when something needs attention: hidden from students, no payment account, requests waiting */}
-        {!isAdmin && <OperatorAlerts kind={kind} />}
+        {/* TOP, always first: the overview */}
+        {!isAdmin && <ProviderOverview kind="operator" />}
 
-        {/* 2. Availability: operators set their own batches; the admin sees everyone and can switch them off */}
+        {/* Payment account first, until it is saved; then it moves to the bottom */}
+        {!isAdmin && !hasAccount && <PayAccountForm />}
+
+        {/* Availability: operators set their own batches; the admin sees everyone and can switch them off */}
         {isAdmin ? <OperatorOverridePanel kind={kind} /> : <BatchSwitches side={kind} />}
 
-        {/* 3. Active orders: the part an operator touches most */}
+        {/* A request waiting for a price blocks the student's cart, so it comes up here */}
+        {!isAdmin && openRequests > 0 && <ProductRequestsPanel />}
+
+        {/* Orders: the part an operator touches most */}
         <div className="space-y-3">
           <p className="text-xs font-black uppercase tracking-wider text-slate-500 px-1">Orders</p>
         <div className="flex items-center gap-2 overflow-x-auto py-0.5">
@@ -562,14 +539,13 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
         })}
         </div>
 
-        {/* 4. Then the rest, from most to least often used */}
-        {!isAdmin && <ProductRequestsPanel />}
-        {!isAdmin && <ProviderOverview kind="operator" />}
+        {/* BELOW ORDERS: less frequent */}
+        {!isAdmin && openRequests === 0 && <ProductRequestsPanel />}
         {!isAdmin && <ProviderSettlement kind="operator" />}
         {!isAdmin && <TodaysMenuPanel side={getCurrentStaff()?.role === 'food' ? 'food' : 'store'} />}
         {!isAdmin && <OperatorProductsPanel />}
         {!isAdmin && <MyRatingsPanel />}
-        {!isAdmin && <PayAccountForm />}
+        {!isAdmin && hasAccount && <PayAccountForm />}
       </div>
     </div>
   );

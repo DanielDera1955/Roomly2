@@ -9,7 +9,7 @@ import { MyRatingsPanel } from './FeedbackPanels';
 import { ProviderSettlement, PayAccountForm } from './SettlementPanel';
 import { ProductRequestsPanel } from './ProductRequestsPanel';
 import { ProviderOverview } from './OperatorPortal';
-import { RunnerStockPanel } from './StoreProducts';
+import { OperatorProductsPanel } from './StoreProducts';
 import { playChime } from '../sound';
 import { ChevronDown as ChevronDownIcon, Phone as PhoneIcon } from 'lucide-react';
 import {
@@ -41,6 +41,7 @@ import {
 } from 'lucide-react';
 import { OrderRecord, DeliveryRunner, CartItem, locationText, shortLocation, roomText, partLabel } from '../types';
 import {
+  subscribeSideRequests,
   getOrders,
   getRunners,
   updateOrderStatus,
@@ -141,6 +142,14 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
   onOrderUpdated,
 }) => {
   const [runners, setRunners] = useState<DeliveryRunner[]>([]);
+  const isRunner = getCurrentStaff()?.role === 'runner';
+  const hasAccount = Boolean(getCurrentStaff()?.payAccount?.accountNumber);
+  // Inside product requests still waiting for a price: they move up to the top section
+  const [openRequests, setOpenRequests] = useState(0);
+  useEffect(() => {
+    if (!isRunner) return;
+    return subscribeSideRequests('inside', (list: any[]) => setOpenRequests((list || []).filter((r) => r.status === 'open').length));
+  }, [isRunner]);
   const [activeRunnerId, setActiveRunnerId] = useState<string>(() => getCurrentStaff()?.id || 'run-1');
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -745,8 +754,11 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
 
       {/* Main Container */}
       <div className="p-4 space-y-4 max-w-[480px] mx-auto">
-        {/* Runner Name Chooser Card (Runner selects their identity) */}
-        <div className="p-4 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
+        {/* TOP, always first: the runner's overview. The admin viewing this portal picks a runner instead. */}
+        {isRunner ? (
+          <ProviderOverview kind="runner" />
+        ) : (
+          <div className="p-4 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
           <div className="flex items-center justify-between">
             <label className="text-xs font-black text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
               <User className="w-4 h-4 text-[#0e9f55]" />
@@ -773,20 +785,21 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
 
         </div>
 
+        )}
+
+        {/* Payment account first, until it is saved; then it moves to the bottom */}
+        {isRunner && !hasAccount && <PayAccountForm />}
+
         <BatchSwitches />
 
-        {getCurrentStaff()?.role === 'runner' && <ExpressPanel orders={insideOrders} />}
+        {isRunner && <ExpressPanel orders={insideOrders} />}
 
         <GatePickupPanel />
 
-        {/* Today's 70/30 statement, settlement and payment account (runners only) */}
-        {getCurrentStaff()?.role === 'runner' && <ProductRequestsPanel />}
-        {getCurrentStaff()?.role === 'runner' && <RunnerStockPanel />}
-        {getCurrentStaff()?.role === 'runner' && <ProviderOverview kind="runner" />}
-        {getCurrentStaff()?.role === 'runner' && <ProviderSettlement kind="runner" />}
-        {getCurrentStaff()?.role === 'runner' && <PayAccountForm />}
-        {getCurrentStaff()?.role === 'runner' && <MyRatingsPanel />}
+        {/* A request waiting for a price blocks the student's cart, so it comes up here */}
+        {isRunner && openRequests > 0 && <ProductRequestsPanel />}
 
+        <p className="text-xs font-black uppercase tracking-wider text-slate-500 px-1 pt-1">Orders</p>
         {/* Filters */}
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
           {([
@@ -848,6 +861,13 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
             )}
           </div>
         )}
+
+        {/* BELOW ORDERS: less frequent */}
+        {isRunner && openRequests === 0 && <ProductRequestsPanel />}
+        {isRunner && <OperatorProductsPanel />}
+        {isRunner && <ProviderSettlement kind="runner" />}
+        {isRunner && <MyRatingsPanel />}
+        {isRunner && hasAccount && <PayAccountForm />}
       </div>
     </div>
   );
