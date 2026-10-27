@@ -655,6 +655,31 @@ export function getMyHiddenReason(now = new Date()) {
   return null;
 }
 
+/** Latest time settlement comes up on its own: 10pm for runners, 8pm for store and food operators */
+const DONE_BY_MIN = { inside: 22 * 60, outside: 20 * 60 };
+
+/**
+ * Has the signed-in runner or operator finished for today? True once they switched OFF the last batch
+ * of the day, or at 10pm (runners) / 8pm (operators), whichever comes first. Never while one of their batches is ON.
+ */
+export function isDoneForToday(now = new Date()) {
+  const staff = getCurrentStaff();
+  const uid = auth.currentUser?.uid;
+  if (!staff || !uid) return false;
+  const side = staff.role === 'runner' ? 'inside' : staff.role === 'store' || staff.role === 'food' ? staff.role : '';
+  if (!side) return false;
+  const outer = side === 'inside' ? 'inside' : 'outside';
+  const all = side === 'inside' ? insideSwitches : (operatorDocs[uid] || {}).slots || {};
+  // Inside batches are shared: only count the ones this runner opened
+  const mineOnly = (sw) => sw && (side !== 'inside' || sw.byUid === uid);
+  const slots = slotsForDay(side, now, 0);
+  if (slots.some((o) => mineOnly(all[o.key]) && switchIsLive(all[o.key], outer, now))) return false;
+  if (now.getHours() * 60 + now.getMinutes() >= DONE_BY_MIN[outer]) return true;
+  const last = slots.slice().sort((a, b) => a.startMin - b.startMin).pop();
+  const sw = last ? all[last.key] : null;
+  return Boolean(last && mineOnly(sw) && sw.on === false && sw.at);
+}
+
 /** Admin: the runners currently switched off (email -> true) */
 export function getRunnerOffMap() {
   return { ...runnerOff };

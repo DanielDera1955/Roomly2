@@ -339,6 +339,9 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
         {/* TOP, always first: the overview */}
         {!isAdmin && <ProviderOverview kind="operator" />}
 
+        {/* Settlement comes up here when they are done for the day with money to send, or a past day is open */}
+        {!isAdmin && <ProviderSettlement kind="operator" placement="top" />}
+
         {/* Payment account first, until it is saved; then it moves to the bottom */}
         {!isAdmin && !hasAccount && <PayAccountForm />}
 
@@ -541,7 +544,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
 
         {/* BELOW ORDERS: less frequent */}
         {!isAdmin && openRequests === 0 && <ProductRequestsPanel />}
-        {!isAdmin && <ProviderSettlement kind="operator" />}
+        {!isAdmin && <ProviderSettlement kind="operator" placement="bottom" />}
         {!isAdmin && <TodaysMenuPanel side={getCurrentStaff()?.role === 'food' ? 'food' : 'store'} />}
         {!isAdmin && <OperatorProductsPanel />}
         {!isAdmin && <MyRatingsPanel />}

@@ -10,6 +10,7 @@ import {
   isOverdue,
   clearMyDay,
   objectToCart,
+  isDoneForToday,
 } from '../api.js';
 import { STORE_CONFIG, SETTLE_BY_HOUR, RUNNER_SHARE, GATE_PICKUP_ROOMLY, EXPRESS_ROOMLY_SHARE } from '../config';
 
@@ -168,17 +169,51 @@ const OpenDay: React.FC<{ d: any }> = ({ d }) => {
 };
 
 /** Runners and operators: today's statement (runners) and the days they still need to clear */
-export const ProviderSettlement: React.FC<{ kind: 'runner' | 'operator' }> = ({ kind }) => {
+/**
+ * placement: the portal renders this twice, under the overview ('top') and below orders ('bottom').
+ * It shows at the top when a past day is still unsettled, or when today owes money and the person is done
+ * for the day (last batch switched OFF, or 10pm runners / 8pm operators). Otherwise it shows at the bottom.
+ */
+export const ProviderSettlement: React.FC<{ kind: 'runner' | 'operator'; placement?: 'top' | 'bottom' }> = ({ kind, placement }) => {
   const [today, setToday] = useState<any | null>(null);
   const [open, setOpen] = useState<any[]>([]);
+  const [, setTick] = useState(0);
   useEffect(() => subscribeMyTodaySummary(setToday), []);
   useEffect(() => subscribeMyOpenSettlements(setOpen), []);
+  // Re-check when a switch changes and every minute, so it comes up at the cut-off time by itself
+  useEffect(() => {
+    const h = () => setTick((n) => n + 1);
+    window.addEventListener('roomly-batches', h);
+    const id = window.setInterval(h, 60000);
+    return () => {
+      window.removeEventListener('roomly-batches', h);
+      window.clearInterval(id);
+    };
+  }, []);
   const owing = open.filter((d) => (d.due || 0) > 0 || (d.sentTotal || 0) > 0);
   const bank = STORE_CONFIG.bankDetails;
 
+  const now = new Date();
+  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const left = (d: any) => Math.max(0, Math.round((d.due || 0) - (d.sentTotal || 0)));
+  const pastOpen = owing.some((d) => d.date < todayKey);
+  const todayLeft = owing.filter((d) => d.date === todayKey).reduce((t, d) => t + left(d), 0);
+  const doneToday = todayLeft > 0 && isDoneForToday(now);
+  const atTop = pastOpen || doneToday;
+  if (placement && (placement === 'top') !== atTop) return null;
+
   return (
-    <div className={card}>
+    <div className={`${card} ${atTop && placement === 'top' ? 'ring-2 ring-amber-400 dark:ring-amber-600' : ''}`}>
       <p className="text-xs font-black uppercase tracking-wider text-slate-500">Money: today and settlement</p>
+
+      {doneToday && (
+        <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-xs text-amber-900 dark:text-amber-200 leading-snug">
+          <p className="font-black">You're done for today. Settle {naira(todayLeft)} before {SETTLE_BY_HOUR}am tomorrow.</p>
+          <p className="font-semibold">
+            If you don't, students won't see you at checkout from {SETTLE_BY_HOUR}am until Roomly confirms your payment. Check the carts below, tap All cleared, send the money, then tap "I have sent".
+          </p>
+        </div>
+      )}
 
       {/* Today's totals live in the Overview above; helpers still need to know what to hand over */}
       {kind === 'runner' && today?.owedToHelpers > 0 && (

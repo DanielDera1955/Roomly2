@@ -787,6 +787,9 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
 
         )}
 
+        {/* Settlement comes up here when they are done for the day with money to send, or a past day is open */}
+        {isRunner && <ProviderSettlement kind="runner" placement="top" />}
+
         {/* Payment account first, until it is saved; then it moves to the bottom */}
         {isRunner && !hasAccount && <PayAccountForm />}
 
@@ -865,7 +868,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
         {/* BELOW ORDERS: less frequent */}
         {isRunner && openRequests === 0 && <ProductRequestsPanel />}
         {isRunner && <OperatorProductsPanel />}
-        {isRunner && <ProviderSettlement kind="runner" />}
+        {isRunner && <ProviderSettlement kind="runner" placement="bottom" />}
         {isRunner && <MyRatingsPanel />}
         {isRunner && hasAccount && <PayAccountForm />}
       </div>
