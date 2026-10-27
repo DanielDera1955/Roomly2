@@ -895,7 +895,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             {!outOfStock && (
               <p className="text-[11px] font-semibold text-amber-800 dark:text-amber-300">Choose one to continue. You can't check out without it.</p>
             )}
-            {((cart === 'inside' ? ['refund', 'swap'] : ['refund', 'tomorrow', 'swap']) as OutOfStockChoice[]).map((k) => (
+            {/* "Tomorrow's batch" only makes sense for outside store items, not cooked food */}
+            {((cart === 'store' ? ['refund', 'tomorrow', 'swap'] : ['refund', 'swap']) as OutOfStockChoice[]).map((k) => (
               <label key={k} className="flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-200 cursor-pointer">
                 <input
                   type="radio"

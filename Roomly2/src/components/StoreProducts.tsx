@@ -7,6 +7,9 @@ import {
   operatorSetPrice,
   operatorAddProduct,
   runnerSetStock,
+  operatorSetStock,
+  setOptionStock,
+  operatorSaveFoodOptions,
   uploadProductImage,
 } from '../api.js';
 import { auth } from '../firebase';
@@ -147,6 +150,7 @@ export const OperatorProductsPanel: React.FC = () => {
                         Save
                       </button>
                     </div>
+                    {role === 'food' && p.isFood && <OperatorFoodOptions p={p} onSaved={load} />}
                     {c > 0 && (() => {
                       // Students pay one price, from the highest cost any operator entered
                       const me = auth.currentUser?.uid || '';
@@ -239,8 +243,73 @@ export const OperatorProductsPanel: React.FC = () => {
   );
 };
 
-/** Runners: switch inside-school items in or out of stock (out of stock hides them from students) */
-export const RunnerStockPanel: React.FC = () => {
+/** "Name, cost" per line -> [{ name, cost }] */
+const parseLines = (text: string) =>
+  text
+    .split('\n')
+    .map((l) => l.trim().match(/^(.+?)[,\s]+₦?([\d,]+)$/))
+    .filter(Boolean)
+    .map((m) => ({ name: m![1].trim().replace(/[,\s]+$/, ''), cost: Number(m![2].replace(/,/g, '')) }));
+const linesOf = (list: any[] | undefined, uid: string) =>
+  (list || []).map((o: any) => `${o.name}, ${(o.opCosts && o.opCosts[uid]) || o.cost || 0}`).join('\n');
+
+/** Food operators: one food item's extras and pick-one choice, at THEIR cost */
+const OperatorFoodOptions: React.FC<{ p: any; onSaved: () => void }> = ({ p, onSaved }) => {
+  const uid = auth.currentUser?.uid || '';
+  const [open, setOpen] = useState(false);
+  const [extras, setExtras] = useState(linesOf(p.extras, uid));
+  const [title, setTitle] = useState(p.choiceTitle || '');
+  const [choices, setChoices] = useState(linesOf(p.choices, uid));
+  const [saving, setSaving] = useState(false);
+  const preview = (text: string) =>
+    parseLines(text)
+      .map((x) => `${x.name} ${x.cost > 0 ? naira(sellingPrice(x.cost, 'food')) : 'free'}`)
+      .join(' · ');
+  const save = async () => {
+    setSaving(true);
+    try {
+      await operatorSaveFoodOptions(p.id, parseLines(extras), title, parseLines(choices));
+      setOpen(false);
+      onSaved();
+    } catch (e: any) {
+      window.alert(e?.message || 'Could not save.');
+    }
+    setSaving(false);
+  };
+  const count = (p.extras || []).length + (p.choices || []).length;
+  if (!open)
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="text-[11px] font-bold text-[#0e9f55] cursor-pointer">
+        Extras and swallow ({count}) ›
+      </button>
+    );
+  return (
+    <div className="space-y-1.5 p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+      <p className="text-[11px] font-bold">Extras (one per line: name, your cost)</p>
+      <textarea rows={4} value={extras} onChange={(e) => setExtras(e.target.value)} className={input} placeholder={'Chicken, 1200\nBeef, 400\nEgg, 250'} />
+      {extras.trim() && <p className="text-[10px] text-slate-500">Students pay: {preview(extras)}</p>}
+      <p className="text-[11px] font-bold pt-1">Pick one per plate (optional, e.g. swallow)</p>
+      <input value={title} onChange={(e) => setTitle(e.target.value)} className={input} placeholder="Title, e.g. Swallow" />
+      <textarea rows={3} value={choices} onChange={(e) => setChoices(e.target.value)} className={input} placeholder={'Fufu, 0\nGarri, 0\nSemo, 100'} />
+      {choices.trim() && <p className="text-[10px] text-slate-500">Students pay: {preview(choices)}</p>}
+      <p className="text-[10px] text-slate-500">Use 0 for no extra charge. If another operator has a higher cost, students pay from theirs; your orders are settled at your cost.</p>
+      <div className="flex gap-2">
+        <button type="button" onClick={() => setOpen(false)} className="flex-1 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[11px] font-bold cursor-pointer">
+          Cancel
+        </button>
+        <button type="button" disabled={saving} onClick={save} className="flex-1 py-1.5 rounded-lg bg-[#0e9f55] text-white text-[11px] font-bold disabled:opacity-40 cursor-pointer">
+          Save
+        </button>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Today's menu: switch products, extras and swallows on or off for today. Off = hidden from students.
+ * Runners: inside items. Store and food operators: their own items.
+ */
+export const TodaysMenuPanel: React.FC<{ side: 'inside' | 'store' | 'food' }> = ({ side }) => {
   const [open, setOpen] = useState(false);
   const [products, setProducts] = useState<any[]>([]);
   const [search, setSearch] = useState('');
@@ -248,7 +317,9 @@ export const RunnerStockPanel: React.FC = () => {
 
   const load = async () => {
     const list = await getProductsFresh();
-    setProducts(list.filter((p: any) => p.source !== 'outside' && p.source !== 'food'));
+    setProducts(
+      list.filter((p: any) => (side === 'inside' ? p.source !== 'outside' && p.source !== 'food' : p.source === STORE_SOURCE[side]))
+    );
   };
   useEffect(() => {
     if (open) load();
@@ -260,49 +331,87 @@ export const RunnerStockPanel: React.FC = () => {
     .sort((a, b) => Number(a.isAvailable !== false) - Number(b.isAvailable !== false));
   const outCount = products.filter((p) => p.isAvailable === false).length;
 
-  const toggle = async (p: any) => {
-    setBusy(p.id);
+  const run = async (key: string, fn: () => Promise<void>) => {
+    setBusy(key);
     try {
-      await runnerSetStock(p.id, p.isAvailable === false);
+      await fn();
       await load();
     } catch (e: any) {
       window.alert(e?.message || 'Could not save.');
     }
     setBusy('');
   };
+  const toggle = (p: any) =>
+    run(p.id, () => (side === 'inside' ? runnerSetStock(p.id, p.isAvailable === false) : operatorSetStock(p.id, p.isAvailable === false)));
+  const canOptions = side !== 'store';
 
   return (
     <div className={card}>
       <button type="button" onClick={() => setOpen(!open)} className="w-full flex items-center justify-between cursor-pointer">
-        <span className="text-xs font-black uppercase tracking-wider text-slate-500">Inside items: in stock ({outCount} out)</span>
+        <span className="text-xs font-black uppercase tracking-wider text-slate-500">
+          Today's menu{side === 'inside' ? ': inside items' : ''} ({outCount} off)
+        </span>
         <span className="text-xs font-bold text-[#0e9f55]">{open ? 'Hide' : 'Show'}</span>
       </button>
       {open && (
         <div className="space-y-2">
-          <input value={search} onChange={(e) => setSearch(e.target.value)} className={input} placeholder="Search inside items" />
-          {shown.slice(0, 60).map((p) => {
+          <input value={search} onChange={(e) => setSearch(e.target.value)} className={input} placeholder="Search items" />
+          {shown.slice(0, 80).map((p) => {
             const inStock = p.isAvailable !== false;
+            const opts = canOptions
+              ? [...(p.choices || []).map((o: any) => ({ ...o, kind: p.choiceTitle || 'Choice' })), ...(p.extras || []).map((o: any) => ({ ...o, kind: 'Extra' }))]
+              : [];
             return (
-              <div key={p.id} className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs">
-                <span className="min-w-0 truncate">
-                  <strong>{p.name}</strong> <span className="text-slate-500">· {naira(p.price)}</span>
-                </span>
-                <button
-                  type="button"
-                  disabled={busy === p.id}
-                  onClick={() => toggle(p)}
-                  className={`shrink-0 px-3 py-1.5 rounded-lg font-bold cursor-pointer disabled:opacity-40 ${
-                    inStock ? 'bg-[#0e9f55] text-white' : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
-                  }`}
-                >
-                  {inStock ? 'In stock' : 'Out of stock'}
-                </button>
+              <div key={p.id} className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate">
+                    <strong>{p.name}</strong> <span className="text-slate-500">· {naira(p.price)}</span>
+                  </span>
+                  <button
+                    type="button"
+                    disabled={busy === p.id}
+                    onClick={() => toggle(p)}
+                    className={`shrink-0 px-3 py-1.5 rounded-lg font-bold cursor-pointer disabled:opacity-40 ${
+                      inStock ? 'bg-[#0e9f55] text-white' : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
+                    }`}
+                  >
+                    {inStock ? 'On' : 'Off today'}
+                  </button>
+                </div>
+                {inStock && opts.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {opts.map((o: any) => {
+                      const key = `${p.id}:${o.id}`;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          disabled={busy === key}
+                          onClick={() => run(key, () => setOptionStock(p.id, o.id, Boolean(o.off)))}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-semibold border cursor-pointer disabled:opacity-40 ${
+                            o.off
+                              ? 'border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 line-through'
+                              : 'border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+                          }`}
+                          title={o.kind}
+                        >
+                          {o.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
-          <p className="text-[11px] text-slate-400">Tap to switch. Out-of-stock items are hidden from students until you switch them back.</p>
+          <p className="text-[11px] text-slate-400">
+            Tap to switch. Anything off is hidden from students until you switch it back.{canOptions ? ' Tap an extra or swallow (e.g. Fufu) to switch just that off.' : ''}
+          </p>
         </div>
       )}
     </div>
   );
 };
+
+/** Runners: inside items (kept for the runner screen) */
+export const RunnerStockPanel: React.FC = () => <TodaysMenuPanel side="inside" />;

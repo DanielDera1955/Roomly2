@@ -23,8 +23,9 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
   const [choiceId, setChoiceId] = useState<string>('');
 
   // This item's own extras and its "pick one" choice (e.g. Swallow), set in Admin
-  const extrasList = product.extras || [];
-  const choices = product.choices || [];
+  // Switched off in Today's menu = not available today
+  const extrasList = (product.extras || []).filter((e) => !e.off);
+  const choices = (product.choices || []).filter((c) => !c.off);
   const choiceTitle = (product.choiceTitle || 'Choose one').trim();
   const chosen = choices.find((c) => c.id === choiceId);
   const canZeroPlate = extrasList.length > 0;

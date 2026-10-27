@@ -734,6 +734,8 @@ async function readCatalog(force = false) {
     const ov = ovSnap && ovSnap.exists() ? ovSnap.data() : {};
     const prices = ov.prices || {};
     const stock = ov.stock || {};
+    const food = ov.food || {};
+    const optStock = ov.optStock || {};
     const products = [...main, ...extra].map((p) => {
       let q = p;
       if (prices[p.id]) {
@@ -744,6 +746,20 @@ async function readCatalog(force = false) {
         }
       }
       if (typeof stock[p.id] === 'boolean') q = { ...q, isAvailable: stock[p.id] };
+      // Food: extras and swallow set by operators (each keeps their own cost; students pay from the highest)
+      const f = food[p.id];
+      if (f && typeof f === 'object') {
+        const toOpts = (list) =>
+          (Array.isArray(list) ? list : []).map((o) => {
+            const costs = Object.entries(o.ops || {}).map(([u, v]) => [u, Number(v && v.cost) || 0]);
+            const max = Math.max(0, ...costs.map((c) => c[1]));
+            return { id: o.id, name: o.name, cost: max, price: max > 0 ? sellingPrice(max, q.source) : 0, opCosts: Object.fromEntries(costs) };
+          });
+        q = { ...q, extras: toOpts(f.extras), choices: toOpts(f.choices), choiceTitle: f.choiceTitle || undefined };
+      }
+      // Today's menu: an extra or swallow switched off is hidden from students
+      const mark = (list) => (Array.isArray(list) ? list.map((o) => ({ ...o, off: optStock[`${p.id}:${o.id}`] === false })) : list);
+      if (q.extras || q.choices) q = { ...q, extras: mark(q.extras), choices: mark(q.choices) };
       return q;
     });
     catalogCache = { categories: d.categories || INITIAL_CATEGORIES, products, extraCount: extra.length, overrideIds: new Set([...Object.keys(prices), ...Object.keys(stock)]) };
@@ -1640,7 +1656,11 @@ function costOf(item, products, inside = false, opId = '') {
   if (p && item.isFood) {
     // Food: plates at the dish's cost + each extra (and swallow choice) at the cost you entered for it
     const opts = [...(p.extras || []), ...(p.choices || []).map((c) => ({ ...c, id: `choice-${c.id}` }))];
-    const extras = (item.extras || []).map((e) => ({ ...e, cost: opts.find((o) => o.id === e.id)?.cost }));
+    const extras = (item.extras || []).map((e) => {
+      const o = opts.find((x) => x.id === e.id);
+      const mine = o && opId && o.opCosts ? o.opCosts[opId] : 0;
+      return { ...e, cost: mine > 0 ? mine : o?.cost };
+    });
     const platesKnown = !(item.plates > 0) || p.costPrice > 0;
     if (platesKnown && extras.every((e) => typeof e.cost === 'number')) {
       const per = (item.plates > 0 ? p.costPrice * item.plates : 0) + extras.reduce((s, e) => s + e.cost * (e.quantity || 0), 0);
@@ -2627,6 +2647,62 @@ export async function operatorAddProduct({ name, category, cost, unit, imageUrl,
     addedByUid: auth.currentUser?.uid || '',
   });
   await setDoc(doc(db, 'catalog', 'extra'), { products: arrayUnion(product) }, { merge: true });
+  catalogAt = 0;
+}
+
+/** Operator: their food item's extras and pick-one choice. lists = [{ name, cost }] (cost is what THEY pay). */
+/** @returns {Promise<void>} */
+export async function operatorSaveFoodOptions(productId, extras, choiceTitle, choices) {
+  const store = myStore();
+  if (store !== 'food') throw new Error('Food operators only');
+  const p = (await readCatalog(true)).products.find((x) => x.id === productId);
+  if (!p || p.source !== 'food') throw new Error('You can only change your own food items');
+  const uid = auth.currentUser?.uid || '';
+  const name = getCurrentStaff()?.name || '';
+  const at = new Date().toISOString();
+  const ovSnap = await getDoc(doc(db, 'catalog', 'overrides')).catch(() => null);
+  const cur = (ovSnap && ovSnap.exists() && (ovSnap.data().food || {})[productId]) || {};
+  const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  // The list is shared: other operators keep their own cost on items that stay on it
+  const build = (list, prev) =>
+    (list || [])
+      .map((x) => ({ id: slug(x.name), name: String(x.name).trim().slice(0, 40), cost: Math.max(0, Math.round(Number(x.cost) || 0)) }))
+      .filter((x, i, a) => x.id && a.findIndex((y) => y.id === x.id) === i)
+      .slice(0, 20)
+      .map((x) => {
+        const old = (prev || []).find((o) => o.id === x.id);
+        return { id: x.id, name: x.name, ops: { ...((old && old.ops) || {}), [uid]: { cost: x.cost, name, at } } };
+      });
+  const next = slim({
+    extras: build(extras, cur.extras),
+    choices: build(choices, cur.choices),
+    choiceTitle: String(choiceTitle || '').trim().slice(0, 30),
+    by: name,
+    at,
+  });
+  await setDoc(doc(db, 'catalog', 'overrides'), { food: { [productId]: next } }, { merge: true });
+  catalogAt = 0;
+}
+
+/** Operator: switch one of their products on or off for today (off hides it from students) */
+/** @returns {Promise<void>} */
+export async function operatorSetStock(productId, inStock) {
+  const store = myStore();
+  if (store !== 'store' && store !== 'food') throw new Error('Operators only');
+  const p = (await readCatalog(true)).products.find((x) => x.id === productId);
+  if (!p || p.source !== STORE_SOURCE[store]) throw new Error("You can only change your own store's products");
+  await setDoc(doc(db, 'catalog', 'overrides'), { stock: { [productId]: Boolean(inStock) } }, { merge: true });
+  catalogAt = 0;
+}
+
+/** Runner (inside food) or food operator: switch one extra or swallow on or off for today */
+/** @returns {Promise<void>} */
+export async function setOptionStock(productId, optId, inStock) {
+  const store = myStore();
+  const p = (await readCatalog(true)).products.find((x) => x.id === productId);
+  const ok = p && ((store === 'inside' && p.source !== 'outside' && p.source !== 'food') || (store === 'food' && p.source === 'food'));
+  if (!ok) throw new Error('Not your item');
+  await setDoc(doc(db, 'catalog', 'overrides'), { optStock: { [`${productId}:${optId}`]: Boolean(inStock) } }, { merge: true });
   catalogAt = 0;
 }
 

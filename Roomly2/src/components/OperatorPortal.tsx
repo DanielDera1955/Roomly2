@@ -14,7 +14,7 @@ import {
 } from '../api.js';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { ProviderSettlement, PayAccountForm } from './SettlementPanel';
-import { OperatorProductsPanel } from './StoreProducts';
+import { OperatorProductsPanel, TodaysMenuPanel } from './StoreProducts';
 import { ProductRequestsPanel } from './ProductRequestsPanel';
 import { MyRatingsPanel } from './FeedbackPanels';
 import { OrderRecord, partLabel, shortLocation } from '../types';
@@ -284,6 +284,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
         {!isAdmin && <PayAccountForm />}
         {!isAdmin && <ProductRequestsPanel />}
         {!isAdmin && <MyRatingsPanel />}
+        {!isAdmin && <TodaysMenuPanel side={getCurrentStaff()?.role === 'food' ? 'food' : 'store'} />}
         {!isAdmin && <OperatorProductsPanel />}
 
         {/* Availability: operators set their own batches; the admin sees everyone and can switch them off */}

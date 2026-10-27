@@ -40,6 +40,10 @@ export interface FoodExtraOption {
   name: string;
   price: number; // what the student pays
   cost?: number; // what you pay (kept on the product, not in the cart)
+  /** Outside: each operator's own cost for this extra (login uid -> cost) */
+  opCosts?: Record<string, number>;
+  /** Switched off in Today's menu (hidden from students) */
+  off?: boolean;
 }
 
 export interface PresetImageOption {

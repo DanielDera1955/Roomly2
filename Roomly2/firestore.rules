@@ -37,11 +37,11 @@ service cloud.firestore {
       // catalog/extra: products runners and operators add by quoting a student's request (add only, never remove)
       // catalog/overrides: operators change their prices, runners switch inside items in or out of stock
       allow create: if doc == 'overrides'
-        && ((isRunner() && request.resource.data.keys().hasOnly(['stock']))
-            || ((isOperator('store') || isOperator('food')) && request.resource.data.keys().hasOnly(['prices'])));
+        && ((isRunner() && request.resource.data.keys().hasOnly(['stock', 'optStock']))
+            || ((isOperator('store') || isOperator('food')) && request.resource.data.keys().hasOnly(['prices', 'stock', 'food', 'optStock'])));
       allow update: if doc == 'overrides'
-        && ((isRunner() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock']))
-            || ((isOperator('store') || isOperator('food')) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['prices'])));
+        && ((isRunner() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock', 'optStock']))
+            || ((isOperator('store') || isOperator('food')) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['prices', 'stock', 'food', 'optStock'])));
       allow create, update: if doc == 'extra'
         && (isRunner() || isOperator('store') || isOperator('food'))
         && request.resource.data.products.size() <= 2000
