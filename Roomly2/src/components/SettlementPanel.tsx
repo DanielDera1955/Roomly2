@@ -180,37 +180,9 @@ export const ProviderSettlement: React.FC<{ kind: 'runner' | 'operator' }> = ({ 
     <div className={card}>
       <p className="text-xs font-black uppercase tracking-wider text-slate-500">Money: today and settlement</p>
 
-      {kind === 'runner' && (
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-2.5">
-            <span className="block text-[10px] font-bold uppercase text-slate-500">Delivered today</span>
-            <span className="block text-base font-extrabold">{today?.orders || 0}</span>
-            <span className="block text-[10px] text-slate-400">Spent on items {naira(today?.itemsCost)}</span>
-          </div>
-          <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-2.5">
-            <span className="block text-[10px] font-bold uppercase text-slate-500">Profit today</span>
-            <span className="block text-base font-extrabold">{naira(today?.profit)}</span>
-            <span className="block text-[10px] text-slate-400">margin + delivery fees</span>
-          </div>
-          <div className="rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 p-2.5">
-            <span className="block text-[10px] font-bold uppercase text-emerald-700 dark:text-emerald-300">You keep</span>
-            <span className="block text-base font-extrabold text-[#0e9f55]">{naira(today?.keep)}</span>
-            <span className="block text-[10px] text-slate-400">
-              items + {Math.round(RUNNER_SHARE * 100)}% of profit{today?.gateFees ? ` + ${naira((today.gateFees || 0) - (today.gateOwed || 0))} gate` : ''}
-              {today?.helpShare ? ` + ${naira(today.helpShare)} for helping` : ''}
-            </span>
-            {today?.owedToHelpers > 0 && (
-              <span className="block text-[10px] font-bold text-violet-700 dark:text-violet-300">
-                Hand {naira(today.owedToHelpers)} to your helper(s)
-              </span>
-            )}
-          </div>
-          <div className="rounded-2xl bg-amber-50 dark:bg-amber-950/30 p-2.5">
-            <span className="block text-[10px] font-bold uppercase text-amber-700 dark:text-amber-300">Owed today</span>
-            <span className="block text-base font-extrabold text-amber-700 dark:text-amber-300">{naira(today?.due)}</span>
-            <span className="block text-[10px] text-slate-400">{Math.round((1 - RUNNER_SHARE) * 100)}% of profit{today?.gatePickups || today?.expressOrders ? ' + the lines below' : ''}</span>
-          </div>
-        </div>
+      {/* Today's totals live in the Overview above; helpers still need to know what to hand over */}
+      {kind === 'runner' && today?.owedToHelpers > 0 && (
+        <p className="text-[11px] font-bold text-violet-700 dark:text-violet-300">Hand {naira(today.owedToHelpers)} to your helper(s) today.</p>
       )}
 
       {/* Gate pickups and express runs are settled on their own lines */}

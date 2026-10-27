@@ -11,6 +11,9 @@ import {
   getMySummaries,
   getMyUid,
   getOperatorOrderMaths,
+  getMyHiddenReason,
+  subscribeSideRequests,
+  mySide,
 } from '../api.js';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { ProviderSettlement, PayAccountForm } from './SettlementPanel';
@@ -18,7 +21,7 @@ import { OperatorProductsPanel, TodaysMenuPanel } from './StoreProducts';
 import { ProductRequestsPanel } from './ProductRequestsPanel';
 import { MyRatingsPanel } from './FeedbackPanels';
 import { OrderRecord, partLabel, shortLocation } from '../types';
-import { OUT_OF_STOCK_LABEL } from '../config';
+import { OUT_OF_STOCK_LABEL, RUNNER_SHARE } from '../config';
 import { playChime } from '../sound';
 import { SoundToggle } from './SoundToggle';
 import { ThemeToggle } from './ThemeToggle';
@@ -29,32 +32,65 @@ type Range = 'today' | 'week' | 'month' | 'year' | 'custom';
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const naira = (n: number) => `₦${Math.round(n || 0).toLocaleString()}`;
 
+/** week = last 7 days, month = last 30 days, year = this year (both ends included) */
 function rangeDates(r: Range): [string, string] {
   const now = new Date();
   const start = new Date(now);
-  if (r === 'week') start.setDate(now.getDate() - ((now.getDay() + 6) % 7)); // from Monday
-  if (r === 'month') start.setDate(1);
+  if (r === 'week') start.setDate(now.getDate() - 6);
+  if (r === 'month') start.setDate(now.getDate() - 29);
   if (r === 'year') start.setMonth(0, 1);
   return [ymd(start), ymd(now)];
 }
 
 function addUp(days: any[]) {
+  const n = (v: any) => Number(v) || 0;
   return days.reduce(
     (t, d) => ({
-      orders: t.orders + (d.orders || 0),
-      paid: t.paid + (d.itemsPaid || 0),
-      earnings: t.earnings + (d.keep || 0),
-      sales: t.sales + (d.paid || 0),
-      owed: t.owed + (d.due || 0),
-      delivery: t.delivery + (d.deliveryKeep || 0),
+      orders: t.orders + n(d.orders),
+      paid: t.paid + n(d.itemsPaid),
+      earnings: t.earnings + n(d.keep),
+      sales: t.sales + n(d.paid),
+      owed: t.owed + n(d.due),
+      delivery: t.delivery + n(d.deliveryKeep),
+      deliveryFees: t.deliveryFees + n(d.deliveryFees),
+      itemsCost: t.itemsCost + n(d.itemsCost),
+      profit: t.profit + n(d.profit),
+      gateKeep: t.gateKeep + n(d.gateFees) - n(d.gateOwed),
+      gatePickups: t.gatePickups + n(d.gatePickups),
+      helpShare: t.helpShare + n(d.helpShare),
       estimated: t.estimated || Boolean(d.estimated),
     }),
-    { orders: 0, paid: 0, earnings: 0, sales: 0, owed: 0, delivery: 0, estimated: false }
+    { orders: 0, paid: 0, earnings: 0, sales: 0, owed: 0, delivery: 0, deliveryFees: 0, itemsCost: 0, profit: 0, gateKeep: 0, gatePickups: 0, helpShare: 0, estimated: false }
   );
 }
 
-/** Live overview: completed orders, earnings and amount owed, from small daily summaries */
-const OperatorOverview: React.FC = () => {
+const Tile: React.FC<{ label: string; value: string | number; sub: string; tone?: 'plain' | 'green' | 'amber' }> = ({ label, value, sub, tone = 'plain' }) => (
+  <div
+    className={`rounded-2xl p-2.5 ${
+      tone === 'green' ? 'bg-emerald-50 dark:bg-emerald-950/30' : tone === 'amber' ? 'bg-amber-50 dark:bg-amber-950/30' : 'bg-slate-50 dark:bg-slate-800/60'
+    }`}
+  >
+    <span
+      className={`block text-[10px] font-bold uppercase ${
+        tone === 'green' ? 'text-emerald-700 dark:text-emerald-300' : tone === 'amber' ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500'
+      }`}
+    >
+      {label}
+    </span>
+    <span
+      className={`block text-base font-extrabold ${tone === 'green' ? 'text-[#0e9f55]' : tone === 'amber' ? 'text-amber-700 dark:text-amber-300' : ''}`}
+    >
+      {value}
+    </span>
+    <span className="block text-[10px] text-slate-400">{sub}</span>
+  </div>
+);
+
+/**
+ * Live overview for runners and operators: Today, last 7 days, last 30 days, this year or picked dates.
+ * Built from the same daily records as settlement, so the numbers always match it.
+ */
+export const ProviderOverview: React.FC<{ kind: 'runner' | 'operator' }> = ({ kind }) => {
   const [range, setRange] = useState<Range>('today');
   const [today, setToday] = useState<any | null>(null);
   const [days, setDays] = useState<any[]>([]);
@@ -62,14 +98,17 @@ const OperatorOverview: React.FC = () => {
   const week = rangeDates('week');
   const [from, setFrom] = useState(week[0]);
   const [to, setTo] = useState(week[1]);
+  const [shown, setShown] = useState<[string, string]>(week);
 
   useEffect(() => subscribeMyTodaySummary(setToday), []);
 
   const load = async (r: Range, f?: string, t?: string) => {
     if (r === 'today') return;
     const [a, b] = r === 'custom' ? [f || from, t || to] : rangeDates(r);
+    const span: [string, string] = a <= b ? [a, b] : [b, a];
+    setShown(span);
     setLoading(true);
-    setDays(await getMySummaries(a <= b ? a : b, a <= b ? b : a));
+    setDays(await getMySummaries(span[0], span[1]));
     setLoading(false);
   };
 
@@ -78,22 +117,23 @@ const OperatorOverview: React.FC = () => {
   }, [range]);
 
   // Keep the longer ranges in step with today's live numbers
-  const list = range === 'today' ? (today ? [today] : []) : days.filter((d) => d.date !== ymd(new Date())).concat(today ? [today] : []);
-  const inRange = range === 'today' ? list : list.filter((d) => {
-    const [a, b] = range === 'custom' ? [from, to] : rangeDates(range);
-    return d.date >= (a <= b ? a : b) && d.date <= (a <= b ? b : a);
-  });
+  const todayKey = ymd(new Date());
+  const list = range === 'today' ? (today ? [today] : []) : days.filter((d) => d.date !== todayKey).concat(today ? [today] : []);
+  const inRange = range === 'today' ? list : list.filter((d) => d.date >= shown[0] && d.date <= shown[1]);
   const t = addUp(inRange);
+  const share = t.earnings - t.itemsCost - t.gateKeep - t.helpShare; // their 30%, after helper splits and late express refunds
   const tabs: [Range, string][] = [
     ['today', 'Today'],
-    ['week', 'Week'],
-    ['month', 'Month'],
-    ['year', 'Year'],
+    ['week', '7 days'],
+    ['month', '30 days'],
+    ['year', 'This year'],
     ['custom', 'Pick dates'],
   ];
+  const when = range === 'today' ? 'today' : 'in this period';
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-4 space-y-3">
+      <p className="text-xs font-black uppercase tracking-wider text-slate-500">Overview</p>
       <div className="flex items-center gap-1.5 overflow-x-auto">
         {tabs.map(([k, label]) => (
           <button
@@ -120,33 +160,80 @@ const OperatorOverview: React.FC = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-2">
-        <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-2.5">
-          <span className="block text-[10px] font-bold uppercase text-slate-500">Completed</span>
-          <span className="block text-lg font-extrabold">{t.orders}</span>
-          <span className="block text-[10px] text-slate-400">orders</span>
-        </div>
-        <div className="rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 p-2.5">
-          <span className="block text-[10px] font-bold uppercase text-emerald-700 dark:text-emerald-300">Total Sales</span>
-          <span className="block text-base font-extrabold text-[#0e9f55]">{naira(t.sales)}</span>
-          <span className="block text-[10px] text-slate-400">items + delivery</span>
-        </div>
-        <div className="rounded-2xl bg-amber-50 dark:bg-amber-950/30 p-2.5">
-          <span className="block text-[10px] font-bold uppercase text-amber-700 dark:text-amber-300">{range === 'today' ? 'Owed today' : 'Owed'}</span>
-          <span className="block text-base font-extrabold text-amber-700 dark:text-amber-300">{naira(t.owed)}</span>
-          <span className="block text-[10px] text-slate-400">to Roomly</span>
-        </div>
-      </div>
-
-      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
-        {loading
-          ? 'Loading…'
-          : `Total Sales is everything students paid on your completed carts (items ${naira(t.paid)} plus delivery). You keep ${naira(t.earnings)}. Counted when you tap "Order delivered".`}
-      </p>
+      {kind === 'runner' ? (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <Tile label="Deliveries" value={t.orders} sub="completed" />
+            <Tile label="Collected" value={naira(t.paid + t.deliveryFees)} sub={`items ${naira(t.paid)} + delivery ${naira(t.deliveryFees)}`} />
+            <Tile label="Item cost" value={naira(t.itemsCost)} sub="what you spent buying items" />
+            <Tile label="Profit" value={naira(t.profit)} sub="item margin + delivery fees" />
+            <Tile label={`Your ${Math.round(RUNNER_SHARE * 100)}% share`} value={naira(share)} sub="of the profit, after helper splits" tone="green" />
+            <Tile label="Owed to Roomly" value={naira(t.owed)} sub="settle by 6am the next day" tone="amber" />
+          </div>
+          {(t.gatePickups > 0 || t.helpShare > 0) && (
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+              On top of your share {when}:{t.gatePickups > 0 ? ` ${naira(t.gateKeep)} from ${t.gatePickups} gate pickup(s)` : ''}
+              {t.gatePickups > 0 && t.helpShare > 0 ? ',' : ''}
+              {t.helpShare > 0 ? ` ${naira(t.helpShare)} for helping other runners` : ''}.
+            </p>
+          )}
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+            {loading ? 'Loading…' : 'Counted when you mark an order delivered. The order by order breakdown is in "Money: today and settlement".'}
+          </p>
+        </>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-2">
+            <Tile label="Completed" value={t.orders} sub="orders" />
+            <Tile label="Total sales" value={naira(t.sales)} sub="items + delivery" tone="green" />
+            <Tile label={range === 'today' ? 'Owed today' : 'Owed'} value={naira(t.owed)} sub="to Roomly" tone="amber" />
+          </div>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+            {loading
+              ? 'Loading…'
+              : `Total sales is everything students paid on your completed carts (items ${naira(t.paid)} plus delivery). You keep ${naira(t.earnings)}. Counted when you tap "Order delivered".`}
+          </p>
+        </>
+      )}
       {t.estimated && (
         <p className="text-[11px] text-amber-700 dark:text-amber-300">
           Some amounts are estimated because an item has no cost price yet. Ask the admin to add it.
         </p>
+      )}
+    </div>
+  );
+};
+
+/** Only shows when something needs the operator: hidden from students, or student requests waiting for a price */
+const OperatorAlerts: React.FC<{ kind: Kind }> = ({ kind }) => {
+  const [, setTick] = useState(0);
+  const [open, setOpen] = useState(0);
+  useEffect(() => {
+    const h = () => setTick((n) => n + 1);
+    window.addEventListener('roomly-batches', h);
+    return () => window.removeEventListener('roomly-batches', h);
+  }, []);
+  useEffect(() => subscribeSideRequests(mySide(), (list: any[]) => setOpen((list || []).filter((r) => r.status === 'open').length)), [kind]);
+  const hidden = getMyHiddenReason();
+  const noAccount = !getCurrentStaff()?.payAccount;
+  if (!hidden && !open && !noAccount) return null;
+  return (
+    <div className="space-y-2">
+      {hidden && (
+        <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-xs text-rose-700 dark:text-rose-300 leading-snug">
+          <p className="font-black">Students cannot see you right now</p>
+          <p className="font-semibold">{hidden.text}</p>
+        </div>
+      )}
+      {noAccount && (
+        <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-xs text-amber-900 dark:text-amber-200 font-semibold">
+          Add the account students pay into, under "Where students pay you" at the bottom, before you switch a batch on.
+        </div>
+      )}
+      {open > 0 && (
+        <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-xs text-amber-900 dark:text-amber-200 font-semibold">
+          {open} student request{open === 1 ? '' : 's'} waiting for your price. Their cart can't check out until someone quotes, so answer it below your orders.
+        </div>
       )}
     </div>
   );
@@ -278,18 +365,15 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
           </div>
         )}
 
-        {/* Live overview, settlement and payment account (operators only) */}
-        {!isAdmin && <OperatorOverview />}
-        {!isAdmin && <ProviderSettlement kind="operator" />}
-        {!isAdmin && <PayAccountForm />}
-        {!isAdmin && <ProductRequestsPanel />}
-        {!isAdmin && <MyRatingsPanel />}
-        {!isAdmin && <TodaysMenuPanel side={getCurrentStaff()?.role === 'food' ? 'food' : 'store'} />}
-        {!isAdmin && <OperatorProductsPanel />}
+        {/* 1. Only when something needs attention: hidden from students, no payment account, requests waiting */}
+        {!isAdmin && <OperatorAlerts kind={kind} />}
 
-        {/* Availability: operators set their own batches; the admin sees everyone and can switch them off */}
+        {/* 2. Availability: operators set their own batches; the admin sees everyone and can switch them off */}
         {isAdmin ? <OperatorOverridePanel kind={kind} /> : <BatchSwitches side={kind} />}
 
+        {/* 3. Active orders: the part an operator touches most */}
+        <div className="space-y-3">
+          <p className="text-xs font-black uppercase tracking-wider text-slate-500 px-1">Orders</p>
         <div className="flex items-center gap-2 overflow-x-auto py-0.5">
           {tabs.map(([key, label]) => (
             <button
@@ -476,6 +560,16 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
             </div>
           );
         })}
+        </div>
+
+        {/* 4. Then the rest, from most to least often used */}
+        {!isAdmin && <ProductRequestsPanel />}
+        {!isAdmin && <ProviderOverview kind="operator" />}
+        {!isAdmin && <ProviderSettlement kind="operator" />}
+        {!isAdmin && <TodaysMenuPanel side={getCurrentStaff()?.role === 'food' ? 'food' : 'store'} />}
+        {!isAdmin && <OperatorProductsPanel />}
+        {!isAdmin && <MyRatingsPanel />}
+        {!isAdmin && <PayAccountForm />}
       </div>
     </div>
   );

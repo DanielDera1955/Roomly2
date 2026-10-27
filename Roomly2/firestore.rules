@@ -87,6 +87,12 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isStaff();
     }
+    // Admin-only controls everyone can read, e.g. adminControl/runners = which runners the admin switched off.
+    // Runners can't write here, so they can't switch themselves back on.
+    match /adminControl/{doc} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
     // One record per store or food operator, keyed by their login uid.
     // Operators edit only their own, and can never change the admin's switch-off.
     match /operatorStatus/{uid} {

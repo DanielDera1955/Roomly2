@@ -289,6 +289,12 @@ let runnerUnsettled = {}; // runner uid -> dates not yet settled
 let runnerPay = {}; // runner uid -> payment account students pay into
 let expressRunners = {}; // runner uid -> { on, name, phone, email, payTo, at }: runners taking express runs now
 let operatorDocs = {};
+let runnerOff = {}; // runner login email (lower case) -> true when the admin has switched them off
+const emailKey = (e) => String(e || '').trim().toLowerCase();
+/** Has the admin switched this runner off? (by login email) */
+export function isRunnerOff(email) {
+  return Boolean(email && runnerOff[emailKey(email)]);
+}
 const fireBatches = () => window.dispatchEvent(new Event('roomly-batches'));
 try {
   onSnapshot(
@@ -310,6 +316,15 @@ try {
         next[d.id] = { ...d.data(), id: d.id };
       });
       operatorDocs = next;
+      fireBatches();
+    },
+    () => {}
+  );
+  // The admin's switch-off for runners. Only the admin can write it, so a runner cannot switch themselves back on.
+  onSnapshot(
+    doc(db, 'adminControl', 'runners'),
+    (s) => {
+      runnerOff = s.exists() ? s.data().off || {} : {};
       fireBatches();
     },
     () => {}
@@ -399,7 +414,7 @@ export function getNextBatch(side, now = new Date()) {
     for (const opt of slotsForDay(side, now, d)) {
       if (side === 'inside') {
         const sw = insideSwitches[opt.key];
-        const blocked = sw && sw.byUid && isOverdue(runnerUnsettled[sw.byUid], now);
+        const blocked = sw && ((sw.byUid && isOverdue(runnerUnsettled[sw.byUid], now)) || isRunnerOff(sw.byEmail));
         if (!blocked && accepting(opt, sw, 'inside', now)) {
           const start = switchStartDate(opt, sw);
           return {
@@ -468,7 +483,7 @@ function fallbackRunner(now = new Date()) {
   for (const sw of list) {
     if (seen.has(sw.byUid)) continue;
     seen.add(sw.byUid);
-    if (isOverdue(runnerUnsettled[sw.byUid], now)) continue;
+    if (isOverdue(runnerUnsettled[sw.byUid], now) || isRunnerOff(sw.byEmail)) continue;
     const payTo = runnerPay[sw.byUid] || sw.payTo;
     if (payTo) return { uid: sw.byUid, name: sw.by || 'Runner', payTo };
   }
@@ -616,6 +631,45 @@ export function getAllOperatorStatus() {
   return Object.values(operatorDocs);
 }
 
+/**
+ * Why students can't see the signed-in runner or operator right now, even if their switches are ON.
+ * Returns { reason: 'admin' | 'overdue', text } or null when students can see them.
+ */
+export function getMyHiddenReason(now = new Date()) {
+  const staff = getCurrentStaff();
+  const uid = auth.currentUser?.uid;
+  if (!staff || !uid) return null;
+  if (staff.role === 'runner') {
+    if (isRunnerOff(auth.currentUser?.email || staff.email))
+      return { reason: 'admin', text: 'The admin has switched you off. Students cannot order from you until the admin switches you back on. Finish the orders you already have.' };
+    if (isOverdue(runnerUnsettled[uid], now))
+      return { reason: 'overdue', text: "A past day's settlement is not confirmed yet, so students cannot see you, even with your switches ON. Send what you owe, tap \"I have sent\", and you show again once Roomly confirms it." };
+    return null;
+  }
+  if (staff.role === 'store' || staff.role === 'food') {
+    const mine = operatorDocs[uid] || {};
+    if (mine.adminOff) return { reason: 'admin', text: 'The admin has switched you off. Students cannot order from you until the admin allows you again.' };
+    if (isOverdue(mine.unsettled, now))
+      return { reason: 'overdue', text: "A past day's settlement is not confirmed yet, so students cannot see you, even with your switches ON. Send what you owe, tap \"I have sent\", and you show again once Roomly confirms it." };
+  }
+  return null;
+}
+
+/** Admin: the runners currently switched off (email -> true) */
+export function getRunnerOffMap() {
+  return { ...runnerOff };
+}
+
+/** Admin only: switch a runner off (or allow them again), by their login email */
+/** @returns {Promise<void>} */
+export async function setRunnerAdminOff(email, off) {
+  const key = emailKey(email);
+  if (!key) return;
+  runnerOff = { ...runnerOff, [key]: Boolean(off) };
+  fireBatches();
+  await setDoc(doc(db, 'adminControl', 'runners'), { off: { [key]: Boolean(off) }, updatedAt: Date.now() }, { merge: true });
+}
+
 function staleKeys(map) {
   const today = ymdOf(new Date());
   const out = {};
@@ -631,8 +685,9 @@ export async function setInsideSwitch(key, patch) {
   const staff = getCurrentStaff();
   // Only runners switch inside batches, so students always pay the runner taking the batch
   if (!staff || staff.role !== 'runner') throw new Error('Only runners can switch inside batches.');
+  if (patch.on && isRunnerOff(auth.currentUser?.email)) throw new Error('The admin has switched you off. You cannot open a batch until the admin switches you back on.');
   const prev = insideSwitches[key] || {};
-  const sw = slim({ ...prev, ...patch, by: staff?.name || 'Runner', byPhone: staff?.phone || '', byUid: auth.currentUser?.uid || '', payTo: staff?.payAccount || null, at: Date.now() });
+  const sw = slim({ ...prev, ...patch, by: staff?.name || 'Runner', byPhone: staff?.phone || '', byUid: auth.currentUser?.uid || '', byEmail: emailKey(auth.currentUser?.email || staff?.email), payTo: staff?.payAccount || null, at: Date.now() });
   insideSwitches = { ...insideSwitches, [key]: sw };
   fireBatches();
   await setDoc(doc(db, 'availability', 'inside'), { slots: { ...staleKeys(insideSwitches), [key]: sw } }, { merge: true });
@@ -647,7 +702,7 @@ export async function setInsideSwitch(key, patch) {
 /** Runners taking express runs right now: [{ uid, name, phone, email, payTo }] */
 export function getExpressRunners(now = new Date()) {
   return Object.entries(expressRunners)
-    .filter(([uid, sw]) => sw && sw.on && sw.payTo && switchIsLive(sw, 'inside', now) && !isOverdue(runnerUnsettled[uid], now))
+    .filter(([uid, sw]) => sw && sw.on && sw.payTo && switchIsLive(sw, 'inside', now) && !isOverdue(runnerUnsettled[uid], now) && !isRunnerOff(sw.email))
     .map(([uid, sw]) => ({ uid, name: sw.name || 'Runner', phone: sw.phone || '', email: sw.email || '', payTo: sw.payTo }));
 }
 
@@ -665,6 +720,7 @@ export async function setMyExpress(on) {
   const uid = auth.currentUser?.uid;
   if (!uid || !staff || staff.role !== 'runner') throw new Error('Runners only');
   if (on && !staff.payAccount?.accountNumber) throw new Error('Save your bank account first. Express students pay you directly.');
+  if (on && isRunnerOff(auth.currentUser?.email)) throw new Error('The admin has switched you off. You cannot take express runs until the admin switches you back on.');
   const sw = slim({ on: Boolean(on), name: staff.name || 'Runner', phone: staff.phone || '', email: staff.email, payTo: staff.payAccount || null, at: Date.now() });
   expressRunners = { ...expressRunners, [uid]: sw };
   fireBatches();
@@ -2143,6 +2199,10 @@ export async function updateGatePickup(orderId, action, heavy = false) {
   const who = staff?.name || 'Runner';
   const status = { accept: 'accepted', refuse: 'refused', delivered: 'delivered', refund: 'refunded' }[action];
   if (!status) return null;
+  if (action === 'accept' && isRunnerOff(auth.currentUser?.email)) {
+    window.alert('The admin has switched you off. You cannot take new gate pickups until the admin switches you back on.');
+    return { blocked: true };
+  }
   let gateDone = null;
   try {
     const res = await patchOrder(orderId, (o) => {
@@ -2533,6 +2593,29 @@ export function subscribeSettlementsByDate(day, cb) {
 
 /** Admin: records between two dates (for the Money tab) */
 /** @returns {Promise<any[]>} */
+/** Admin: every day not yet settled that owes money, across all dates, live. Used for "Who owes you" and the Money badge. */
+export function subscribeAdminOwing(cb) {
+  try {
+    return onSnapshot(
+      query(collection(db, 'settlements'), where('settled', '==', false), limit(1000)),
+      (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })).filter((r) => (r.due || 0) > 0)),
+      (e) => {
+        console.error(e);
+        cb([]);
+      }
+    );
+  } catch (e) {
+    cb([]);
+    return () => {};
+  }
+}
+
+/** What a not-yet-settled day needs: 'waiting' (sent, you confirm), 'overdue' (not sent, hidden), 'due' (not overdue yet) */
+export function settlementState(r, now = new Date()) {
+  if ((r.sentTotal || 0) > (r.confirmed || 0)) return 'waiting';
+  return isOverdue([r.date], now) ? 'overdue' : 'due';
+}
+
 export async function getSettlementsRange(from, to) {
   try {
     const q = query(collection(db, 'settlements'), where('date', '>=', from), where('date', '<=', to), limit(2000));
@@ -2944,6 +3027,7 @@ export async function acceptExpress(orderId) {
   const staff = getCurrentStaff();
   if (!staff || staff.role !== 'runner') throw new Error('Runners only');
   if (!staff.payAccount?.accountNumber) throw new Error('Save your bank account first. The student pays you directly.');
+  if (isRunnerOff(auth.currentUser?.email)) throw new Error('The admin has switched you off. You cannot take new express runs.');
   // First runner wins: read and write in one transaction so two runners can't both take it
   const ref = doc(db, 'orders', orderId);
   let result = null;

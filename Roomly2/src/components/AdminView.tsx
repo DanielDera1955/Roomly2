@@ -32,7 +32,7 @@ import {
 import { sellingPrice, isOutsideSource } from '../config';
 import { OrderRecord, CategoryDefinition, DeliveryRunner, locationText, shortLocation, roomText } from '../types';
 import { Product, FoodExtraOption, PRESET_PRODUCT_IMAGES, StoreKey, STORE_LABEL, STORE_SOURCE, categoriesForStore, storeOfSource } from '../config';
-import { AdminDispatch, AdminTeam, AdminMoney } from './AdminDispatch';
+import { AdminDispatch, AdminTeam, AdminMoney, useOpenSettlements, needsAction } from './AdminDispatch';
 import { AdminInsights } from './AdminInsights';
 import { AdminFeedbackPanel } from './FeedbackPanels';
 import {
@@ -153,6 +153,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
   // Active Admin Tab
   const [currentTab, setCurrentTab] = useState<AdminTab>('dashboard');
+  // Red count on the Money tab: days sent and waiting for your confirmation, or overdue
+  const moneyAlerts = needsAction(useOpenSettlements()).length;
 
   // Orders State
   const [orders, setOrders] = useState<OrderRecord[]>([]);
@@ -594,6 +596,11 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
           >
             <BarChart3 className="w-3.5 h-3.5" />
             <span>Money</span>
+            {moneyAlerts > 0 && (
+              <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-black flex items-center justify-center">
+                {moneyAlerts}
+              </span>
+            )}
           </button>
 
           <button

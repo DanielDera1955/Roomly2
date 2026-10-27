@@ -8,6 +8,7 @@ import { ExpressPanel } from './ExpressPanel';
 import { MyRatingsPanel } from './FeedbackPanels';
 import { ProviderSettlement, PayAccountForm } from './SettlementPanel';
 import { ProductRequestsPanel } from './ProductRequestsPanel';
+import { ProviderOverview } from './OperatorPortal';
 import { RunnerStockPanel } from './StoreProducts';
 import { playChime } from '../sound';
 import { ChevronDown as ChevronDownIcon, Phone as PhoneIcon } from 'lucide-react';
@@ -781,6 +782,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
         {/* Today's 70/30 statement, settlement and payment account (runners only) */}
         {getCurrentStaff()?.role === 'runner' && <ProductRequestsPanel />}
         {getCurrentStaff()?.role === 'runner' && <RunnerStockPanel />}
+        {getCurrentStaff()?.role === 'runner' && <ProviderOverview kind="runner" />}
         {getCurrentStaff()?.role === 'runner' && <ProviderSettlement kind="runner" />}
         {getCurrentStaff()?.role === 'runner' && <PayAccountForm />}
         {getCurrentStaff()?.role === 'runner' && <MyRatingsPanel />}

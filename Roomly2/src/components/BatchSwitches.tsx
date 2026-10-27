@@ -12,6 +12,7 @@ import {
   switchStartDate,
   batchOpen,
   batchCloseDate,
+  getMyHiddenReason,
 } from '../api.js';
 
 const toHHMM = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
@@ -40,7 +41,7 @@ const acceptLine = (side: SwitchSide, o: BatchOption, time: string) =>
     ? `Still accepting ${o.name.replace(' store batch', '').toLowerCase()} batch, and will start sending by ${time}`
     : `Still accepting the ${o.window} batch, and will start sending by ${time}`;
 
-const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?: boolean; readOnly?: boolean }> = ({ side, o, sw, adminOff, readOnly }) => {
+const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?: boolean; hiddenNote?: string; readOnly?: boolean }> = ({ side, o, sw, adminOff, hiddenNote, readOnly }) => {
   const now = new Date();
   const live = switchIsLive(sw, side === 'inside' ? 'inside' : 'outside', now);
   const startMin = sw && Number.isFinite(sw.start) ? sw.start : o.startMin;
@@ -97,13 +98,15 @@ const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
           <span className="font-bold text-slate-900 dark:text-white">{side === 'food' ? 'Food batch' : o.window}</span>
-          <span className={`block text-[11px] font-bold ${started ? 'text-slate-500' : live ? 'text-[#0e9f55]' : 'text-rose-600 dark:text-rose-400'}`}>
+          <span className={`block text-[11px] font-bold ${started ? 'text-slate-500' : live && hiddenNote ? 'text-rose-600 dark:text-rose-400' : live ? 'text-[#0e9f55]' : 'text-rose-600 dark:text-rose-400'}`}>
             {started
               ? 'Sending now. New orders go to the next batch.'
               : readOnly
               ? live
                 ? `ON${sw?.by ? `: ${sw.by} is taking this batch` : ''}${pastTime ? ' (past the batch time, still taking late orders)' : ''}`
                 : 'OFF: no runner has opened this batch'
+              : live && hiddenNote
+              ? hiddenNote
               : live
               ? pastTime
                 ? 'ON: past the batch time, still taking late orders. Tap OFF when you stop.'
@@ -191,6 +194,9 @@ export const BatchSwitches: React.FC<BatchSwitchesProps> = ({ side = 'inside' })
   const cutoff = side === 'inside' ? '10pm' : '6pm';
   // The admin only watches: runners and operators switch their own batches
   const readOnly = getCurrentStaff()?.role === 'admin';
+  // Switched off by the admin, or an overdue settlement: students can't see this person even with switches ON
+  const hidden = readOnly ? null : getMyHiddenReason(now);
+  const locked = Boolean(mine?.adminOff) || hidden?.reason === 'admin';
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 overflow-hidden">
@@ -212,9 +218,10 @@ export const BatchSwitches: React.FC<BatchSwitchesProps> = ({ side = 'inside' })
       </button>
       {open && (
         <div className="px-4 pb-4 space-y-3">
-          {mine?.adminOff && (
-            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-xs text-rose-700 dark:text-rose-300 font-semibold">
-              The admin has switched you off. Students cannot order from you until the admin allows you again.
+          {hidden && (
+            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-xs text-rose-700 dark:text-rose-300 font-semibold leading-snug">
+              {hidden.reason === 'overdue' ? 'Students cannot see you right now. ' : ''}
+              {hidden.text}
             </div>
           )}
           {days.map((slots, i) => (
@@ -223,7 +230,7 @@ export const BatchSwitches: React.FC<BatchSwitchesProps> = ({ side = 'inside' })
               {slots
                 .filter((o) => i > 0 || now.getTime() < batchCloseDate(o, side).getTime() || switchIsLive(switches[o.key], side === 'inside' ? 'inside' : 'outside', now))
                 .map((o) => (
-                  <SwitchRow key={o.key} side={side} o={o} sw={switches[o.key]} adminOff={mine?.adminOff} readOnly={readOnly} />
+                  <SwitchRow key={o.key} side={side} o={o} sw={switches[o.key]} adminOff={locked} hiddenNote={hidden ? 'ON, but students cannot see you (see the red note above)' : ''} readOnly={readOnly} />
                 ))}
             </div>
           ))}
