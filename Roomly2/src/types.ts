@@ -95,8 +95,19 @@ export interface OrderRecord {
   deliveryDate?: string;
   gateReq?: boolean;
   gatePickup?: {
-    status: 'pending' | 'accepted' | 'refused' | 'delivered' | 'refunded';
+    status: 'pending' | 'accepted' | 'refused' | 'delivered' | 'refunded' | 'cancelled';
     fee: number;
+    /** When the current request started (ms). No runner for 10 min: the student may cancel; 30 min: cancelled by itself */
+    requestedAt?: number;
+    /** Runners who said they can't take it: they no longer see it */
+    refusedBy?: string[];
+    runnerUid?: string;
+    /** The runner checked their account: the student's ₦1,000 arrived */
+    payConfirmed?: boolean;
+    payConfirmedAt?: string;
+    /** A runner who released it after the student paid, and is sending the money back */
+    refunds?: { runnerName: string; amount: number; at: string }[];
+    cancelledAt?: string;
     heavy?: boolean;
     runnerName?: string;
     runnerPhone?: string;

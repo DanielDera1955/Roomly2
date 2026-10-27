@@ -2217,43 +2217,142 @@ export function subscribeGatePickups(cb) {
   );
 }
 
-/** Runners: action = 'accept' | 'refuse' | 'delivered' | 'refund'. heavy only matters on accept. */
-/** @returns {Promise<any>} */
-export async function updateGatePickup(orderId, action, heavy = false) {
+/* ---------------- gate to room pickup ----------------
+ * 1. After the operator taps "Order delivered", the student asks for a runner (₦1,000 flat). Every runner sees it.
+ * 2. A runner who taps Refuse stops seeing it; the others still do.
+ * 3. From 10 minutes with no runner, the student may cancel. At 30 minutes it cancels by itself.
+ * 4. A runner accepts (first one wins) -> the student pays and taps "I have paid the runner"
+ *    -> the runner taps "Confirm ₦1,000 received" -> the runner brings it and taps "Brought to room".
+ * 5. A runner who can't do it after accepting releases it: it goes back to New for the other runners.
+ *    If the student already paid, the runner sends the ₦1,000 back (the release is recorded as a refund).
+ */
+export const GATE_CANCEL_AFTER_MS = 10 * 60000;
+export const GATE_EXPIRE_MS = 30 * 60000;
+
+/** When the current request started (older requests only have updatedAt) */
+const gateAskedAt = (gp) => Number(gp && gp.requestedAt) || Date.parse((gp && gp.updatedAt) || '') || 0;
+
+/** Pending with no runner for 30 minutes: cancelled by itself */
+export function gateExpired(gp, now = Date.now()) {
+  return Boolean(gp && gp.status === 'pending' && now - gateAskedAt(gp) >= GATE_EXPIRE_MS);
+}
+
+/** Minutes until the student may cancel (0 = they can now) */
+export function gateCancelIn(gp, now = Date.now()) {
+  if (!gp || gp.status !== 'pending') return 0;
+  return Math.max(0, Math.ceil((gateAskedAt(gp) + GATE_CANCEL_AFTER_MS - now) / 60000));
+}
+
+/** Can the student send a new request? (nothing asked yet, cancelled, expired, or an old refused / refunded one) */
+export function gateCanAskAgain(gp, now = Date.now()) {
+  return !gp || ['refused', 'refunded', 'cancelled'].includes(gp.status) || gateExpired(gp, now);
+}
+
+/**
+ * Runners: action = 'accept' | 'refuse' | 'confirm' | 'delivered' | 'release'.
+ * refuse  = hide it from me only. confirm = the student's ₦1,000 reached my account.
+ * release = I can't do it after all: back to New for the other runners (a refund if the student already paid).
+ */
+export async function updateGatePickup(orderId, action) {
   const staff = getCurrentStaff();
   const who = staff?.name || 'Runner';
-  const status = { accept: 'accepted', refuse: 'refused', delivered: 'delivered', refund: 'refunded' }[action];
-  if (!status) return null;
+  const uid = auth.currentUser?.uid || '';
+  if (action === 'refund') action = 'release'; // older button name
+  if (!['accept', 'refuse', 'confirm', 'delivered', 'release'].includes(action)) return null;
   if (action === 'accept' && isRunnerOff(auth.currentUser?.email)) {
     window.alert('The admin has switched you off. You cannot take new gate pickups until the admin switches you back on.');
     return { blocked: true };
   }
+  const ref = doc(db, 'orders', orderId);
+  let result = null;
   let gateDone = null;
+  let problem = '';
   try {
-    const res = await patchOrder(orderId, (o) => {
-      const gp = o.gatePickup || { status: 'pending', fee: GATE_PICKUP_FEE };
+    // One transaction, so two runners can't both accept and nothing changes under a runner's feet
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) return;
+      const o = { ...snap.data(), id: snap.id };
+      if (!o.history) o.history = [];
+      const gp = { ...(o.gatePickup || { status: 'pending', fee: GATE_PICKUP_FEE }) };
+      const now = new Date().toISOString();
+      const mine = gp.status === 'accepted' && (gp.runnerUid ? gp.runnerUid === uid : gp.runnerName === who);
+      let note = '';
       if (action === 'accept') {
-        // Flat fee: the runner checks the parcel and accepts, or declines it if they can't carry it
-        gp.heavy = false;
-        gp.fee = GATE_PICKUP_FEE;
-        gp.runnerName = who;
-        gp.runnerPhone = staff?.phone || '';
-        gp.runnerPay = staff?.payAccount || null; // the student pays the runner this account
-        gp.paid = false;
+        if (gp.status !== 'pending' || gateExpired(gp)) {
+          problem = 'Another runner took this pickup, or it was cancelled.';
+          return;
+        }
+        Object.assign(gp, {
+          status: 'accepted',
+          fee: GATE_PICKUP_FEE,
+          heavy: false,
+          runnerName: who,
+          runnerUid: uid,
+          runnerPhone: staff?.phone || '',
+          runnerPay: staff?.payAccount || null, // the student pays the runner this account
+          paid: false,
+          payConfirmed: false,
+        });
+        note = `Gate pickup accepted (₦${GATE_PICKUP_FEE.toLocaleString()}) by ${who}`;
+      } else if (action === 'refuse') {
+        if (gp.status !== 'pending') return;
+        gp.refusedBy = [...new Set([...(gp.refusedBy || []), uid])];
+        note = `${who} can't take the gate pickup`;
+      } else if (action === 'confirm') {
+        if (!mine || !gp.paid) {
+          problem = 'The student has not marked it paid yet.';
+          return;
+        }
+        gp.payConfirmed = true;
+        gp.payConfirmedAt = now;
+        note = `${who} confirmed the ₦${(gp.fee || GATE_PICKUP_FEE).toLocaleString()} gate pickup payment`;
+      } else if (action === 'delivered') {
+        if (!mine || !gp.payConfirmed) {
+          problem = 'Confirm the payment reached your account first.';
+          return;
+        }
+        gp.status = 'delivered';
+        note = `Gate pickup brought to the room by ${who}`;
+      } else if (action === 'release') {
+        if (!mine) return;
+        const refund = Boolean(gp.paid);
+        if (refund) gp.refunds = [...(gp.refunds || []), { runnerName: who, amount: gp.fee || GATE_PICKUP_FEE, at: now }];
+        gp.refusedBy = [...new Set([...(gp.refusedBy || []), uid])];
+        Object.assign(gp, { status: 'pending', requestedAt: Date.now(), runnerName: '', runnerUid: '', runnerPhone: '', runnerPay: null, paid: false, payConfirmed: false });
+        note = refund
+          ? `${who} couldn't do the gate pickup and is refunding ₦${(gp.fee || GATE_PICKUP_FEE).toLocaleString()}. Back to the other runners.`
+          : `${who} couldn't do the gate pickup. Back to the other runners.`;
       }
-      gp.status = status;
-      gp.updatedAt = new Date().toISOString();
+      gp.updatedAt = now;
       o.gatePickup = gp;
+      o.history.push({ status: o.status, timestamp: now, note, updatedBy: who });
       gateDone = action === 'delivered' ? o : null;
-      o.history.push({
-        status: o.status,
-        timestamp: gp.updatedAt,
-        note: `Gate pickup ${status}${action === 'accept' ? ` (₦${gp.fee.toLocaleString()})` : ''} by ${who}`,
-        updatedBy: who,
-      });
+      tx.set(ref, slim(o));
+      result = o;
     });
-    if (gateDone) recordGateFee(gateDone).catch((e) => console.error(e));
-    return res;
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
+  if (problem) {
+    window.alert(problem);
+    return { blocked: true };
+  }
+  if (gateDone) recordGateFee(gateDone).catch((e) => console.error(e));
+  return result;
+}
+
+/** Student: cancel a gate pickup that no runner has accepted for 10 minutes; they collect it at the gate */
+export async function cancelGatePickup(orderId) {
+  try {
+    return await patchOrder(orderId, (o) => {
+      const gp = o.gatePickup;
+      if (!gp || gp.status !== 'pending' || gateCancelIn(gp) > 0) return;
+      const now = new Date().toISOString();
+      o.gatePickup = { ...gp, status: 'cancelled', cancelledAt: now, updatedAt: now };
+      o.history.push({ status: o.status, timestamp: now, note: 'Student cancelled the gate pickup (no runner accepted)', updatedBy: o.name || 'Customer' });
+    });
   } catch (e) {
     console.error(e);
     return null;
@@ -2492,7 +2591,7 @@ export async function requestGatePickup(orderId, building = '', room = '') {
   try {
     return await patchOrder(orderId, (o) => {
       if (o.cart !== 'store' && o.cart !== 'food') throw new Error('Only outside orders');
-      if (o.gatePickup && o.gatePickup.status !== 'refused' && o.gatePickup.status !== 'refunded') return;
+      if (o.gatePickup && !gateCanAskAgain(o.gatePickup)) return;
       const now = new Date().toISOString();
       // Where the runner should bring it
       if (building && room) {
@@ -2501,7 +2600,7 @@ export async function requestGatePickup(orderId, building = '', room = '') {
         o.room = String(room).replace(/\s+/g, '').toUpperCase().slice(0, 8);
       }
       o.gateReq = true;
-      o.gatePickup = { status: 'pending', fee: GATE_PICKUP_FEE, heavy: false, updatedAt: now };
+      o.gatePickup = { status: 'pending', fee: GATE_PICKUP_FEE, heavy: false, requestedAt: Date.now(), refusedBy: [], updatedAt: now };
       o.history.push({ status: o.status, timestamp: now, note: 'Student asked for gate to room pickup', updatedBy: o.name || 'Customer' });
     });
   } catch (e) {
@@ -3027,6 +3126,7 @@ export async function markGatePickupPaid(orderId) {
   try {
     return await patchOrder(orderId, (o) => {
       if (!o.gatePickup || o.gatePickup.status !== 'accepted' || o.gatePickup.paid) return;
+      // The runner's "Confirm received" is theirs to tap, never set here
       const now = new Date().toISOString();
       o.gatePickup = { ...o.gatePickup, paid: true, paidAt: now };
       o.history.push({ status: o.status, timestamp: now, note: 'Student paid the runner for gate to room pickup', updatedBy: o.name || 'Customer' });

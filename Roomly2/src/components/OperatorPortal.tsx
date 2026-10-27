@@ -13,6 +13,7 @@ import {
   getOperatorOrderMaths,
   subscribeSideRequests,
   mySide,
+  gateCanAskAgain,
 } from '../api.js';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { ProviderSettlement, PayAccountForm } from './SettlementPanel';
@@ -438,7 +439,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                       If out of stock: <strong>{OUT_OF_STOCK_LABEL[o.outOfStock || 'refund']}</strong>
                     </p>
                     <p>
-                      {o.gatePickup && o.gatePickup.status !== 'refused' && o.gatePickup.status !== 'refunded'
+                      {o.gatePickup && !gateCanAskAgain(o.gatePickup)
                         ? `An inside runner will collect it at the gate for ${shortLocation(o)}.`
                         : 'The student collects it at the school gate.'}
                     </p>

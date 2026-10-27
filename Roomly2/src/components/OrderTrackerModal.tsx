@@ -33,7 +33,7 @@ import {
   EXPRESS_CONFIRM_MINUTES,
   GATE_ARRIVAL_MINUTES,
 } from '../config';
-import { markPaymentSent, paymentState, requestGatePickup, markGatePickupPaid, getPayProvider, cancelExpress, markExpressReceived, markExpressNotHere } from '../api.js';
+import { markPaymentSent, paymentState, requestGatePickup, markGatePickupPaid, getPayProvider, cancelExpress, markExpressReceived, markExpressNotHere, cancelGatePickup, gateExpired, gateCancelIn, gateCanAskAgain } from '../api.js';
 import { RateExperience } from './RateExperience';
 import { InstallBanner } from './InstallPrompt';
 
@@ -209,6 +209,15 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
     else window.alert('Could not save. Please try again.');
     setAskingGate(false);
   };
+  const cancelGate = async () => {
+    if (!currentOrder) return;
+    if (!window.confirm('Cancel the gate pickup? You will collect the parcel at the school gate yourself.')) return;
+    setAskingGate(true);
+    const updated = await cancelGatePickup(currentOrder.id);
+    if (updated) setCurrentOrder(updated as OrderRecord);
+    else window.alert('Could not cancel. Please try again.');
+    setAskingGate(false);
+  };
   const askGatePickup = async () => {
     if (!currentOrder) return;
     if (!/\d/.test(gateRoom)) {
@@ -228,6 +237,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
   const isOutside = currentOrder?.cart === 'store' || currentOrder?.cart === 'food';
   const clockRunning = Boolean(
     (ex && ex.status !== 'cancelled' && !ex.receivedAt) ||
+      (currentOrder?.gatePickup?.status === 'pending' && !gateExpired(currentOrder.gatePickup)) ||
       (isOutside && currentOrder?.status === 'Delivered' && currentOrder?.deliveredAt && Date.now() - Date.parse(currentOrder.deliveredAt) < GATE_ARRIVAL_MINUTES * 60000)
   );
   useEffect(() => {
@@ -338,7 +348,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
               {(currentOrder.cart === 'store' || currentOrder.cart === 'food') &&
                 currentOrder.paymentStatus !== 'unpaid' &&
                 currentOrder.status === 'Delivered' &&
-                (!currentOrder.gatePickup || currentOrder.gatePickup.status === 'refused' || currentOrder.gatePickup.status === 'refunded') && (
+                gateCanAskAgain(currentOrder.gatePickup, nowMs) && (
                   <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs space-y-2">
                     <p className="text-slate-700 dark:text-slate-200">
                       Want it brought from the <strong>school gate</strong> to your room? An inside runner can collect it for a flat ₦{GATE_PICKUP_FEE.toLocaleString()}. Ask first: a runner checks the parcel and accepts, then you pay the runner.
@@ -390,19 +400,55 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
               {currentOrder.gatePickup && (
                 <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs space-y-1">
                   <p className="font-bold text-slate-800 dark:text-slate-100">Gate to room pickup</p>
-                  <p className="text-slate-600 dark:text-slate-300">
-                    {currentOrder.gatePickup.status === 'pending'
-                      ? 'Waiting for an inside runner to accept.'
-                      : currentOrder.gatePickup.status === 'accepted'
-                      ? currentOrder.gatePickup.paid
-                        ? `Paid. ${currentOrder.gatePickup.runnerName || 'The runner'} is bringing it to your room.`
-                        : `${currentOrder.gatePickup.runnerName || 'A runner'} accepted. Pay ₦${currentOrder.gatePickup.fee.toLocaleString()} to the runner, then tap "I have paid the runner".`
-                      : currentOrder.gatePickup.status === 'delivered'
-                      ? 'Brought to your room.'
-                      : currentOrder.gatePickup.status === 'refunded'
-                      ? 'The runner refunded this pickup. Please collect at the gate.'
-                      : 'No runner could take this one. Please collect at the school gate.'}
-                  </p>
+                  {(() => {
+                    const gp: any = currentOrder.gatePickup;
+                    const who = gp.runnerName || 'The runner';
+                    const lastRefund = (gp.refunds || [])[(gp.refunds || []).length - 1];
+                    const expired = gateExpired(gp, nowMs);
+                    const cancelIn = gateCancelIn(gp, nowMs);
+                    const text =
+                      gp.status === 'pending'
+                        ? expired
+                          ? 'No runner accepted within 30 minutes, so the pickup was cancelled. Please collect it at the school gate, or ask again.'
+                          : 'Waiting for an inside runner to accept.'
+                        : gp.status === 'accepted'
+                        ? !gp.paid
+                          ? `${who} accepted. Pay ₦${gp.fee.toLocaleString()} to the runner, then tap "I have paid the runner".`
+                          : !gp.payConfirmed
+                          ? `Waiting for ${who} to confirm your ₦${gp.fee.toLocaleString()} reached their account.`
+                          : `${who} confirmed your payment and is bringing it to your room.`
+                        : gp.status === 'delivered'
+                        ? 'Brought to your room.'
+                        : gp.status === 'cancelled'
+                        ? 'You cancelled the pickup. Please collect it at the school gate, or ask again.'
+                        : gp.status === 'refunded'
+                        ? 'The runner refunded this pickup. Please collect at the gate.'
+                        : 'No runner could take this one. Please collect at the school gate.';
+                    return (
+                      <>
+                        <p className="text-slate-600 dark:text-slate-300">{text}</p>
+                        {gp.status === 'pending' && lastRefund && !expired && (
+                          <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                            {lastRefund.runnerName} couldn't do it and is sending your ₦{Number(lastRefund.amount || 0).toLocaleString()} back. Another runner can take it now.
+                          </p>
+                        )}
+                        {gp.status === 'pending' && !expired && (
+                          cancelIn > 0 ? (
+                            <p className="text-[11px] text-slate-400">If no runner accepts, you can cancel in {cancelIn} min.</p>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={askingGate}
+                              onClick={cancelGate}
+                              className="w-full py-2 rounded-xl bg-slate-200 dark:bg-slate-700 font-bold disabled:opacity-50 cursor-pointer"
+                            >
+                              Cancel, I'll collect it at the gate
+                            </button>
+                          )
+                        )}
+                      </>
+                    );
+                  })()}
                   {currentOrder.gatePickup.status === 'accepted' && !currentOrder.gatePickup.paid && (
                     <div className="space-y-2 pt-1">
                       {currentOrder.gatePickup.runnerPay ? (
@@ -725,7 +771,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                           {gateLeftMs !== null && gateLeftMs > 0 ? 'Your order is on its way to the gate' : 'Your order has been delivered'}
                         </h4>
                         <p className="text-[11px] text-emerald-800 dark:text-emerald-400">
-                          {currentOrder.gatePickup && currentOrder.gatePickup.status !== 'refused' && currentOrder.gatePickup.status !== 'refunded'
+                          {currentOrder.gatePickup && !gateCanAskAgain(currentOrder.gatePickup)
                             ? `It will be at the school gate in under ${GATE_ARRIVAL_MINUTES} minutes, and the runner will bring it to your room.`
                             : gateLeftMs !== null && gateLeftMs > 0
                             ? `It will be at the school gate in under ${GATE_ARRIVAL_MINUTES} minutes. Head to the gate when the timer is nearly done.`

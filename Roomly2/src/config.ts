@@ -168,7 +168,16 @@ export const EXPRESS_CONFIRM_MINUTES = 10;
 export const GATE_ARRIVAL_MINUTES = 15;
 
 /** Rate your experience: the options a student can tick (plus Other with their own words) */
-export const RATING_REASONS = ['All good', 'Late', 'Wrong item', 'Damaged', 'Poor attitude', 'Other'] as const;
+/** After delivery the student ticks one or more of these. The first means no problem and can't be ticked with a problem. */
+export const RATING_GOOD = 'Arrived as expected';
+export const RATING_REASONS = [RATING_GOOD, 'Came late', 'Wrong or missing item', 'Damaged or spilled', 'Runner or operator attitude', 'Other'] as const;
+/** Hidden score kept for the runner and operator ratings: as expected = 5, each problem ticked lowers it */
+export function ratingScore(reasons: string[]): number {
+  if (reasons.includes(RATING_GOOD)) return 5;
+  const problems = reasons.filter((r) => r !== 'Other').length;
+  if (problems === 0) return 3; // only "Other": we read the note
+  return Math.max(1, 4 - problems); // 1 problem = 3, 2 = 2, 3 or more = 1
+}
 /** What the student wants if an item is out of stock */
 export type OutOfStockChoice = 'refund' | 'tomorrow' | 'swap';
 export const OUT_OF_STOCK_LABEL: Record<OutOfStockChoice, string> = {
