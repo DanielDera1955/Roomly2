@@ -9,6 +9,7 @@ import {
   runnerSetStock,
   uploadProductImage,
 } from '../api.js';
+import { auth } from '../firebase';
 import { sellingPrice, categoriesForStore, STORE_SOURCE, StoreKey } from '../config';
 
 const naira = (n: number) => `₦${Math.round(n || 0).toLocaleString()}`;
@@ -125,7 +126,7 @@ export const OperatorProductsPanel: React.FC = () => {
                     <div className="flex justify-between gap-2">
                       <span className="font-bold truncate">{p.name}</span>
                       <span className="shrink-0 text-slate-500">
-                        cost {naira(p.costPrice)} · students {naira(p.price)}
+                        your cost {naira((p.opCosts && auth.currentUser && p.opCosts[auth.currentUser.uid]) || p.costPrice)} · students {naira(p.price)}
                       </span>
                     </div>
                     <div className="flex gap-2">
@@ -146,11 +147,22 @@ export const OperatorProductsPanel: React.FC = () => {
                         Save
                       </button>
                     </div>
-                    {c > 0 && <p className="text-[11px] text-slate-500">Students will pay {naira(sellingPrice(c, source))}</p>}
+                    {c > 0 && (() => {
+                      // Students pay one price, from the highest cost any operator entered
+                      const me = auth.currentUser?.uid || '';
+                      const others: number[] = Object.entries((p.opCosts || {}) as Record<string, number>).filter(([uid]) => uid !== me).map(([, v]) => Number(v) || 0);
+                      const top = Math.max(c, ...others);
+                      return (
+                        <p className="text-[11px] text-slate-500">
+                          Students will pay {naira(sellingPrice(top, source))}
+                          {top > c ? ' (another operator has a higher cost, so the price follows theirs; your orders are settled at your cost)' : ''}
+                        </p>
+                      );
+                    })()}
                   </div>
                 );
               })}
-              <p className="text-[11px] text-slate-400">You enter your cost price; Roomly's margin is added automatically. Changes go live at once.</p>
+              <p className="text-[11px] text-slate-400">You enter your own cost price. Students see one price, worked out from the highest cost any operator entered; your orders are settled at your cost. Changes go live at once.</p>
             </div>
           ) : (
             <div className="space-y-1.5">

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Zap } from 'lucide-react';
-import { getMyExpress, setMyExpress, acceptExpress, markExpressRefunded, getCurrentStaff } from '../api.js';
+import { getMyExpress, setMyExpress, acceptExpress, markExpressRefunded, markExpressArrived, getCurrentStaff } from '../api.js';
 import { OrderRecord, shortLocation, expressTiming } from '../types';
 import { EXPRESS_FEE, EXPRESS_RUNNER_SHARE, EXPRESS_ROOMLY_SHARE, EXPRESS_REFUND, EXPRESS_MINUTES, EXPRESS_CONFIRM_MINUTES } from '../config';
 import { playChime } from '../sound';
@@ -159,6 +159,22 @@ export const ExpressPanel: React.FC<{ orders: OrderRecord[] }> = ({ orders }) =>
                   </p>
                 )}
                 {t?.awaitingReceipt && <p className="text-[11px] text-slate-500">You marked it delivered. Waiting for the student to tap "Received".</p>}
+                {/* The student tapped "Not here yet": the clock is running again until you are really there */}
+                {t && !t.finished && !t.awaitingReceipt && (ex as any).notHereCount > 0 && o.status === 'Delivered' && (
+                  <>
+                    <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                      {o.name} says you haven't arrived yet. The clock is still running. Tap below once you're at the room.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={busy === o.id}
+                      onClick={() => run(o.id, () => markExpressArrived(o.id))}
+                      className="w-full py-2 rounded-xl bg-[#0e9f55] text-white font-bold disabled:opacity-40 cursor-pointer"
+                    >
+                      I'm at the room now
+                    </button>
+                  </>
+                )}
                 {t?.finished && !t.late && <p className="text-[11px] font-bold text-[#0e9f55]">On time ({Math.max(1, Math.round(t.usedMs / 60000))} min).</p>}
                 {t?.finished && t.late && !ex.refunded && (
                   <>

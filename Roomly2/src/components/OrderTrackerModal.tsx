@@ -33,7 +33,7 @@ import {
   EXPRESS_CONFIRM_MINUTES,
   GATE_ARRIVAL_MINUTES,
 } from '../config';
-import { markPaymentSent, paymentState, requestGatePickup, markGatePickupPaid, getPayProvider, cancelExpress, markExpressReceived } from '../api.js';
+import { markPaymentSent, paymentState, requestGatePickup, markGatePickupPaid, getPayProvider, cancelExpress, markExpressReceived, markExpressNotHere } from '../api.js';
 import { RateExperience } from './RateExperience';
 import { InstallBanner } from './InstallPrompt';
 
@@ -253,6 +253,15 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
     if (!currentOrder) return;
     setExBusy(true);
     const updated = await markExpressReceived(currentOrder.id);
+    if (updated) setCurrentOrder(updated as OrderRecord);
+    else window.alert('Could not save. Please try again.');
+    setExBusy(false);
+  };
+  const notHereYet = async () => {
+    if (!currentOrder) return;
+    if (!window.confirm("Tell the runner you haven't received it yet? The clock keeps running until it arrives.")) return;
+    setExBusy(true);
+    const updated = await markExpressNotHere(currentOrder.id);
     if (updated) setCurrentOrder(updated as OrderRecord);
     else window.alert('Could not save. Please try again.');
     setExBusy(false);
@@ -506,6 +515,14 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                             className="w-full py-2.5 rounded-xl bg-[#0e9f55] text-white font-bold disabled:opacity-50 cursor-pointer"
                           >
                             I've received it
+                          </button>
+                          <button
+                            type="button"
+                            disabled={exBusy}
+                            onClick={notHereYet}
+                            className="w-full py-2 rounded-xl border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 font-bold disabled:opacity-50 cursor-pointer"
+                          >
+                            Not here yet
                           </button>
                         </div>
                       )}
