@@ -34,6 +34,7 @@ import {
   sellingPrice,
   CATEGORY_SETUP,
   STORE_SOURCE,
+  storeOfSource,
   OUTSIDE_DAYS_AHEAD,
   outsideDeliveryText,
   longDayLabel,
@@ -922,7 +923,16 @@ export async function addCategory(name, emoji = '📦', initialSubcategories = [
   const cat = await readCatalog(true);
   const trimmed = name.trim();
   if (!trimmed) return cat.categories;
-  if (cat.categories.find((c) => c.name.toLowerCase() === trimmed.toLowerCase())) return cat.categories;
+  // The same name in another store: share that category with this store too (like Drinks).
+  // Each product still belongs to one store, so students only see that store's products in it.
+  const existing = cat.categories.find((c) => c.name.toLowerCase() === trimmed.toLowerCase());
+  if (existing) {
+    const missing = (stores || []).filter((s) => !(existing.stores || []).includes(s));
+    if (!missing.length) throw new Error(`"${existing.name}" already exists in this store.`);
+    existing.stores = [...(existing.stores || []), ...missing];
+    await writeCatalog(cat);
+    return cat.categories;
+  }
   cat.categories = [
     ...cat.categories,
     {
@@ -952,9 +962,18 @@ export async function addSubcategory(categoryName, subcategoryName) {
 
 /** Remove a main category. Refused while any product still uses it (move those products first). */
 /** @returns {Promise<any>} */
-export async function deleteCategory(categoryName) {
+export async function deleteCategory(categoryName, store = '') {
   const cat = await readCatalog(true);
   const name = String(categoryName).toLowerCase();
+  // Shared with another store: only remove it from this store (the other store keeps it and its products)
+  const shared = cat.categories.find((c) => c.name.toLowerCase() === name);
+  if (store && shared && (shared.stores || []).includes(store) && shared.stores.length > 1) {
+    const here = cat.products.filter((p) => String(p.category).toLowerCase() === name && storeOfSource(p.source) === store).length;
+    if (here > 0) throw new Error(`${here} product(s) in this store still use "${categoryName}". Move them to another category first.`);
+    shared.stores = shared.stores.filter((s) => s !== store);
+    await writeCatalog(cat);
+    return cat.categories;
+  }
   const inUse = cat.products.filter((p) => String(p.category).toLowerCase() === name).length;
   if (inUse > 0) throw new Error(`${inUse} product(s) still use "${categoryName}". Move them to another category first.`);
   cat.categories = cat.categories.filter((c) => c.name.toLowerCase() !== name);

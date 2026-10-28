@@ -282,9 +282,13 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCatName.trim()) return;
-    const updated = await addCategory(newCatName.trim(), newCatEmoji.trim() || '', ['All'], [adminStore]);
-    setCategories(updated);
-    setNewCatName('');
+    try {
+      const updated = await addCategory(newCatName.trim(), newCatEmoji.trim() || '', ['All'], [adminStore]);
+      setCategories(updated);
+      setNewCatName('');
+    } catch (err: any) {
+      window.alert(err?.message || 'Could not add this category. Check your connection and try again.');
+    }
   };
 
   const handleAddSubcategory = async (catName: string) => {
@@ -309,7 +313,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
   const handleDeleteCategory = async (catName: string) => {
     if (!window.confirm(`Delete the category "${catName}"?`)) return;
     try {
-      setCategories(await deleteCategory(catName));
+      setCategories(await deleteCategory(catName, adminStore));
     } catch (e: any) {
       window.alert(e?.message || 'Could not delete this category.');
     }

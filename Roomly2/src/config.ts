@@ -467,7 +467,8 @@ export const CATEGORY_SETUP: Record<'inside' | 'store' | 'food', CategorySetup[]
   ],
   store: [
     { name: 'Foodstuff', emoji: '🍚', subs: ['Rice', 'Beans & Grains', 'Garri & Flour', 'Tubers & Plantain', 'Pasta & Noodles'] },
-    { name: 'Cooking Essentials', emoji: '🌶️', subs: ['Cooking Oil', 'Seasoning & Spices', 'Soup Ingredients', 'Fresh Produce', 'Protein'] },
+    { name: 'Cooking Essentials', emoji: '🌶️', subs: ['Cooking Oil', 'Seasoning & Spices', 'Soup Ingredients', 'Protein'] },
+    { name: 'Fruits & Vegetables', emoji: '🥕', subs: ['Vegetables', 'Fruits', 'Tomatoes, Pepper & Onions'] },
     { name: 'Kitchen & Stove', emoji: '🔥', subs: ['Stove & Fuel', 'Cookware', 'Food Storage', 'Plates & Cutlery'] },
     { name: 'Provisions', emoji: '📦', subs: ['Beverages & Spreads', 'Cereal & Breakfast', 'Biscuits & Snacks', 'Sweets & Chocolate'] },
     { name: 'Toiletries & Laundry', emoji: '🧴', subs: ['Bath & Skin', 'Oral Care', 'Hygiene & Paper', 'Laundry', 'Cleaning & Pest Control'] },
