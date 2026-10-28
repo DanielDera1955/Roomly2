@@ -1,0 +1,411 @@
+import React, { useEffect, useState } from 'react';
+import { Plus, Minus, X, RotateCcw, Star, Sparkles } from 'lucide-react';
+import { Product } from '../config';
+
+const naira = (n: number) => `₦${Math.round(n || 0).toLocaleString()}`;
+
+/** The product's group (e.g. Soft Drinks). Empty or 'All' falls back to the category. */
+export const groupOf = (p: Product): string => {
+  const g = String(p.subcategory || '').trim();
+  return g && g.toLowerCase() !== 'all' ? g : String(p.category || '').trim();
+};
+
+const Thumb: React.FC<{ p: Product; big?: boolean }> = ({ p, big }) => {
+  const [err, setErr] = useState(false);
+  const cls = big ? 'w-full aspect-[4/3] rounded-2xl' : 'w-12 h-12 rounded-xl';
+  return p.imageUrl && !err ? (
+    <img src={p.imageUrl} alt={p.name} onError={() => setErr(true)} referrerPolicy="no-referrer" className={`${cls} object-cover shrink-0`} />
+  ) : (
+    <div className={`${cls} shrink-0 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-800/70 flex items-center justify-center`}>
+      <span className={big ? 'text-5xl' : 'text-xl'}>{p.emoji}</span>
+    </div>
+  );
+};
+
+const Stepper: React.FC<{ qty: number; onAdd: () => void; onRemove: () => void; small?: boolean }> = ({ qty, onAdd, onRemove, small }) =>
+  qty > 0 ? (
+    <div className="flex items-center bg-[#0e9f55] text-white rounded-xl p-0.5 shrink-0">
+      <button type="button" onClick={onRemove} className={`${small ? 'w-6 h-6' : 'w-8 h-8'} flex items-center justify-center rounded-lg hover:bg-black/15 cursor-pointer`} aria-label="Remove one">
+        <Minus className="w-3.5 h-3.5" />
+      </button>
+      <span className={`${small ? 'min-w-[18px] text-xs' : 'min-w-[24px] text-sm'} text-center font-bold`}>{qty}</span>
+      <button type="button" onClick={onAdd} className={`${small ? 'w-6 h-6' : 'w-8 h-8'} flex items-center justify-center rounded-lg hover:bg-black/15 cursor-pointer`} aria-label="Add one">
+        <Plus className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  ) : (
+    <button
+      type="button"
+      onClick={onAdd}
+      className={`shrink-0 flex items-center gap-1 bg-[#0e9f55] hover:bg-[#0b8044] text-white rounded-xl font-bold cursor-pointer ${small ? 'px-2.5 py-1.5 text-xs' : 'px-4 py-2 text-sm'}`}
+    >
+      <Plus className="w-3.5 h-3.5" /> Add
+    </button>
+  );
+
+interface SheetProps {
+  product: Product | null;
+  /** Products students can see on this side, for "More …" */
+  pool: Product[];
+  qtyOf: (id: string) => number;
+  onAdd: (p: Product) => void;
+  onRemove: (id: string) => void;
+  onOpen: (p: Product) => void;
+  onClose: () => void;
+}
+
+/** Tap a product: its details, quantity, and similar products from the same group */
+export const ProductSheet: React.FC<SheetProps> = ({ product, pool, qtyOf, onAdd, onRemove, onOpen, onClose }) => {
+  if (!product) return null;
+  const group = groupOf(product);
+  // "Goes well with" (set in Admin), in stock on this side only; then similar items from the same group
+  const pairs = (product.pairsWith || [])
+    .map((id) => pool.find((p) => p.id === id))
+    .filter((p): p is Product => Boolean(p) && !p!.isFood)
+    .slice(0, 4);
+  const similar = pool
+    .filter((p) => p.id !== product.id && !p.isFood && !pairs.includes(p) && groupOf(p).toLowerCase() === group.toLowerCase())
+    .slice(0, 12);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-xs">
+      <div className="absolute inset-0" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-[480px] bg-white dark:bg-slate-900 rounded-t-3xl max-h-[88vh] flex flex-col shadow-2xl border-t border-slate-200/80 dark:border-slate-800">
+        <div className="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mt-3 mb-1 shrink-0" />
+        <button type="button" onClick={onClose} className="absolute right-3 top-3 p-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 cursor-pointer" aria-label="Close">
+          <X className="w-4 h-4" />
+        </button>
+        <div className="overflow-y-auto px-4 pb-6 pt-2 space-y-4">
+          <div className="max-w-[260px] mx-auto">
+            <Thumb p={product} big />
+          </div>
+          <div className="flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="text-base font-extrabold text-slate-900 dark:text-white leading-snug">{product.name}</h3>
+              {product.unit && <p className="text-xs text-slate-500">{product.unit}</p>}
+              <p className="text-lg font-black text-slate-900 dark:text-white mt-1">{naira(product.price)}</p>
+            </div>
+            <Stepper qty={qtyOf(product.id)} onAdd={() => onAdd(product)} onRemove={() => onRemove(product.id)} />
+          </div>
+          {product.description && <p className="text-xs text-slate-500 dark:text-slate-400">{product.description}</p>}
+
+          {pairs.length > 0 && (
+            <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <p className="text-xs font-black uppercase tracking-wider text-[#0e9f55]">Goes well with</p>
+              {pairs.map((p) => (
+                <div key={p.id} className="flex items-center gap-3 p-2 rounded-2xl bg-slate-50 dark:bg-slate-800/60">
+                  <button type="button" onClick={() => onOpen(p)} className="flex items-center gap-3 min-w-0 flex-1 text-left cursor-pointer">
+                    <Thumb p={p} />
+                    <span className="min-w-0">
+                      <span className="block text-xs font-bold text-slate-900 dark:text-white truncate">{p.name}</span>
+                      <span className="block text-[11px] text-slate-500">
+                        {naira(p.price)}
+                        {p.unit ? ` · ${p.unit}` : ''}
+                      </span>
+                    </span>
+                  </button>
+                  <Stepper small qty={qtyOf(p.id)} onAdd={() => onAdd(p)} onRemove={() => onRemove(p.id)} />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {similar.length > 0 && (
+            <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <p className="text-xs font-black uppercase tracking-wider text-slate-500">More {group}</p>
+              {similar.map((p) => (
+                <div key={p.id} className="flex items-center gap-3 p-2 rounded-2xl bg-slate-50 dark:bg-slate-800/60">
+                  <button type="button" onClick={() => onOpen(p)} className="flex items-center gap-3 min-w-0 flex-1 text-left cursor-pointer">
+                    <Thumb p={p} />
+                    <span className="min-w-0">
+                      <span className="block text-xs font-bold text-slate-900 dark:text-white truncate">{p.name}</span>
+                      <span className="block text-[11px] text-slate-500">
+                        {naira(p.price)}
+                        {p.unit ? ` · ${p.unit}` : ''}
+                      </span>
+                    </span>
+                  </button>
+                  <Stepper small qty={qtyOf(p.id)} onAdd={() => onAdd(p)} onRemove={() => onRemove(p.id)} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/** Returning students: their most-bought items on this side, one tap to add */
+export const OrderAgainRow: React.FC<{
+  items: Product[];
+  qtyOf: (id: string) => number;
+  onAdd: (p: Product) => void;
+  onOpen: (p: Product) => void;
+  /** Whose hidden items these are (their phone number), so a different student on the same phone starts fresh */
+  ownerKey?: string;
+}> = ({ items: allItems, qtyOf, onAdd, onOpen, ownerKey = '' }) => {
+  const KEY = `roomly_hidden_usuals_${ownerKey}`;
+  const read = (): string[] => {
+    try {
+      const v = JSON.parse(localStorage.getItem(KEY) || '[]');
+      return Array.isArray(v) ? v : [];
+    } catch {
+      return [];
+    }
+  };
+  const [hidden, setHidden] = useState<string[]>(read);
+  useEffect(() => {
+    setHidden(read());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [KEY]);
+  const save = (next: string[]) => {
+    setHidden(next);
+    try {
+      localStorage.setItem(KEY, JSON.stringify(next));
+    } catch {
+      /* storage can be blocked; the change still holds for this visit */
+    }
+  };
+  const items = allItems.filter((p) => !hidden.includes(p.id));
+  const hiddenCount = allItems.length - items.length;
+  if (!items.length) {
+    if (!hiddenCount) return null;
+    return (
+      <button
+        type="button"
+        onClick={() => save([])}
+        className="text-xs font-semibold text-[#0e9f55] px-1 py-0.5 cursor-pointer"
+      >
+        Show my usuals
+      </button>
+    );
+  }
+  const missing = items.filter((p) => qtyOf(p.id) === 0);
+  return (
+    <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 shadow-[0_2px_10px_-4px_rgba(15,60,40,0.15)] space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+          <RotateCcw className="w-3.5 h-3.5 text-[#0e9f55]" /> Order again
+        </p>
+        <div className="flex items-center gap-1">
+          {missing.length > 0 && (
+            <button
+              type="button"
+              onClick={() => missing.forEach((p) => onAdd(p))}
+              className="text-xs font-bold text-[#0e9f55] px-2 py-1 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
+            >
+              Add all
+            </button>
+          )}
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              onClick={() => save([])}
+              className="text-xs font-semibold text-[#0e9f55] px-2 py-1 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
+            >
+              Show hidden
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => save(Array.from(new Set([...hidden, ...items.map((p) => p.id)])))}
+            className="text-xs font-semibold text-slate-400 px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+          >
+            Hide
+          </button>
+        </div>
+      </div>
+      <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-3 px-3">
+        {items.map((p) => {
+          const q = qtyOf(p.id);
+          return (
+            <div key={p.id} className="relative shrink-0 w-28 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-1.5">
+              <button
+                type="button"
+                aria-label={`Remove ${p.name} from Order again`}
+                onClick={() => save([...hidden, p.id])}
+                className="absolute top-1 right-1 z-10 w-5 h-5 rounded-full bg-white/90 dark:bg-slate-900/90 text-slate-500 flex items-center justify-center shadow-sm cursor-pointer"
+              >
+                <X className="w-3 h-3" />
+              </button>
+              <button type="button" onClick={() => onOpen(p)} className="block w-full text-left cursor-pointer">
+                <Thumb p={p} />
+                <span className="block mt-1 text-[11px] font-bold text-slate-900 dark:text-white leading-tight line-clamp-2">{p.name}</span>
+                <span className="block text-[11px] text-slate-500">{naira(p.price)}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onAdd(p)}
+                className={`w-full py-1 rounded-lg text-[11px] font-bold cursor-pointer ${q > 0 ? 'bg-[#0e9f55] text-white' : 'bg-[#0e9f55]/10 text-[#0e9f55]'}`}
+              >
+                {q > 0 ? `In cart (${q}) +` : '+ Add'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+/** Returning students: a greeting card whose sky follows the time of day (sunrise, blue sky, night) */
+export const GreetingCard: React.FC<{
+  dayPart: 'Good morning' | 'Good afternoon' | 'Good evening';
+  name: string;
+  hasUsuals: boolean;
+  activeOrders: number;
+  onOpenOrders: () => void;
+}> = ({ dayPart, name, hasUsuals, activeOrders, onOpenOrders }) => {
+  const morning = dayPart === 'Good morning';
+  const afternoon = dayPart === 'Good afternoon';
+  const sky = morning
+    ? 'linear-gradient(180deg,#fb923c 0%,#fbbf24 45%,#fde68a 100%)'
+    : afternoon
+    ? 'linear-gradient(180deg,#0ea5e9 0%,#38bdf8 55%,#7dd3fc 100%)'
+    : 'linear-gradient(180deg,#1e1b4b 0%,#312e81 55%,#0e7490 100%)';
+  const ink = morning ? 'text-orange-950' : 'text-white';
+  const stars = [
+    [190, 14],
+    [235, 46],
+    [262, 10],
+    [205, 78],
+    [290, 92],
+  ];
+  return (
+    <div className={`relative overflow-hidden rounded-3xl p-[18px] min-h-[176px] shadow-md ${ink}`} style={{ background: sky }}>
+      {morning && (
+        <div className="absolute right-5 top-5 w-14 h-14 rounded-full bg-orange-50" style={{ boxShadow: '0 0 40px 14px rgba(255,237,213,.8)' }} />
+      )}
+      {afternoon && (
+        <>
+          <div className="absolute right-6 top-[18px] w-12 h-12 rounded-full bg-yellow-300" style={{ boxShadow: '0 0 30px 10px rgba(253,224,71,.6)' }} />
+          <span className="absolute right-[70px] top-[30px] w-[70px] h-5 rounded-full bg-white/85" />
+          <span className="absolute right-5 top-[78px] w-[46px] h-3.5 rounded-full bg-white/85" />
+        </>
+      )}
+      {!morning && !afternoon && (
+        <>
+          {stars.map(([l, t]) => (
+            <span key={`${l}-${t}`} className="absolute w-[3px] h-[3px] rounded-full bg-white/85" style={{ left: l, top: t }} />
+          ))}
+          <div className="absolute right-[22px] top-4 w-10 h-10 rounded-full bg-amber-200 overflow-hidden" style={{ boxShadow: '0 0 30px 8px rgba(253,230,138,.35)' }}>
+            <div className="absolute w-10 h-10 rounded-full left-[11px] -top-1.5" style={{ background: '#262266' }} />
+          </div>
+        </>
+      )}
+      {/* hills */}
+      <div className="absolute -left-8 -right-8 -bottom-12 h-20 rounded-[50%] bg-[#0e9f55]/55" />
+      <div className="absolute left-[120px] -right-16 -bottom-14 h-20 rounded-[50%] bg-[#0b8044]/50" />
+
+      <div className="relative z-10">
+        <p className={`text-[11px] font-extrabold uppercase tracking-[0.14em] ${morning ? 'text-orange-800' : 'opacity-90'}`}>{dayPart}</p>
+        <h1 className="text-[30px] font-extrabold tracking-tight leading-tight truncate">{name}</h1>
+        <p className="text-[13px] opacity-90 max-w-[230px] leading-snug">
+          Nice to have you back.{hasUsuals ? ' Your usuals are one tap away.' : ''}
+        </p>
+        {activeOrders > 0 && (
+          <button
+            type="button"
+            onClick={onOpenOrders}
+            className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold cursor-pointer backdrop-blur-sm ${
+              morning ? 'bg-white/45' : 'bg-white/20'
+            }`}
+          >
+            🛍 {activeOrders} {activeOrders === 1 ? 'order' : 'orders'} on the way ›
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/** Homepage: products you ticked "Featured" in Admin (in stock only), one tap to add */
+export const FeaturedRow: React.FC<{
+  items: Product[];
+  qtyOf: (id: string) => number;
+  onAdd: (p: Product) => void;
+  onOpen: (p: Product) => void;
+}> = ({ items, qtyOf, onAdd, onOpen }) => {
+  if (!items.length) return null;
+  return (
+    <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 shadow-[0_2px_10px_-4px_rgba(15,60,40,0.15)] space-y-2">
+      <p className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+        <Star className="w-3.5 h-3.5 text-amber-500" /> Featured
+      </p>
+      {/* Cards are sized so about 2.5 show on any phone: the cut-off card tells students to swipe */}
+      <div className="flex gap-2 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-px-3 -mx-3 px-3">
+        {items.map((p) => {
+          const q = qtyOf(p.id);
+          return (
+            <div key={p.id} className="shrink-0 basis-[38%] snap-start p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-1.5">
+              <button type="button" onClick={() => onOpen(p)} className="block w-full text-left cursor-pointer">
+                <Thumb p={p} big />
+                <span className="block mt-1 text-[11px] font-bold text-slate-900 dark:text-white leading-tight line-clamp-2">{p.name}</span>
+                <span className="block text-[11px] text-slate-500">{naira(p.price)}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onAdd(p)}
+                className={`w-full py-1 rounded-lg text-[11px] font-bold cursor-pointer ${q > 0 ? 'bg-[#0e9f55] text-white' : 'bg-[#0e9f55]/10 text-[#0e9f55]'}`}
+              >
+                {p.isFood ? 'Choose' : q > 0 ? `In cart (${q}) +` : '+ Add'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+/** Right after a product is added: its "Goes well with" items, one tap to add. Hides itself after a while. */
+export const PairingsBar: React.FC<{
+  forName: string;
+  items: Product[];
+  qtyOf: (id: string) => number;
+  onAdd: (p: Product) => void;
+  onClose: () => void;
+}> = ({ forName, items, qtyOf, onAdd, onClose }) => {
+  if (!items.length) return null;
+  return (
+    <div className="fixed inset-x-0 bottom-24 z-40 px-3 pointer-events-none">
+      <div className="pointer-events-auto max-w-[460px] mx-auto p-3 rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900/60 shadow-2xl space-y-2 animate-in fade-in slide-in-from-bottom-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 min-w-0">
+            <Sparkles className="w-3.5 h-3.5 text-[#0e9f55] shrink-0" />
+            <span className="truncate">Goes well with {forName}</span>
+          </p>
+          <button type="button" aria-label="Close suggestions" onClick={onClose} className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center cursor-pointer shrink-0">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        <div className="flex gap-2 overflow-x-auto no-scrollbar">
+          {items.map((p) => {
+            const q = qtyOf(p.id);
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => onAdd(p)}
+                className={`shrink-0 flex items-center gap-2 pl-1.5 pr-2.5 py-1.5 rounded-xl border text-left cursor-pointer ${
+                  q > 0 ? 'border-[#0e9f55] bg-emerald-50 dark:bg-emerald-950/40' : 'border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                <span className="w-8 h-8 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                  {p.imageUrl ? <img src={p.imageUrl} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" /> : <span>{p.emoji}</span>}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[11px] font-bold text-slate-900 dark:text-white max-w-[110px] truncate">{p.name}</span>
+                  <span className="block text-[11px] font-semibold text-[#0e9f55]">
+                    {p.isFood ? `${naira(p.price)} · Choose` : q > 0 ? `In cart (${q}) +` : `${naira(p.price)} +`}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
