@@ -1319,7 +1319,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                         />
                         Featured on the homepage
                         <span className="font-normal text-slate-500">
-                          ({products.filter((x) => x.featured && isOutsideSource(x.source) === isOutsideSource(editingProduct.source)).length} featured on this side, first 8 show)
+                          ({products.filter((x) => x.featured && isOutsideSource(x.source) === isOutsideSource(editingProduct.source)).length} featured on this side, first 10 show)
                         </span>
                       </label>
                       <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 pt-1">Goes well with (up to 4)</p>

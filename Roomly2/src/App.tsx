@@ -883,7 +883,7 @@ export default function App() {
   }, [signedInCustomer, phone, pin]);
 
   // "Order again": their most-bought items on this side, from delivered orders
-  const featured = useMemo(() => sideProducts.filter((p) => p.featured).slice(0, 8), [sideProducts]);
+  const featured = useMemo(() => sideProducts.filter((p) => p.featured).slice(0, 10), [sideProducts]);
   const pairSource = pairFor ? products.find((p) => p.id === pairFor.id) : undefined;
   const pairItems = useMemo(() => {
     if (!pairSource) return [] as Product[];

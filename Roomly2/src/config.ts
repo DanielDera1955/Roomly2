@@ -445,7 +445,7 @@ export function shopGroupLabel(group: ShopGroup, side: 'inside' | 'outside'): st
   if (group === 'store') return 'Store Items';
   return 'Cooked Food';
 }
-export const ITEMS_PER_PAGE = 10;
+export const ITEMS_PER_PAGE = 20;
 
 /** Roomly's standard categories and subcategories for each store, in the order students see them.
  *  Admin > Categories > "Set up Roomly categories" adds any that are missing (it never deletes). */
