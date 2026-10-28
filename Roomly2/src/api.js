@@ -4,7 +4,7 @@
  * Same exported functions as the old localStorage version, now backed by
  * Firebase (Firestore + Auth, free Spark plan).
  *
- * - Customers: no accounts. Saved by phone + 6-digit PIN (hashed document id).
+ * - Customers: no accounts. Saved by phone + 4-digit PIN (older ones 6) (hashed document id).
  * - Runners and admin: email/password login (a phone number becomes phone@roomly.app).
  * - Orders: customers create and track them; staff see the full list in real time.
  */
@@ -84,6 +84,11 @@ export function isValidNigerianPhone(phone) {
   if (!phone) return false;
   const cleaned = phone.replace(/[\s-]/g, '');
   return /^(070|080|081|090|091)\d{8}$/.test(cleaned);
+}
+
+/** New students create a 4-digit PIN. Students who signed up earlier with 6 digits keep using theirs. */
+export function isValidPin(pin) {
+  return /^(\d{4}|\d{6})$/.test(pin || '');
 }
 
 export function normalizePhone(phone) {
@@ -1014,7 +1019,7 @@ export async function deleteProduct(productId) {
   return cat.products;
 }
 
-/* ------------- customers (no accounts: phone + 6-digit PIN) ------------- */
+/* ------------- customers (no accounts: phone + 4-digit PIN) ------------- */
 
 /** @returns {Promise<any>} */
 export async function getCustomerByPhone(phone, pin) {
@@ -1025,7 +1030,7 @@ export async function getCustomerByPhone(phone, pin) {
     const known = ps.exists() ? ps.data() : null;
 
     let profile = null;
-    if (/^\d{6}$/.test(pin || '')) {
+    if (isValidPin(pin)) {
       const cs = await getDoc(doc(db, 'customers', await profileKey(p, pin)));
       if (cs.exists()) profile = cs.data();
     }
@@ -1210,7 +1215,7 @@ export async function createOrder(orderPayload) {
   const phone = normalizePhone(orderPayload.phone);
   const pin = orderPayload.pin;
   if (!isValidNigerianPhone(phone)) throw new Error('Invalid phone number');
-  if (!/^\d{6}$/.test(pin || '')) throw new Error('A 6-digit PIN is required');
+  if (!isValidPin(pin)) throw new Error('A 4-digit PIN is required');
 
   const pk = await phoneKey(phone);
   const prk = await profileKey(phone, pin);
@@ -1607,7 +1612,7 @@ export async function deleteOrder(orderId) {
 /** @returns {Promise<any[]>} */
 export async function getMyOrders(phone, pin) {
   const p = normalizePhone(phone);
-  if (!isValidNigerianPhone(p) || !/^\d{6}$/.test(pin || '')) return [];
+  if (!isValidNigerianPhone(p) || !isValidPin(pin)) return [];
   try {
     const cs = await getDoc(doc(db, 'customers', await profileKey(p, pin)));
     if (!cs.exists()) return [];

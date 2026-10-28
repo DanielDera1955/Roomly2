@@ -17,6 +17,7 @@ import {
   getStoreStatus,
   setStoreOverride,
   isValidNigerianPhone,
+  isValidPin,
   createProductRequest,
   subscribeProductRequest,
 } from './api.js';
@@ -83,14 +84,29 @@ export default function App() {
   // Categories & Products from API
   const [categories, setCategories] = useState<CategoryDefinition[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  // The app opens on the side and category of the student's last placed order (saved on this phone).
+  // Nothing saved, or unreadable storage: Inside school > Store Items.
+  const lastShop = useMemo(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem('roomly_last_shop') || '{}');
+      return {
+        side: v.side === 'outside' ? 'outside' : 'inside',
+        tab: v.tab === 'food' ? 'food' : 'store',
+      } as { side: 'inside' | 'outside'; tab: 'store' | 'food' };
+    } catch {
+      return { side: 'inside', tab: 'store' } as { side: 'inside' | 'outside'; tab: 'store' | 'food' };
+    }
+  }, []);
   // Two categories per side: 'store' (Store Items) and 'food' (Cooked Food), plus the Request form
-  const [selectedTab, setSelectedTab] = useState<ShopTab>('store');
+  const [selectedTab, setSelectedTab] = useState<ShopTab>(lastShop.tab);
   const [selectedFilter, setSelectedFilter] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sourceMode, setSourceMode] = useState<'inside' | 'outside'>('inside');
+  // Header "Sign in" popup for guests (returning students on a new phone)
+  const [signInOpen, setSignInOpen] = useState(false);
+  const [sourceMode, setSourceMode] = useState<'inside' | 'outside'>(lastShop.side);
   const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
   // The last section browsed (store or food), so the request form and delivery card know where the student is
-  const [lastGroup, setLastGroup] = useState<'store' | 'food'>('store');
+  const [lastGroup, setLastGroup] = useState<'store' | 'food'>(lastShop.tab);
   useEffect(() => {
     if (selectedTab !== 'Request') setLastGroup(selectedTab);
   }, [selectedTab]);
@@ -216,7 +232,7 @@ export default function App() {
 
   // Save the login on this device once the PIN is confirmed
   useEffect(() => {
-    if (customer && !customer.wrongPin && /^\d{6}$/.test(pin) && phone) {
+    if (customer && !customer.wrongPin && isValidPin(pin) && phone) {
       try {
         localStorage.setItem('roomly_customer', JSON.stringify({ phone, pin, name: localName, intro: introPhone }));
       } catch (e) {
@@ -255,7 +271,7 @@ export default function App() {
   const handleOpenHistory = async () => {
     setIsTrackerOpen(false);
     setHistoryOpen(true);
-    if (!isValidNigerianPhone(phone) || !/^\d{6}$/.test(pin)) return;
+    if (!isValidNigerianPhone(phone) || !isValidPin(pin)) return;
     setHistoryLoading(true);
     setHistoryOrders(await getMyOrders(phone, pin));
     setHistoryLoading(false);
@@ -310,7 +326,7 @@ export default function App() {
 
   // ---------- Saved carts (on this phone): one for guests, one per signed-in number ----------
   const cartOwner =
-    customer && customer.name && !customer.wrongPin && isValidNigerianPhone(phone) && /^\d{6}$/.test(pin) ? `u_${customer.phone || phone}` : 'guest';
+    customer && customer.name && !customer.wrongPin && isValidNigerianPhone(phone) && isValidPin(pin) ? `u_${customer.phone || phone}` : 'guest';
   const [loadedOwner, setLoadedOwner] = useState('');
   const readCart = (owner: string): CartItem[] => {
     try {
@@ -612,11 +628,11 @@ export default function App() {
   // Place Order flow
   const handlePlaceOrder = async (orderPayload: any) => {
     if (customer?.wrongPin) {
-      window.alert('This phone number is already registered. Enter the correct PIN at the top, or ask Roomly to reset it.');
+      window.alert('This phone number is already registered. Enter your PIN in the checkout form, or ask Roomly on WhatsApp to reset it.');
       return;
     }
-    if (!/^\d{6}$/.test(pin)) {
-      window.alert('Please enter a 6-digit PIN at the top of the page. It saves your details for next time.');
+    if (!isValidPin(pin)) {
+      window.alert('Please create your 4-digit PIN in the checkout form. It saves your details for next time.');
       return;
     }
     try {
@@ -627,6 +643,23 @@ export default function App() {
 
       // Only the cart that was checked out is emptied; the other carts stay
       const placed: CartKind = orderPayload.cart || 'inside';
+
+      // Remember this order's side and category so the app opens there next time.
+      // Inside: Food only when every item in the cart was food, otherwise Store Items.
+      try {
+        const placedItems = cartItems.filter((i) => cartOf(i) === placed);
+        const insideAllFood = placedItems.length > 0 && placedItems.every((i) => i.isFood);
+        const shop =
+          placed === 'store'
+            ? { side: 'outside', tab: 'store' }
+            : placed === 'food'
+              ? { side: 'outside', tab: 'food' }
+              : { side: 'inside', tab: insideAllFood ? 'food' : 'store' };
+        localStorage.setItem('roomly_last_shop', JSON.stringify(shop));
+      } catch {
+        // Storage blocked (private browsing): the app just opens on the normal default
+      }
+
       setCartItems((prev) => prev.filter((i) => cartOf(i) !== placed));
       if (placed === 'inside') setCustomRequest('');
       setIsCartOpen(false);
@@ -781,7 +814,10 @@ export default function App() {
     (Boolean(customer?.name) || (introPhone !== '' && introPhone === phone)) &&
     !customer?.wrongPin &&
     isValidNigerianPhone(phone) &&
-    /^\d{6}$/.test(pin);
+    isValidPin(pin);
+  useEffect(() => {
+    if (signedInCustomer) setSignInOpen(false);
+  }, [signedInCustomer]);
   const firstName = String(customer?.name || localName || '').trim().split(/\s+/)[0] || '';
   const hasCompletedOrder =
     signedInCustomer &&
@@ -953,6 +989,7 @@ export default function App() {
           activeOrderCount={activeOrderCount}
           signedIn={signedInCustomer}
           onSignOut={handleSignOut}
+          onSignIn={() => setSignInOpen(true)}
         />
 
         {/* A requested price just came back */}
@@ -1005,26 +1042,37 @@ export default function App() {
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   From inside or outside {SCHOOL_NAME}, delivered to your room or the school gate.
                 </p>
+                <p className="text-xs font-semibold text-[#0b8044] dark:text-[#0e9f55] mt-1.5">
+                  No sign-up needed. Just pick what you need and check out.
+                </p>
               </>
             )}
           </div>
 
-          {/* Sign-in box: guests only. Signed-in students use the Orders and Account buttons in the header */}
-          {!signedInCustomer && (
-            <PhoneLookupBar
-              phone={phone}
-              onPhoneChange={setPhone}
-              pin={pin}
-              onPinChange={setPin}
-              customer={customer}
-              onOpenHistory={handleOpenHistory}
-              onSignOut={handleSignOut}
-              cartCount={cartItems.reduce((n, i) => n + i.quantity, 0)}
-              isNewNumber={customerLoaded && !customer}
-              name={localName}
-              onNameChange={setLocalName}
-              onContinue={handleContinueNew}
-            />
+          {/* No sign-in box on the home screen: new students give their details once, at checkout.
+              Returning students on a new phone use "Sign in" in the header, which opens this popup. */}
+          {signInOpen && !signedInCustomer && (
+            <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 px-3 pt-20" onClick={() => setSignInOpen(false)}>
+              <div className="w-full max-w-[460px] space-y-2" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between px-1">
+                  <p className="text-sm font-bold text-white">Sign in</p>
+                  <button type="button" onClick={() => setSignInOpen(false)} className="text-xs font-bold text-white/80 cursor-pointer">
+                    Close
+                  </button>
+                </div>
+                <PhoneLookupBar
+                  phone={phone}
+                  onPhoneChange={setPhone}
+                  pin={pin}
+                  onPinChange={setPin}
+                  customer={customer}
+                  onOpenHistory={handleOpenHistory}
+                  onSignOut={handleSignOut}
+                  isNewNumber={customerLoaded && !customer}
+                  signInOnly
+                />
+              </div>
+            </div>
           )}
 
           {/* Inside school or outside school */}
@@ -1235,6 +1283,9 @@ export default function App() {
           guestName={localName}
           phone={phone}
           onPhoneChange={setPhone}
+          pin={pin}
+          onPinChange={setPin}
+          signedIn={signedInCustomer}
           onPlaceOrder={handlePlaceOrder}
         />
 
@@ -1244,7 +1295,7 @@ export default function App() {
           onClose={() => setHistoryOpen(false)}
           orders={screenOrders}
           loading={historyLoading}
-          signedIn={isValidNigerianPhone(phone) && /^\d{6}$/.test(pin) && !customer?.wrongPin}
+          signedIn={isValidNigerianPhone(phone) && isValidPin(pin) && !customer?.wrongPin}
           onSelect={(o) => {
             setActiveOrder(o);
             setHistoryOpen(false);

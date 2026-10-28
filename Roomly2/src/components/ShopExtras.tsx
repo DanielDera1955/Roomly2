@@ -333,13 +333,14 @@ export const FeaturedRow: React.FC<{
       <p className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
         <Star className="w-3.5 h-3.5 text-amber-500" /> Featured
       </p>
-      <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-3 px-3">
+      {/* Cards are sized so about 2.5 show on any phone: the cut-off card tells students to swipe */}
+      <div className="flex gap-2 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-px-3 -mx-3 px-3">
         {items.map((p) => {
           const q = qtyOf(p.id);
           return (
-            <div key={p.id} className="shrink-0 w-28 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-1.5">
+            <div key={p.id} className="shrink-0 basis-[38%] snap-start p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-1.5">
               <button type="button" onClick={() => onOpen(p)} className="block w-full text-left cursor-pointer">
-                <Thumb p={p} />
+                <Thumb p={p} big />
                 <span className="block mt-1 text-[11px] font-bold text-slate-900 dark:text-white leading-tight line-clamp-2">{p.name}</span>
                 <span className="block text-[11px] text-slate-500">{naira(p.price)}</span>
               </button>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Phone, CheckCircle2, Sparkles, RotateCcw, UserCheck, ShoppingBag, ArrowRight } from 'lucide-react';
 import { CustomerProfile, CartItem } from '../types';
-import { isValidNigerianPhone } from '../api.js';
+import { isValidNigerianPhone, isValidPin } from '../api.js';
 
 interface PhoneLookupBarProps {
   phone: string;
@@ -17,6 +17,8 @@ interface PhoneLookupBarProps {
   name?: string;
   onNameChange?: (name: string) => void;
   onContinue?: () => void;
+  /** Header popup: sign in only. New numbers are told to just order (no sign-up) */
+  signInOnly?: boolean;
 }
 
 export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
@@ -32,6 +34,7 @@ export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
   name = '',
   onNameChange,
   onContinue,
+  signInOnly = false,
 }) => {
   const [inputValue, setInputValue] = useState(phone || '');
   const isValid = isValidNigerianPhone(inputValue);
@@ -86,16 +89,18 @@ export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
 
         {!customer && (
           <p className={`mt-1.5 text-[11px] leading-snug font-medium ${cartCount > 0 ? 'text-[#0e9f55]' : 'text-slate-500 dark:text-slate-400'}`}>
-            {cartCount > 0
-              ? `You have ${cartCount} item${cartCount === 1 ? '' : 's'} in your cart. Enter your phone number and PIN to order them and keep them saved to your number.`
-              : 'Enter your phone number and 6-digit PIN to order and track your deliveries.'}
+            {signInOnly
+              ? 'Ordered before? Enter your phone number and PIN to see your orders and saved details.'
+              : cartCount > 0
+                ? `You have ${cartCount} item${cartCount === 1 ? '' : 's'} in your cart. Enter your phone number and PIN to order them and keep them saved to your number.`
+                : 'Enter your phone number and PIN to order and track your deliveries.'}
           </p>
         )}
 
         {isValid && (
           <div className="mt-2">
             <label htmlFor="pin-input" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              6-digit PIN (new here? choose one)
+              {signInOnly ? 'Your PIN' : '4-digit PIN (new here? choose one)'}
             </label>
             <input
               id="pin-input"
@@ -104,14 +109,20 @@ export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
               autoComplete="off"
               value={pin}
               onChange={(e) => onPinChange(e.target.value.replace(/[^\d]/g, '').slice(0, 6))}
-              placeholder="••••••"
+              placeholder="••••"
               maxLength={6}
               className="mt-1 w-full px-3 py-2 text-sm font-mono tracking-[0.4em] bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55]"
             />
           </div>
         )}
 
-        {isValid && !customer && isNewNumber && /^\d{6}$/.test(pin) && onContinue && (
+        {signInOnly && isValid && !customer && isNewNumber && (
+          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
+            This number hasn't ordered yet. No sign-up needed: pick what you need and check out.
+          </p>
+        )}
+
+        {!signInOnly && isValid && !customer && isNewNumber && /^\d{4}$/.test(pin) && onContinue && (
           <div className="mt-2 space-y-2">
             <div>
               <label htmlFor="name-input" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -140,9 +151,9 @@ export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
 
         {isValid && customer && customer.wrongPin && (
           <div className="mt-2 text-xs text-amber-600 dark:text-amber-400 font-medium">
-            {pin.length < 6
-              ? 'Enter your 6-digit PIN to continue.'
-              : 'That PIN does not match this phone number. Enter the correct PIN, or ask Roomly to reset it.'}
+            {!isValidPin(pin)
+              ? 'Enter your PIN to continue.'
+              : 'That PIN does not match this phone number. Enter the correct PIN, or ask Roomly on WhatsApp to reset it.'}
           </div>
         )}
 

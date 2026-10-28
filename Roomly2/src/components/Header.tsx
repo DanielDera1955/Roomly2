@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { SoundToggle } from './SoundToggle';
 import { Moon, Sun, ShoppingBag, UserRound, LogOut } from 'lucide-react';
 import { CustomerProfile } from '../types';
+import { SCHOOL_NAME } from '../config';
 
 export type PortalMode = 'customer' | 'runner' | 'admin' | 'operator';
 
@@ -23,6 +24,8 @@ interface HeaderProps {
   /** Signed-in student: shows the Orders and Account buttons instead of the sign-in box */
   signedIn?: boolean;
   onSignOut?: () => void;
+  /** Guests: opens the sign-in popup (returning students on a new phone) */
+  onSignIn?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -37,6 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
   activeOrderCount = 0,
   signedIn = false,
   onSignOut,
+  onSignIn,
 }) => {
   const [accountOpen, setAccountOpen] = useState(false);
   return (
@@ -48,8 +52,9 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="w-8 h-8 rounded-xl bg-[#0e9f55] text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
             R
           </div>
-          <div className="min-w-0">
-            <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-white">Roomly</span>
+          <div className="min-w-0 leading-none">
+            <span className="block font-extrabold text-base tracking-tight text-slate-900 dark:text-white">Roomly</span>
+            <span className="block mt-0.5 text-[10px] font-semibold text-[#0e9f55]">for {SCHOOL_NAME}</span>
           </div>
         </div>
 
@@ -99,6 +104,15 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
               )}
             </>
+          )}
+          {!signedIn && currentPortal === 'customer' && onSignIn && (
+            <button
+              type="button"
+              onClick={onSignIn}
+              className="px-2.5 h-8 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+            >
+              Sign in
+            </button>
           )}
           {/* Dark Mode Toggle */}
           <SoundToggle className="border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" />

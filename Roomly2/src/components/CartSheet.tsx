@@ -18,7 +18,7 @@ import {
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
 import { HOSTELS, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, OUTSIDE_BANNER } from '../config';
 import { getNextBatch, getOutsideChoices, getExpressRunners } from '../api.js';
-import { isValidNigerianPhone, normalizePhone } from '../api.js';
+import { isValidNigerianPhone, isValidPin, normalizePhone } from '../api.js';
 
 interface CartSheetProps {
   /** Inside cart: a bag of water to suggest when the cart has none */
@@ -42,6 +42,11 @@ interface CartSheetProps {
   guestName?: string;
   phone: string;
   onPhoneChange: (phone: string) => void;
+  /** PIN: new students create one here (4 digits); returning students on a new phone enter theirs */
+  pin?: string;
+  onPinChange?: (pin: string) => void;
+  /** Already signed in on this phone: no PIN field */
+  signedIn?: boolean;
   onPlaceOrder: (orderPayload: {
     phone: string;
     name: string;
@@ -90,6 +95,9 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   guestName = '',
   phone,
   onPhoneChange,
+  pin = '',
+  onPinChange,
+  signedIn = false,
   onPlaceOrder,
 }) => {
   if (!isOpen) return null;
@@ -226,6 +234,11 @@ export const CartSheet: React.FC<CartSheetProps> = ({
 
   const hasCustomRequest = Boolean(customRequest && customRequest.trim().length > 0);
   const isPhoneValid = isValidNigerianPhone(phone);
+  // This number has ordered before but isn't signed in here: ask for their PIN instead of creating one
+  const needsExistingPin = Boolean(customer?.wrongPin);
+  // PIN matched a saved profile (any length), or a new student created 4 digits
+  const pinMatched = Boolean(customer && !customer.wrongPin && isValidPin(pin));
+  const pinOk = signedIn || pinMatched || (!customer && /^\d{4}$/.test(pin));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -233,6 +246,20 @@ export const CartSheet: React.FC<CartSheetProps> = ({
 
     if (!isPhoneValid) {
       setErrorMessage('Please enter a valid 11-digit Nigerian phone number (e.g. 08012345678)');
+      return;
+    }
+
+    if (!signedIn && needsExistingPin) {
+      setErrorMessage(
+        isValidPin(pin)
+          ? 'Wrong PIN for this number. Try again, or ask Roomly on WhatsApp to reset it.'
+          : 'This number has ordered before. Enter your PIN to continue.'
+      );
+      return;
+    }
+
+    if (!pinOk) {
+      setErrorMessage('Please create a 4-digit PIN');
       return;
     }
 
@@ -596,6 +623,31 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                   className="w-full px-3 py-2 text-sm font-mono bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55]"
                 />
               </div>
+
+              {!signedIn && !pinMatched && isPhoneValid && onPinChange && (
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    {needsExistingPin ? 'Enter your PIN' : 'Create a 4-digit PIN'}
+                  </label>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={pin}
+                    onChange={(e) => onPinChange(e.target.value.replace(/[^\d]/g, '').slice(0, needsExistingPin ? 6 : 4))}
+                    placeholder="••••"
+                    maxLength={needsExistingPin ? 6 : 4}
+                    className="w-full px-3 py-2 text-sm font-mono tracking-[0.4em] bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55]"
+                  />
+                  <p className="mt-1 text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+                    {needsExistingPin
+                      ? isValidPin(pin)
+                        ? 'Wrong PIN for this number. Try again, or ask Roomly on WhatsApp to reset it.'
+                        : 'This number has ordered before. Enter your PIN and we will fill in your details.'
+                      : "One time only. This helps us remember you for next orders and keeps your account secure. Don't use your bank or ATM PIN."}
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
