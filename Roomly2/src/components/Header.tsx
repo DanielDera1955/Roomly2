@@ -52,10 +52,11 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="w-8 h-8 rounded-xl bg-[#0e9f55] text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
             R
           </div>
-          {/* "Roomly" plus the school as a green tag on the same line: reads as one name, e.g. Roomly Caritas */}
-          <div className="min-w-0 flex items-center gap-1.5">
-            <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-white">Roomly</span>
-            <span className="px-2 py-0.5 rounded-full bg-[#0e9f55]/10 dark:bg-[#0e9f55]/20 ring-1 ring-inset ring-[#0e9f55]/25 text-[11px] font-extrabold uppercase tracking-wider text-[#0b8044] dark:text-[#34d27b] truncate">
+          {/* "Roomly" with the school under it in small green caps, after a short green line */}
+          <div className="min-w-0 leading-none">
+            <span className="block font-extrabold text-base tracking-tight text-slate-900 dark:text-white">Roomly</span>
+            <span className="mt-1 flex items-center gap-1.5 text-[9.5px] font-extrabold uppercase tracking-[0.18em] text-[#0e9f55] dark:text-[#34d27b] truncate">
+              <span className="w-3 h-0.5 rounded-full bg-current shrink-0" />
               {SCHOOL_NAME}
             </span>
           </div>
