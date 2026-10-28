@@ -16,7 +16,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
-import { HOSTELS, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES } from '../config';
+import { HOSTELS, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, OUTSIDE_BANNER } from '../config';
 import { getNextBatch, getOutsideChoices, getExpressRunners } from '../api.js';
 import { isValidNigerianPhone, normalizePhone } from '../api.js';
 
@@ -180,7 +180,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const chosen: any = cart === 'inside'
     ? insideNext?.next || null
     : (chosenOp?.batch || outside?.batch) && chosenOp
-    ? { batch: chosenOp.batch || outside!.batch, start: chosenOp.start, startText: chosenOp.startText, late: Boolean(chosenOp.late), by: chosenOp.name, unconfirmed: Boolean(outside!.unconfirmed) }
+    ? { batch: chosenOp.batch || outside!.batch, start: chosenOp.start, startText: chosenOp.startText, late: Boolean(chosenOp.late), by: chosenOp.name, unconfirmed: Boolean((outside as any).unconfirmed) }
     : outside?.batch && (outside as any).start
     ? { batch: outside.batch, start: (outside as any).start, startText: (outside as any).startText, late: Boolean((outside as any).late), by: '', unconfirmed: true, noProvider: true }
     : null;
@@ -190,13 +190,20 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const unconfirmed = Boolean((chosen as any)?.unconfirmed);
   const selectedBatch = chosen?.batch;
   const payBy = chosen ? chosen.start : null;
-  const payByText = payBy ? payBy.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+  const payByTime = payBy ? payBy.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+  // Outside orders for a later day: say which day the payment time is on
+  const payByText = payBy && cart !== 'inside' && selectedBatch && dayWord(selectedBatch.date) !== 'today' ? `${payByTime} ${dayWord(selectedBatch.date)}` : payByTime;
   const pauseNote = cart === 'inside' ? insideNext?.note : outside?.note;
   const pausedText = chosen
     ? ''
-    : `${cart === 'food' ? 'Food orders are' : cart === 'store' ? 'Store orders are' : 'Ordering is'} paused right now.${
-        pauseNote ? ' ' + pauseNote : ' Please check back soon.'
-      }`;
+    : cart !== 'inside'
+    ? `${cart === 'food' ? 'Food orders' : 'Store orders'}: back soon. Every ${cart === 'food' ? 'food vendor' : 'store'} is fully booked for the next few days.`
+    : `Ordering is paused right now.${pauseNote ? ' ' + pauseNote : ' Please check back soon.'}`;
+  // Outside: which day this order is for ("today" / "tomorrow" / "on Friday"), and the fixed date
+  const outsideDay = cart !== 'inside' && selectedBatch ? dayWord(selectedBatch.date) : '';
+  const outsideDate = cart !== 'inside' && selectedBatch ? longDayLabel(selectedBatch.date) : '';
+  // Today's outside orders closed at 5:30pm: "this batch" is already another day
+  const outsideClosedToday = cart !== 'inside' && Boolean(currentBatch) && dayWord(currentBatch.date) !== 'today';
   const otherCarts = (['inside', 'store', 'food'] as CartKind[]).filter((k) => k !== cart && cartCounts[k] > 0);
   const atGate = cart !== 'inside' && !gatePickup;
 
@@ -288,7 +295,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
         items,
         customRequest: customRequest.trim(),
         deliveryBatch: (selectedBatch?.id || 'afternoon') as DeliveryBatchId,
-        deliveryTime: selectedBatch?.label || '',
+        // Outside: a fixed date ("Thursday 29 Oct: at the school gate before 6pm") so it never reads "Tomorrow" a day later
+        deliveryTime: cart !== 'inside' && selectedBatch ? outsideDeliveryText(selectedBatch.date) : selectedBatch?.label || '',
         deliveryDate: selectedBatch?.date,
         paymentDeadline: isExpress ? undefined : payBy?.toISOString(),
         paymentMethod: 'pay_now',
@@ -725,12 +733,16 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 {cart === 'food' ? 'Choose a food vendor' : 'Choose a store'}
               </h3>
-              {!anyNow && currentBatch && (
+              {outsideClosedToday ? (
                 <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200">
-                  {cart === 'food'
-                    ? `No food vendor is taking ${currentBatch.dayLabel === 'Today' ? "today's" : currentBatch.dayLabel.toLowerCase() + "'s"} batch. You can order now for the next batch.`
-                    : `No store is taking the ${currentBatch.dayLabel === 'Today' ? '' : currentBatch.dayLabel.toLowerCase() + ' '}${currentBatch.window} batch. You can order now for the next batch.`}
+                  Today's orders have closed. Anything you order now will be delivered {outsideDay || 'on the next day'}.
                 </div>
+              ) : !anyNow && currentBatch ? (
+                <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200">
+                  {cart === 'food' ? 'Every food vendor' : 'Every store'} is fully booked today. Orders placed now will be delivered {outsideDay || 'on the next day'}.
+                </div>
+              ) : (
+                <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">{OUTSIDE_BANNER}</p>
               )}
               {operators.map((op) => {
                 const on = (chosenOp?.uid || '') === op.uid;
@@ -759,9 +771,9 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                     </span>
                     <span className="block text-[11px] text-slate-500 mt-0.5">
                       {op.status === 'now'
-                        ? `Taking orders for this batch · starts sending by ${op.startText}`
+                        ? `Delivering ${dayWord(op.batch.date)}, to the school gate before 6pm`
                         : op.status === 'next'
-                        ? `Not available for this batch · taking orders for the next batch: ${op.batch.dayLabel === 'Today' ? '' : op.batch.dayLabel + ', '}${op.batch.window}`
+                        ? `${op.name} is fully booked ${currentBatch ? dayWord(currentBatch.date) : 'today'}. Orders placed now will be delivered ${dayWord(op.batch.date)}.`
                         : 'Not available yet'}
                     </span>
                   </button>
@@ -818,10 +830,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                   className="w-4 h-4 mt-0.5 accent-[#0e9f55]"
                 />
                 <span>
-                  <strong>
-                    {chosenOp?.name} isn't taking {currentBatch ? `the ${currentBatch.window} batch` : 'this batch'}.
-                  </strong>{' '}
-                  Your order joins their next batch: {selectedBatch.dayLabel.toLowerCase()}, {selectedBatch.window}. Tick to accept.
+                  <strong>This order is for {outsideDay.replace(/^on /, '')}, {outsideDate}.</strong> {chosenOp?.name} is fully booked{' '}
+                  {currentBatch ? dayWord(currentBatch.date) : 'today'}, so it reaches the school gate {outsideDay}. Tick to accept.
                 </span>
               </label>
             )}
@@ -833,40 +843,57 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                   onChange={(e) => setLateAccepted(e.target.checked)}
                   className="w-4 h-4 mt-0.5 accent-[#0e9f55]"
                 />
-                <span>
-                  <strong>
-                    {cart === 'inside' ? 'The runners have' : 'This operator has'} stopped taking orders for today.
-                  </strong>{' '}
-                  Your order will go in the next batch: {selectedBatch.dayLabel.toLowerCase()}, {selectedBatch.window}. Tick to accept.
-                </span>
+                {cart === 'inside' ? (
+                  <span>
+                    <strong>The runners have stopped taking orders for today.</strong> Your order will go in the next batch:{' '}
+                    {selectedBatch.dayLabel.toLowerCase()}, {selectedBatch.window}. Tick to accept.
+                  </span>
+                ) : (
+                  <span>
+                    <strong>This order is for {outsideDay.replace(/^on /, '')}, {outsideDate}.</strong>{' '}
+                    {outsideClosedToday ? "Today's orders have closed." : `${chosenOp?.name || 'The operator'} is fully booked today.`} It
+                    reaches the school gate {outsideDay}. Tick to accept.
+                  </span>
+                )}
               </label>
             )}
             {selectedBatch && chosen ? (
               <div className="p-3 rounded-2xl border border-slate-900 dark:border-white bg-slate-50 dark:bg-slate-800/60">
                 <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <span className="text-xs font-extrabold text-slate-900 dark:text-white">
-                      {selectedBatch.dayLabel}, {selectedBatch.window}
-                    </span>
-                    <span className="block text-[11px] text-slate-500 dark:text-slate-400">
-                      {pastBatchTime
-                        ? "It's past the batch time, but orders are still being accepted."
-                        : unconfirmed
-                        ? `Not opened yet. Usually starts around ${chosen.startText}.`
-                        : `Taking orders now. Starts sending around ${chosen.startText}.`}
-                    </span>
-                  </div>
+                  {cart === 'inside' ? (
+                    <div>
+                      <span className="text-xs font-extrabold text-slate-900 dark:text-white">
+                        {selectedBatch.dayLabel}, {selectedBatch.window}
+                      </span>
+                      <span className="block text-[11px] text-slate-500 dark:text-slate-400">
+                        {pastBatchTime
+                          ? "It's past the batch time, but orders are still being accepted."
+                          : unconfirmed
+                          ? `Not opened yet. Usually starts around ${chosen.startText}.`
+                          : `Taking orders now. Starts sending around ${chosen.startText}.`}
+                      </span>
+                    </div>
+                  ) : (
+                    <div>
+                      <span className="text-xs font-extrabold text-slate-900 dark:text-white">This order is for {outsideDate}</span>
+                      <span className="block text-[11px] text-slate-500 dark:text-slate-400">
+                        At the school gate {outsideDay}, before 6pm.
+                      </span>
+                    </div>
+                  )}
                   <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
                     ₦{deliveryFee.toLocaleString()}
                   </span>
                 </div>
                 <p className="mt-2 text-[11px] font-bold text-amber-700 dark:text-amber-300">
-                  {pastBatchTime
+                  {cart !== 'inside'
+                    ? `Pay before ${payByText} to keep this order.`
+                    : pastBatchTime
                     ? `Pay within 15 minutes (before ${payByText}) to join this batch.`
                     : `Pay before ${payByText} to join the ${selectedBatch.window} batch.`}
                 </p>
                 <p className="text-[10px] text-slate-400 mt-0.5">
-                  Every order joins the next batch.{cart !== 'inside' ? ' Delivery is to the school gate.' : ''}
+                  {cart !== 'inside' ? OUTSIDE_BANNER : 'Every order joins the next batch.'}
                 </p>
               </div>
             ) : (
@@ -970,18 +997,6 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                 </button>
               </div>
             )}
-
-          {/* Late outside orders: the school stops parcels at the gate after 6pm */}
-          {hasOutside && (() => {
-            const d = new Date();
-            const m = d.getHours() * 60 + d.getMinutes();
-            return m >= 17 * 60 + 30 ? (
-              <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 text-[11px] text-amber-900 dark:text-amber-200 leading-snug">
-                <strong>It is close to 6pm.</strong> The school can refuse parcels at the gate after 6pm. If this order is turned back, or arrives
-                after 6pm, it will not be refunded.
-              </div>
-            ) : null;
-          })()}
 
           {/* Why the inside delivery fee is what it is */}
           {cart === 'inside' && itemTotal > 0 && deliveryFee === DELIVERY_FEES.large && (

@@ -14,6 +14,7 @@ import {
   subscribeSideRequests,
   mySide,
   gateCanAskAgain,
+  moveOrderToNextDay,
 } from '../api.js';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { ProviderSettlement, PayAccountForm } from './SettlementPanel';
@@ -21,7 +22,7 @@ import { OperatorProductsPanel, TodaysMenuPanel } from './StoreProducts';
 import { ProductRequestsPanel } from './ProductRequestsPanel';
 import { MyRatingsPanel } from './FeedbackPanels';
 import { OrderRecord, partLabel, shortLocation } from '../types';
-import { OUT_OF_STOCK_LABEL, RUNNER_SHARE } from '../config';
+import { OUT_OF_STOCK_LABEL, RUNNER_SHARE, dayWord, longDayLabel } from '../config';
 import { playChime } from '../sound';
 import { SoundToggle } from './SoundToggle';
 import { ThemeToggle } from './ThemeToggle';
@@ -263,7 +264,10 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
   const stageOf = (o: OrderRecord) =>
     statusOf(o) === 'sent' ? 'completed' : o.paymentStatus === 'payment_confirmed' ? 'confirmed' : 'active';
   const count = (s: string) => orders.filter((o) => stageOf(o) === s).length;
-  const shown = orders.filter((o) => stageOf(o) === filter);
+  // Open orders: soonest delivery day first (today's, then tomorrow's...)
+  const shown = orders
+    .filter((o) => stageOf(o) === filter)
+    .sort((a, b) => (filter === 'completed' ? 0 : String(a.deliveryDate || '').localeCompare(String(b.deliveryDate || ''))));
   const confirmPaid = async (o: OrderRecord) => {
     const msg = `Confirm that ₦${(o.totalAmount || 0).toLocaleString()} from ${o.name} reached your account?\n\nItems ₦${(o.subtotal || 0).toLocaleString()} + delivery ₦${(o.deliveryFee || 0).toLocaleString()}.\n\nThe student will see "Confirmed & Packaging".`;
     if (!window.confirm(msg)) return;
@@ -278,6 +282,26 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
     await updatePartStatus(o.id, kind, status, staff?.name || 'Operator');
     setBusy('');
   };
+
+  // Can't make it today: the order goes to this operator's next day that is ON, and the student is told
+  const moveOn = async (o: OrderRecord) => {
+    if (!window.confirm(`Move ${o.name}'s order to your next available day? The student sees the new day right away. Same price, no extra fee.`)) return;
+    setBusy(o.id);
+    try {
+      const to = await moveOrderToNextDay(o.id);
+      if (!to) window.alert('Could not move this order. It may already be delivered.');
+    } catch (e) {
+      window.alert('Could not move this order. Check your connection and try again.');
+    }
+    setBusy('');
+  };
+  // Which day an order is for, e.g. "For today: at the gate before 6pm" / "For tomorrow, Thursday 29 Oct"
+  const dayOf = (o: OrderRecord) => {
+    if (!o.deliveryDate) return o.deliveryTime;
+    const w = dayWord(o.deliveryDate);
+    return w === 'today' ? 'For today: at the gate before 6pm' : `For ${w.replace(/^on /, '')}, ${longDayLabel(o.deliveryDate)}`;
+  };
+  const isFuture = (o: OrderRecord) => Boolean(o.deliveryDate) && Date.parse(o.deliveryDate + 'T00:00:00') > Date.now();
 
   const pill = (s: string) =>
     s === 'sent'
@@ -399,7 +423,10 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                       {st === 'sent' ? 'Delivered' : o.paymentStatus !== 'payment_confirmed' ? 'Check payment' : 'Packaging'}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">{o.deliveryTime}</p>
+                  <p className={`text-xs ${isFuture(o) ? 'font-bold text-blue-700 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400'}`}>
+                    {dayOf(o)}
+                    {o.movedAt ? ' (moved)' : ''}
+                  </p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     {items.reduce((n, i) => n + i.quantity, 0)} item(s)
                   </p>
@@ -527,6 +554,16 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                   >
                     {st === 'sent' ? 'Delivered' : 'Order delivered'}
                   </button>
+                  )}
+                  {st !== 'sent' && !isAdmin && (
+                    <button
+                      type="button"
+                      disabled={busy === o.id}
+                      onClick={() => moveOn(o)}
+                      className="w-full py-2.5 rounded-xl border border-blue-300 dark:border-blue-800 text-xs font-bold text-blue-700 dark:text-blue-300 disabled:opacity-40 cursor-pointer"
+                    >
+                      Move to next available day
+                    </button>
                   )}
                   <a
                     href={`tel:${o.phone}`}

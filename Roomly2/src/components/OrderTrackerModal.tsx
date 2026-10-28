@@ -330,6 +330,11 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                 <div>
                   <span className="text-[11px] uppercase font-bold tracking-wider text-slate-400">Delivery window</span>
                   <p className="text-sm font-extrabold text-[#0e9f55] mt-0.5">{currentOrder.deliveryTime}</p>
+                  {currentOrder.movedAt && currentOrder.status !== 'Delivered' && (
+                    <p className="mt-1.5 p-2 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 text-[11px] font-semibold text-blue-800 dark:text-blue-200 leading-snug">
+                      {currentOrder.movedBy || 'The operator'} is fully booked, so your order was moved to this day. Same price, no extra fee.
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-start gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
                   <Building className="w-4 h-4 text-[#0e9f55] shrink-0 mt-0.5" />

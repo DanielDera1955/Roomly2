@@ -311,7 +311,15 @@ service cloud.firestore {
         (isOperator('food') && resource.data.hasFood == true && resource.data.payReady == true
          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['foodStatus', 'history', 'status', 'deliveredAt'])
          && (request.resource.data.status == resource.data.status
-             || (resource.data.get('cart', '') == 'food' && request.resource.data.status == 'Delivered')));
+             || (resource.data.get('cart', '') == 'food' && request.resource.data.status == 'Delivered'))) ||
+        // Operators move their own paid, undelivered outside order to their next available day (only the day changes)
+        (((isOperator('store') && resource.data.get('cart', '') == 'store') || (isOperator('food') && resource.data.get('cart', '') == 'food'))
+         && resource.data.payReady == true
+         && resource.data.get('operatorId', '') in ['', request.auth.uid]
+         && resource.data.status != 'Delivered'
+         && resource.data.status != 'Cancelled'
+         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deliveryDate', 'deliveryTime', 'deliveryBatch', 'movedAt', 'movedBy', 'history'])
+         && request.resource.data.get('deliveryDate', '') > resource.data.get('deliveryDate', ''));
 
       allow delete: if isAdmin();
 

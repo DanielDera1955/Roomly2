@@ -34,6 +34,9 @@ import {
   sellingPrice,
   CATEGORY_SETUP,
   STORE_SOURCE,
+  OUTSIDE_DAYS_AHEAD,
+  outsideDeliveryText,
+  longDayLabel,
 } from './config.ts';
 import { db, auth } from './firebase.ts';
 import { CLOUDINARY } from './cloudinary.ts';
@@ -367,9 +370,18 @@ export function batchCloseDate(opt, side) {
   return new Date(day.getTime() + Math.min(later ?? cut, cut) * 60000);
 }
 
+/**
+ * Outside operators switch whole days. A day they never touched counts as ON, so every day starts available
+ * and the setting of each day stays as they left it (tomorrow's OFF is still OFF when tomorrow comes).
+ */
+export function outsideDayOn(sw) {
+  return !sw || sw.on !== false;
+}
+
 /** Switched ON and not past the batch's last moment. side: 'inside' | 'store' | 'food' */
 export function batchOpen(opt, sw, side, now = new Date()) {
-  return switchIsLive(sw, side === 'inside' ? 'inside' : 'outside', now) && now.getTime() < batchCloseDate(opt, side).getTime();
+  if (side !== 'inside') return outsideDayOn(sw) && now.getTime() < batchCloseDate(opt, side).getTime();
+  return switchIsLive(sw, 'inside', now) && now.getTime() < batchCloseDate(opt, side).getTime();
 }
 const accepting = (opt, sw, side, now) => batchOpen(opt, sw, side, now);
 
@@ -399,9 +411,9 @@ export function isOverdue(dates, now = new Date()) {
   });
 }
 
-/** Operators of one kind that the admin has not switched off */
+/** Operators of one kind that the admin has not switched off, settled up, with a payment account saved (students pay them directly) */
 function activeOperators(kind) {
-  return Object.values(operatorDocs).filter((o) => o.kind === kind && !o.adminOff && !isOverdue(o.unsettled));
+  return Object.values(operatorDocs).filter((o) => o.kind === kind && !o.adminOff && !isOverdue(o.unsettled) && o.payTo);
 }
 
 /**
@@ -441,6 +453,8 @@ export function getNextBatch(side, now = new Date()) {
       }
     }
   }
+  // Outside: every day starts ON, so nobody open means every operator switched all three days OFF. Back soon.
+  if (side !== 'inside') return { next: null, note: '' };
   // Nobody has opened a batch: students can still order. The order joins the next scheduled batch
   // and goes to a runner / operator who can take it; the student is told it is not opened yet.
   const fb = scheduledNext(side, now);
@@ -500,20 +514,19 @@ function fallbackOperators(kind) {
 }
 
 /**
- * Outside checkout: every store (or food vendor) of this kind, with where they stand against "this batch".
- * "This batch" = the next batch on the timetable that has not closed yet.
+ * Outside checkout: every store (or food vendor) of this kind and the day their order would come.
+ * "This batch" = today's delivery, or tomorrow's once today's orders closed at 5:30pm.
  * Each operator: { uid, name, status, batch, start, startText, late, load, payTo }
- *   status 'now'  = taking orders for this batch
- *          'next' = not taking this batch, but switched on for a later one (batch = that later one)
- *          'off'  = no batch switched on yet (shown, not selectable)
- * The student picks one; the order joins that operator's batch.
- * When nobody has switched anything on, students can still order into the next scheduled batch (as before).
+ *   status 'now'  = delivering on "this batch" day
+ *          'next' = fully booked that day; the order goes to their next day that is ON (batch = that day)
+ * Operators with all three days OFF are left out (students can't see them).
+ * Nobody left: { batch: null, backSoon: true } and that section shows "Back soon".
  */
 export function getOutsideChoices(kind, now = new Date()) {
   const today = ymdOf(now);
-  // "This batch": the first timetable batch today or later that has not passed its last moment
+  // "This batch": the first day's delivery that has not closed yet (today before 5:30pm, else tomorrow)
   let current = null;
-  for (let d = 0; d < 3 && !current; d++) {
+  for (let d = 0; d < OUTSIDE_DAYS_AHEAD && !current; d++) {
     for (const opt of slotsForDay(kind, now, d)) {
       if (now.getTime() < batchCloseDate(opt, kind).getTime()) {
         current = opt;
@@ -521,15 +534,17 @@ export function getOutsideChoices(kind, now = new Date()) {
       }
     }
   }
-  const ops = activeOperators(kind).map((op) => {
+  const ops = [];
+  for (const op of activeOperators(kind)) {
     const load = op.load && op.load.date === today ? op.load.count || 0 : 0;
     const base = { uid: op.id, name: op.name || 'Operator', load, payTo: op.payTo || null };
-    for (let d = 0; d < 3; d++) {
+    let found = null;
+    for (let d = 0; d < OUTSIDE_DAYS_AHEAD && !found; d++) {
       for (const opt of slotsForDay(kind, now, d)) {
         const sw = (op.slots || {})[opt.key];
         if (accepting(opt, sw, kind, now)) {
           const start = switchStartDate(opt, sw);
-          return {
+          found = {
             ...base,
             status: current && opt.key === current.key ? 'now' : 'next',
             batch: opt,
@@ -537,46 +552,18 @@ export function getOutsideChoices(kind, now = new Date()) {
             startText: startTextOf(start),
             late: start <= now,
           };
+          break;
         }
       }
     }
-    return { ...base, status: 'off', batch: null, start: null, startText: '', late: false };
-  });
-  const rank = { now: 0, next: 1, off: 2 };
-  ops.sort((a, b) => rank[a.status] - rank[b.status] || (a.start && b.start ? a.start - b.start : 0) || a.load - b.load);
-  const anyOn = ops.some((o) => o.status !== 'off');
-  const anyNow = ops.some((o) => o.status === 'now');
-  if (anyOn) {
-    const first = ops.find((o) => o.status !== 'off');
-    return { batch: anyNow ? current : first.batch, current, operators: ops, anyNow, note: '' };
+    // All three days OFF: hidden at checkout until one of their days comes back on
+    if (found) ops.push(found);
   }
-  // Nobody has opened a batch yet: still let the student order into the next scheduled batch
-  const { note } = getNextBatch(kind, now);
-  const fb = scheduledNext(kind, now);
-  const fallback = fallbackOperators(kind).map((o) => ({
-    ...o,
-    status: 'scheduled',
-    batch: fb ? fb.opt : null,
-    start: fb ? payDeadline(fb.start, now) : null,
-    startText: fb ? startTextOf(fb.start) : '',
-    late: fb ? fb.start <= now : false,
-  }));
-  if (fb && fallback.length) return { batch: fb.opt, current, operators: fallback, others: ops, note, unconfirmed: true };
-  // Nobody to take it yet: the order is still allowed and scheduled for the next batch
-  if (fb)
-    return {
-      batch: fb.opt,
-      current,
-      operators: [],
-      others: ops,
-      note,
-      unconfirmed: true,
-      noProvider: true,
-      start: payDeadline(fb.start, now),
-      startText: startTextOf(fb.start),
-      late: fb.start <= now,
-    };
-  return { batch: null, current, operators: [], others: ops, note };
+  const rank = { now: 0, next: 1 };
+  ops.sort((a, b) => rank[a.status] - rank[b.status] || a.start - b.start || a.load - b.load);
+  const anyNow = ops.some((o) => o.status === 'now');
+  if (!ops.length) return { batch: null, current, operators: [], anyNow: false, note: '', backSoon: true };
+  return { batch: anyNow ? current : ops[0].batch, current, operators: ops, anyNow, note: '' };
 }
 
 /**
@@ -768,6 +755,51 @@ export async function setOperatorSwitch(key, patch) {
     { kind: staff.role, name: staff.name || 'Operator', payTo: staff.payAccount || null, slots: { ...staleKeys(mine.slots), [key]: sw }, updatedAt: Date.now() },
     { merge: true }
   );
+}
+
+/**
+ * Operator: move one of their outside orders to their next day that is ON (after its current delivery day).
+ * Same price, no extra fee. The student sees the new day on their order screen.
+ * Returns the new delivery date ("2026-10-30") or '' if the order could not be moved.
+ */
+/** @returns {Promise<string>} */
+export async function moveOrderToNextDay(orderId) {
+  const staff = getCurrentStaff();
+  const uid = auth.currentUser?.uid;
+  if (!uid || !staff || (staff.role !== 'store' && staff.role !== 'food')) throw new Error('Operators only');
+  const kind = staff.role;
+  const slots = (operatorDocs[uid] || {}).slots || {};
+  let target = '';
+  const updated = await patchOrder(orderId, (o) => {
+    const part = kind === 'food' ? o.foodStatus : o.storeStatus;
+    if (o.status === 'Delivered' || o.status === 'Cancelled' || part === 'sent') return;
+    // Count from the later of today and the order's current day, so it always moves forward
+    const base = new Date();
+    base.setHours(0, 0, 0, 0);
+    const cur = new Date((o.deliveryDate || '') + 'T00:00:00');
+    if (Number.isFinite(cur.getTime()) && cur.getTime() > base.getTime()) base.setTime(cur.getTime());
+    let opt = null;
+    for (let d = 1; d <= 7 && !opt; d++) {
+      const day = slotsForDay(kind, base, d)[0];
+      if (day && outsideDayOn(slots[day.key])) opt = day;
+    }
+    if (!opt) opt = slotsForDay(kind, base, 1)[0];
+    if (!opt) return;
+    target = opt.date;
+    const at = new Date().toISOString();
+    o.deliveryDate = opt.date;
+    o.deliveryBatch = opt.id;
+    o.deliveryTime = outsideDeliveryText(opt.date);
+    o.movedAt = at;
+    o.movedBy = staff.name || 'Operator';
+    o.history.push({
+      status: o.status,
+      timestamp: at,
+      note: `${staff.name || 'The operator'} is fully booked, so your order now comes on ${longDayLabel(opt.date)}. Same price, no extra fee.`,
+      updatedBy: staff.name || 'Operator',
+    });
+  });
+  return updated && target ? target : '';
 }
 
 /** Create the operator's status record on first visit, so the admin can see them */
@@ -1226,6 +1258,22 @@ export async function createOrder(orderPayload) {
   const deadlineText = deadline.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const batchMeta = DELIVERY_BATCHES.find((b) => b.id === batchId);
 
+  // Outside orders lock the operator's cost now, so a price change before delivery day doesn't change the settlement
+  let orderItems = orderPayload.items || [];
+  if (hasOutside) {
+    try {
+      const products = (await readCatalog()).products || [];
+      const opId = orderPayload.operatorId || '';
+      orderItems = orderItems.map((i) => {
+        if (i.source !== 'outside' && i.source !== 'food') return i;
+        const c = costOf(i, products, false, opId);
+        return c.estimated ? i : { ...i, lockedCost: c.cost };
+      });
+    } catch (e) {
+      /* no lock: the settlement uses the cost at delivery, as before */
+    }
+  }
+
   const newOrder = {
     id: orderId,
     phone,
@@ -1233,7 +1281,7 @@ export async function createOrder(orderPayload) {
     area: orderPayload.area,
     building: orderPayload.building,
     room: orderPayload.room,
-    items: orderPayload.items || [],
+    items: orderItems,
     customRequest: orderPayload.customRequest || '',
     hasStore,
     hasFood,
@@ -1729,6 +1777,8 @@ const OP_OWE_PER_CART = 200;
 
 /** Cost (standard price) of one cart line. Uses the cost price you entered; otherwise works it back from the margin. */
 function costOf(item, products, inside = false, opId = '') {
+  // Outside: the cost locked when the order was placed wins over today's price
+  if (!inside && typeof item.lockedCost === 'number' && item.lockedCost > 0) return { cost: item.lockedCost, estimated: false };
   const found = products.find((x) => x.id === item.productId);
   // Outside: use the cost of the operator who served this order (students paid from the highest cost)
   const own = found && opId && found.opCosts ? found.opCosts[opId] : 0;

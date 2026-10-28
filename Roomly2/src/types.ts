@@ -21,6 +21,8 @@ export interface CartItem {
   pendingQuote?: boolean;
   requestId?: string;
   requestIdx?: number;
+  /** Outside orders: the operator's cost for this line when the order was placed, so later price changes don't change the settlement */
+  lockedCost?: number;
 }
 
 export interface CustomerProfile {
@@ -93,6 +95,9 @@ export interface OrderRecord {
   turnRunner?: string; // the runner whose turn it is, shown at checkout
   outOfStock?: 'refund' | 'tomorrow' | 'swap';
   deliveryDate?: string;
+  /** The operator moved this outside order to their next available day */
+  movedAt?: string;
+  movedBy?: string;
   gateReq?: boolean;
   gatePickup?: {
     status: 'pending' | 'accepted' | 'refused' | 'delivered' | 'refunded' | 'cancelled';

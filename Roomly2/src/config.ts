@@ -327,19 +327,44 @@ export function formatRemaining(ms: number): string {
 }
 
 // ---------- Outside school schedule ----------
-/** Outside store items: two batches a day, 12:30 to 1:30pm and 5 to 6pm */
+/**
+ * Outside orders: one delivery a day. Order before 5:30pm and it reaches the school gate the same day, before 6pm.
+ * After 5:30pm, or when the operator has switched today off, the order is for their next day that is on.
+ * Operators switch whole days on or off: today, tomorrow and the day after. Every day starts on.
+ */
+export const OUTSIDE_ORDER_BY_MIN = T(17, 30);
+export const OUTSIDE_DAYS_AHEAD = 3;
+export const OUTSIDE_BANNER = 'Order before 5:30pm. Sec men are strict with late deliveries.';
+/** Outside store items: one delivery a day */
 export const OUTSIDE_STORE_BATCHES: BatchSlotDef[] = [
-  { id: 'afternoon', name: 'Afternoon store batch', startMin: T(12, 30), endMin: T(13, 30), orderByMin: T(12) },
-  { id: 'late', name: 'Evening store batch', startMin: T(17), endMin: T(18), orderByMin: T(16, 30) },
+  { id: 'late', name: 'Store delivery', startMin: OUTSIDE_ORDER_BY_MIN, endMin: T(18), orderByMin: OUTSIDE_ORDER_BY_MIN },
 ];
-/** Outside food: one batch a day, 4:30 to 6pm */
+/** Outside food: one delivery a day */
 export const OUTSIDE_FOOD_BATCH: BatchSlotDef = {
   id: 'evening',
-  name: 'Food batch',
-  startMin: T(16, 30),
+  name: 'Food delivery',
+  startMin: OUTSIDE_ORDER_BY_MIN,
   endMin: T(18),
-  orderByMin: T(16),
+  orderByMin: OUTSIDE_ORDER_BY_MIN,
 };
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "2026-10-29" -> "Thursday 29 Oct" (a fixed date, so it never goes stale like "Tomorrow") */
+export const longDayLabel = (date: string): string => {
+  const d = new Date(date + 'T00:00:00');
+  return Number.isFinite(d.getTime()) ? `${DAY_NAMES[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}` : date;
+};
+/** "2026-10-29" -> "today" / "tomorrow" / "on Friday", relative to now */
+export const dayWord = (date: string, now: Date = new Date()): string => {
+  const a = new Date(date + 'T00:00:00');
+  const b = new Date(now);
+  b.setHours(0, 0, 0, 0);
+  const diff = Math.round((a.getTime() - b.getTime()) / 86400000);
+  if (diff === 0) return 'today';
+  if (diff === 1) return 'tomorrow';
+  return Number.isFinite(a.getTime()) ? `on ${DAY_NAMES[a.getDay()]}` : '';
+};
+/** What an outside order's delivery line says, e.g. "Thursday 29 Oct: at the school gate before 6pm" */
+export const outsideDeliveryText = (date: string): string => `${longDayLabel(date)}: at the school gate before 6pm`;
 
 /** Next outside batch still taking orders. kind 'store' or 'food'. */
 export function getNextOutsideSlot(kind: 'store' | 'food', now: Date = new Date()): BatchOption | null {
@@ -366,8 +391,8 @@ export function slotsForDay(side: SwitchSide, base: Date, dayOffset: number): Ba
   const defs = side === 'food' ? [OUTSIDE_FOOD_BATCH] : OUTSIDE_STORE_BATCHES;
   return defs.map((s) => buildOption(day, dayOffset, s));
 }
-/** Switches turn themselves off at night: 10pm inside, 6pm outside (the school does not want outside parcels at the gate after 6pm) */
-export const SWITCH_CUTOFF_MIN = { inside: T(22), outside: T(18) };
+/** Switches turn themselves off at night: 10pm inside. Outside, today's orders close at 5:30pm (parcels must reach the gate before 6pm) */
+export const SWITCH_CUTOFF_MIN = { inside: T(22), outside: OUTSIDE_ORDER_BY_MIN };
 
 /** "will start sending by 2pm" style label for a batch */
 export const startLabel = (opt: BatchOption): string => {
