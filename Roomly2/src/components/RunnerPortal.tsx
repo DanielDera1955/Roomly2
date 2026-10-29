@@ -52,7 +52,12 @@ import {
   logoutStaff,
   setOrderHelper,
   syncMyHelpCredits,
+  subscribeGatePickups,
+  gateExpired,
+  getMyUid,
 } from '../api.js';
+import { AttentionCard, jumpTo } from './AttentionCard';
+import { OperatorGuide } from './OperatorGuide';
 
 interface RunnerPortalProps {
   onBackToCustomer: () => void;
@@ -291,6 +296,29 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
       o.status !== 'Delivered' &&
       o.status !== 'Cancelled'
   );
+
+  // For the attention card: payments to confirm, orders to deliver today, express and gate pickups waiting
+  const nowR = new Date();
+  const todayR = `${nowR.getFullYear()}-${String(nowR.getMonth() + 1).padStart(2, '0')}-${String(nowR.getDate()).padStart(2, '0')}`;
+  const openInside = insideOrders.filter((o) => o.status !== 'Delivered' && o.status !== 'Cancelled');
+  const attConfirm = openInside.filter(
+    (o) => o.paymentStatus === 'payment_sent' && (!o.runnerId || o.runnerId === activeRunner?.id) && o.express?.status !== 'requested'
+  ).length;
+  const attSend = openInside.filter(
+    (o) => o.runnerId === activeRunner?.id && o.paymentStatus === 'payment_confirmed' && (!o.deliveryDate || o.deliveryDate <= todayR)
+  ).length;
+  const attExpress = openInside.filter((o) => o.express?.status === 'requested').length;
+  const [gateList, setGateList] = useState<OrderRecord[]>([]);
+  useEffect(() => subscribeGatePickups((l: OrderRecord[]) => setGateList(l)), []);
+  const myUidR = getMyUid();
+  const attGate = gateList.filter((o: any) => {
+    const gp = o.gatePickup;
+    return gp && gp.status === 'pending' && !gateExpired(gp) && !(gp.refusedBy || []).includes(myUidR);
+  }).length;
+  const goToRunnerOrders = () => {
+    setActiveFilter('all');
+    window.setTimeout(() => jumpTo('op-orders'), 60);
+  };
 
   // 3. Past Completed Orders Delivered by Chosen Runner (History)
   const myCompletedOrders = insideOrders.filter(
@@ -787,22 +815,57 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
 
         )}
 
+        {/* What needs doing right now: short, jumps to each section */}
+        {isRunner && (
+          <AttentionCard
+            runner
+            needsAccount={!hasAccount}
+            toConfirm={attConfirm}
+            toSend={attSend}
+            requests={openRequests}
+            express={attExpress}
+            gate={attGate}
+            onOrders={goToRunnerOrders}
+          />
+        )}
+
+        {/* How it works: open until they tap "Got it", then a small bar */}
+        {isRunner && <OperatorGuide kind="runner" />}
+
         {/* Settlement comes up here when they are done for the day with money to send, or a past day is open */}
-        {isRunner && <ProviderSettlement kind="runner" placement="top" />}
+        {isRunner && (
+          <div id="op-settle-top" className="scroll-mt-20">
+            <ProviderSettlement kind="runner" placement="top" />
+          </div>
+        )}
 
         {/* Payment account first, until it is saved; then it moves to the bottom */}
-        {isRunner && !hasAccount && <PayAccountForm />}
+        {isRunner && !hasAccount && (
+          <div id="op-account" className="scroll-mt-20">
+            <PayAccountForm />
+          </div>
+        )}
 
         <BatchSwitches />
 
-        {isRunner && <ExpressPanel orders={insideOrders} />}
+        {isRunner && (
+          <div id="op-express" className="scroll-mt-20">
+            <ExpressPanel orders={insideOrders} />
+          </div>
+        )}
 
-        <GatePickupPanel />
+        <div id="op-gate" className="scroll-mt-20">
+          <GatePickupPanel />
+        </div>
 
         {/* A request waiting for a price blocks the student's cart, so it comes up here */}
-        {isRunner && openRequests > 0 && <ProductRequestsPanel />}
+        {isRunner && openRequests > 0 && (
+          <div id="op-requests" className="scroll-mt-20">
+            <ProductRequestsPanel />
+          </div>
+        )}
 
-        <p className="text-xs font-black uppercase tracking-wider text-slate-500 px-1 pt-1">Orders</p>
+        <p id="op-orders" className="text-xs font-black uppercase tracking-wider text-slate-500 px-1 pt-1 scroll-mt-20">Orders</p>
         {/* Filters */}
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
           {([
@@ -866,7 +929,11 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
         )}
 
         {/* BELOW ORDERS: settlement, then products and prices, then the rest */}
-        {isRunner && <ProviderSettlement kind="runner" placement="bottom" />}
+        {isRunner && (
+          <div id="op-settle-bottom" className="scroll-mt-20">
+            <ProviderSettlement kind="runner" placement="bottom" />
+          </div>
+        )}
         {isRunner && <OperatorProductsPanel />}
         {isRunner && openRequests === 0 && <ProductRequestsPanel />}
         {isRunner && <MyRatingsPanel />}

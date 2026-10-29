@@ -12,6 +12,10 @@ interface Props {
   toSend: number;
   requests: number;
   onOrders: (stage: 'active' | 'confirmed') => void;
+  /** Runners: inside orders go to the room, plus express runs and gate pickups waiting for a runner */
+  runner?: boolean;
+  express?: number;
+  gate?: number;
 }
 
 type Tone = 'red' | 'amber' | 'blue';
@@ -34,7 +38,7 @@ export const jumpTo = (...ids: string[]) => {
 
 const naira = (n: number) => `₦${Math.round(n || 0).toLocaleString()}`;
 
-export const AttentionCard: React.FC<Props> = ({ needsAccount, toConfirm, toSend, requests, onOrders }) => {
+export const AttentionCard: React.FC<Props> = ({ needsAccount, toConfirm, toSend, requests, onOrders, runner = false, express = 0, gate = 0 }) => {
   // Settlement: money owed for a past day, or for today once they are done for the day
   const [open, setOpen] = useState<any[]>([]);
   const [, setTick] = useState(0);
@@ -61,7 +65,19 @@ export const AttentionCard: React.FC<Props> = ({ needsAccount, toConfirm, toSend
   if (toConfirm > 0)
     rows.push({ key: 'pay', tone: 'red', badge: String(toConfirm), title: `Payment${toConfirm > 1 ? 's' : ''} to confirm`, note: "Students say they've paid", go: 'View', act: () => onOrders('active') });
   if (toSend > 0)
-    rows.push({ key: 'send', tone: 'amber', badge: String(toSend), title: `Order${toSend > 1 ? 's' : ''} to pack and send`, note: 'Must reach the gate before 6pm', go: 'View', act: () => onOrders('confirmed') });
+    rows.push({
+      key: 'send',
+      tone: 'amber',
+      badge: String(toSend),
+      title: runner ? `Order${toSend > 1 ? 's' : ''} to pack and deliver` : `Order${toSend > 1 ? 's' : ''} to pack and send`,
+      note: runner ? 'Deliver to their rooms in your batch' : 'Must reach the gate before 6pm',
+      go: 'View',
+      act: () => onOrders('confirmed'),
+    });
+  if (express > 0)
+    rows.push({ key: 'exp', tone: 'red', badge: String(express), title: `Express order${express > 1 ? 's' : ''} waiting`, note: 'A student wants it now. 20 minutes once they pay', go: 'View', act: () => jumpTo('op-express') });
+  if (gate > 0)
+    rows.push({ key: 'gate', tone: 'amber', badge: String(gate), title: `Gate pickup${gate > 1 ? 's' : ''} waiting`, note: 'Bring an outside order from the gate to a room', go: 'View', act: () => jumpTo('op-gate') });
   if (requests > 0)
     rows.push({ key: 'req', tone: 'blue', badge: String(requests), title: `Product request${requests > 1 ? 's' : ''}`, note: 'A student is waiting for your price', go: 'Answer', act: () => jumpTo('op-requests') });
   if (settle > 0)
