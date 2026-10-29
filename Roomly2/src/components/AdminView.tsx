@@ -1514,7 +1514,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] text-slate-400">
-                        {products.filter((p) => p.category === cat.name).length} products
+                        {products.filter((p) => p.category === cat.name && storeOfSource(p.source) === adminStore).length} products
                       </span>
                       {cat.name !== 'Request' && (
                         <button

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Minus, X, RotateCcw, Star, Sparkles } from 'lucide-react';
-import { Product } from '../config';
+import { Product, storeOfSource } from '../config';
 
 const naira = (n: number) => `₦${Math.round(n || 0).toLocaleString()}`;
 
@@ -64,7 +64,15 @@ export const ProductSheet: React.FC<SheetProps> = ({ product, pool, qtyOf, onAdd
     .filter((p): p is Product => Boolean(p) && !p!.isFood)
     .slice(0, 4);
   const similar = pool
-    .filter((p) => p.id !== product.id && !p.isFood && !pairs.includes(p) && groupOf(p).toLowerCase() === group.toLowerCase())
+    .filter(
+      (p) =>
+        p.id !== product.id &&
+        !p.isFood &&
+        !pairs.includes(p) &&
+        // Same store only: a food drink shows other food drinks, never the outside store's
+        storeOfSource(p.source) === storeOfSource(product.source) &&
+        groupOf(p).toLowerCase() === group.toLowerCase()
+    )
     .slice(0, 12);
 
   return (
