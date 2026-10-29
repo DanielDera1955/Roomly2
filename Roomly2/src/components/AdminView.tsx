@@ -1108,9 +1108,10 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
             {/* FULL EDIT PRODUCT MODAL (Allows updating product image, name, price, etc.) */}
             {editingProduct && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
-                <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-sm w-full p-5 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-3.5">
-                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4 animate-in fade-in">
+                {/* Never taller than the screen: the form scrolls inside, title and Save stay pinned */}
+                <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-sm sm:max-w-md w-full max-h-[90dvh] overflow-y-auto overscroll-contain px-5 pb-0 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-3.5">
+                  <div className="sticky top-0 z-10 -mx-5 px-5 pt-5 pb-2 bg-white dark:bg-slate-900 flex items-center justify-between border-b border-slate-100 dark:border-slate-800">
                     <h3 className="font-extrabold text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
                       <ImageIcon className="w-4 h-4 text-[#0e9f55]" />
                       <span>Edit Product & Photo</span>
@@ -1396,7 +1397,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                       />
                     )}
 
-                    <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <div className="sticky bottom-0 z-10 -mx-5 px-5 pt-3 pb-5 bg-white dark:bg-slate-900 flex gap-2 border-t border-slate-100 dark:border-slate-800">
                       <button
                         type="button"
                         onClick={() => setEditingProduct(null)}
