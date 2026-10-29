@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { subscribeSideRequests, quoteProductRequest, mySide, getCategories, getCurrentStaff } from '../api.js';
 import { sellingPrice, categoriesForStore } from '../config';
-import { auth } from '../firebase';
 
 const naira = (n: number) => `₦${Math.round(n || 0).toLocaleString()}`;
 const input =
@@ -28,12 +27,9 @@ export const ProductRequestsPanel: React.FC = () => {
     getCategories().then((l: any[]) => setCategories(categoriesForStore(l, side).map((c: any) => c.name)));
   }, [side]);
 
-  const since = Date.now() - 3 * 86400000;
-  // Open requests show to every store on this side. Once answered, only the store that answered still sees it
-  // (the admin sees who answered in the Activity log).
-  const myUid = auth.currentUser?.uid || '';
-  const answeredByMe = (r: any) => (r.quotedBy?.uid ? r.quotedBy.uid === myUid : r.quotedBy?.name === me);
-  const shown = list.filter((r) => r.status === 'open' || (answeredByMe(r) && Date.parse(r.quotedAt || r.createdAt) > since));
+  // Only requests still waiting for a price. Once any store answers, it disappears for everyone
+  // (the admin sees who answered, and the price, in the Activity log).
+  const shown = list.filter((r) => r.status === 'open');
   const openCount = shown.filter((r) => r.status === 'open').length;
 
   const send = async (r: any) => {

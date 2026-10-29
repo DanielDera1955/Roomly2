@@ -23,6 +23,7 @@ import { OperatorProductsPanel, TodaysMenuPanel } from './StoreProducts';
 import { ProductRequestsPanel } from './ProductRequestsPanel';
 import { MyRatingsPanel } from './FeedbackPanels';
 import { OperatorGuide } from './OperatorGuide';
+import { AttentionCard, jumpTo } from './AttentionCard';
 import { OrderRecord, partLabel, shortLocation } from '../types';
 import { OUT_OF_STOCK_LABEL, RUNNER_SHARE, dayWord, longDayLabel } from '../config';
 import { playChime } from '../sound';
@@ -266,6 +267,14 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
   const stageOf = (o: OrderRecord) =>
     statusOf(o) === 'sent' ? 'completed' : o.paymentStatus === 'payment_confirmed' ? 'confirmed' : 'active';
   const count = (s: string) => orders.filter((o) => stageOf(o) === s).length;
+  // For the attention card: payments to confirm, and confirmed orders due today (or overdue) still to send
+  const nowD = new Date();
+  const todayYmd = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}-${String(nowD.getDate()).padStart(2, '0')}`;
+  const toSend = orders.filter((o) => stageOf(o) === 'confirmed' && (!o.deliveryDate || o.deliveryDate <= todayYmd)).length;
+  const goToOrders = (stage: 'active' | 'confirmed') => {
+    setFilter(stage);
+    window.setTimeout(() => jumpTo('op-orders'), 60);
+  };
   // Open orders: soonest delivery day first (today's, then tomorrow's...)
   const shown = orders
     .filter((o) => stageOf(o) === filter)
@@ -363,6 +372,11 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
           </div>
         )}
 
+        {/* What needs doing right now: short, jumps to each section */}
+        {!isAdmin && (
+          <AttentionCard needsAccount={!hasAccount} toConfirm={count('active')} toSend={toSend} requests={openRequests} onOrders={goToOrders} />
+        )}
+
         {/* How it works: open until they tap "Got it", then a small bar */}
         {!isAdmin && <OperatorGuide kind={kind} />}
 
@@ -370,19 +384,31 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
         {!isAdmin && <ProviderOverview kind="operator" />}
 
         {/* Settlement comes up here when they are done for the day with money to send, or a past day is open */}
-        {!isAdmin && <ProviderSettlement kind="operator" placement="top" />}
+        {!isAdmin && (
+          <div id="op-settle-top" className="scroll-mt-20">
+            <ProviderSettlement kind="operator" placement="top" />
+          </div>
+        )}
 
         {/* Payment account first, until it is saved; then it moves to the bottom */}
-        {!isAdmin && !hasAccount && <PayAccountForm />}
+        {!isAdmin && !hasAccount && (
+          <div id="op-account" className="scroll-mt-20">
+            <PayAccountForm />
+          </div>
+        )}
 
         {/* Availability: operators set their own batches; the admin sees everyone and can switch them off */}
         {isAdmin ? <OperatorOverridePanel kind={kind} /> : <BatchSwitches side={kind} />}
 
         {/* A request waiting for a price blocks the student's cart, so it comes up here */}
-        {!isAdmin && openRequests > 0 && <ProductRequestsPanel />}
+        {!isAdmin && openRequests > 0 && (
+          <div id="op-requests" className="scroll-mt-20">
+            <ProductRequestsPanel />
+          </div>
+        )}
 
         {/* Orders: the part an operator touches most */}
-        <div className="space-y-3">
+        <div id="op-orders" className="space-y-3 scroll-mt-20">
           <p className="text-xs font-black uppercase tracking-wider text-slate-500 px-1">Orders</p>
         <div className="flex items-center gap-2 overflow-x-auto py-0.5">
           {tabs.map(([key, label]) => (
@@ -590,7 +616,11 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
 
         {/* BELOW ORDERS: less frequent */}
         {!isAdmin && openRequests === 0 && <ProductRequestsPanel />}
-        {!isAdmin && <ProviderSettlement kind="operator" placement="bottom" />}
+        {!isAdmin && (
+          <div id="op-settle-bottom" className="scroll-mt-20">
+            <ProviderSettlement kind="operator" placement="bottom" />
+          </div>
+        )}
         {!isAdmin && <TodaysMenuPanel side={getCurrentStaff()?.role === 'food' ? 'food' : 'store'} />}
         {!isAdmin && <OperatorProductsPanel />}
         {!isAdmin && <MyRatingsPanel />}

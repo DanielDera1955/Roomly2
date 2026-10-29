@@ -229,7 +229,7 @@ const OutsideDaySwitches: React.FC<{ side: 'store' | 'food' }> = ({ side }) => {
         onClick={() => setOpen(!open)}
         className="w-full flex items-center justify-between px-4 py-3 text-xs font-black uppercase tracking-wider text-slate-500 cursor-pointer"
       >
-        <span>{side === 'food' ? 'Food orders: my days' : 'Store orders: my days'}</span>
+        <span>My active and inactive days</span>
         <span className="text-[#0e9f55]">{open ? 'Hide' : 'Show'}</span>
       </button>
       {open && (
