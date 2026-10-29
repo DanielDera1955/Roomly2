@@ -865,10 +865,10 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
           </div>
         )}
 
-        {/* BELOW ORDERS: less frequent */}
-        {isRunner && openRequests === 0 && <ProductRequestsPanel />}
-        {isRunner && <OperatorProductsPanel />}
+        {/* BELOW ORDERS: settlement, then products and prices, then the rest */}
         {isRunner && <ProviderSettlement kind="runner" placement="bottom" />}
+        {isRunner && <OperatorProductsPanel />}
+        {isRunner && openRequests === 0 && <ProductRequestsPanel />}
         {isRunner && <MyRatingsPanel />}
         {isRunner && hasAccount && <PayAccountForm />}
       </div>

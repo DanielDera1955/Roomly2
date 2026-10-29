@@ -614,15 +614,15 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
         })}
         </div>
 
-        {/* BELOW ORDERS: less frequent */}
-        {!isAdmin && openRequests === 0 && <ProductRequestsPanel />}
+        {/* BELOW ORDERS: settlement, then products and prices, then Today's menu, then the rest */}
         {!isAdmin && (
           <div id="op-settle-bottom" className="scroll-mt-20">
             <ProviderSettlement kind="operator" placement="bottom" />
           </div>
         )}
-        {!isAdmin && <TodaysMenuPanel side={getCurrentStaff()?.role === 'food' ? 'food' : 'store'} />}
         {!isAdmin && <OperatorProductsPanel />}
+        {!isAdmin && <TodaysMenuPanel side={getCurrentStaff()?.role === 'food' ? 'food' : 'store'} />}
+        {!isAdmin && openRequests === 0 && <ProductRequestsPanel />}
         {!isAdmin && <MyRatingsPanel />}
         {!isAdmin && hasAccount && <PayAccountForm />}
       </div>
