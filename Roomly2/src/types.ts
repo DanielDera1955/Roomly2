@@ -55,6 +55,10 @@ export interface OrderRecord {
   payReady?: boolean;
   storeStatus?: string;
   foodStatus?: string;
+  /** Photo of the packed order, added by the operator (shown large to the student) */
+  packPhoto?: string;
+  packPhotoAt?: string;
+  packPhotoBy?: string;
   phone: string;
   name: string;
   area: string;

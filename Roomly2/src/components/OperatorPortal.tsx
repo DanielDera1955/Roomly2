@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Package, Phone } from 'lucide-react';
+import { ChevronDown, Package, Phone, Camera, Loader2, X } from 'lucide-react';
 import {
   subscribeOperatorOrders,
   updatePartStatus,
@@ -15,12 +15,14 @@ import {
   mySide,
   gateCanAskAgain,
   moveOrderToNextDay,
+  addPackagePhoto,
 } from '../api.js';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { ProviderSettlement, PayAccountForm } from './SettlementPanel';
 import { OperatorProductsPanel, TodaysMenuPanel } from './StoreProducts';
 import { ProductRequestsPanel } from './ProductRequestsPanel';
 import { MyRatingsPanel } from './FeedbackPanels';
+import { OperatorGuide } from './OperatorGuide';
 import { OrderRecord, partLabel, shortLocation } from '../types';
 import { OUT_OF_STOCK_LABEL, RUNNER_SHARE, dayWord, longDayLabel } from '../config';
 import { playChime } from '../sound';
@@ -361,6 +363,9 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
           </div>
         )}
 
+        {/* How it works: open until they tap "Got it", then a small bar */}
+        {!isAdmin && <OperatorGuide kind={kind} />}
+
         {/* TOP, always first: the overview */}
         {!isAdmin && <ProviderOverview kind="operator" />}
 
@@ -544,6 +549,8 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                       </button>
                     </div>
                   ) : (
+                  <>
+                  <PackagePhoto o={o} canEdit={!isAdmin && st !== 'sent'} />
                   <button
                     type="button"
                     disabled={busy === o.id || st === 'sent'}
@@ -554,6 +561,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                   >
                     {st === 'sent' ? 'Delivered' : 'Order delivered'}
                   </button>
+                  </>
                   )}
                   {st !== 'sent' && !isAdmin && (
                     <button
@@ -588,6 +596,56 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
         {!isAdmin && <MyRatingsPanel />}
         {!isAdmin && hasAccount && <PayAccountForm />}
       </div>
+    </div>
+  );
+};
+
+/**
+ * Photo of the packed order: the operator takes or picks one, the student sees it large on their order
+ * (so they know what to collect at the gate, no WhatsApp needed). Can be replaced until the order is delivered.
+ */
+const PackagePhoto: React.FC<{ o: OrderRecord; canEdit: boolean }> = ({ o, canEdit }) => {
+  const [busy, setBusy] = useState(false);
+  const [big, setBig] = useState(false);
+  const url = o.packPhoto;
+  const pick = async (f?: File) => {
+    if (!f) return;
+    setBusy(true);
+    try {
+      await addPackagePhoto(o.id, f);
+    } catch (e: any) {
+      window.alert(e?.message || 'Could not add the photo. Check your connection and try again.');
+    }
+    setBusy(false);
+  };
+  if (!url && !canEdit) return null;
+  return (
+    <div className="space-y-1.5">
+      {url && (
+        <button type="button" onClick={() => setBig(true)} className="block w-full cursor-pointer">
+          <img src={url} alt="Package" className="w-full max-h-64 object-cover rounded-2xl border border-slate-200 dark:border-slate-700" />
+        </button>
+      )}
+      {canEdit && (
+        <label
+          className={`w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold cursor-pointer ${
+            url ? 'border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300' : 'bg-blue-600 text-white'
+          } ${busy ? 'opacity-50 pointer-events-none' : ''}`}
+        >
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+          <span>{busy ? 'Uploading photo...' : url ? 'Replace package photo' : 'Add photo of package'}</span>
+          <input type="file" accept="image/*" className="hidden" onChange={(e) => pick(e.target.files?.[0] || undefined)} />
+        </label>
+      )}
+      {canEdit && !url && <p className="text-[11px] text-slate-500 text-center">The student sees this photo, so they know exactly what to collect at the gate.</p>}
+      {big && url && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-3" onClick={() => setBig(false)}>
+          <button type="button" aria-label="Close" className="absolute top-4 right-4 p-2 rounded-full bg-white/15 text-white cursor-pointer">
+            <X className="w-5 h-5" />
+          </button>
+          <img src={url} alt="Package" className="max-w-full max-h-full rounded-xl" />
+        </div>
+      )}
     </div>
   );
 };

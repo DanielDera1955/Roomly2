@@ -325,6 +325,9 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
           {/* Active Order Card */}
           {currentOrder ? (
             <div className="space-y-4">
+              {/* The operator's photo of the packed order: what to collect at the gate */}
+              {currentOrder.packPhoto && <PackagePhotoCard url={currentOrder.packPhoto} by={currentOrder.packPhotoBy || currentOrder.operatorName || ''} />}
+
               {/* Delivery window and location */}
               <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 space-y-3">
                 <div>
@@ -1042,6 +1045,25 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
           )}
         </div>
       </div>
+    </div>
+  );
+};
+
+/** Student: the operator's photo of their packed order, large, with a tap to see it full screen */
+const PackagePhotoCard: React.FC<{ url: string; by: string }> = ({ url, by }) => {
+  const [big, setBig] = useState(false);
+  return (
+    <div className="rounded-2xl overflow-hidden border-2 border-[#0e9f55] bg-white dark:bg-slate-900">
+      <div className="px-3 py-2 bg-[#0e9f55] text-white text-xs font-extrabold">Your package{by ? `, packed by ${by}` : ''}</div>
+      <button type="button" onClick={() => setBig(true)} className="block w-full cursor-pointer">
+        <img src={url} alt="Your packed order" className="w-full max-h-72 object-cover" />
+      </button>
+      <p className="px-3 py-2 text-[11px] text-slate-600 dark:text-slate-300">This is what you will collect. Tap the photo to see it full size.</p>
+      {big && (
+        <div className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-3" onClick={() => setBig(false)}>
+          <img src={url} alt="Your packed order" className="max-w-full max-h-full rounded-xl" />
+        </div>
+      )}
     </div>
   );
 };

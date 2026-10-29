@@ -521,7 +521,7 @@ function fallbackOperators(kind) {
 
 /**
  * Outside checkout: every store (or food vendor) of this kind and the day their order would come.
- * "This batch" = today's delivery, or tomorrow's once today's orders closed at 5:30pm.
+ * "This batch" = today's delivery, or tomorrow's once today's orders closed at 5:10pm.
  * Each operator: { uid, name, status, batch, start, startText, late, load, payTo }
  *   status 'now'  = delivering on "this batch" day
  *          'next' = fully booked that day; the order goes to their next day that is ON (batch = that day)
@@ -530,7 +530,7 @@ function fallbackOperators(kind) {
  */
 export function getOutsideChoices(kind, now = new Date()) {
   const today = ymdOf(now);
-  // "This batch": the first day's delivery that has not closed yet (today before 5:30pm, else tomorrow)
+  // "This batch": the first day's delivery that has not closed yet (today before 5:10pm, else tomorrow)
   let current = null;
   for (let d = 0; d < OUTSIDE_DAYS_AHEAD && !current; d++) {
     for (const opt of slotsForDay(kind, now, d)) {
@@ -680,7 +680,7 @@ export function getRunnerOffMap() {
 
 /** Admin only: switch a runner off (or allow them again), by their login email */
 /** @returns {Promise<void>} */
-export async function setRunnerAdminOff(email, off) {
+async function setRunnerAdminOff__raw(email, off) {
   const key = emailKey(email);
   if (!key) return;
   runnerOff = { ...runnerOff, [key]: Boolean(off) };
@@ -699,7 +699,7 @@ function staleKeys(map) {
 
 /** Runners and admin: set one inside batch. patch = { on, start, note } */
 /** @returns {Promise<void>} */
-export async function setInsideSwitch(key, patch) {
+async function setInsideSwitch__raw(key, patch) {
   const staff = getCurrentStaff();
   // Only runners switch inside batches, so students always pay the runner taking the batch
   if (!staff || staff.role !== 'runner') throw new Error('Only runners can switch inside batches.');
@@ -733,7 +733,7 @@ export function getMyExpress(now = new Date()) {
 
 /** Runner: switch "Express available" on or off */
 /** @returns {Promise<void>} */
-export async function setMyExpress(on) {
+async function setMyExpress__raw(on) {
   const staff = getCurrentStaff();
   const uid = auth.currentUser?.uid;
   if (!uid || !staff || staff.role !== 'runner') throw new Error('Runners only');
@@ -747,7 +747,7 @@ export async function setMyExpress(on) {
 
 /** Store and food operators: set one of their own batches. patch = { on, start, note } */
 /** @returns {Promise<void>} */
-export async function setOperatorSwitch(key, patch) {
+async function setOperatorSwitch__raw(key, patch) {
   const staff = getCurrentStaff();
   const uid = auth.currentUser?.uid;
   if (!uid || !staff || (staff.role !== 'store' && staff.role !== 'food')) throw new Error('Operators only');
@@ -769,7 +769,7 @@ export async function setOperatorSwitch(key, patch) {
  * Returns the new delivery date ("2026-10-30") or '' if the order could not be moved.
  */
 /** @returns {Promise<string>} */
-export async function moveOrderToNextDay(orderId) {
+async function moveOrderToNextDay__raw(orderId) {
   const staff = getCurrentStaff();
   const uid = auth.currentUser?.uid;
   if (!uid || !staff || (staff.role !== 'store' && staff.role !== 'food')) throw new Error('Operators only');
@@ -824,7 +824,7 @@ export async function ensureOperatorStatus() {
 
 /** Admin only: switch an operator off (or allow them again) */
 /** @returns {Promise<void>} */
-export async function setOperatorAdminOff(uid, off) {
+async function setOperatorAdminOff__raw(uid, off) {
   operatorDocs = { ...operatorDocs, [uid]: { ...(operatorDocs[uid] || {}), adminOff: Boolean(off) } };
   fireBatches();
   await setDoc(doc(db, 'operatorStatus', uid), { adminOff: Boolean(off), adminAt: Date.now() }, { merge: true });
@@ -919,7 +919,7 @@ export async function getCategories() {
 }
 
 /** @returns {Promise<any>} */
-export async function addCategory(name, emoji = '📦', initialSubcategories = ['All'], stores = []) {
+async function addCategory__raw(name, emoji = '📦', initialSubcategories = ['All'], stores = []) {
   const cat = await readCatalog(true);
   const trimmed = name.trim();
   if (!trimmed) return cat.categories;
@@ -962,7 +962,7 @@ export async function addSubcategory(categoryName, subcategoryName) {
 
 /** Remove a main category. Refused while any product still uses it (move those products first). */
 /** @returns {Promise<any>} */
-export async function deleteCategory(categoryName, store = '') {
+async function deleteCategory__raw(categoryName, store = '') {
   const cat = await readCatalog(true);
   const name = String(categoryName).toLowerCase();
   // Shared with another store: only remove it from this store (the other store keeps it and its products)
@@ -998,7 +998,7 @@ export async function getProducts() {
 }
 
 /** @returns {Promise<any>} */
-export async function saveProduct(productData) {
+async function saveProduct__raw(productData) {
   const cat = await readCatalog(true);
   const products = [...cat.products];
   const index = products.findIndex((p) => p.id === productData.id);
@@ -1031,7 +1031,7 @@ export async function saveProduct(productData) {
 }
 
 /** @returns {Promise<any>} */
-export async function deleteProduct(productId) {
+async function deleteProduct__raw(productId) {
   const cat = await readCatalog(true);
   cat.products = cat.products.filter((p) => p.id !== productId);
   await writeCatalog(cat);
@@ -1461,7 +1461,7 @@ export async function markPaymentSent(orderId) {
  * If it is later than the student's "I've paid" tap, the 20 minutes start from it instead.
  */
 /** @returns {Promise<any>} */
-export async function confirmPayment(orderId, confirmedBy = 'Runner / Admin', txAt = '') {
+async function confirmPayment__raw(orderId, confirmedBy = 'Runner / Admin', txAt = '') {
   try {
     return await patchOrder(orderId, (o) => {
       const now = new Date().toISOString();
@@ -1489,7 +1489,7 @@ export async function confirmPayment(orderId, confirmedBy = 'Runner / Admin', tx
 }
 
 /** @returns {Promise<any>} */
-export async function startPackagingOrder(orderId, runnerId, runnerName, runnerPhone) {
+async function startPackagingOrder__raw(orderId, runnerId, runnerName, runnerPhone) {
   try {
     return await patchOrder(orderId, (o) => {
       const now = new Date().toISOString();
@@ -1513,7 +1513,7 @@ export async function startPackagingOrder(orderId, runnerId, runnerName, runnerP
 }
 
 /** @returns {Promise<any>} */
-export async function updateOrderStatus(orderId, newStatus, updatedBy = 'Admin', note = '') {
+async function updateOrderStatus__raw(orderId, newStatus, updatedBy = 'Admin', note = '') {
   try {
     let becameDelivered = false;
     let phone = '';
@@ -1730,7 +1730,65 @@ export async function uploadProductImage(file) {
   return compressToDataUrl(file);
 }
 
+/* ------------------- activity log ------------------- */
+// Who did what and when (operators, runners and the admin). Only the admin can read it, nobody can edit it.
+// Logging never blocks the action: if the entry can't be saved, the action still goes through.
+
+const naira = (n) => `₦${Math.round(Number(n) || 0).toLocaleString()}`;
+
+/** type: 'price' | 'product' | 'stock' | 'days' | 'order' | 'money' | 'request' | 'staff' */
+export function logActivity(type, text, ref = '') {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return;
+  const staff = getCurrentStaff();
+  addDoc(collection(db, 'activity'), {
+    at: new Date().toISOString(),
+    atMs: Date.now(),
+    uid,
+    who: String(staff?.name || auth.currentUser?.email || 'Someone').slice(0, 60),
+    role: staff?.role || 'admin',
+    type,
+    text: String(text).slice(0, 300),
+    ref: String(ref || '').slice(0, 80),
+  }).catch((e) => console.error('Activity not logged:', e));
+}
+
+/** Admin: one page of the activity log, newest first. Pass the last entry's atMs to load the next page. */
+export async function getActivityPage(beforeMs = 0, pageSize = 50) {
+  const q = beforeMs
+    ? query(collection(db, 'activity'), where('atMs', '<', beforeMs), orderBy('atMs', 'desc'), limit(pageSize))
+    : query(collection(db, 'activity'), orderBy('atMs', 'desc'), limit(pageSize));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+const orderLabel = (o) => `${o?.name || 'a student'}'s order ${o?.id || ''}`.trim();
+
 /* ------------------- store and food operators ------------------- */
+
+/**
+ * Operator: add (or replace) a photo of the packed order. The student sees it large on their order,
+ * so they know what to collect at the gate. Allowed after payment is confirmed, until the order is delivered.
+ */
+export async function addPackagePhoto(orderId, file) {
+  if (!CLOUDINARY.cloudName || !CLOUDINARY.uploadPreset) throw new Error('Photo uploads are not set up yet.');
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('upload_preset', CLOUDINARY.uploadPreset);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY.cloudName}/image/upload`, { method: 'POST', body: fd });
+  if (!res.ok) throw new Error('Photo upload failed. Check your connection and try again.');
+  const data = await res.json();
+  const url = String(data.secure_url).replace('/upload/', '/upload/w_1000,c_limit,q_auto,f_auto/');
+  const who = getCurrentStaff()?.name || 'Operator';
+  const updated = await patchOrder(orderId, (o) => {
+    o.packPhoto = url;
+    o.packPhotoAt = new Date().toISOString();
+    o.packPhotoBy = who;
+  });
+  if (!updated) throw new Error('Order not found.');
+  logActivity('order', `added a package photo to ${orderLabel(updated)}`, orderId);
+  return url;
+}
 
 /** Live list of PAID orders (payment marked as sent) that contain this operator's items. kind: 'store' | 'food' */
 export function subscribeOperatorOrders(kind, cb) {
@@ -1753,7 +1811,7 @@ export function subscribeOperatorOrders(kind, cb) {
 
 /** Operator marks their part of an order as 'packed' or 'sent' */
 /** @returns {Promise<any>} */
-export async function updatePartStatus(orderId, kind, status, who = 'Operator') {
+async function updatePartStatus__raw(orderId, kind, status, who = 'Operator') {
   const field = kind === 'food' ? 'foodStatus' : 'storeStatus';
   const label = kind === 'food' ? 'Food' : 'Store';
   try {
@@ -1789,15 +1847,15 @@ export async function updatePartStatus(orderId, kind, status, who = 'Operator') 
 
 /* ---------------- daily statements and settlement (Phases 3 + 5) ----------------
  * settlements/{uid}_{yyyy-mm-dd}: one small record per provider (store, food or runner) per day.
- *   Operators keep the standard (cost) price + ₦600 per cart; they owe the margin + ₦200 per cart.
+ *   Operators keep the standard (cost) price + ₦500 per cart; they owe the margin + ₦300 per cart.
  *   Runners keep what they spent on items + 30% of the day's profit (item margin + delivery fees);
  *   they owe the other 70%. Gate pickup fees are shown but kept by the runner.
  * due = what the provider owes for that day. They tap "I have sent"; the admin confirms or overrides.
  * A day not settled by 6am next morning hides that provider from checkout.
  */
 
-const OP_KEEP_PER_CART = 600;
-const OP_OWE_PER_CART = 200;
+const OP_KEEP_PER_CART = 500;
+const OP_OWE_PER_CART = 300;
 
 /** Cost (standard price) of one cart line. Uses the cost price you entered; otherwise works it back from the margin. */
 function costOf(item, products, inside = false, opId = '') {
@@ -2184,7 +2242,7 @@ export function subscribeMyOpenSettlements(cb) {
 
 /** Provider: "I have sent" (partial payments allowed, with a note) */
 /** @returns {Promise<void>} */
-export async function sendSettlement(id, amount, note) {
+async function sendSettlement__raw(id, amount, note) {
   const amt = Math.round(Number(amount) || 0);
   if (amt <= 0) throw new Error('Enter the amount you sent');
   const ref = doc(db, 'settlements', id);
@@ -2216,7 +2274,7 @@ export function subscribeOpenSettlements(cb) {
 
 /** Admin: confirm money received. override = mark the day settled (paid outside the app). */
 /** @returns {Promise<void>} */
-export async function adminConfirmSettlement(id, amount, override = false) {
+async function adminConfirmSettlement__raw(id, amount, override = false) {
   const ref = doc(db, 'settlements', id);
   let rec = null;
   await runTransaction(db, async (tx) => {
@@ -2247,7 +2305,7 @@ export async function adminConfirmSettlement(id, amount, override = false) {
 
 /** Staff: where students pay them (shown to the student on their order) */
 /** @returns {Promise<void>} */
-export async function savePayAccount(acc) {
+async function savePayAccount__raw(acc) {
   const staff = getCurrentStaff();
   if (!staff || staff.role === 'admin') throw new Error('Staff only');
   const clean = {
@@ -2327,7 +2385,7 @@ export function gateCanAskAgain(gp, now = Date.now()) {
  * refuse  = hide it from me only. confirm = the student's ₦1,000 reached my account.
  * release = I can't do it after all: back to New for the other runners (a refund if the student already paid).
  */
-export async function updateGatePickup(orderId, action) {
+async function updateGatePickup__raw(orderId, action) {
   const staff = getCurrentStaff();
   const who = staff?.name || 'Runner';
   const uid = auth.currentUser?.uid || '';
@@ -2504,7 +2562,7 @@ export function subscribePendingCatalogRequests(cb) {
 
 /** Admin: approve (updates the catalog) or reject a request */
 /** @returns {Promise<void>} */
-export async function decideCatalogRequest(r, approve, adminNote = '') {
+async function decideCatalogRequest__raw(r, approve, adminNote = '') {
   if (approve) {
     if (r.type === 'price') {
       await saveProduct({ id: r.productId, costPrice: r.newCost, price: sellingPrice(r.newCost, r.source) });
@@ -2606,7 +2664,7 @@ export function mySide() {
  * First reply wins. Each priced item becomes a live product with the margin added.
  */
 /** @returns {Promise<void>} */
-export async function quoteProductRequest(reqId, costs, category) {
+async function quoteProductRequest__raw(reqId, costs, category) {
   const staff = getCurrentStaff();
   const uid = auth.currentUser?.uid;
   if (!staff || !uid) throw new Error('Sign in first');
@@ -2702,7 +2760,7 @@ export function orderStage(o) {
 
 /** Store / food operator: they checked their account and the student's money arrived */
 /** @returns {Promise<any>} */
-export async function operatorConfirmPayment(orderId) {
+async function operatorConfirmPayment__raw(orderId) {
   const staff = getCurrentStaff();
   const who = staff?.name || 'Operator';
   try {
@@ -2722,7 +2780,7 @@ export async function operatorConfirmPayment(orderId) {
 
 /** Provider: agree with the day's statement. Not allowed while an objection is open. */
 /** @returns {Promise<void>} */
-export async function clearMyDay(id) {
+async function clearMyDay__raw(id) {
   const ref = doc(db, 'settlements', id);
   const snap = await getDoc(ref);
   if (!snap.exists()) throw new Error('Record not found');
@@ -2733,7 +2791,7 @@ export async function clearMyDay(id) {
 
 /** Provider: object to one cart, with the reason */
 /** @returns {Promise<void>} */
-export async function objectToCart(id, orderId, reason) {
+async function objectToCart__raw(id, orderId, reason) {
   const r = String(reason || '').trim().slice(0, 300);
   if (!r) throw new Error('Say why this cart is wrong');
   await updateDoc(doc(db, 'settlements', id), {
@@ -2746,7 +2804,7 @@ export async function objectToCart(id, orderId, reason) {
  * Admin: answer an objection. newOwed = corrected amount owed on that cart (null = dismiss, amount stays).
  */
 /** @returns {Promise<void>} */
-export async function adminResolveObjection(id, orderId, newOwed, reply) {
+async function adminResolveObjection__raw(id, orderId, newOwed, reply) {
   const ref = doc(db, 'settlements', id);
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
@@ -2832,7 +2890,7 @@ export async function getSettlementsRange(from, to) {
  * Only adds what is missing. Nothing is deleted and no product is moved.
  */
 /** @returns {Promise<{ categories: any[], added: string[], subsAdded: number }>} */
-export async function setupStoreCategories() {
+async function setupStoreCategories__raw() {
   const cat = await readCatalog(true);
   const categories = [...cat.categories];
   const added = [];
@@ -2876,7 +2934,7 @@ const myStore = () => {
 
 /** Operator: change the cost price of one of their products. The student price is worked out with your margin. */
 /** @returns {Promise<void>} */
-export async function operatorSetPrice(productId, cost) {
+async function operatorSetPrice__raw(productId, cost) {
   const store = myStore();
   // Runners change inside prices; operators change their own store's
   if (store !== 'store' && store !== 'food' && store !== 'inside') throw new Error('Runners and operators only');
@@ -2903,7 +2961,7 @@ export async function operatorSetPrice(productId, cost) {
 
 /** Operator: add a product they sell. It goes live at once in their store. */
 /** @returns {Promise<void>} */
-export async function operatorAddProduct({ name, category, cost, unit, imageUrl, group = '' }) {
+async function operatorAddProduct__raw({ name, category, cost, unit, imageUrl, group = '' }) {
   const store = myStore();
   if (store !== 'store' && store !== 'food' && store !== 'inside') throw new Error('Runners and operators only');
   const n = String(name || '').trim().slice(0, 80);
@@ -2934,7 +2992,7 @@ export async function operatorAddProduct({ name, category, cost, unit, imageUrl,
 
 /** Operator: their food item's extras and pick-one choice. lists = [{ name, cost }] (cost is what THEY pay). */
 /** @returns {Promise<void>} */
-export async function operatorSaveFoodOptions(productId, extras, choiceTitle, choices) {
+async function operatorSaveFoodOptions__raw(productId, extras, choiceTitle, choices) {
   const store = myStore();
   if (store !== 'food') throw new Error('Food operators only');
   const p = (await readCatalog(true)).products.find((x) => x.id === productId);
@@ -2968,7 +3026,7 @@ export async function operatorSaveFoodOptions(productId, extras, choiceTitle, ch
 
 /** Operator: switch one of their products on or off for today (off hides it from students) */
 /** @returns {Promise<void>} */
-export async function operatorSetStock(productId, inStock) {
+async function operatorSetStock__raw(productId, inStock) {
   const store = myStore();
   if (store !== 'store' && store !== 'food') throw new Error('Operators only');
   const p = (await readCatalog(true)).products.find((x) => x.id === productId);
@@ -2979,7 +3037,7 @@ export async function operatorSetStock(productId, inStock) {
 
 /** Runner (inside food) or food operator: switch one extra or swallow on or off for today */
 /** @returns {Promise<void>} */
-export async function setOptionStock(productId, optId, inStock) {
+async function setOptionStock__raw(productId, optId, inStock) {
   const store = myStore();
   const p = (await readCatalog(true)).products.find((x) => x.id === productId);
   const ok = p && ((store === 'inside' && p.source !== 'outside' && p.source !== 'food') || (store === 'food' && p.source === 'food'));
@@ -2990,7 +3048,7 @@ export async function setOptionStock(productId, optId, inStock) {
 
 /** Runner: mark an inside product out of stock (false) or back in stock (true) */
 /** @returns {Promise<void>} */
-export async function runnerSetStock(productId, inStock) {
+async function runnerSetStock__raw(productId, inStock) {
   if (myStore() !== 'inside') throw new Error('Runners only');
   await setDoc(doc(db, 'catalog', 'overrides'), { stock: { [productId]: Boolean(inStock) } }, { merge: true });
   catalogAt = 0;
@@ -3223,7 +3281,7 @@ const EXPRESS_CONFIRM_MS = EXPRESS_CONFIRM_MINUTES * 60000;
 
 /** Runner: "I can do it now" on an express request */
 /** @returns {Promise<any>} */
-export async function acceptExpress(orderId) {
+async function acceptExpress__raw(orderId) {
   const staff = getCurrentStaff();
   if (!staff || staff.role !== 'runner') throw new Error('Runners only');
   if (!staff.payAccount?.accountNumber) throw new Error('Save your bank account first. The student pays you directly.');
@@ -3333,7 +3391,7 @@ export async function markExpressArrived(orderId) {
 
 /** Runner: they paid the ₦600 back on a late express order */
 /** @returns {Promise<any>} */
-export async function markExpressRefunded(orderId) {
+async function markExpressRefunded__raw(orderId) {
   const staff = getCurrentStaff();
   let done = null;
   const res = await patchOrder(orderId, (o) => {
@@ -3425,4 +3483,203 @@ export function subscribeMyRatings(cb) {
     (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))),
     () => cb([])
   );
+}
+
+/* ---------------- activity log: each action below records who did it ----------------
+ * The exported functions wrap the originals (the __raw versions): the action runs first, then the entry is saved.
+ */
+const productOf = async (id) => {
+  try {
+    return (await readCatalog()).products.find((x) => x.id === id) || null;
+  } catch (e) {
+    return null;
+  }
+};
+const dayOfKey = (key) => {
+  const d = String(key || '').split('|')[0];
+  try {
+    return longDayLabel(d);
+  } catch (e) {
+    return d;
+  }
+};
+const settlementDay = (id) => String(id || '').split('_').pop();
+const onOff = (on) => (on ? 'ON' : 'OFF');
+
+export async function operatorSetPrice(productId, cost) {
+  const p = await productOf(productId);
+  const uid = auth.currentUser?.uid || '';
+  const before = (p && ((p.opCosts && p.opCosts[uid]) || p.costPrice)) || 0;
+  await operatorSetPrice__raw(productId, cost);
+  const name = p?.name || productId;
+  const text =
+    before && Math.round(before) === Math.round(Number(cost))
+      ? `confirmed the price of ${name} at ${naira(cost)}`
+      : before
+        ? `changed the price of ${name} from ${naira(before)} to ${naira(cost)}`
+        : `set the price of ${name} to ${naira(cost)}`;
+  logActivity('price', text, productId);
+}
+export async function operatorAddProduct(args) {
+  await operatorAddProduct__raw(args);
+  logActivity('product', `added a new product: ${args?.name || ''} at ${naira(args?.cost)}`);
+}
+export async function operatorSaveFoodOptions(productId, extras, choiceTitle, choices) {
+  await operatorSaveFoodOptions__raw(productId, extras, choiceTitle, choices);
+  const p = await productOf(productId);
+  logActivity('price', `updated the extras and choices of ${p?.name || productId}`, productId);
+}
+export async function operatorSetStock(productId, inStock) {
+  await operatorSetStock__raw(productId, inStock);
+  const p = await productOf(productId);
+  logActivity('stock', `switched ${p?.name || productId} ${onOff(inStock)}`, productId);
+}
+export async function runnerSetStock(productId, inStock) {
+  await runnerSetStock__raw(productId, inStock);
+  const p = await productOf(productId);
+  logActivity('stock', `switched ${p?.name || productId} ${onOff(inStock)}`, productId);
+}
+export async function setOptionStock(productId, optId, inStock) {
+  await setOptionStock__raw(productId, optId, inStock);
+  const p = await productOf(productId);
+  const opt = [...(p?.extras || []), ...(p?.choices || [])].find((o) => o.id === optId);
+  logActivity('stock', `switched ${opt?.name || optId} on ${p?.name || productId} ${onOff(inStock)}`, productId);
+}
+export async function setOperatorSwitch(key, patch) {
+  await setOperatorSwitch__raw(key, patch);
+  if (patch && 'on' in patch) logActivity('days', `switched ${dayOfKey(key)} ${onOff(patch.on)}`, key);
+}
+export async function setInsideSwitch(key, patch) {
+  await setInsideSwitch__raw(key, patch);
+  if (patch && 'on' in patch) logActivity('days', `switched the ${String(key).split('|')[1] || ''} batch on ${dayOfKey(key)} ${onOff(patch.on)}`, key);
+}
+export async function setMyExpress(on) {
+  await setMyExpress__raw(on);
+  logActivity('days', `switched express runs ${onOff(on)}`);
+}
+export async function moveOrderToNextDay(orderId) {
+  const day = await moveOrderToNextDay__raw(orderId);
+  if (day) logActivity('order', `moved order ${orderId} to ${longDayLabel(day)} (fully booked)`, orderId);
+  return day;
+}
+export async function setOperatorAdminOff(uid, off) {
+  await setOperatorAdminOff__raw(uid, off);
+  logActivity('staff', `switched operator ${(operatorDocs[uid] || {}).name || uid} ${onOff(!off)}`, uid);
+}
+export async function setRunnerAdminOff(email, off) {
+  await setRunnerAdminOff__raw(email, off);
+  logActivity('staff', `switched runner ${email} ${onOff(!off)}`, email);
+}
+export async function saveProduct(productData) {
+  const before = productData?.id ? await productOf(productData.id) : null;
+  const res = await saveProduct__raw(productData);
+  const name = productData?.name || before?.name || productData?.id || 'a product';
+  const oldCost = Number(before?.costPrice) || 0;
+  const newCost = Number(productData?.costPrice) || 0;
+  const priceNote = before && newCost && oldCost !== newCost ? ` (cost ${naira(oldCost)} to ${naira(newCost)})` : '';
+  logActivity('product', before ? `edited ${name}${priceNote}` : `added ${name}${newCost ? ` at ${naira(newCost)}` : ''}`, productData?.id || '');
+  return res;
+}
+export async function deleteProduct(productId) {
+  const before = await productOf(productId);
+  const res = await deleteProduct__raw(productId);
+  logActivity('product', `deleted ${before?.name || productId}`, productId);
+  return res;
+}
+export async function addCategory(name, emoji = '📦', initialSubcategories = ['All'], stores = []) {
+  const res = await addCategory__raw(name, emoji, initialSubcategories, stores);
+  logActivity('product', `added the category ${name}${stores.length ? ` (${stores.join(', ')})` : ''}`);
+  return res;
+}
+export async function deleteCategory(categoryName, store = '') {
+  const res = await deleteCategory__raw(categoryName, store);
+  logActivity('product', `deleted the category ${categoryName}${store ? ` from ${store}` : ''}`);
+  return res;
+}
+export async function setupStoreCategories() {
+  const res = await setupStoreCategories__raw();
+  logActivity('product', `ran "Set up Roomly categories"${res?.added?.length ? ` (added ${res.added.join(', ')})` : ''}`);
+  return res;
+}
+export async function operatorConfirmPayment(orderId) {
+  const o = await operatorConfirmPayment__raw(orderId);
+  if (o) logActivity('order', `confirmed payment on ${orderLabel(o)} (${naira(o.totalAmount)})`, orderId);
+  return o;
+}
+export async function updatePartStatus(orderId, kind, status, who = 'Operator') {
+  const o = await updatePartStatus__raw(orderId, kind, status, who);
+  if (o) logActivity('order', status === 'sent' ? `tapped Order delivered on ${orderLabel(o)}` : `marked ${orderLabel(o)} as ${status}`, orderId);
+  return o;
+}
+export async function confirmPayment(orderId, confirmedBy = 'Runner / Admin', txAt = '') {
+  const o = await confirmPayment__raw(orderId, confirmedBy, txAt);
+  if (o) logActivity('order', `confirmed payment on ${orderLabel(o)} (${naira(o.totalAmount)})`, orderId);
+  return o;
+}
+export async function startPackagingOrder(orderId, runnerId, runnerName, runnerPhone) {
+  const o = await startPackagingOrder__raw(orderId, runnerId, runnerName, runnerPhone);
+  if (o) logActivity('order', `accepted ${orderLabel(o)} and started packing`, orderId);
+  return o;
+}
+export async function updateOrderStatus(orderId, newStatus, updatedBy = 'Admin', note = '') {
+  const o = await updateOrderStatus__raw(orderId, newStatus, updatedBy, note);
+  if (o) logActivity('order', `changed ${orderLabel(o)} to ${newStatus}`, orderId);
+  return o;
+}
+export async function savePayAccount(acc) {
+  await savePayAccount__raw(acc);
+  const num = String(acc?.accountNumber || '').replace(/\D/g, '');
+  logActivity('money', `changed their payment account to ${acc?.bankName || ''} ${num} (${acc?.accountName || ''})`);
+}
+export async function sendSettlement(id, amount, note) {
+  await sendSettlement__raw(id, amount, note);
+  logActivity('money', `sent ${naira(amount)} to Roomly for ${settlementDay(id)}`, id);
+}
+export async function adminConfirmSettlement(id, amount, override = false) {
+  await adminConfirmSettlement__raw(id, amount, override);
+  logActivity('money', override ? `marked ${id} as settled (paid outside the app)` : `confirmed ${naira(amount)} received for ${id}`, id);
+}
+export async function clearMyDay(id) {
+  await clearMyDay__raw(id);
+  logActivity('money', `tapped All cleared for ${settlementDay(id)}`, id);
+}
+export async function objectToCart(id, orderId, reason) {
+  await objectToCart__raw(id, orderId, reason);
+  logActivity('money', `objected to order ${orderId} on ${settlementDay(id)}: ${String(reason || '').slice(0, 150)}`, orderId);
+}
+export async function adminResolveObjection(id, orderId, newOwed, reply) {
+  await adminResolveObjection__raw(id, orderId, newOwed, reply);
+  logActivity('money', newOwed === null ? `dismissed the objection on order ${orderId}` : `corrected order ${orderId} to ${naira(newOwed)} owed`, orderId);
+}
+export async function quoteProductRequest(reqId, costs, category) {
+  await quoteProductRequest__raw(reqId, costs, category);
+  let items = '';
+  try {
+    const snap = await getDoc(doc(db, 'productRequests', reqId));
+    const r = snap.exists() ? snap.data() : null;
+    items = (r?.items || []).map((it, i) => `${it.name} ${Number(costs[i]) > 0 ? naira(costs[i]) : '(not available)'}`).join(', ');
+  } catch (e) {
+    /* names are a nice-to-have */
+  }
+  logActivity('request', `answered a product request${items ? `: ${items}` : ''}`, reqId);
+}
+export async function updateGatePickup(orderId, action) {
+  const o = await updateGatePickup__raw(orderId, action);
+  if (o) logActivity('order', `gate pickup on ${orderLabel(o)}: ${action}`, orderId);
+  return o;
+}
+export async function acceptExpress(orderId) {
+  const res = await acceptExpress__raw(orderId);
+  logActivity('order', `accepted express order ${orderId}`, orderId);
+  return res;
+}
+export async function markExpressRefunded(orderId) {
+  const res = await markExpressRefunded__raw(orderId);
+  logActivity('money', `refunded the late express fee on order ${orderId}`, orderId);
+  return res;
+}
+export async function decideCatalogRequest(r, approve, adminNote = '') {
+  const res = await decideCatalogRequest__raw(r, approve, adminNote);
+  logActivity('request', `${approve ? 'approved' : 'declined'} a ${r?.type === 'price' ? 'price change' : 'new product'} request${r?.name ? ` for ${r.name}` : ''}`);
+  return res;
 }

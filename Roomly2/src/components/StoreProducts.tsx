@@ -53,8 +53,20 @@ export const OperatorProductsPanel: React.FC = () => {
     if (open) load();
   }, [open]);
 
+  // This operator's own price on a product (what they set, or what they entered when they added it)
+  const uidNow = auth.currentUser?.uid || '';
+  const myCost = (p: any): number => Number((p.opCosts && p.opCosts[uidNow]) || (p.addedByUid && p.addedByUid === uidNow ? p.costPrice : 0)) || 0;
+  const pricedCount = products.filter((p) => myCost(p) > 0).length;
+  const [catFilter, setCatFilter] = useState('All');
+  const [needsOnly, setNeedsOnly] = useState(false);
+  const [visible, setVisible] = useState(20);
+
   const q = search.trim().toLowerCase();
-  const shown = products.filter((p) => !q || p.name.toLowerCase().includes(q) || String(p.category).toLowerCase().includes(q));
+  const shown = products
+    .filter((p) => !q || p.name.toLowerCase().includes(q) || String(p.category).toLowerCase().includes(q))
+    .filter((p) => catFilter === 'All' || p.category === catFilter)
+    .filter((p) => !needsOnly || !myCost(p));
+  useEffect(() => setVisible(20), [search, catFilter, needsOnly]);
   const costNum = Math.round(Number(cost) || 0);
 
   const savePrice = async (p: any) => {
@@ -62,6 +74,18 @@ export const OperatorProductsPanel: React.FC = () => {
     try {
       await operatorSetPrice(p.id, Number(newCost[p.id]));
       setNewCost((m) => ({ ...m, [p.id]: '' }));
+      await load();
+    } catch (e: any) {
+      window.alert(e?.message || 'Could not save.');
+    }
+    setBusy('');
+  };
+
+  // "Correct": the price Roomly entered is right, so it becomes this operator's own price
+  const keepPrice = async (p: any) => {
+    setBusy(p.id);
+    try {
+      await operatorSetPrice(p.id, Number(p.costPrice));
       await load();
     } catch (e: any) {
       window.alert(e?.message || 'Could not save.');
@@ -120,17 +144,68 @@ export const OperatorProductsPanel: React.FC = () => {
 
           {mode === 'prices' ? (
             <div className="space-y-2">
+              {/* Progress: how many prices this operator has set themselves */}
+              <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-900/50 space-y-1.5">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className="text-slate-800 dark:text-slate-100">
+                    {pricedCount} of {products.length} prices set by you
+                  </span>
+                  <span className="text-[#0e9f55]">{products.length ? Math.round((pricedCount / products.length) * 100) : 0}%</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-emerald-100 dark:bg-emerald-900/50 overflow-hidden">
+                  <div className="h-full bg-[#0e9f55]" style={{ width: `${products.length ? (pricedCount / products.length) * 100 : 0}%` }} />
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Items you haven't set yet use the price Roomly entered. Tap Correct if it's right, or type your price and Save.
+                </p>
+              </div>
+
               <input value={search} onChange={(e) => setSearch(e.target.value)} className={input} placeholder="Search your products" />
-              {shown.length === 0 && <p className="text-xs text-slate-400">No products yet.</p>}
-              {shown.slice(0, 40).map((p) => {
+              <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                {['All', ...cats.filter((c) => products.some((p) => p.category === c))].map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setCatFilter(c)}
+                    className={`shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-semibold cursor-pointer ${
+                      catFilter === c ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer">
+                <input type="checkbox" checked={needsOnly} onChange={(e) => setNeedsOnly(e.target.checked)} className="accent-[#0e9f55]" />
+                Only show items that need my price ({products.length - pricedCount})
+              </label>
+
+              {shown.length === 0 && <p className="text-xs text-slate-400">{products.length ? 'Nothing matches.' : 'No products yet.'}</p>}
+              {shown.slice(0, visible).map((p) => {
                 const c = Math.round(Number(newCost[p.id]) || 0);
+                const mine = myCost(p);
+                const current = Number(p.costPrice) || 0;
                 return (
-                  <div key={p.id} className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs space-y-1.5">
-                    <div className="flex justify-between gap-2">
-                      <span className="font-bold truncate">{p.name}</span>
-                      <span className="shrink-0 text-slate-500">
-                        your cost {naira((p.opCosts && auth.currentUser && p.opCosts[auth.currentUser.uid]) || p.costPrice)} · students {naira(p.price)}
-                      </span>
+                  <div key={p.id} className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs space-y-2">
+                    <div className="flex gap-2.5">
+                      {p.imageUrl ? (
+                        <img src={p.imageUrl} alt="" referrerPolicy="no-referrer" className="w-14 h-14 rounded-lg object-cover shrink-0 bg-white dark:bg-slate-900" />
+                      ) : (
+                        <span className="w-14 h-14 rounded-lg shrink-0 bg-white dark:bg-slate-900 flex items-center justify-center text-2xl">{p.emoji || '🛍️'}</span>
+                      )}
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <p className="font-bold text-slate-900 dark:text-white leading-snug">{p.name}</p>
+                        <p className="text-[11px] text-slate-500">{[p.unit, p.category].filter(Boolean).join(' · ')}</p>
+                        {mine ? (
+                          <p className="text-[11px] font-semibold text-[#0b8044] dark:text-[#34d27b]">
+                            Your price {naira(mine)} · Students pay {naira(p.price)}
+                          </p>
+                        ) : (
+                          <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                            Not set by you{current ? ` · Roomly's price ${naira(current)}` : ''}
+                          </p>
+                        )}
+                      </div>
                     </div>
                     <div className="flex gap-2">
                       <input
@@ -139,7 +214,7 @@ export const OperatorProductsPanel: React.FC = () => {
                         value={newCost[p.id] || ''}
                         onChange={(e) => setNewCost((m) => ({ ...m, [p.id]: e.target.value }))}
                         className={input}
-                        placeholder="New cost price (₦)"
+                        placeholder={mine ? 'New price (₦)' : 'Your price (₦)'}
                       />
                       <button
                         type="button"
@@ -149,6 +224,16 @@ export const OperatorProductsPanel: React.FC = () => {
                       >
                         Save
                       </button>
+                      {!mine && current > 0 && !c && (
+                        <button
+                          type="button"
+                          disabled={busy === p.id}
+                          onClick={() => keepPrice(p)}
+                          className="shrink-0 px-3 py-1.5 rounded-lg border border-[#0e9f55] text-[#0e9f55] font-bold disabled:opacity-40 cursor-pointer"
+                        >
+                          Correct
+                        </button>
+                      )}
                     </div>
                     {role === 'food' && p.isFood && <OperatorFoodOptions p={p} onSaved={load} />}
                     {c > 0 && (() => {
@@ -166,7 +251,16 @@ export const OperatorProductsPanel: React.FC = () => {
                   </div>
                 );
               })}
-              <p className="text-[11px] text-slate-400">You enter your own cost price. Students see one price, worked out from the highest cost any operator entered; your orders are settled at your cost. Changes go live at once.</p>
+              {shown.length > visible && (
+                <button
+                  type="button"
+                  onClick={() => setVisible((v) => v + 20)}
+                  className="w-full py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer"
+                >
+                  Show 20 more ({shown.length - visible} left)
+                </button>
+              )}
+              <p className="text-[11px] text-slate-400">You enter your own price. Students see one price, worked out from the highest price any operator entered; your orders are settled at your price. Changes go live at once.</p>
             </div>
           ) : (
             <div className="space-y-1.5">
@@ -330,6 +424,8 @@ export const TodaysMenuPanel: React.FC<{ side: 'inside' | 'store' | 'food' }> = 
     .filter((p) => !q || p.name.toLowerCase().includes(q) || String(p.category).toLowerCase().includes(q))
     .sort((a, b) => Number(a.isAvailable !== false) - Number(b.isAvailable !== false));
   const outCount = products.filter((p) => p.isAvailable === false).length;
+  const [menuVisible, setMenuVisible] = useState(20);
+  useEffect(() => setMenuVisible(20), [search]);
 
   const run = async (key: string, fn: () => Promise<void>) => {
     setBusy(key);
@@ -356,7 +452,7 @@ export const TodaysMenuPanel: React.FC<{ side: 'inside' | 'store' | 'food' }> = 
       {open && (
         <div className="space-y-2">
           <input value={search} onChange={(e) => setSearch(e.target.value)} className={input} placeholder="Search items" />
-          {shown.slice(0, 80).map((p) => {
+          {shown.slice(0, menuVisible).map((p) => {
             const inStock = p.isAvailable !== false;
             const opts = canOptions
               ? [...(p.choices || []).map((o: any) => ({ ...o, kind: p.choiceTitle || 'Choice' })), ...(p.extras || []).map((o: any) => ({ ...o, kind: 'Extra' }))]
@@ -375,7 +471,7 @@ export const TodaysMenuPanel: React.FC<{ side: 'inside' | 'store' | 'food' }> = 
                       inStock ? 'bg-[#0e9f55] text-white' : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
                     }`}
                   >
-                    {inStock ? 'On' : 'Off today'}
+                    {inStock ? 'On' : 'Off'}
                   </button>
                 </div>
                 {inStock && opts.length > 0 && (
@@ -404,8 +500,17 @@ export const TodaysMenuPanel: React.FC<{ side: 'inside' | 'store' | 'food' }> = 
               </div>
             );
           })}
+          {shown.length > menuVisible && (
+            <button
+              type="button"
+              onClick={() => setMenuVisible((v) => v + 20)}
+              className="w-full py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer"
+            >
+              Show 20 more ({shown.length - menuVisible} left)
+            </button>
+          )}
           <p className="text-[11px] text-slate-400">
-            Tap to switch. Anything off is hidden from students until you switch it back.{canOptions ? ' Tap an extra or swallow (e.g. Fufu) to switch just that off.' : ''}
+            Tap to switch. Anything off stays hidden from students until you switch it back on, even on the next day.{canOptions ? ' Tap an extra or swallow (e.g. Fufu) to switch just that off.' : ''}
           </p>
         </div>
       )}

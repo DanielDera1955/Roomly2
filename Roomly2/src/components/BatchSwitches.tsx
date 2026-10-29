@@ -267,7 +267,7 @@ const OutsideDaySwitches: React.FC<{ side: 'store' | 'food' }> = ({ side }) => {
                   </span>
                   <span className={`block text-[11px] font-bold ${closed ? 'text-slate-500' : on ? 'text-[#0e9f55]' : 'text-rose-600 dark:text-rose-400'}`}>
                     {closed
-                      ? "Today's orders closed at 5:30pm. New orders are for your next day that is ON."
+                      ? "Today's orders closed at 5:10pm. New orders are for your next day that is ON."
                       : on
                       ? 'ON: students can order for this day'
                       : 'OFF: students see you are fully booked, and their order goes to your next day that is ON'}
@@ -307,7 +307,7 @@ const OutsideDaySwitches: React.FC<{ side: 'store' | 'food' }> = ({ side }) => {
             still order: their order goes to your next day that is ON.
           </p>
           <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-snug">
-            Students order before 5:30pm to get it the same day. Send so it reaches the school gate before 6pm. If you can't make it,
+            Students order before 5:10pm to get it the same day. Send so it reaches the school gate before 6pm. If you can't make it,
             open the order and tap "Move to next available day".
           </p>
         </div>

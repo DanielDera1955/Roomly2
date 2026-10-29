@@ -124,7 +124,7 @@ export const PRICING = {
   outsideBigFrom: 10000,
 };
 
-/** Outside delivery to the school gate: ₦800 (₦600 to the operator, ₦200 to you) */
+/** Outside delivery to the school gate: ₦800 (₦500 to the operator, ₦300 to you) */
 export const OUTSIDE_DELIVERY_FEE = 800;
 
 // ---------- Three carts (Phase 4) ----------
@@ -328,13 +328,13 @@ export function formatRemaining(ms: number): string {
 
 // ---------- Outside school schedule ----------
 /**
- * Outside orders: one delivery a day. Order before 5:30pm and it reaches the school gate the same day, before 6pm.
- * After 5:30pm, or when the operator has switched today off, the order is for their next day that is on.
+ * Outside orders: one delivery a day. Order before 5:10pm and it reaches the school gate the same day, before 6pm.
+ * After 5:10pm, or when the operator has switched today off, the order is for their next day that is on.
  * Operators switch whole days on or off: today, tomorrow and the day after. Every day starts on.
  */
-export const OUTSIDE_ORDER_BY_MIN = T(17, 30);
+export const OUTSIDE_ORDER_BY_MIN = T(17, 10);
 export const OUTSIDE_DAYS_AHEAD = 3;
-export const OUTSIDE_BANNER = 'Order before 5:30pm. Sec men are strict with late deliveries.';
+export const OUTSIDE_BANNER = 'Order before 5:10pm. Sec men are strict with late deliveries.';
 /** Outside store items: one delivery a day */
 export const OUTSIDE_STORE_BATCHES: BatchSlotDef[] = [
   { id: 'late', name: 'Store delivery', startMin: OUTSIDE_ORDER_BY_MIN, endMin: T(18), orderByMin: OUTSIDE_ORDER_BY_MIN },
@@ -391,7 +391,7 @@ export function slotsForDay(side: SwitchSide, base: Date, dayOffset: number): Ba
   const defs = side === 'food' ? [OUTSIDE_FOOD_BATCH] : OUTSIDE_STORE_BATCHES;
   return defs.map((s) => buildOption(day, dayOffset, s));
 }
-/** Switches turn themselves off at night: 10pm inside. Outside, today's orders close at 5:30pm (parcels must reach the gate before 6pm) */
+/** Switches turn themselves off at night: 10pm inside. Outside, today's orders close at 5:10pm (parcels must reach the gate before 6pm) */
 export const SWITCH_CUTOFF_MIN = { inside: T(22), outside: OUTSIDE_ORDER_BY_MIN };
 
 /** "will start sending by 2pm" style label for a batch */

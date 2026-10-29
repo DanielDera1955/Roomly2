@@ -30,7 +30,7 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
   const title = side === 'inside' ? 'Delivery to your room' : side === 'food' ? 'Cooked food' : 'Outside store items';
   const where = side === 'inside' ? 'to your room' : 'to the school gate';
 
-  // Outside: one delivery a day, ordered before 5:30pm
+  // Outside: one delivery a day, ordered before 5:10pm
   if (side !== 'inside') {
     const now = new Date();
     const todayOpt = slotsForDay(side, now, 0)[0];

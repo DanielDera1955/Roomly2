@@ -4,7 +4,7 @@ import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { AdminSettlementsPanel } from './SettlementPanel';
 import { AnnouncementsPanel } from './AnnouncementsPanel';
 import { playChime } from '../sound';
-import { Phone as PhoneIcon, ChevronDown as ChevronDownIcon } from 'lucide-react';
+import { Phone as PhoneIcon, ChevronDown as ChevronDownIcon, History } from 'lucide-react';
 import {
   ArrowLeft,
   Lock,
@@ -35,6 +35,7 @@ import { Product, FoodExtraOption, PRESET_PRODUCT_IMAGES, StoreKey, STORE_LABEL,
 import { AdminDispatch, AdminTeam, AdminMoney, useOpenSettlements, needsAction } from './AdminDispatch';
 import { AdminInsights } from './AdminInsights';
 import { AdminFeedbackPanel } from './FeedbackPanels';
+import { ActivityLog } from './ActivityLog';
 import {
   getOrders,
   updateOrderStatus,
@@ -142,7 +143,7 @@ const FoodOptionsEditor: React.FC<{ value: FoodOptions; source: Product['source'
   );
 };
 
-type AdminTab = 'dashboard' | 'orders' | 'team' | 'money' | 'feedback' | 'products' | 'categories' | 'customers';
+type AdminTab = 'dashboard' | 'orders' | 'team' | 'money' | 'feedback' | 'products' | 'categories' | 'customers' | 'activity';
 
 export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpdated }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -657,6 +658,19 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
           >
             <User className="w-3.5 h-3.5" />
             <span>Customers</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCurrentTab('activity')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+              currentTab === 'activity'
+                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <History className="w-3.5 h-3.5" />
+            <span>Activity</span>
           </button>
         </div>
       </header>
@@ -1575,6 +1589,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
             </div>
           </div>
         )}
+
+        {/* ================= ACTIVITY LOG ================= */}
+        {currentTab === 'activity' && <ActivityLog />}
 
         {/* ================= TAB 4: CUSTOMERS ================= */}
         {currentTab === 'customers' && (

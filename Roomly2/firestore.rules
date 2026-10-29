@@ -20,6 +20,17 @@ service cloud.firestore {
     function isOperator(kind) { return hasStaffDoc() && staffRole() == kind; }
     function isStaff() { return isAdmin() || isRunner(); }
 
+    // ---------- activity log: everyone signed in as staff writes their own entries, only the admin reads ----------
+    match /activity/{id} {
+      allow read: if isAdmin();
+      allow create: if (isAdmin() || isRunner() || isOperator('store') || isOperator('food'))
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['at', 'atMs', 'uid', 'who', 'role', 'type', 'text', 'ref'])
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 300;
+      allow update, delete: if false;
+    }
+
     // ---------- staff (runners) ----------
     match /staff/{email} {
       allow get: if isAdmin() || (signedIn() && request.auth.token.email == email);
@@ -312,6 +323,17 @@ service cloud.firestore {
          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['foodStatus', 'history', 'status', 'deliveredAt'])
          && (request.resource.data.status == resource.data.status
              || (resource.data.get('cart', '') == 'food' && request.resource.data.status == 'Delivered'))) ||
+        // Operators add (or replace) a photo of the packed order, after confirming payment and before it is delivered
+        (((isOperator('store') && resource.data.get('cart', '') == 'store') || (isOperator('food') && resource.data.get('cart', '') == 'food'))
+         && resource.data.payReady == true
+         && resource.data.get('operatorId', '') in ['', request.auth.uid]
+         && resource.data.paymentStatus == 'payment_confirmed'
+         && resource.data.status != 'Delivered'
+         && resource.data.status != 'Cancelled'
+         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['packPhoto', 'packPhotoAt', 'packPhotoBy'])
+         && request.resource.data.packPhoto is string
+         && request.resource.data.packPhoto.size() <= 600
+         && request.resource.data.packPhoto.matches('https://res[.]cloudinary[.]com/.*')) ||
         // Operators move their own paid, undelivered outside order to their next available day (only the day changes)
         (((isOperator('store') && resource.data.get('cart', '') == 'store') || (isOperator('food') && resource.data.get('cart', '') == 'food'))
          && resource.data.payReady == true

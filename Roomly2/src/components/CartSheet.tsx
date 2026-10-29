@@ -210,7 +210,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   // Outside: which day this order is for ("today" / "tomorrow" / "on Friday"), and the fixed date
   const outsideDay = cart !== 'inside' && selectedBatch ? dayWord(selectedBatch.date) : '';
   const outsideDate = cart !== 'inside' && selectedBatch ? longDayLabel(selectedBatch.date) : '';
-  // Today's outside orders closed at 5:30pm: "this batch" is already another day
+  // Today's outside orders closed at 5:10pm: "this batch" is already another day
   const outsideClosedToday = cart !== 'inside' && Boolean(currentBatch) && dayWord(currentBatch.date) !== 'today';
   const otherCarts = (['inside', 'store', 'food'] as CartKind[]).filter((k) => k !== cart && cartCounts[k] > 0);
   const atGate = cart !== 'inside' && !gatePickup;

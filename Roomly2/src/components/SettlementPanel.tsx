@@ -79,9 +79,9 @@ const OpenDay: React.FC<{ d: any }> = ({ d }) => {
         <div className="space-y-2">
           {carts.map((c) => {
             const ob = objections[c.orderId];
-            // Operators: what they keep is their cost + ₦600 delivery. Older records only saved the total.
+            // Operators: what they keep is their cost + ₦500 delivery. Older records only saved the total.
             const isOp = d.kind !== 'runner' && !c.gate;
-            const delivery = isOp ? (c.delivery ?? 600) : 0;
+            const delivery = isOp ? (c.delivery ?? 500) : 0;
             const cost = isOp ? (c.cost ?? Math.max(0, (c.keep || 0) - delivery)) : 0;
             return (
               <div key={c.orderId} className="p-2.5 rounded-xl bg-white dark:bg-slate-900 space-y-1">
