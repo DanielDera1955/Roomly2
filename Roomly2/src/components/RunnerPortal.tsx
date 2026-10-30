@@ -55,7 +55,9 @@ import {
   subscribeGatePickups,
   gateExpired,
   getMyUid,
+  autoDeliverOverdue,
 } from '../api.js';
+import { insideArrivalLeftMs, INSIDE_ARRIVAL_MINUTES } from '../config';
 import { AttentionCard, jumpTo } from './AttentionCard';
 import { OperatorGuide } from './OperatorGuide';
 
@@ -339,6 +341,39 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
   const packingOrders = myActiveOrders.filter((o) => o.status === 'Packing');
   const onTheWayOrders = myActiveOrders.filter((o) => o.status === 'On the way');
 
+  // 15-minute arrival timer: tick every second while one of my orders is on its way,
+  // and mark it delivered automatically once the time runs out
+  const [nowMs, setNowMs] = useState(Date.now());
+  const timedCount = onTheWayOrders.filter((o) => insideArrivalLeftMs(o, Date.now()) !== null).length;
+  useEffect(() => {
+    if (!timedCount) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [timedCount]);
+  const sweeping = React.useRef(false);
+  useEffect(() => {
+    const overdue = onTheWayOrders.filter((o) => {
+      const left = insideArrivalLeftMs(o, nowMs);
+      return left !== null && left <= 0;
+    });
+    if (!overdue.length || sweeping.current) return;
+    sweeping.current = true;
+    autoDeliverOverdue(overdue)
+      .then((n) => {
+        if (n) {
+          fetchOrdersAndRunners();
+          if (onOrderUpdated) onOrderUpdated();
+        }
+      })
+      .finally(() => {
+        sweeping.current = false;
+      });
+  }, [nowMs, onTheWayOrders.length]);
+  const mmss = (ms: number) => {
+    const t = Math.max(0, Math.ceil(ms / 1000));
+    return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+  };
+
   // Render Order Card Helper
   const renderOrderCard = (ord: OrderRecord, isAssignedToMe: boolean) => {
     const isFirstTime = ord.isFirstTimeCustomer !== false;
@@ -618,9 +653,32 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
               className="w-full py-3 bg-[#0e9f55] hover:bg-[#0b8044] text-white rounded-2xl text-xs font-black transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
             >
               <Truck className="w-4 h-4" />
-              <span>Order Packaged & On The Way</span>
+              <span>Done packing, on my way</span>
               <ArrowRight className="w-4 h-4" />
             </button>
+          )}
+          {isAssignedToMe && ord.status === 'Packing' && (
+            <p className="mt-1.5 text-[10px] text-slate-500 text-center">
+              Tap this when you leave for this student's hostel. They get a {INSIDE_ARRIVAL_MINUTES}-minute countdown and it marks delivered when it ends.
+            </p>
+          )}
+
+          {/* 15-minute arrival countdown */}
+          {isAssignedToMe && ord.status === 'On the way' && insideArrivalLeftMs(ord, nowMs) !== null && (
+            <div className="mb-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-900 flex items-center justify-between gap-2">
+              <span className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5" /> Be at {roomText(ord)} in
+              </span>
+              <span className="font-mono text-sm font-black text-[#0e9f55]">{mmss(insideArrivalLeftMs(ord, nowMs) as number)}</span>
+            </div>
+          )}
+
+          {/* The student says it never arrived */}
+          {ord.notReceived && !ord.notReceived.resolvedAt && (
+            <div className="mb-2 p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-[11px] font-bold text-rose-700 dark:text-rose-300 flex items-start gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>The student says they haven't received this order. Call them now. Admin has been told.</span>
+            </div>
           )}
 
           {/* If assigned to me and currently en route */}

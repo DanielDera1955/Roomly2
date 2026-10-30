@@ -1098,9 +1098,6 @@ export default function App() {
           {/* Delivery bar: changes with the toggle above */}
           <DeliveryPromiseBanner mode={sourceMode} tab={lastGroup} />
 
-          {/* Search Bar */}
-          <SearchBar query={searchQuery} onChange={setSearchQuery} />
-
           {!searchQuery && <InstallBanner variant="home" />}
 
           {!searchQuery && (
@@ -1122,18 +1119,21 @@ export default function App() {
             />
           )}
 
-          {/* Two categories per side */}
-          {!searchQuery && (
-            <CategoryNav
-              side={sourceMode}
-              selected={selectedTab}
-              onSelect={setSelectedTab}
-              filters={groupFilters}
-              selectedFilter={selectedFilter}
-              onSelectFilter={setSelectedFilter}
-              requestCount={customRequest ? 1 : 0}
-            />
-          )}
+          {/* Store Items / Food toggle, then search, then category chips and request */}
+          <CategoryNav
+            side={sourceMode}
+            selected={selectedTab}
+            onSelect={(t) => {
+              setSelectedTab(t);
+              setSearchQuery('');
+            }}
+            filters={groupFilters}
+            selectedFilter={selectedFilter}
+            onSelectFilter={setSelectedFilter}
+            requestCount={customRequest ? 1 : 0}
+            searching={Boolean(searchQuery)}
+            searchSlot={<SearchBar query={searchQuery} onChange={setSearchQuery} />}
+          />
 
           {/* Request Tab vs Product Grid */}
           {!searchQuery && selectedTab === 'Request' ? (

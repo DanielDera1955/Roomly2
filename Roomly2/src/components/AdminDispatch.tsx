@@ -14,6 +14,8 @@ import {
   settlementState,
   getRunnerOffMap,
   setRunnerAdminOff,
+  autoDeliverOverdue,
+  resolveNotReceived,
 } from '../api.js';
 import { OrderRecord, locationText } from '../types';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
@@ -301,6 +303,23 @@ export const AdminDispatch: React.FC = () => {
 
   useEffect(() => subscribeOrders((list: OrderRecord[]) => setOrders(list || [])), []);
 
+  // Backup for the runner's 15-minute timer: if the runner's app is closed, admin marks overdue inside orders delivered
+  useEffect(() => {
+    const run = () => autoDeliverOverdue(orders).catch(() => 0);
+    run();
+    const id = window.setInterval(run, 60000);
+    return () => window.clearInterval(id);
+  }, [orders]);
+
+  // Students who tapped "I haven't received it"
+  const notReceived = orders.filter((o) => o.notReceived && !o.notReceived.resolvedAt);
+  const resolveFlag = async (o: OrderRecord) => {
+    const note = window.prompt('How was it sorted? (optional, e.g. delivered late, refunded)') ?? null;
+    if (note === null) return;
+    const done = await resolveNotReceived(o.id, note.trim());
+    if (!done) window.alert('Could not save. Please try again.');
+  };
+
   const inSection = useMemo(() => (section === 'all' ? orders : orders.filter((o) => sectionOf(o) === section)), [orders, section]);
   const counts = {
     active: inSection.filter((o) => orderStage(o) === 'active').length,
@@ -317,6 +336,35 @@ export const AdminDispatch: React.FC = () => {
 
   return (
     <div className="space-y-3">
+      {notReceived.length > 0 && (
+        <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 space-y-2">
+          <p className="text-xs font-black uppercase tracking-wider text-rose-700 dark:text-rose-300">
+            Not received ({notReceived.length})
+          </p>
+          <p className="text-[11px] text-rose-700/80 dark:text-rose-300/80">
+            These students say their order never reached their room. Call the student and the runner, then mark it resolved.
+          </p>
+          {notReceived.map((o) => (
+            <div key={o.id} className="p-2.5 rounded-xl bg-white dark:bg-slate-900 text-xs space-y-1.5">
+              <p className="font-bold text-slate-900 dark:text-white">
+                {o.name} <span className="font-mono font-normal text-slate-400">{o.id}</span>
+              </p>
+              <p className="text-[11px] text-slate-500">
+                {locationText(o)} · Student {o.phone} · Runner {o.runnerName || 'none'}
+                {o.runnerPhone ? ` (${o.runnerPhone})` : ''}
+                {o.autoDelivered ? ' · Marked delivered by the 15-minute timer' : ' · Runner tapped Delivered'}
+              </p>
+              <button
+                type="button"
+                onClick={() => resolveFlag(o)}
+                className="px-3 py-1.5 rounded-lg bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-[11px] font-bold cursor-pointer"
+              >
+                Mark resolved
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <Pills value={section} onChange={setSection} options={[['all', 'All'], ['inside', 'Inside'], ['store', 'Outside Store'], ['food', 'Food']]} />
       <div className={card}>
         <p className="text-xs font-black uppercase tracking-wider text-slate-500">{SECTION_LABEL[section]}</p>

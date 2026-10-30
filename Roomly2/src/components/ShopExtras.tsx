@@ -339,7 +339,7 @@ export const FeaturedRow: React.FC<{
   return (
     <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 shadow-[0_2px_10px_-4px_rgba(15,60,40,0.15)] space-y-2">
       <p className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-        <Star className="w-3.5 h-3.5 text-amber-500" /> Featured
+        <Star className="w-3.5 h-3.5 text-amber-500" /> Featured: Most Bought Items
       </p>
       {/* Cards are sized so about 2.5 show on any phone: the cut-off card tells students to swipe */}
       <div className="flex gap-2 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-px-3 -mx-3 px-3">

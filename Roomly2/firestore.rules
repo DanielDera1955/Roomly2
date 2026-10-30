@@ -209,7 +209,11 @@ service cloud.firestore {
         || (signedIn() && (resource.data.providerKey == request.auth.uid || resource.data.providerKey == request.auth.token.email));
       allow create: if request.resource.data.orderId == orderId
         && exists(/databases/$(database)/documents/orders/$(orderId))
-        && get(/databases/$(database)/documents/orders/$(orderId)).data.status == 'Delivered'
+        && (get(/databases/$(database)/documents/orders/$(orderId)).data.status == 'Delivered'
+            // Inside: the 15-minute timer ran out but no runner or admin app has marked it yet
+            || (get(/databases/$(database)/documents/orders/$(orderId)).data.status == 'On the way'
+                && get(/databases/$(database)/documents/orders/$(orderId)).data.get('onTheWayAtMs', 0) > 0
+                && request.time.toMillis() >= get(/databases/$(database)/documents/orders/$(orderId)).data.onTheWayAtMs + 900000))
         && request.resource.data.score is int
         && request.resource.data.score >= 1 && request.resource.data.score <= 5
         && request.resource.data.reasons.size() <= 6
@@ -297,6 +301,14 @@ service cloud.firestore {
          && resource.data.express.get('runnerDeliveredAt', null) != null
          && request.resource.data.express.get('runnerDeliveredAt', null) == null
          && request.resource.data.express.diff(resource.data.express).affectedKeys().hasOnly(['runnerDeliveredAt', 'notHereCount', 'lastNotHereAt'])) ||
+        // Inside: the student taps "I haven't received it" once the runner's 15 minutes have passed
+        // (on an order still "On the way", or one marked Delivered). Only adds the flag.
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['notReceived', 'history'])
+         && resource.data.get('cart', 'inside') == 'inside'
+         && resource.data.status in ['On the way', 'Delivered']
+         && resource.data.get('notReceived', null) == null
+         && request.time.toMillis() >= resource.data.get('onTheWayAtMs', 0) + 900000
+         && request.resource.data.notReceived.keys().hasOnly(['atMs', 'at'])) ||
         // Customers mark that they paid the runner who accepted their gate pickup (nothing else changes)
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['gatePickup', 'history'])
          && resource.data.get('gatePickup', null) != null

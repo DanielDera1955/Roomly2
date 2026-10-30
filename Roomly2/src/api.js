@@ -38,6 +38,9 @@ import {
   OUTSIDE_DAYS_AHEAD,
   outsideDeliveryText,
   longDayLabel,
+  INSIDE_ARRIVAL_MINUTES,
+  NOT_RECEIVED_WINDOW_HOURS,
+  insideTimerOrder,
 } from './config.ts';
 import { db, auth } from './firebase.ts';
 import { CLOUDINARY } from './cloudinary.ts';
@@ -1513,6 +1516,9 @@ async function startPackagingOrder__raw(orderId, runnerId, runnerName, runnerPho
 }
 
 /** @returns {Promise<any>} */
+/** Who the history shows when the 15-minute timer marks an inside order delivered */
+export const AUTO_DELIVERED_BY = 'Auto (15-minute timer)';
+
 async function updateOrderStatus__raw(orderId, newStatus, updatedBy = 'Admin', note = '') {
   try {
     let becameDelivered = false;
@@ -1527,6 +1533,7 @@ async function updateOrderStatus__raw(orderId, newStatus, updatedBy = 'Admin', n
 
       if (newStatus === 'Delivered') {
         o.deliveredAt = now;
+        if (updatedBy === AUTO_DELIVERED_BY) o.autoDelivered = true;
         // Express: the runner's time stands if the student forgets to tap "Received"
         if (o.express && o.express.status === 'accepted' && !o.express.runnerDeliveredAt) {
           o.express = { ...o.express, runnerDeliveredAt: now };
@@ -1541,6 +1548,9 @@ async function updateOrderStatus__raw(orderId, newStatus, updatedBy = 'Admin', n
       } else if (newStatus === 'On the way') {
         o.runnerCurrentLocation = 'En route to student hostel/lodge';
         o.runnerLocationUpdatedAt = now;
+        // Starts the 15-minute arrival timer the student sees
+        o.onTheWayAt = now;
+        o.onTheWayAtMs = Date.now();
       } else if (newStatus === 'Packing') {
         o.runnerCurrentLocation = 'At Campus Store / Kitchen (Packaging items)';
         o.runnerLocationUpdatedAt = now;
@@ -3682,4 +3692,80 @@ export async function decideCatalogRequest(r, approve, adminNote = '') {
   const res = await decideCatalogRequest__raw(r, approve, adminNote);
   logActivity('request', `${approve ? 'approved' : 'declined'} a ${r?.type === 'price' ? 'price change' : 'new product'} request${r?.name ? ` for ${r.name}` : ''}`);
   return res;
+}
+
+
+/* ---------------------- inside 15-minute arrival timer ---------------------- */
+
+/** Staff only (runner portal / admin): mark normal inside orders delivered once their 15 minutes have run out */
+/** @returns {Promise<number>} */
+export async function autoDeliverOverdue(orders) {
+  const limit = INSIDE_ARRIVAL_MINUTES * 60000;
+  const due = (orders || []).filter(
+    (o) => o && o.status === 'On the way' && insideTimerOrder(o) && Date.now() - Number(o.onTheWayAtMs) >= limit
+  );
+  let done = 0;
+  for (const o of due) {
+    try {
+      const u = await updateOrderStatus(
+        o.id,
+        'Delivered',
+        AUTO_DELIVERED_BY,
+        'Marked delivered automatically: 15 minutes passed since the runner left'
+      );
+      if (u) done++;
+    } catch (e) {
+      console.error('Auto delivery failed', o.id, e);
+    }
+  }
+  return done;
+}
+
+/** Can the student still tap "I haven't received it" on this inside order? */
+export function canFlagNotReceived(o, nowMs = Date.now()) {
+  if (!o || o.notReceived || !insideTimerOrder(o)) return false;
+  const left = INSIDE_ARRIVAL_MINUTES * 60000 - (nowMs - Number(o.onTheWayAtMs));
+  if (o.status === 'On the way') return left <= 0;
+  if (o.status !== 'Delivered') return false;
+  const del = Date.parse(o.deliveredAt || '');
+  return !Number.isFinite(del) || nowMs - del < NOT_RECEIVED_WINDOW_HOURS * 3600000;
+}
+
+/** Student: the order was marked delivered (or the timer ran out) but it never reached the room. Flags it to admin. */
+/** @returns {Promise<any>} */
+export async function markNotReceived(orderId) {
+  try {
+    const o = await patchOrder(orderId, (ord) => {
+      if (!canFlagNotReceived(ord)) return;
+      const nowMs = Date.now();
+      ord.notReceived = { atMs: nowMs, at: new Date(nowMs).toISOString() };
+      ord.history.push({
+        status: ord.status,
+        timestamp: ord.notReceived.at,
+        note: "Student says they haven't received this order",
+        updatedBy: ord.name || 'Customer',
+      });
+    });
+    if (o && o.notReceived) logActivity('order', `student flagged ${orderLabel(o)} as not received`, orderId);
+    return o;
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
+}
+
+/** Admin: close a "not received" flag once it has been sorted out with the student and runner */
+/** @returns {Promise<any>} */
+export async function resolveNotReceived(orderId, note = '') {
+  try {
+    return await patchOrder(orderId, (o) => {
+      if (!o.notReceived || o.notReceived.resolvedAt) return;
+      const now = new Date().toISOString();
+      o.notReceived = { ...o.notReceived, resolvedAt: now, resolvedNote: note };
+      o.history.push({ status: o.status, timestamp: now, note: `Not received flag resolved${note ? `: ${note}` : ''}`, updatedBy: 'Admin' });
+    });
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
 }

@@ -32,8 +32,10 @@ import {
   EXPRESS_ACCEPT_MINUTES,
   EXPRESS_CONFIRM_MINUTES,
   GATE_ARRIVAL_MINUTES,
+  INSIDE_ARRIVAL_MINUTES,
+  insideArrivalLeftMs,
 } from '../config';
-import { markPaymentSent, paymentState, requestGatePickup, markGatePickupPaid, getPayProvider, cancelExpress, markExpressReceived, markExpressNotHere, cancelGatePickup, gateExpired, gateCancelIn, gateCanAskAgain } from '../api.js';
+import { markPaymentSent, paymentState, requestGatePickup, markGatePickupPaid, getPayProvider, cancelExpress, markExpressReceived, markExpressNotHere, cancelGatePickup, gateExpired, gateCancelIn, gateCanAskAgain, markNotReceived, canFlagNotReceived } from '../api.js';
 import { RateExperience } from './RateExperience';
 import { InstallBanner } from './InstallPrompt';
 
@@ -238,7 +240,8 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
   const clockRunning = Boolean(
     (ex && ex.status !== 'cancelled' && !ex.receivedAt) ||
       (currentOrder?.gatePickup?.status === 'pending' && !gateExpired(currentOrder.gatePickup)) ||
-      (isOutside && currentOrder?.status === 'Delivered' && currentOrder?.deliveredAt && Date.now() - Date.parse(currentOrder.deliveredAt) < GATE_ARRIVAL_MINUTES * 60000)
+      (isOutside && currentOrder?.status === 'Delivered' && currentOrder?.deliveredAt && Date.now() - Date.parse(currentOrder.deliveredAt) < GATE_ARRIVAL_MINUTES * 60000) ||
+      (currentOrder?.status === 'On the way' && (insideArrivalLeftMs(currentOrder, Date.now()) ?? 0) > 0)
   );
   useEffect(() => {
     if (!clockRunning) return;
@@ -277,6 +280,20 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
     setExBusy(false);
   };
   const waitingMs = ex && ex.status === 'requested' ? nowMs - Date.parse(ex.requestedAt) : 0;
+  // Inside: 15-minute countdown from "Done packing, on my way". When it runs out the order shows as delivered.
+  const insideLeftMs = currentOrder && currentOrder.status === 'On the way' ? insideArrivalLeftMs(currentOrder, nowMs) : null;
+  const insideTimeUp = insideLeftMs !== null && insideLeftMs <= 0;
+  const shownDelivered = currentOrder?.status === 'Delivered' || insideTimeUp;
+  const [flagBusy, setFlagBusy] = useState(false);
+  const flagNotReceived = async () => {
+    if (!currentOrder) return;
+    if (!window.confirm("Tell Roomly you haven't received this order? Your runner and admin will be told right away.")) return;
+    setFlagBusy(true);
+    const updated = await markNotReceived(currentOrder.id);
+    if (updated) setCurrentOrder(updated as OrderRecord);
+    else window.alert('Could not send. Please try again or call your runner.');
+    setFlagBusy(false);
+  };
   // Outside: after "Order delivered", a 15-minute countdown to the gate
   const gateLeftMs =
     isOutside && currentOrder?.status === 'Delivered' && currentOrder?.deliveredAt
@@ -735,7 +752,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                       Your items are currently being gathered and packaged at the campus kitchen / store. Once complete, your runner will head directly to {shortLocation(currentOrder)}.
                     </p>
                   </div>
-                ) : currentOrder.status === 'On the way' ? (
+                ) : currentOrder.status === 'On the way' && !insideTimeUp ? (
                   <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-300 dark:border-blue-800/60 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -766,6 +783,21 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                     <p className="text-xs text-blue-900 dark:text-blue-300 leading-snug">
                       Your order has been packaged and is en route to <strong>{shortLocation(currentOrder)}</strong>. Please listen for your runner!
                     </p>
+
+                    {insideLeftMs !== null && insideLeftMs > 0 && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-900">
+                          <span className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300">Your runner should be at your room in</span>
+                          <span className="font-mono text-sm font-extrabold text-[#0e9f55]">{mmss(insideLeftMs)}</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-emerald-100 dark:bg-emerald-950 overflow-hidden">
+                          <div
+                            className="h-full bg-[#0e9f55] transition-all"
+                            style={{ width: `${Math.min(100, Math.max(4, 100 - (insideLeftMs / (INSIDE_ARRIVAL_MINUTES * 60000)) * 100))}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : currentOrder.status === 'Delivered' && isOutside ? (
                   // Outside: the operator tapped "Order delivered". A green bar counts down to the gate.
@@ -799,15 +831,52 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                       </div>
                     )}
                   </div>
-                ) : currentOrder.status === 'Delivered' ? (
-                  <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800/60 flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-[#0e9f55] text-white flex items-center justify-center font-bold shrink-0">
-                      <CheckCircle2 className="w-5 h-5" />
+                ) : shownDelivered ? (
+                  <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800/60 space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-[#0e9f55] text-white flex items-center justify-center font-bold shrink-0">
+                        <CheckCircle2 className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-emerald-950 dark:text-emerald-200">Order Delivered & Handed Over!</h4>
+                        <p className="text-[11px] text-emerald-800 dark:text-emerald-400">Delivered to {shortLocation(currentOrder)}. Enjoy your order!</p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-emerald-950 dark:text-emerald-200">Order Delivered & Handed Over!</h4>
-                      <p className="text-[11px] text-emerald-800 dark:text-emerald-400">Delivered to {shortLocation(currentOrder)}. Enjoy your order!</p>
-                    </div>
+
+                    {currentOrder.notReceived ? (
+                      <p className="text-[11px] font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 rounded-xl p-2.5">
+                        {currentOrder.notReceived.resolvedAt
+                          ? 'Roomly has looked into this. Thanks for letting us know.'
+                          : "We've told your runner and Roomly that you haven't received it. You'll be contacted shortly."}
+                      </p>
+                    ) : (
+                      canFlagNotReceived(currentOrder, nowMs) && (
+                        <div className="space-y-2 pt-2 border-t border-emerald-200/70 dark:border-emerald-900">
+                          <p className="text-[11px] text-emerald-900 dark:text-emerald-300">Still waiting? Call your runner.</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            {currentOrder.runnerPhone ? (
+                              <a
+                                href={`tel:${currentOrder.runnerPhone}`}
+                                className="flex items-center justify-center gap-1 py-2 rounded-xl bg-[#0e9f55] text-white text-xs font-bold"
+                              >
+                                <Phone className="w-3 h-3" />
+                                <span>Call runner</span>
+                              </a>
+                            ) : (
+                              <span />
+                            )}
+                            <button
+                              type="button"
+                              onClick={flagNotReceived}
+                              disabled={flagBusy}
+                              className="py-2 rounded-xl border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-bold cursor-pointer disabled:opacity-60"
+                            >
+                              I haven't received it
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    )}
                   </div>
                 ) : (
                   <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 text-xs text-slate-600 dark:text-slate-300 flex items-center gap-2.5">
@@ -835,15 +904,15 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                     Order Progress
                   </h3>
                   <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-[#0e9f55] dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800/40">
-                    {currentOrder.status === 'Delivered' ? 'Delivered' : STATUS_STEPS[stepIndex].key === 'onway' && currentOrder.area === 'Custom' ? `On the way to ${currentOrder.building}` : STATUS_STEPS[stepIndex].label}
+                    {shownDelivered ? 'Delivered' : STATUS_STEPS[stepIndex].key === 'onway' && currentOrder.area === 'Custom' ? `On the way to ${currentOrder.building}` : STATUS_STEPS[stepIndex].label}
                   </span>
                 </div>
 
                 {/* Timeline */}
                 <div className="relative pl-6 space-y-5 before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200 dark:before:bg-slate-800">
                   {STATUS_STEPS.map((step, idx) => {
-                    const isDone = idx < stepIndex || currentOrder.status === 'Delivered';
-                    const isCurrent = idx === stepIndex && currentOrder.status !== 'Delivered';
+                    const isDone = idx < stepIndex || shownDelivered;
+                    const isCurrent = idx === stepIndex && !shownDelivered;
                     const IconComponent = step.icon;
 
                     return (
@@ -1012,7 +1081,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
               </div>
 
               {/* Rate your experience: one rating per delivered cart, straight to Roomly */}
-              {currentOrder.status === 'Delivered' && <RateExperience order={currentOrder} />}
+              {shownDelivered && <RateExperience order={currentOrder} />}
 
               {/* Chat and call, under the items and total */}
               <div className="space-y-2">

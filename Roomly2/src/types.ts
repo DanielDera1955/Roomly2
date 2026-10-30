@@ -77,6 +77,13 @@ export interface OrderRecord {
   deliveryTime: string; // descriptive window
   createdAt: string;
   deliveredAt?: string;
+  /** Inside: when the runner tapped "Done packing, on my way" (starts the 15-minute timer) */
+  onTheWayAt?: string;
+  onTheWayAtMs?: number;
+  /** Inside: marked delivered by the 15-minute timer, not by the runner */
+  autoDelivered?: boolean;
+  /** Inside: the student tapped "I haven't received it" */
+  notReceived?: { atMs: number; at: string; resolvedAt?: string; resolvedNote?: string };
   items: CartItem[];
   customRequest?: string;
   subtotal: number;

@@ -167,6 +167,23 @@ export const EXPRESS_CONFIRM_MINUTES = 10;
 /** Outside orders: after the operator taps "Order delivered", they reach the school gate within this */
 export const GATE_ARRIVAL_MINUTES = 15;
 
+/** Inside orders: after the runner taps "Done packing, on my way", they should be at the room within this.
+ *  When it runs out the order is marked Delivered automatically (the student can still say it never came). */
+export const INSIDE_ARRIVAL_MINUTES = 15;
+/** How long after delivery the student can still tap "I haven't received it" */
+export const NOT_RECEIVED_WINDOW_HOURS = 3;
+
+/** A normal inside order on its way to the room (express and outside orders have their own clocks) */
+export const insideTimerOrder = (o: any): boolean =>
+  Boolean(o) &&
+  (!o.cart || o.cart === 'inside') &&
+  (!o.express || o.express.status === 'cancelled') &&
+  Number(o.onTheWayAtMs) > 0;
+
+/** Milliseconds left on the 15-minute runner timer (negative once it has run out); null when there is no timer */
+export const insideArrivalLeftMs = (o: any, nowMs: number): number | null =>
+  insideTimerOrder(o) ? INSIDE_ARRIVAL_MINUTES * 60000 - (nowMs - Number(o.onTheWayAtMs)) : null;
+
 /** Rate your experience: the options a student can tick (plus Other with their own words) */
 /** After delivery the student ticks one or more of these. The first means no problem and can't be ticked with a problem. */
 export const RATING_GOOD = 'Arrived as expected';

@@ -13,6 +13,10 @@ interface CategoryNavProps {
   selectedFilter: string;
   onSelectFilter: (f: string) => void;
   requestCount?: number;
+  /** Search box shown right under the Store/Food toggle */
+  searchSlot?: React.ReactNode;
+  /** While the student is searching, hide the chips and request button */
+  searching?: boolean;
 }
 
 const EMOJI: Record<ShopGroup, string> = { store: '🛒', food: '🍛' };
@@ -26,6 +30,8 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
   selectedFilter,
   onSelectFilter,
   requestCount = 0,
+  searchSlot,
+  searching = false,
 }) => {
   return (
     <div className="space-y-2.5">
@@ -53,7 +59,9 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
         })}
       </div>
 
-      {selected !== 'Request' && filters.length > 1 && (
+      {searchSlot}
+
+      {!searching && selected !== 'Request' && filters.length > 1 && (
         <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4 pb-0.5">
           {['All', ...filters].map((f) => {
             const on = selectedFilter.toLowerCase() === f.toLowerCase();
@@ -75,6 +83,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
         </div>
       )}
 
+      {!searching && (
       <button
         type="button"
         onClick={() => onSelect(selected === 'Request' ? 'store' : 'Request')}
@@ -84,6 +93,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
         <span>{selected === 'Request' ? 'Back to items' : "Can't find it? Request an item"}</span>
         {requestCount > 0 && selected !== 'Request' && <span className="w-2 h-2 rounded-full bg-amber-400" />}
       </button>
+      )}
     </div>
   );
 };
