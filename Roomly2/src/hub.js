@@ -70,8 +70,20 @@ export const GAMES = [
   { id: 'freefire', label: 'Free Fire' },
   { id: 'codm', label: 'CODM' },
 ];
-export const CHALLENGE_ACCEPT_HOURS = 48;
-export const POINTS = { win: 10, upset: 15, loss: 5, duck: 10, podium: [50, 30, 15] };
+/** Football games are scored (draws possible); the others are win or lose */
+export const SCORED_GAMES = ['efootball', 'fifa', 'dls'];
+export const READY_CHOICES = [
+  { id: 'today', label: 'Today', days: 0 },
+  { id: '3d', label: '3 days', days: 3 },
+  { id: '1w', label: '1 week', days: 7 },
+];
+/** Rating: everyone starts at 1,000. K decides how much one match moves it. */
+export const RATING = { start: 1000, k: 32, idleDecayPerWeek: 10, crownActiveDays: 14, podium: [40, 25, 15] };
+/** A logged result counts by itself after 24 hours; the opponent can dispute for 3 days */
+export const AUTO_CONFIRM_HOURS = 24;
+export const DISPUTE_HOURS = 72;
+/** You can log a result only against someone you contacted (or who contacted you) through Roomly in this time */
+export const CONTACT_VALID_DAYS = 3;
 
 const DAY = 86400000;
 
@@ -166,7 +178,9 @@ export function blockedReason(type, title, productNames = []) {
     return p.length >= 4 && t.includes(` ${p} `);
   });
   const hit = word || prod;
-  return hit ? `Roomly already delivers "${hit.trim()}" to your room. Order it from Store Items or Food instead.` : '';
+  return hit
+    ? `The school doesn't allow selling "${hit.trim()}" in the hostel. Roomly delivers it to your room: order it from Store Items or Food.`
+    : '';
 }
 
 /* ------------------------------------------------------------------ */
@@ -223,7 +237,7 @@ async function checkPoster(phone, pin) {
 }
 
 /**
- * input: { type, title, price, price2, note, days, photoFile, isPhone, proofFile, imei, name, phone, pin, hostel, productNames }
+ * input: { type, title, price, price2, note, days, photoFile, name, phone, pin, hostel, productNames }
  */
 export async function createListing(input) {
   const type = input.type;
@@ -236,9 +250,6 @@ export async function createListing(input) {
   if (!name) throw new Error('Add your name.');
   if (!input.hostel) throw new Error('Choose your hostel.');
   if (type !== 'wanted' && !input.photoFile) throw new Error('Add a real photo.');
-  if (input.isPhone && (!input.proofFile || String(input.imei || '').replace(/\D/g, '').length < 14)) {
-    throw new Error('Selling a phone needs a photo of the box or receipt and the IMEI (dial *#06#).');
-  }
   const phone = await checkPoster(input.phone, input.pin);
   const uid = await hubUid();
 
@@ -249,7 +260,6 @@ export async function createListing(input) {
   }
 
   const photo = input.photoFile ? await uploadProductImage(input.photoFile) : '';
-  const proof = input.isPhone ? await uploadProductImage(input.proofFile) : '';
   const now = Date.now();
   const days = EXPIRY_DAYS.includes(Number(input.days)) ? Number(input.days) : 7;
   const ref = doc(collection(hubDb, 'hubListings'));
@@ -260,7 +270,7 @@ export async function createListing(input) {
     price2: Math.max(0, Math.round(Number(input.price2) || 0)),
     note: String(input.note || '').trim().slice(0, 300),
     photo,
-    isPhone: Boolean(input.isPhone),
+    isPhone: false,
     ownerUid: uid,
     name,
     phone,
@@ -278,15 +288,6 @@ export async function createListing(input) {
   };
   const batch = writeBatch(hubDb);
   batch.set(ref, listing);
-  if (input.isPhone) {
-    batch.set(doc(hubDb, 'hubPrivate', ref.id), {
-      ownerUid: uid,
-      imei: String(input.imei).replace(/\D/g, '').slice(0, 17),
-      proof,
-      phone,
-      atMs: now,
-    });
-  }
   await batch.commit();
   return { id: ref.id, ...listing };
 }
@@ -358,10 +359,6 @@ export function adminSubscribeReports(cb) {
     () => cb([])
   );
 }
-export async function adminGetPrivate(id) {
-  const s = await getDoc(doc(db, 'hubPrivate', id));
-  return s.exists() ? s.data() : null;
-}
 export async function adminRestoreListing(id) {
   await updateDoc(doc(db, 'hubListings', id), { hidden: false, stolenFlag: false, reportCount: 0, status: 'active', updatedAtMs: Date.now() });
 }
@@ -384,7 +381,23 @@ export function adminSubscribeBans(cb) {
 
 /* ------------------------------------------------------------------ */
 /* Gaming                                                              */
+/*                                                                     */
+/* 1. Join once: name, hostel, phone (private), the games you play.    */
+/* 2. Go "Ready to play": you show with a WhatsApp Challenge button.   */
+/* 3. Play, then one player logs the result. The other confirms, or    */
+/*    it counts by itself after 24 hours (they can dispute for 3 days). */
+/* 4. Ratings are worked out from confirmed results, never stored.     */
 /* ------------------------------------------------------------------ */
+
+const HOUR = 3600000;
+export const isScored = (game) => SCORED_GAMES.includes(game);
+export const gameLabel = (id) => GAMES.find((g) => g.id === id)?.label || id;
+export const playsGame = (g, game) => Boolean(g && !g.banned && (g.games || []).includes(game));
+/** Ready for this game right now? */
+export const readyFor = (g, game, nowMs = Date.now()) => playsGame(g, game) && Number(g.ready?.[game] || 0) > nowMs;
+const appLink = (params) => `${window.location.origin}/?${new URLSearchParams(params).toString()}`;
+export const waShare = (text) => `https://wa.me/?text=${encodeURIComponent(text)}`;
+const waTo = (phone, text) => `https://wa.me/234${String(phone).replace(/\D/g, '').replace(/^0/, '')}?text=${encodeURIComponent(text)}`;
 
 export function subscribeGamers(cb) {
   return onSnapshot(
@@ -393,141 +406,200 @@ export function subscribeGamers(cb) {
     () => cb([])
   );
 }
-/** name, hostel, phone, ids: { efootball: 'id', ... } */
+
+/** name, hostel, phone, games: ['efootball', ...], ids: { efootball: 'optional id' }, freeNote */
 export async function saveGamer(input) {
   const uid = await hubUid();
   const name = String(input.name || '').trim().slice(0, 40);
   if (!name) throw new Error('Add the name other players will see.');
   if (!input.hostel) throw new Error('Choose your hostel.');
   const p = normalizePhone(input.phone);
-  if (!isValidNigerianPhone(p)) throw new Error('Enter a valid 11-digit phone number.');
+  if (!isValidNigerianPhone(p)) throw new Error('Enter your WhatsApp number (11 digits).');
+  const games = GAMES.map((g) => g.id).filter((id) => (input.games || []).includes(id));
+  if (!games.length) throw new Error('Tap at least one game you play.');
   const ids = {};
-  GAMES.forEach((g) => {
-    const v = String(input.ids?.[g.id] || '').trim().slice(0, 40);
-    if (v) ids[g.id] = v;
+  games.forEach((g) => {
+    const v = String(input.ids?.[g] || '').trim().slice(0, 40);
+    if (v) ids[g] = v;
   });
-  if (!Object.keys(ids).length) throw new Error('Add your player ID for at least one game.');
   const ref = doc(hubDb, 'gamers', uid);
   const existing = await getDoc(ref);
-  // The phone stays private (admin only); other players see the name, hostel and player IDs
-  const data = { name, hostel: String(input.hostel).slice(0, 30), ids, updatedAtMs: Date.now() };
+  const data = {
+    name,
+    hostel: String(input.hostel).slice(0, 30),
+    games,
+    ids,
+    freeNote: String(input.freeNote || '').trim().slice(0, 60),
+    updatedAtMs: Date.now(),
+  };
   if (existing.exists()) await updateDoc(ref, data);
-  else await setDoc(ref, { ...data, createdAtMs: Date.now(), banned: false });
-  await setDoc(doc(hubDb, 'gamerPrivate', uid), { phone: p, atMs: Date.now() });
+  else await setDoc(ref, { ...data, ready: {}, createdAtMs: Date.now(), banned: false });
+  const ready = existing.exists() ? existing.data().ready || {} : {};
+  // Phone: readable by other players only while you are "Ready to play" (enforced by the security rules)
+  await setDoc(doc(hubDb, 'gamerContact', uid), { phone: p, readyUntil: maxReady(ready), atMs: Date.now() });
   try {
     localStorage.setItem('roomly_gamer_phone', p);
   } catch {}
   return { id: uid, ...data };
 }
-/** Admin: a player's private phone number */
+const maxReady = (ready) => Math.max(0, ...Object.values(ready || {}).map((v) => Number(v) || 0));
+
+/** Go ready for a game (days 0 = until midnight), or switch it off */
+export async function setReady(game, choice) {
+  const uid = await hubUid();
+  const ref = doc(hubDb, 'gamers', uid);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('Join the leaderboard first.');
+  const ready = { ...(snap.data().ready || {}) };
+  if (!choice) delete ready[game];
+  else {
+    const c = READY_CHOICES.find((x) => x.id === choice) || READY_CHOICES[2];
+    const end = new Date();
+    if (c.days === 0) end.setHours(23, 59, 0, 0);
+    else end.setTime(end.getTime() + c.days * 86400000);
+    ready[game] = end.getTime();
+  }
+  await updateDoc(ref, { ready, updatedAtMs: Date.now() });
+  await updateDoc(doc(hubDb, 'gamerContact', uid), { readyUntil: maxReady(ready), atMs: Date.now() });
+}
+
+/**
+ * Challenge a ready player: records the contact (needed later to log a result) and returns the
+ * WhatsApp link with the message already written.
+ */
+export async function challengeOnWhatsApp(game, me, opp, myRating) {
+  const uid = await hubUid();
+  if (uid === opp.id) throw new Error("That's you.");
+  const c = await getDoc(doc(hubDb, 'gamerContact', opp.id));
+  if (!c.exists() || !c.data().phone) throw new Error(`${opp.name} is no longer ready to play.`);
+  await setDoc(doc(hubDb, 'gameContacts', `${uid}_${opp.id}_${game}`), { from: uid, to: opp.id, game, atMs: Date.now() });
+  const text =
+    `Hi ${opp.name}, I saw you're ready for ${gameLabel(game)} on Roomly Caritas. ` +
+    `I'm ${me.name}${myRating ? ` (rating ${myRating})` : ''}. Let's play? ` +
+    `After the match, one of us logs the score here: ${appLink({ game })}`;
+  return waTo(c.data().phone, text);
+}
+
+/** People you can log a result against for this game: contacted through Roomly in the last 3 days, either way */
+export async function getRecentOpponents(game) {
+  const uid = await knownHubUid();
+  if (!uid) return [];
+  const since = Date.now() - CONTACT_VALID_DAYS * 86400000;
+  const [a, b] = await Promise.all([
+    getDocs(query(collection(hubDb, 'gameContacts'), where('from', '==', uid))),
+    getDocs(query(collection(hubDb, 'gameContacts'), where('to', '==', uid))),
+  ]);
+  const ids = new Set();
+  [...a.docs, ...b.docs].forEach((d) => {
+    const c = d.data();
+    if (c.game === game && Number(c.atMs) >= since) ids.add(c.from === uid ? c.to : c.from);
+  });
+  return [...ids];
+}
+
+/* ---------------------------- results ---------------------------- */
+
+export function subscribeMatches(game, cb) {
+  return onSnapshot(
+    query(collection(hubDb, 'matches'), where('game', '==', game)),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    () => cb([])
+  );
+}
+
+/**
+ * Log a result. myScore / theirScore: goals for football games, or 1 and 0 (who won) for the others.
+ * Returns the WhatsApp share link that asks the opponent to confirm.
+ * @param {string} game
+ * @param {any} me
+ * @param {any} opp
+ * @param {number} myScore
+ * @param {number} theirScore
+ * @param {File | null} [proofFile]
+ */
+export async function logResult(game, me, opp, myScore, theirScore, proofFile = null) {
+  const uid = await hubUid();
+  const a = Math.max(0, Math.min(99, Math.round(Number(myScore) || 0)));
+  const b = Math.max(0, Math.min(99, Math.round(Number(theirScore) || 0)));
+  if (!isScored(game) && a === b) throw new Error('Pick who won.');
+  const proof = proofFile ? await uploadProductImage(proofFile) : '';
+  const ref = doc(collection(hubDb, 'matches'));
+  await setDoc(ref, {
+    game,
+    aUid: uid,
+    bUid: opp.id,
+    aName: me.name,
+    bName: opp.name,
+    scoreA: a,
+    scoreB: b,
+    status: 'pending',
+    loggedAtMs: Date.now(),
+    confirmedAtMs: 0,
+    proofA: proof,
+    proofB: '',
+    disputeNote: '',
+  });
+  const result = isScored(game) ? `${me.name} ${a} - ${b} ${opp.name}` : `${a > b ? me.name : opp.name} won`;
+  return waShare(
+    `${opp.name}, I logged our ${gameLabel(game)} match on Roomly Caritas: ${result}. ` +
+      `Confirm it here: ${appLink({ match: ref.id })} (it counts by itself after ${AUTO_CONFIRM_HOURS} hours).`
+  );
+}
+
+export async function confirmMatch(m) {
+  await hubUid();
+  await updateDoc(doc(hubDb, 'matches', m.id), { status: 'confirmed', confirmedAtMs: Date.now() });
+}
+/** @param {any} m @param {string} note @param {File | null} [proofFile] */
+export async function disputeMatch(m, note, proofFile = null) {
+  await hubUid();
+  const proof = proofFile ? await uploadProductImage(proofFile) : '';
+  await updateDoc(doc(hubDb, 'matches', m.id), { status: 'disputed', disputeNote: String(note || '').slice(0, 200), proofB: proof });
+}
+export async function cancelMatch(m) {
+  await hubUid();
+  await updateDoc(doc(hubDb, 'matches', m.id), { status: 'cancelled' });
+}
+/** Either player adds a screenshot while the admin looks at a dispute */
+export async function addMatchProof(m, file) {
+  const uid = await hubUid();
+  const url = await uploadProductImage(file);
+  await updateDoc(doc(hubDb, 'matches', m.id), { [uid === m.aUid ? 'proofA' : 'proofB']: url });
+}
+
+/** Does this result count towards ratings now? */
+export function matchCounts(m, nowMs = Date.now()) {
+  if (m.status === 'confirmed') return true;
+  return m.status === 'pending' && nowMs - Number(m.loggedAtMs || 0) >= AUTO_CONFIRM_HOURS * HOUR;
+}
+/** Can the opponent still dispute it? */
+export const canDispute = (m, nowMs = Date.now()) =>
+  (m.status === 'pending' || m.status === 'confirmed') && nowMs - Number(m.loggedAtMs || 0) < DISPUTE_HOURS * HOUR;
+
+/* admin */
+export function adminSubscribeDisputes(cb) {
+  return onSnapshot(
+    query(collection(db, 'matches'), where('status', '==', 'disputed')),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    () => cb([])
+  );
+}
+/** Admin: keep as logged, set the right score, or void */
+export async function adminResolveMatch(m, action, scoreA = 0, scoreB = 0) {
+  const patch =
+    action === 'void'
+      ? { status: 'void' }
+      : action === 'score'
+      ? { status: 'confirmed', scoreA: Number(scoreA) || 0, scoreB: Number(scoreB) || 0, confirmedAtMs: Date.now() }
+      : { status: 'confirmed', confirmedAtMs: Date.now() };
+  await updateDoc(doc(db, 'matches', m.id), patch);
+}
 export async function adminGamerPhone(uid) {
-  const s = await getDoc(doc(db, 'gamerPrivate', uid));
+  const s = await getDoc(doc(db, 'gamerContact', uid));
   return s.exists() ? String(s.data().phone || '') : '';
 }
 export async function adminSetGamerBan(uid, banned) {
   await updateDoc(doc(db, 'gamers', uid), { banned: Boolean(banned) });
-}
-
-export function subscribeChallenges(game, cb) {
-  return onSnapshot(
-    query(collection(hubDb, 'challenges'), where('game', '==', game)),
-    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-    () => cb([])
-  );
-}
-export function adminSubscribeDisputes(cb) {
-  return onSnapshot(
-    query(collection(db, 'challenges'), where('status', '==', 'disputed')),
-    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-    () => cb([])
-  );
-}
-
-export const challengeExpired = (c, nowMs = Date.now()) =>
-  c.status === 'pending' && nowMs - Number(c.createdAtMs || 0) >= CHALLENGE_ACCEPT_HOURS * 3600000;
-
-/** Winner of a finished challenge, or '' (not finished, disputed or void) */
-export function challengeWinner(c) {
-  if (c.status === 'void' || c.status === 'cancelled' || c.status === 'declined') return '';
-  if (c.status === 'done' && c.winnerUid) return c.winnerUid;
-  if (c.claimFrom && c.claimFrom === c.claimTo) return c.claimFrom;
-  return '';
-}
-export const challengeDisputed = (c) => c.status === 'disputed' || (c.claimFrom && c.claimTo && c.claimFrom !== c.claimTo && c.status !== 'done' && c.status !== 'void');
-
-export async function sendChallenge(game, me, opponent) {
-  const uid = await hubUid();
-  if (uid === opponent.id) throw new Error("You can't challenge yourself.");
-  await setDoc(doc(collection(hubDb, 'challenges')), {
-    game,
-    fromUid: uid,
-    toUid: opponent.id,
-    fromName: me.name,
-    toName: opponent.name,
-    status: 'pending',
-    createdAtMs: Date.now(),
-    updatedAtMs: Date.now(),
-    respondedAtMs: 0,
-    claimFrom: '',
-    claimTo: '',
-    proofFrom: '',
-    proofTo: '',
-    winnerUid: '',
-  });
-}
-export async function answerChallenge(c, accept) {
-  await hubUid();
-  const now = Date.now();
-  await updateDoc(doc(hubDb, 'challenges', c.id), { status: accept ? 'accepted' : 'declined', respondedAtMs: now, updatedAtMs: now });
-}
-export async function cancelChallenge(c) {
-  await hubUid();
-  await updateDoc(doc(hubDb, 'challenges', c.id), { status: 'cancelled', updatedAtMs: Date.now() });
-}
-/**
- * Both players say who won. Same answer: done. Different answers: disputed, the admin decides.
- * @param {any} c
- * @param {string} winnerUid
- * @param {File | null} [proofFile]
- */
-export async function reportResult(c, winnerUid, proofFile = null) {
-  const uid = await hubUid();
-  const fresh = await getDoc(doc(hubDb, 'challenges', c.id));
-  if (!fresh.exists()) throw new Error('Challenge not found.');
-  const cur = { id: c.id, ...fresh.data() };
-  const mineIsFrom = uid === cur.fromUid;
-  if (!mineIsFrom && uid !== cur.toUid) throw new Error('This is not your match.');
-  const theirs = mineIsFrom ? cur.claimTo : cur.claimFrom;
-  const proof = proofFile ? await uploadProductImage(proofFile) : '';
-  const patch = { updatedAtMs: Date.now() };
-  patch[mineIsFrom ? 'claimFrom' : 'claimTo'] = winnerUid;
-  patch[mineIsFrom ? 'proofFrom' : 'proofTo'] = proof;
-  if (!theirs) {
-    patch.status = 'accepted';
-    patch.winnerUid = '';
-  } else if (theirs === winnerUid) {
-    patch.status = 'done';
-    patch.winnerUid = winnerUid;
-  } else {
-    patch.status = 'disputed';
-    patch.winnerUid = '';
-  }
-  await updateDoc(doc(hubDb, 'challenges', c.id), patch);
-}
-export async function addDisputeProof(c, file) {
-  const uid = await hubUid();
-  const url = await uploadProductImage(file);
-  const key = uid === c.fromUid ? 'proofFrom' : 'proofTo';
-  await updateDoc(doc(hubDb, 'challenges', c.id), { [key]: url, updatedAtMs: Date.now() });
-}
-/** Admin: winnerUid, or '' to void the match */
-export async function adminResolveChallenge(c, winnerUid, note = '') {
-  await updateDoc(doc(db, 'challenges', c.id), {
-    status: winnerUid ? 'done' : 'void',
-    winnerUid: winnerUid || '',
-    resolvedNote: String(note).slice(0, 200),
-    updatedAtMs: Date.now(),
-  });
 }
 
 /* ---------------------------- tournaments ---------------------------- */
@@ -548,13 +620,12 @@ export function subscribeEntries(tid, cb) {
 }
 export async function joinTournament(t, gamer) {
   const uid = await hubUid();
-  const gameId = gamer?.ids?.[t.game];
-  if (!gameId) throw new Error('Add your player ID for this game first.');
+  if (!playsGame(gamer, t.game)) throw new Error(`Add ${gameLabel(t.game)} to your games first.`);
   await setDoc(doc(hubDb, 'tournaments', t.id, 'entries', uid), {
     uid,
     name: gamer.name,
     hostel: gamer.hostel || '',
-    gameId,
+    gameId: gamer.ids?.[t.game] || '',
     paid: false,
     paidAtMs: 0,
     confirmed: Number(t.fee) === 0,
@@ -604,82 +675,101 @@ export async function adminRemoveEntry(tid, uid) {
 /* ---------------------------- leaderboard ---------------------------- */
 
 /**
- * Points per game, worked out from finished challenges and tournament results (nothing is stored,
- * so nobody can edit their own points):
- * - Challenge win +10, or +15 when the loser had more points at the time. Loser -5 (never below 0).
- * - Tournament: 1st +50, 2nd +30, 3rd +15.
- * - Declining or ignoring (48 hours) 2 challenges in a row costs 10 points.
+ * Rating per game, worked out from results that count and tournament places (nothing stored, so
+ * nobody can edit their own rating):
+ * - Everyone starts at 1,000. Beat a stronger player and you gain a lot; beat a weaker one, a little.
+ *   Lose to a weaker player and you lose a lot. A draw moves both a little towards each other.
+ * - Tournament places add a bonus: 1st +40, 2nd +25, 3rd +15.
+ * - No match for a week: -10 per idle week (from the last match).
+ * - The crown goes to the top player who played in the last 14 days.
  */
-export function computeBoard(game, gamers, challenges, tournaments, nowMs = Date.now()) {
-  const players = gamers.filter((g) => !g.banned && g.ids && g.ids[game]);
-  const pts = {};
-  const wins = {};
-  const losses = {};
-  const streak = {};
+export function computeBoard(game, gamers, matches, tournaments, nowMs = Date.now()) {
+  const players = gamers.filter((g) => playsGame(g, game));
+  const rating = {};
+  const w = {};
+  const d = {};
+  const l = {};
+  const last = {};
+  const played = {};
+  const titles = {};
   players.forEach((p) => {
-    pts[p.id] = 0;
-    wins[p.id] = 0;
-    losses[p.id] = 0;
-    streak[p.id] = 0;
+    rating[p.id] = RATING.start;
+    w[p.id] = d[p.id] = l[p.id] = 0;
+    last[p.id] = 0;
+    played[p.id] = 0;
+    titles[p.id] = 0;
   });
-  const has = (id) => Object.prototype.hasOwnProperty.call(pts, id);
+  const has = (id) => Object.prototype.hasOwnProperty.call(rating, id);
   const events = [];
-  challenges
-    .filter((c) => c.game === game)
-    .forEach((c) => {
-      const w = challengeWinner(c);
-      if (w) {
-        const l = w === c.fromUid ? c.toUid : c.fromUid;
-        events.push({ at: Number(c.updatedAtMs || c.createdAtMs || 0), kind: 'match', w, l });
-      } else if (c.status === 'declined') {
-        events.push({ at: Number(c.respondedAtMs || c.updatedAtMs || 0), kind: 'duck', who: c.toUid });
-      } else if (challengeExpired(c, nowMs)) {
-        events.push({ at: Number(c.createdAtMs || 0) + CHALLENGE_ACCEPT_HOURS * 3600000, kind: 'duck', who: c.toUid });
-      }
-    });
+  matches
+    .filter((m) => m.game === game && matchCounts(m, nowMs))
+    .forEach((m) => events.push({ at: Number(m.loggedAtMs || 0), kind: 'match', m }));
   tournaments
     .filter((t) => t.game === game && t.status === 'done' && t.results)
-    .forEach((t) => {
+    .forEach((t) =>
       ['first', 'second', 'third'].forEach((k, i) => {
         const uid = t.results?.[k]?.uid;
-        if (uid) events.push({ at: Number(t.startAtMs || 0), kind: 'podium', who: uid, add: POINTS.podium[i], first: i === 0 });
-      });
-    });
-  events.sort((a, b) => a.at - b.at);
-  const titles = {};
+        if (uid) events.push({ at: Number(t.startAtMs || 0), kind: 'podium', uid, add: RATING.podium[i], first: i === 0 });
+      })
+    );
+  events.sort((x, y) => x.at - y.at);
   events.forEach((e) => {
-    if (e.kind === 'match') {
-      if (!has(e.w) || !has(e.l)) return;
-      pts[e.w] += pts[e.l] > pts[e.w] ? POINTS.upset : POINTS.win;
-      pts[e.l] = Math.max(0, pts[e.l] - POINTS.loss);
-      wins[e.w] += 1;
-      losses[e.l] += 1;
-      streak[e.w] = 0;
-      streak[e.l] = 0;
-    } else if (e.kind === 'duck') {
-      if (!has(e.who)) return;
-      streak[e.who] += 1;
-      if (streak[e.who] >= 2) {
-        pts[e.who] = Math.max(0, pts[e.who] - POINTS.duck);
-        streak[e.who] = 0;
-      }
-    } else if (e.kind === 'podium') {
-      if (!has(e.who)) return;
-      pts[e.who] += e.add;
-      if (e.first) titles[e.who] = (titles[e.who] || 0) + 1;
+    if (e.kind === 'podium') {
+      if (!has(e.uid)) return;
+      rating[e.uid] += e.add;
+      last[e.uid] = Math.max(last[e.uid], e.at);
+      if (e.first) titles[e.uid] += 1;
+      return;
     }
+    const { aUid, bUid, scoreA, scoreB } = e.m;
+    if (!has(aUid) || !has(bUid) || aUid === bUid) return;
+    const sa = scoreA > scoreB ? 1 : scoreA < scoreB ? 0 : 0.5;
+    const ea = 1 / (1 + Math.pow(10, (rating[bUid] - rating[aUid]) / 400));
+    const change = RATING.k * (sa - ea);
+    rating[aUid] += change;
+    rating[bUid] -= change;
+    if (sa === 1) {
+      w[aUid]++;
+      l[bUid]++;
+    } else if (sa === 0) {
+      w[bUid]++;
+      l[aUid]++;
+    } else {
+      d[aUid]++;
+      d[bUid]++;
+    }
+    played[aUid]++;
+    played[bUid]++;
+    last[aUid] = Math.max(last[aUid], e.at);
+    last[bUid] = Math.max(last[bUid], e.at);
   });
-  return players
-    .map((p) => ({
+  const WEEK = 7 * 86400000;
+  const rows = players.map((p) => {
+    const idleWeeks = last[p.id] ? Math.floor((nowMs - last[p.id]) / WEEK) : 0;
+    const shown = Math.round(rating[p.id] - idleWeeks * RATING.idleDecayPerWeek);
+    return {
       id: p.id,
       name: p.name,
       hostel: p.hostel,
-      gameId: p.ids[game],
-      points: pts[p.id],
-      wins: wins[p.id],
-      losses: losses[p.id],
-      titles: titles[p.id] || 0,
-    }))
-    .sort((a, b) => b.points - a.points || b.wins - a.wins || a.losses - b.losses || a.name.localeCompare(b.name))
+      gameId: p.ids?.[game] || '',
+      freeNote: p.freeNote || '',
+      rating: shown,
+      wins: w[p.id],
+      draws: d[p.id],
+      losses: l[p.id],
+      played: played[p.id],
+      titles: titles[p.id],
+      lastMs: last[p.id],
+      active: last[p.id] > 0 && nowMs - last[p.id] <= RATING.crownActiveDays * 86400000,
+      ready: readyFor(p, game, nowMs),
+      readyUntil: Number(p.ready?.[game] || 0),
+    };
+  });
+  const ranked = rows
+    .filter((r) => r.lastMs > 0)
+    .sort((a, b) => b.rating - a.rating || b.wins - a.wins || a.name.localeCompare(b.name))
     .map((r, i) => ({ ...r, rank: i + 1 }));
+  const crownId = ranked.find((r) => r.active)?.id || '';
+  const fresh = rows.filter((r) => r.lastMs === 0).sort((a, b) => Number(b.ready) - Number(a.ready) || a.name.localeCompare(b.name));
+  return { ranked: ranked.map((r) => ({ ...r, crown: r.id === crownId })), fresh };
 }

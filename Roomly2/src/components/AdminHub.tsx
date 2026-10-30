@@ -7,14 +7,14 @@ import {
   saveHubSettings,
   adminSubscribeAllListings,
   adminSubscribeReports,
-  adminGetPrivate,
   adminRestoreListing,
   adminRemoveListing,
   adminBanPhone,
   adminUnbanPhone,
   adminSubscribeBans,
   adminSubscribeDisputes,
-  adminResolveChallenge,
+  adminResolveMatch,
+  isScored,
   adminSetGamerBan,
   adminGamerPhone,
   subscribeGamers,
@@ -170,11 +170,7 @@ const HubSettings: React.FC<{ settings: any }> = ({ settings }) => {
 /* ------------------------------------------------------------------ */
 
 const FlaggedRow: React.FC<{ l: any; reports: any[] }> = ({ l, reports }) => {
-  const [priv, setPriv] = useState<any>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    if (l.isPhone) adminGetPrivate(l.id).then(setPriv).catch(() => {});
-  }, [l.id, l.isPhone]);
   const run = async (fn: () => Promise<any>) => {
     setBusy(true);
     try {
@@ -207,16 +203,6 @@ const FlaggedRow: React.FC<{ l: any; reports: any[] }> = ({ l, reports }) => {
           {r.note ? `: ${r.note}` : ''} <span className="text-slate-400">({timeAgo(r.atMs)})</span>
         </p>
       ))}
-      {priv && (
-        <div className="text-[11px] text-slate-600 dark:text-slate-300 space-y-1">
-          <p>IMEI: {priv.imei}</p>
-          {priv.proof && (
-            <a href={priv.proof} target="_blank" rel="noreferrer" className="text-[#0e9f55] font-bold underline">
-              Box or receipt photo
-            </a>
-          )}
-        </div>
-      )}
       <div className="flex flex-wrap gap-1.5">
         <button type="button" disabled={busy} onClick={() => run(() => adminRestoreListing(l.id))} className={`${btn} bg-[#0e9f55] text-white`}>
           Restore
@@ -249,10 +235,20 @@ const Disputes: React.FC = () => {
   useEffect(() => subscribeGamers(setGamers), []);
   const banned = gamers.filter((g) => g.banned);
 
-  const resolve = async (c: any, winner: string) => {
-    const note = window.prompt(winner ? 'Note (optional)' : 'Cancel this match? Reason (optional)');
-    if (note === null) return;
-    await adminResolveChallenge(c, winner, note);
+  const text = (m: any) =>
+    isScored(m.game) ? `${m.aName} ${m.scoreA} - ${m.scoreB} ${m.bName}` : `${m.scoreA > m.scoreB ? m.aName : m.bName} won`;
+  const setScore = async (m: any) => {
+    const v = window.prompt(
+      isScored(m.game) ? `Correct score as "${m.aName} goals-${m.bName} goals", e.g. 2-1` : `Who won? Type 1 for ${m.aName} or 2 for ${m.bName}`
+    );
+    if (!v) return;
+    if (isScored(m.game)) {
+      const [a, b] = v.split('-').map((x) => Number(x.trim()));
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return window.alert('Use the format 2-1.');
+      await adminResolveMatch(m, 'score', a, b);
+    } else {
+      await adminResolveMatch(m, 'score', v.trim() === '1' ? 1 : 0, v.trim() === '1' ? 0 : 1);
+    }
   };
   const ban = async (uid: string, name: string) => {
     if (!window.confirm(`Ban ${name} from gaming? They drop off every leaderboard.`)) return;
@@ -266,50 +262,50 @@ const Disputes: React.FC = () => {
 
   return (
     <div className={card}>
-      <p className={h}>Disputed challenges ({list.length})</p>
+      <p className={h}>Disputed results ({list.length})</p>
       {list.length === 0 && <p className="text-xs text-slate-400">No disputes.</p>}
-      {list.map((c) => (
-        <div key={c.id} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs space-y-2">
+      {list.map((m) => (
+        <div key={m.id} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs space-y-2">
           <p className="font-bold text-slate-900 dark:text-white">
-            {gameLabel(c.game)}: {c.fromName} vs {c.toName}
+            {gameLabel(m.game)}: {text(m)}
           </p>
           <p className="text-[11px] text-slate-500">
-            {c.fromName} says {c.claimFrom === c.fromUid ? 'they' : c.toName} won. {c.toName} says {c.claimTo === c.toUid ? 'they' : c.fromName} won.
+            Logged by {m.aName} {timeAgo(m.loggedAtMs)}. {m.bName} says: {m.disputeNote || 'no note'}
           </p>
           <div className="flex gap-3 text-[11px]">
-            {c.proofFrom && (
-              <a href={c.proofFrom} target="_blank" rel="noreferrer" className="text-[#0e9f55] font-bold underline">
-                {c.fromName}'s screenshot
+            {m.proofA && (
+              <a href={m.proofA} target="_blank" rel="noreferrer" className="text-[#0e9f55] font-bold underline">
+                {m.aName}'s screenshot
               </a>
             )}
-            {c.proofTo && (
-              <a href={c.proofTo} target="_blank" rel="noreferrer" className="text-[#0e9f55] font-bold underline">
-                {c.toName}'s screenshot
+            {m.proofB && (
+              <a href={m.proofB} target="_blank" rel="noreferrer" className="text-[#0e9f55] font-bold underline">
+                {m.bName}'s screenshot
               </a>
             )}
-            {!c.proofFrom && !c.proofTo && <span className="text-slate-400">No screenshots yet</span>}
+            {!m.proofA && !m.proofB && <span className="text-slate-400">No screenshots yet</span>}
           </div>
           <div className="flex flex-wrap gap-1.5">
-            <button type="button" onClick={() => resolve(c, c.fromUid)} className={`${btn} bg-[#0e9f55] text-white`}>
-              {c.fromName} won
+            <button type="button" onClick={() => adminResolveMatch(m, 'keep')} className={`${btn} bg-[#0e9f55] text-white`}>
+              Keep as logged
             </button>
-            <button type="button" onClick={() => resolve(c, c.toUid)} className={`${btn} bg-[#0e9f55] text-white`}>
-              {c.toName} won
+            <button type="button" onClick={() => setScore(m)} className={`${btn} bg-slate-900 text-white dark:bg-white dark:text-slate-900`}>
+              Set correct result
             </button>
-            <button type="button" onClick={() => resolve(c, '')} className={`${btn} bg-slate-200 dark:bg-slate-700`}>
-              Cancel match
+            <button type="button" onClick={() => window.confirm('Cancel this result?') && adminResolveMatch(m, 'void')} className={`${btn} bg-slate-200 dark:bg-slate-700`}>
+              Cancel result
             </button>
-            <button type="button" onClick={() => callPlayer(c.fromUid)} className={`${btn} text-slate-600 dark:text-slate-300`}>
-              Call {c.fromName}
+            <button type="button" onClick={() => callPlayer(m.aUid)} className={`${btn} text-slate-600 dark:text-slate-300`}>
+              Call {m.aName}
             </button>
-            <button type="button" onClick={() => callPlayer(c.toUid)} className={`${btn} text-slate-600 dark:text-slate-300`}>
-              Call {c.toName}
+            <button type="button" onClick={() => callPlayer(m.bUid)} className={`${btn} text-slate-600 dark:text-slate-300`}>
+              Call {m.bName}
             </button>
-            <button type="button" onClick={() => ban(c.fromUid, c.fromName)} className={`${btn} text-rose-600`}>
-              Ban {c.fromName}
+            <button type="button" onClick={() => ban(m.aUid, m.aName)} className={`${btn} text-rose-600`}>
+              Ban {m.aName}
             </button>
-            <button type="button" onClick={() => ban(c.toUid, c.toName)} className={`${btn} text-rose-600`}>
-              Ban {c.toName}
+            <button type="button" onClick={() => ban(m.bUid, m.bName)} className={`${btn} text-rose-600`}>
+              Ban {m.bName}
             </button>
           </div>
         </div>

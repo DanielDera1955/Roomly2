@@ -65,24 +65,25 @@ const GUIDES: Record<Section, { title: string; points: string[] }> = {
   buysell: {
     title: 'How Buy & Sell works',
     points: [
-      'For your own used items only: stove, bucket, power bank, phone, textbooks. Reselling new stock is not allowed.',
+      "Selling new stock inside the hostel isn't allowed by the school, so Buy & Sell is only for your own used items: stove, bucket, power bank, phone, textbooks.",
+      'Need something new? Order it on Roomly and a runner brings it to your room, or order from Outside school to restock. It is all easy on Roomly.',
       'For sale: sell an item once. For rent: lend it per day and agree a deposit first. Wanted: post what you need and people who have it will contact you.',
       'You choose how long your post stays up: 1, 3, 7 or 14 days. You can have 3 items for sale at a time. Tap "Mark sold" when it is gone.',
-      'Selling a phone? Add a photo of the box or receipt and the IMEI. Only Roomly sees them.',
       'Meet in a public place and check the item before you pay. Anyone selling stolen items is banned and reported.',
-      "Things Roomly already delivers (bread, eggs, bag of water, provisions, food) can't be listed here. Order them from Store Items or Food.",
     ],
   },
   games: {
     title: 'How Games works',
     points: [
-      'Add your gamer name and your player ID for each game you play (eFootball, FIFA, DLS, Free Fire, CODM). Your phone number stays private.',
-      'Leaderboard: each game has its own. The number one player wears the crown.',
-      'Challenge: tap Challenge next to any player, even the leader. They have 48 hours to accept. Play the match, then both of you tap who won.',
-      'If you disagree on the result, upload a screenshot of the final score and Roomly decides.',
-      `Points: win +${10} (+15 if they had more points than you), lose -5. Tournament 1st +50, 2nd +30, 3rd +15. Declining or ignoring 2 challenges in a row costs 10 points.`,
-      'Tournaments: Roomly hosts them on a set date. Tap Join, pay the entry fee (if any) to the account shown, then tap "I\'ve paid". Once Roomly confirms you, you get the players\' WhatsApp group.',
-      'If a tournament does not fill up by the start time, everyone is refunded in full. Challenges are free and there is no betting.',
+      'Join once: your gamer name, hostel, WhatsApp number and the games you play (eFootball, FIFA, DLS, Free Fire, CODM). Player IDs are optional.',
+      'Leaderboard: every game has its own. Everyone starts at 1,000. Beat stronger players to climb faster. The best active player wears the crown as the best in Caritas.',
+      'Go "Ready to play" for today, 3 days or a week. Ready players show a Challenge button that opens WhatsApp with the message already written.',
+      'Challenge any ready player on the leaderboard, including the leader. Agree a time on WhatsApp and play.',
+      'After the match, one of you taps "Log a match result" and enters the score (draws count for football games). Send the confirm link to your opponent.',
+      'If your opponent does not answer in 24 hours, the result counts. They can still dispute it for 3 days with a screenshot, and Roomly decides.',
+      'No match for a week and your rating slowly drops, so keep playing to stay on top.',
+      'Tournaments: Roomly hosts them on a set date. Tap Join, pay the entry fee (if any) to the account shown, then tap "I\'ve paid". If a tournament does not fill up, everyone is refunded in full.',
+      '1v1 challenges are free and there is no betting. Challenge the best in Caritas at any game you play, and see every player on the leaderboard.',
     ],
   },
 };
@@ -419,9 +420,6 @@ const PostForm: React.FC<{
   const [note, setNote] = useState('');
   const [days, setDays] = useState(7);
   const [photo, setPhoto] = useState<File | null>(null);
-  const [isPhone, setIsPhone] = useState(false);
-  const [proof, setProof] = useState<File | null>(null);
-  const [imei, setImei] = useState('');
   const [name, setName] = useState(session.name || '');
   const [phone, setPhone] = useState(session.phone || '');
   const [pin, setPin] = useState(session.pin || '');
@@ -454,9 +452,6 @@ const PostForm: React.FC<{
         note,
         days,
         photoFile: photo,
-        isPhone: type === 'item' && isPhone,
-        proofFile: proof,
-        imei,
         name,
         phone,
         pin,
@@ -563,28 +558,9 @@ const PostForm: React.FC<{
       </label>
 
       {type === 'item' && (
-        <div className="space-y-2">
-          <p className="text-[11px] text-slate-500">
-            Your own used items only, at most {MAX_ITEMS} at a time. Roomly doesn't allow reselling new stock.
-          </p>
-          <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer">
-            <input type="checkbox" checked={isPhone} onChange={(e) => setIsPhone(e.target.checked)} />
-            This is a phone
-          </label>
-          {isPhone && (
-            <div className="space-y-2 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30">
-              <p className="text-[11px] text-amber-800 dark:text-amber-300">
-                Proof of ownership is required. Only Roomly sees the IMEI and the box or receipt photo.
-              </p>
-              <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
-                <Camera className="w-4 h-4 text-amber-600" />
-                <span>{proof ? proof.name : 'Photo of the box or receipt'}</span>
-                <input type="file" accept="image/*" className="hidden" onChange={(e) => setProof(e.target.files?.[0] || null)} />
-              </label>
-              <input value={imei} onChange={(e) => setImei(e.target.value.replace(/\D/g, ''))} inputMode="numeric" className={input} placeholder="IMEI (dial *#06#)" />
-            </div>
-          )}
-        </div>
+        <p className="text-[11px] text-slate-500">
+          Your own used items only, at most {MAX_ITEMS} at a time. The school doesn't allow selling new stock in the hostel.
+        </p>
       )}
 
       <div className="pt-1 border-t border-slate-100 dark:border-slate-800 space-y-2">

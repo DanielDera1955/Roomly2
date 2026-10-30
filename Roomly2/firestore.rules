@@ -263,15 +263,6 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Phone sales: IMEI and box/receipt photo. Only the admin can read them.
-    match /hubPrivate/{id} {
-      allow read: if isAdmin();
-      allow create: if anyUser()
-        && request.resource.data.ownerUid == request.auth.uid
-        && getAfter(/databases/$(database)/documents/hubListings/$(id)).data.ownerUid == request.auth.uid;
-      allow update, delete: if isAdmin();
-    }
-
     match /hubReports/{id} {
       allow read: if isAdmin();
       allow create: if anyUser()
@@ -302,54 +293,65 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    match /gamerPrivate/{uid} {
-      allow read: if isAdmin();
+    // A player's WhatsApp number: other players can open it only while that player is "Ready to play"
+    match /gamerContact/{uid} {
+      allow get: if isAdmin()
+        || (anyUser() && request.auth.uid == uid)
+        || (anyUser() && resource.data.readyUntil > request.time.toMillis());
+      allow list: if isAdmin();
       allow write: if anyUser() && request.auth.uid == uid;
     }
 
-    // 1v1 challenges. Each player can only answer for themselves; points are worked out from these, never stored.
-    match /challenges/{id} {
+    // Who messaged whom through Roomly (needed to log a result). Id = from_to_game.
+    match /gameContacts/{id} {
+      allow get, list: if isAdmin()
+        || (anyUser() && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid));
+      allow create, update: if anyUser()
+        && request.resource.data.from == request.auth.uid
+        && id == request.resource.data.from + '_' + request.resource.data.to + '_' + request.resource.data.game
+        && exists(/databases/$(database)/documents/gamers/$(request.auth.uid))
+        && exists(/databases/$(database)/documents/gamers/$(request.resource.data.to));
+      allow delete: if isAdmin();
+    }
+
+    // Match results. One player logs it; the other confirms or disputes. Ratings are worked out from these.
+    match /matches/{id} {
       function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
       function me() { return request.auth.uid; }
-      // After a player says who won: waiting for the other player, agreed (done) or disputed
-      function resultOk(mine, theirs) {
-        return (theirs == '' && request.resource.data.status == 'accepted' && request.resource.data.winnerUid == '')
-          || (theirs == mine && request.resource.data.status == 'done' && request.resource.data.winnerUid == mine)
-          || (theirs != '' && theirs != mine && request.resource.data.status == 'disputed' && request.resource.data.winnerUid == '');
+      function contact(f, t) {
+        return exists(/databases/$(database)/documents/gameContacts/$(f + '_' + t + '_' + request.resource.data.game))
+          && get(/databases/$(database)/documents/gameContacts/$(f + '_' + t + '_' + request.resource.data.game)).data.atMs
+             >= request.time.toMillis() - 259200000;
       }
       allow read: if true;
       allow create: if anyUser()
-        && request.resource.data.fromUid == me()
-        && request.resource.data.toUid != me()
-        && request.resource.data.status == 'pending'
-        && request.resource.data.claimFrom == '' && request.resource.data.claimTo == ''
-        && request.resource.data.winnerUid == ''
+        && request.resource.data.aUid == me()
+        && request.resource.data.bUid != me()
         && request.resource.data.game in ['efootball', 'fifa', 'dls', 'freefire', 'codm']
+        && request.resource.data.status == 'pending'
+        && request.resource.data.scoreA is int && request.resource.data.scoreA >= 0 && request.resource.data.scoreA <= 99
+        && request.resource.data.scoreB is int && request.resource.data.scoreB >= 0 && request.resource.data.scoreB <= 99
+        && request.resource.data.loggedAtMs > request.time.toMillis() - 600000
+        && request.resource.data.loggedAtMs < request.time.toMillis() + 600000
         && exists(/databases/$(database)/documents/gamers/$(me()))
         && get(/databases/$(database)/documents/gamers/$(me())).data.get('banned', false) == false
-        && exists(/databases/$(database)/documents/gamers/$(request.resource.data.toUid));
+        && exists(/databases/$(database)/documents/gamers/$(request.resource.data.bUid))
+        && (contact(me(), request.resource.data.bUid) || contact(request.resource.data.bUid, me()));
       allow update: if isAdmin()
-        // The challenger cancels before it is answered
-        || (anyUser() && me() == resource.data.fromUid && resource.data.status == 'pending'
-            && changed().hasOnly(['status', 'updatedAtMs']) && request.resource.data.status == 'cancelled')
-        // The challenged player accepts or declines
-        || (anyUser() && me() == resource.data.toUid && resource.data.status == 'pending'
-            && changed().hasOnly(['status', 'respondedAtMs', 'updatedAtMs'])
-            && request.resource.data.status in ['accepted', 'declined'])
-        // The challenger says who won
-        || (anyUser() && me() == resource.data.fromUid && resource.data.status == 'accepted' && resource.data.claimFrom == ''
-            && changed().hasOnly(['claimFrom', 'proofFrom', 'status', 'winnerUid', 'updatedAtMs'])
-            && request.resource.data.claimFrom in [resource.data.fromUid, resource.data.toUid]
-            && resultOk(request.resource.data.claimFrom, resource.data.claimTo))
-        // The challenged player says who won
-        || (anyUser() && me() == resource.data.toUid && resource.data.status == 'accepted' && resource.data.claimTo == ''
-            && changed().hasOnly(['claimTo', 'proofTo', 'status', 'winnerUid', 'updatedAtMs'])
-            && request.resource.data.claimTo in [resource.data.fromUid, resource.data.toUid]
-            && resultOk(request.resource.data.claimTo, resource.data.claimFrom))
-        // Disputed: each player can add a screenshot for the admin
+        // The opponent confirms
+        || (anyUser() && me() == resource.data.bUid && resource.data.status == 'pending'
+            && changed().hasOnly(['status', 'confirmedAtMs']) && request.resource.data.status == 'confirmed')
+        // The opponent disputes, within 3 days of the log (even after it was confirmed or counted)
+        || (anyUser() && me() == resource.data.bUid && resource.data.status in ['pending', 'confirmed']
+            && request.time.toMillis() < resource.data.loggedAtMs + 259200000
+            && changed().hasOnly(['status', 'disputeNote', 'proofB']) && request.resource.data.status == 'disputed')
+        // The logger takes it back before it is confirmed
+        || (anyUser() && me() == resource.data.aUid && resource.data.status == 'pending'
+            && changed().hasOnly(['status']) && request.resource.data.status == 'cancelled')
+        // Screenshots while disputed
         || (anyUser() && resource.data.status == 'disputed'
-            && ((me() == resource.data.fromUid && changed().hasOnly(['proofFrom', 'updatedAtMs']))
-                || (me() == resource.data.toUid && changed().hasOnly(['proofTo', 'updatedAtMs']))));
+            && ((me() == resource.data.aUid && changed().hasOnly(['proofA']))
+                || (me() == resource.data.bUid && changed().hasOnly(['proofB']))));
       allow delete: if isAdmin();
     }
 

@@ -88,14 +88,22 @@ export default function App() {
   // The app opens on the side and category of the student's last placed order (saved on this phone).
   // Nothing saved, or unreadable storage: Inside school > Store Items.
   const lastShop = useMemo(() => {
+    // A WhatsApp link from Games (?game= or ?match=) opens Hostel Hub > Games
+    try {
+      const q = new URLSearchParams(window.location.search);
+      if (q.get('game') || q.get('match')) {
+        localStorage.setItem('roomly_hub_section', 'games');
+        return { side: 'inside', tab: 'hub' } as { side: 'inside' | 'outside'; tab: 'store' | 'food' | 'hub' };
+      }
+    } catch {}
     try {
       const v = JSON.parse(localStorage.getItem('roomly_last_shop') || '{}');
       return {
         side: v.side === 'outside' ? 'outside' : 'inside',
         tab: v.tab === 'food' ? 'food' : 'store',
-      } as { side: 'inside' | 'outside'; tab: 'store' | 'food' };
+      } as { side: 'inside' | 'outside'; tab: 'store' | 'food' | 'hub' };
     } catch {
-      return { side: 'inside', tab: 'store' } as { side: 'inside' | 'outside'; tab: 'store' | 'food' };
+      return { side: 'inside', tab: 'store' } as { side: 'inside' | 'outside'; tab: 'store' | 'food' | 'hub' };
     }
   }, []);
   // Two categories per side: 'store' (Store Items) and 'food' (Cooked Food), plus the Request form
@@ -107,7 +115,7 @@ export default function App() {
   const [sourceMode, setSourceMode] = useState<'inside' | 'outside'>(lastShop.side);
   const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
   // The last section browsed (store or food), so the request form and delivery card know where the student is
-  const [lastGroup, setLastGroup] = useState<'store' | 'food'>(lastShop.tab);
+  const [lastGroup, setLastGroup] = useState<'store' | 'food'>(lastShop.tab === 'food' ? 'food' : 'store');
   useEffect(() => {
     if (selectedTab !== 'Request' && selectedTab !== 'hub') setLastGroup(selectedTab);
   }, [selectedTab]);

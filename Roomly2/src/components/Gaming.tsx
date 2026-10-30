@@ -1,22 +1,28 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Trophy, Swords, Crown, Camera, Loader2, Users, Calendar } from 'lucide-react';
+import { Trophy, Crown, Camera, Loader2, Users, Calendar, MessageCircle } from 'lucide-react';
 import { HOSTELS } from '../config';
 import {
   GAMES,
-  CHALLENGE_ACCEPT_HOURS,
-  POINTS,
+  READY_CHOICES,
+  AUTO_CONFIRM_HOURS,
+  isScored,
+  gameLabel,
+  playsGame,
+  readyFor,
   knownHubUid,
   subscribeGamers,
   saveGamer,
-  subscribeChallenges,
-  sendChallenge,
-  answerChallenge,
-  cancelChallenge,
-  reportResult,
-  addDisputeProof,
-  challengeExpired,
-  challengeWinner,
-  challengeDisputed,
+  setReady,
+  challengeOnWhatsApp,
+  getRecentOpponents,
+  subscribeMatches,
+  logResult,
+  confirmMatch,
+  disputeMatch,
+  cancelMatch,
+  addMatchProof,
+  matchCounts,
+  canDispute,
   subscribeTournaments,
   subscribeEntries,
   subscribeHubSettings,
@@ -30,33 +36,65 @@ const input =
   'w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30';
 const card = 'bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800';
 const naira = (n: number) => `₦${Math.round(n || 0).toLocaleString()}`;
-const gameLabel = (id: string) => GAMES.find((g) => g.id === id)?.label || id;
+const btnGreen = 'rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer disabled:opacity-50';
+const btnDark = 'rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-xs font-bold cursor-pointer disabled:opacity-50';
+const when = (ms: number) => new Date(ms).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+const goTo = (url: string) => {
+  window.location.href = url;
+};
 
 type View = 'board' | 'challenges' | 'tournaments';
 
-/** Gaming: leaderboard per game, free 1v1 challenges, and hosted tournaments */
+/** Read ?game= / ?match= once (from a WhatsApp link), then clean the address bar */
+const linkParams = (() => {
+  try {
+    const p = new URLSearchParams(window.location.search);
+    return { game: p.get('game') || '', match: p.get('match') || '' };
+  } catch {
+    return { game: '', match: '' };
+  }
+})();
+
+/** Gaming: leaderboard per game, "Ready to play" challenges over WhatsApp, and hosted tournaments */
 export const Gaming: React.FC<{ session: { name?: string; phone?: string } }> = ({ session }) => {
   const [game, setGame] = useState<string>(() => {
+    if (GAMES.some((g) => g.id === linkParams.game)) return linkParams.game;
     try {
       return localStorage.getItem('roomly_game') || 'efootball';
     } catch {
       return 'efootball';
     }
   });
-  const [view, setView] = useState<View>('board');
+  const [view, setView] = useState<View>(linkParams.game || linkParams.match ? 'challenges' : 'board');
+  const [focusMatch, setFocusMatch] = useState(linkParams.match);
   const [uid, setUid] = useState('');
   const [gamers, setGamers] = useState<any[]>([]);
-  const [challenges, setChallenges] = useState<any[]>([]);
+  const [matches, setMatches] = useState<any[]>([]);
   const [tournaments, setTournaments] = useState<any[]>([]);
   const [editing, setEditing] = useState(false);
   const [nowMs, setNowMs] = useState(Date.now());
 
   useEffect(() => {
     knownHubUid().then(setUid);
+    if (linkParams.game || linkParams.match) {
+      try {
+        window.history.replaceState(null, '', window.location.pathname);
+      } catch {}
+    }
   }, []);
   useEffect(() => subscribeGamers(setGamers), []);
   useEffect(() => subscribeTournaments(setTournaments), []);
-  useEffect(() => subscribeChallenges(game, setChallenges), [game]);
+  useEffect(() => subscribeMatches(game, setMatches), [game]);
+  // A confirm link names the match, not the game: switch to that match's game once it is known
+  useEffect(() => {
+    if (!focusMatch) return;
+    const unsub = GAMES.map((g) =>
+      subscribeMatches(g.id, (list: any[]) => {
+        if (list.some((m) => m.id === focusMatch)) setGame(g.id);
+      })
+    );
+    return () => unsub.forEach((u) => u());
+  }, [focusMatch]);
   useEffect(() => {
     try {
       localStorage.setItem('roomly_game', game);
@@ -68,9 +106,9 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string } }> = 
   }, []);
 
   const me = gamers.find((g) => g.id === uid) || null;
-  const board = useMemo(() => computeBoard(game, gamers, challenges, tournaments, nowMs), [game, gamers, challenges, tournaments, nowMs]);
-  const myChallenges = challenges.filter((c) => uid && (c.fromUid === uid || c.toUid === uid));
-  const incoming = myChallenges.filter((c) => c.toUid === uid && c.status === 'pending' && !challengeExpired(c, nowMs));
+  const board = useMemo(() => computeBoard(game, gamers, matches, tournaments, nowMs), [game, gamers, matches, tournaments, nowMs]);
+  const myRow = board.ranked.find((r: any) => r.id === uid) || board.fresh.find((r: any) => r.id === uid);
+  const toConfirm = matches.filter((m) => m.bUid === uid && m.status === 'pending');
   const gameTourneys = tournaments.filter((t) => t.game === game && t.status !== 'cancelled');
 
   return (
@@ -82,7 +120,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string } }> = 
             key={g.id}
             type="button"
             onClick={() => setGame(g.id)}
-            className={`shrink-0 whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer ${
+            className={`shrink-0 whitespace-nowrap h-8 px-3 rounded-lg text-xs font-bold cursor-pointer ${
               game === g.id ? 'bg-[#0e9f55] text-white' : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
             }`}
           >
@@ -105,13 +143,14 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string } }> = 
       ) : (
         <div className={`${card} p-3 flex items-center justify-between gap-2`}>
           <div className="min-w-0">
-            <p className="text-xs font-extrabold text-slate-900 dark:text-white truncate">{me.name}</p>
-            <p className="text-[11px] text-slate-500 truncate">
-              {me.ids?.[game] ? `${gameLabel(game)} ID: ${me.ids[game]}` : `Add your ${gameLabel(game)} ID to compete`}
+            <p className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
+              {me.name}
+              {myRow && playsGame(me, game) ? <span className="font-bold text-[#0e9f55]"> · {myRow.rating}</span> : null}
             </p>
+            <p className="text-[11px] text-slate-500 truncate">{(me.games || []).map(gameLabel).join(', ')}</p>
           </div>
           <button type="button" onClick={() => setEditing(true)} className="shrink-0 text-[11px] font-bold text-[#0e9f55] cursor-pointer">
-            Edit IDs
+            Edit
           </button>
         </div>
       )}
@@ -121,7 +160,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string } }> = 
         {(
           [
             ['board', 'Leaderboard'],
-            ['challenges', `Challenges${incoming.length ? ` (${incoming.length})` : ''}`],
+            ['challenges', `Challenges${toConfirm.length ? ` (${toConfirm.length})` : ''}`],
             ['tournaments', 'Tournaments'],
           ] as [View, string][]
         ).map(([v, label]) => (
@@ -129,7 +168,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string } }> = 
             key={v}
             type="button"
             onClick={() => setView(v)}
-            className={`py-2 rounded-xl text-[11px] font-bold cursor-pointer ${
+            className={`h-9 rounded-xl text-[12px] font-bold truncate cursor-pointer ${
               view === v ? 'bg-white dark:bg-slate-900 text-[#0e9f55] shadow-xs' : 'text-slate-500 dark:text-slate-400'
             }`}
           >
@@ -138,8 +177,10 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string } }> = 
         ))}
       </div>
 
-      {view === 'board' && <Leaderboard game={game} board={board} me={me} uid={uid} challenges={challenges} nowMs={nowMs} />}
-      {view === 'challenges' && <Challenges uid={uid} list={myChallenges} gamers={gamers} game={game} nowMs={nowMs} />}
+      {view === 'board' && <Leaderboard game={game} board={board} me={me} uid={uid} myRating={myRow?.rating} />}
+      {view === 'challenges' && (
+        <Challenges game={game} me={me} uid={uid} board={board} matches={matches} nowMs={nowMs} focusMatch={focusMatch} onFocusDone={() => setFocusMatch('')} />
+      )}
       {view === 'tournaments' && <Tournaments list={gameTourneys} me={me} uid={uid} game={game} />}
     </div>
   );
@@ -162,16 +203,19 @@ const GamerForm: React.FC<{ me: any; session: { name?: string; phone?: string };
       return session.phone || '';
     }
   });
+  const [games, setGames] = useState<string[]>(me?.games || []);
   const [ids, setIds] = useState<Record<string, string>>(me?.ids || {});
+  const [freeNote, setFreeNote] = useState(me?.freeNote || '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  const toggle = (g: string) => setGames(games.includes(g) ? games.filter((x) => x !== g) : [...games, g]);
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError('');
     try {
-      const saved = await saveGamer({ name, hostel, phone, ids });
+      const saved = await saveGamer({ name, hostel, phone, games, ids, freeNote });
       onSaved(saved.id);
     } catch (err: any) {
       setError(err?.message || 'Could not save.');
@@ -182,8 +226,8 @@ const GamerForm: React.FC<{ me: any; session: { name?: string; phone?: string };
   return (
     <form onSubmit={save} className={`${card} p-4 space-y-2.5`}>
       <div>
-        <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">{me ? 'Your player IDs' : 'Join the leaderboard'}</h3>
-        <p className="text-[11px] text-slate-500">Challenges are free. Your phone number stays private.</p>
+        <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">{me ? 'Your player profile' : 'Join the leaderboard'}</h3>
+        <p className="text-[11px] text-slate-500">Free. Other players only reach your WhatsApp while you are Ready to play.</p>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} className={input} placeholder="Gamer name" />
@@ -197,27 +241,46 @@ const GamerForm: React.FC<{ me: any; session: { name?: string; phone?: string };
           <option value="Lodge">Lodge</option>
         </select>
       </div>
-      <input value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))} inputMode="numeric" maxLength={11} className={input} placeholder="Phone (for prizes, only Roomly sees it)" />
-      <p className="text-[11px] font-bold text-slate-500 pt-1">Player IDs (fill the games you play)</p>
-      <div className="grid grid-cols-2 gap-2">
-        {GAMES.map((g) => (
-          <input
-            key={g.id}
-            value={ids[g.id] || ''}
-            onChange={(e) => setIds({ ...ids, [g.id]: e.target.value })}
-            maxLength={40}
-            className={input}
-            placeholder={`${g.label} ID`}
-          />
-        ))}
+      <input value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))} inputMode="numeric" maxLength={11} className={input} placeholder="WhatsApp number" />
+      <div>
+        <p className="text-[11px] font-bold text-slate-500 mb-1.5">Games you play</p>
+        <div className="flex flex-wrap gap-1.5">
+          {GAMES.map((g) => (
+            <button
+              key={g.id}
+              type="button"
+              onClick={() => toggle(g.id)}
+              className={`h-8 px-3 rounded-lg text-xs font-bold cursor-pointer ${
+                games.includes(g.id) ? 'bg-[#0e9f55] text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+              }`}
+            >
+              {g.label}
+            </button>
+          ))}
+        </div>
       </div>
+      {games.length > 0 && (
+        <div className="grid grid-cols-2 gap-2">
+          {games.map((g) => (
+            <input
+              key={g}
+              value={ids[g] || ''}
+              onChange={(e) => setIds({ ...ids, [g]: e.target.value })}
+              maxLength={40}
+              className={input}
+              placeholder={`${gameLabel(g)} ID (optional)`}
+            />
+          ))}
+        </div>
+      )}
+      <input value={freeNote} onChange={(e) => setFreeNote(e.target.value)} maxLength={60} className={input} placeholder="Usually free (optional), e.g. evenings after 8pm" />
       {error && <p className="text-[11px] font-semibold text-rose-600">{error}</p>}
       <div className="flex gap-2">
-        <button type="submit" disabled={busy} className="flex-1 py-2.5 rounded-xl bg-[#0e9f55] text-white text-xs font-black cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5">
+        <button type="submit" disabled={busy} className={`flex-1 h-10 ${btnGreen} flex items-center justify-center gap-1.5`}>
           {busy && <Loader2 className="w-4 h-4 animate-spin" />} Save
         </button>
         {onCancel && (
-          <button type="button" onClick={onCancel} className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 cursor-pointer">
+          <button type="button" onClick={onCancel} className="px-4 h-10 rounded-xl text-xs font-bold text-slate-500 cursor-pointer">
             Cancel
           </button>
         )}
@@ -228,79 +291,79 @@ const GamerForm: React.FC<{ me: any; session: { name?: string; phone?: string };
 
 /* ------------------------------------------------------------------ */
 
-const Leaderboard: React.FC<{ game: string; board: any[]; me: any; uid: string; challenges: any[]; nowMs: number }> = ({
-  game,
-  board,
-  me,
-  uid,
-  challenges,
-  nowMs,
-}) => {
-  const [busyId, setBusyId] = useState('');
-  const [msg, setMsg] = useState('');
-  const canChallenge = Boolean(me && me.ids?.[game] && !me.banned);
-  const openWith = (id: string) =>
-    challenges.some(
-      (c) =>
-        ((c.fromUid === uid && c.toUid === id) || (c.fromUid === id && c.toUid === uid)) &&
-        ((c.status === 'pending' && !challengeExpired(c, nowMs)) || (c.status === 'accepted' && !challengeWinner(c)))
-    );
-
-  const challenge = async (row: any) => {
-    setBusyId(row.id);
-    setMsg('');
+const ChallengeButton: React.FC<{ game: string; me: any; row: any; myRating?: number }> = ({ game, me, row, myRating }) => {
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    setBusy(true);
     try {
-      await sendChallenge(game, me, { id: row.id, name: row.name });
-      setMsg(`Challenge sent to ${row.name}. They have ${CHALLENGE_ACCEPT_HOURS} hours to accept.`);
+      goTo(await challengeOnWhatsApp(game, me, row, myRating));
     } catch (e: any) {
-      setMsg(e?.message || 'Could not send the challenge.');
+      window.alert(e?.message || 'Could not open WhatsApp.');
     }
-    setBusyId('');
+    setBusy(false);
   };
-
   return (
-    <div className="space-y-2">
-      <p className="text-[11px] text-slate-500 leading-snug">
-        Win a challenge +{POINTS.win} (+{POINTS.upset} if they had more points). Lose −{POINTS.loss}. Tournament 1st +{POINTS.podium[0]}, 2nd +
-        {POINTS.podium[1]}, 3rd +{POINTS.podium[2]}. Declining or ignoring 2 challenges in a row costs {POINTS.duck} points.
-      </p>
-      {msg && <p className="text-[11px] font-semibold text-[#0e9f55]">{msg}</p>}
-      {board.length === 0 ? (
-        <div className={`${card} text-center py-8 text-xs text-slate-400`}>No {gameLabel(game)} players yet. Add your ID and be number one.</div>
-      ) : (
-        <div className={`${card} divide-y divide-slate-100 dark:divide-slate-800`}>
-          {board.map((r) => (
-            <div key={r.id} className={`flex items-center gap-2.5 p-2.5 ${r.id === uid ? 'bg-emerald-50/60 dark:bg-emerald-950/30' : ''}`}>
-              <span className={`w-6 text-center text-xs font-black ${r.rank === 1 ? 'text-amber-500' : 'text-slate-400'}`}>
-                {r.rank === 1 ? <Crown className="w-4 h-4 inline" /> : r.rank}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
-                  {r.name}
-                  {r.titles > 0 && (
-                    <span className="ml-1 inline-flex items-center gap-0.5 text-[10px] text-amber-600">
-                      <Trophy className="w-3 h-3" />
-                      {r.titles > 1 ? `x${r.titles}` : ''}
-                    </span>
-                  )}
-                </p>
-                <p className="text-[10px] text-slate-500 truncate">
-                  {r.hostel} · {r.wins}W {r.losses}L · ID {r.gameId}
-                </p>
-              </div>
-              <span className="text-xs font-black text-[#0e9f55] w-12 text-right">{r.points}</span>
-              {canChallenge && r.id !== uid && (
-                <button
-                  type="button"
-                  disabled={busyId === r.id || openWith(r.id)}
-                  onClick={() => challenge(r)}
-                  className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-[10px] font-bold cursor-pointer disabled:opacity-40"
-                >
-                  <Swords className="w-3 h-3" /> {openWith(r.id) ? 'Open' : 'Challenge'}
-                </button>
-              )}
-            </div>
+    <button type="button" disabled={busy} onClick={go} className={`shrink-0 h-8 px-2.5 ${btnGreen} flex items-center gap-1 text-[11px]`}>
+      <MessageCircle className="w-3.5 h-3.5" /> Challenge
+    </button>
+  );
+};
+
+const PlayerRow: React.FC<{ r: any; game: string; me: any; uid: string; myRating?: number; ranked: boolean }> = ({ r, game, me, uid, myRating, ranked }) => {
+  const canChallenge = r.ready && r.id !== uid && playsGame(me, game);
+  return (
+    <div className={`flex items-center gap-2.5 p-2.5 ${r.id === uid ? 'bg-emerald-50/60 dark:bg-emerald-950/30' : ''}`}>
+      {ranked && (
+        <span className={`w-6 text-center text-xs font-black ${r.crown ? 'text-amber-500' : 'text-slate-400'}`}>
+          {r.crown ? <Crown className="w-4 h-4 inline" /> : r.rank}
+        </span>
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-extrabold text-slate-900 dark:text-white truncate flex items-center gap-1">
+          <span className="truncate">{r.name}</span>
+          {r.titles > 0 && (
+            <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600">
+              <Trophy className="w-3 h-3" />
+              {r.titles > 1 ? `x${r.titles}` : ''}
+            </span>
+          )}
+          {r.ready && <span className="shrink-0 text-[9px] font-bold uppercase text-[#0e9f55] bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded">Ready</span>}
+        </p>
+        <p className="text-[10px] text-slate-500 truncate">
+          {r.hostel}
+          {ranked ? ` · ${r.wins}W ${r.draws}D ${r.losses}L` : ''}
+          {r.gameId ? ` · ID ${r.gameId}` : ''}
+          {r.ready && r.freeNote ? ` · ${r.freeNote}` : ''}
+        </p>
+      </div>
+      {ranked && <span className="text-xs font-black text-[#0e9f55] w-11 text-right">{r.rating}</span>}
+      {canChallenge && <ChallengeButton game={game} me={me} row={r} myRating={myRating} />}
+    </div>
+  );
+};
+
+const Leaderboard: React.FC<{ game: string; board: any; me: any; uid: string; myRating?: number }> = ({ game, board, me, uid, myRating }) => {
+  if (!board.ranked.length && !board.fresh.length)
+    return <div className={`${card} text-center py-8 text-xs text-slate-400`}>No {gameLabel(game)} players yet. Join and be the first.</div>;
+  return (
+    <div className="space-y-3">
+      {board.ranked.length > 0 ? (
+        <div className={`${card} divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden`}>
+          {board.ranked.map((r: any) => (
+            <PlayerRow key={r.id} r={r} game={game} me={me} uid={uid} myRating={myRating} ranked />
           ))}
+        </div>
+      ) : (
+        <p className="text-[11px] text-slate-500">No results yet. The first confirmed match puts players on the board.</p>
+      )}
+      {board.fresh.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] font-bold text-slate-500">New players (no matches yet)</p>
+          <div className={`${card} divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden`}>
+            {board.fresh.map((r: any) => (
+              <PlayerRow key={r.id} r={r} game={game} me={me} uid={uid} myRating={myRating} ranked={false} />
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -309,121 +372,338 @@ const Leaderboard: React.FC<{ game: string; board: any[]; me: any; uid: string; 
 
 /* ------------------------------------------------------------------ */
 
-const Challenges: React.FC<{ uid: string; list: any[]; gamers: any[]; game: string; nowMs: number }> = ({ uid, list, gamers, game, nowMs }) => {
-  const [busyId, setBusyId] = useState('');
-  const [proofs, setProofs] = useState<Record<string, File | null>>({});
-  const idOf = (u: string) => gamers.find((g) => g.id === u)?.ids?.[game] || '';
+const Challenges: React.FC<{
+  game: string;
+  me: any;
+  uid: string;
+  board: any;
+  matches: any[];
+  nowMs: number;
+  focusMatch: string;
+  onFocusDone: () => void;
+}> = ({ game, me, uid, board, matches, nowMs, focusMatch, onFocusDone }) => {
+  const [logging, setLogging] = useState(false);
+  const [busy, setBusy] = useState('');
+  const plays = playsGame(me, game);
+  const all = [...board.ranked, ...board.fresh];
+  const myRating = all.find((r: any) => r.id === uid)?.rating;
+  const ready = all.filter((r: any) => r.ready && r.id !== uid).sort((a: any, b: any) => (b.rating || 0) - (a.rating || 0));
+  const isReady = readyFor(me, game, nowMs);
+  const toConfirm = matches.filter((m) => m.bUid === uid && m.status === 'pending').sort((a, b) => (a.id === focusMatch ? -1 : b.id === focusMatch ? 1 : 0));
+  const mine = matches
+    .filter((m) => (m.aUid === uid || m.bUid === uid) && !(m.bUid === uid && m.status === 'pending'))
+    .sort((a, b) => (b.loggedAtMs || 0) - (a.loggedAtMs || 0))
+    .slice(0, 15);
 
   const run = async (id: string, fn: () => Promise<any>) => {
-    setBusyId(id);
+    setBusy(id);
     try {
       await fn();
     } catch (e: any) {
       window.alert(e?.message || 'Could not save.');
     }
-    setBusyId('');
+    setBusy('');
   };
 
-  if (!uid) return <div className={`${card} text-center py-8 text-xs text-slate-400`}>Join the leaderboard to send and receive challenges.</div>;
-  const sorted = [...list].sort((a, b) => (b.updatedAtMs || b.createdAtMs || 0) - (a.updatedAtMs || a.createdAtMs || 0));
-  if (!sorted.length) return <div className={`${card} text-center py-8 text-xs text-slate-400`}>No challenges yet. Pick someone on the leaderboard.</div>;
+  if (!uid || !me) return <div className={`${card} text-center py-8 text-xs text-slate-400`}>Join the leaderboard above to challenge players.</div>;
+  if (!plays) return <div className={`${card} text-center py-8 text-xs text-slate-400`}>Add {gameLabel(game)} to your games (tap Edit) to play it.</div>;
 
   return (
-    <div className="space-y-2.5">
-      <p className="text-[11px] text-slate-500">
-        Play, then both of you tap who won. If you disagree, upload a screenshot of the final score and Roomly decides.
-      </p>
-      {sorted.map((c) => {
-        const iAmFrom = c.fromUid === uid;
-        const oppUid = iAmFrom ? c.toUid : c.fromUid;
-        const oppName = iAmFrom ? c.toName : c.fromName;
-        const myClaim = iAmFrom ? c.claimFrom : c.claimTo;
-        const winner = challengeWinner(c);
-        const expired = challengeExpired(c, nowMs);
-        const disputed = challengeDisputed(c);
-        const hoursLeft = Math.max(0, Math.ceil((CHALLENGE_ACCEPT_HOURS * 3600000 - (nowMs - (c.createdAtMs || 0))) / 3600000));
-        let state = '';
-        if (c.status === 'cancelled') state = 'Cancelled';
-        else if (c.status === 'declined') state = iAmFrom ? 'Declined by them' : 'You declined';
-        else if (c.status === 'void') state = 'Cancelled by Roomly';
-        else if (expired) state = iAmFrom ? 'Not accepted in time' : 'You did not answer in time';
-        else if (winner) state = winner === uid ? 'You won' : `${oppName} won`;
-        else if (disputed) state = 'Disputed: Roomly will decide';
-        else if (c.status === 'pending') state = iAmFrom ? `Waiting for them (${hoursLeft}h left)` : `They challenged you (${hoursLeft}h left)`;
-        else if (c.status === 'accepted') state = myClaim ? 'Waiting for them to confirm the result' : 'Accepted: play, then report the result';
-
-        return (
-          <div key={c.id} className={`${card} p-3 space-y-2`}>
-            <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <p className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
-                  {iAmFrom ? 'You' : oppName} vs {iAmFrom ? oppName : 'You'}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  {state}
-                  {idOf(oppUid) ? ` · Their ID ${idOf(oppUid)}` : ''}
-                </p>
-              </div>
-              {winner && <Trophy className={`w-4 h-4 shrink-0 ${winner === uid ? 'text-amber-500' : 'text-slate-300'}`} />}
+    <div className="space-y-3">
+      {/* My ready switch */}
+      <div className={`${card} p-3 space-y-2`}>
+        {isReady ? (
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <p className="text-xs font-extrabold text-[#0e9f55]">You're ready to play {gameLabel(game)}</p>
+              <p className="text-[11px] text-slate-500">Until {when(Number(me.ready?.[game]))}. Players can challenge you on WhatsApp.</p>
             </div>
-
-            {!iAmFrom && c.status === 'pending' && !expired && (
-              <div className="grid grid-cols-2 gap-2">
-                <button type="button" disabled={busyId === c.id} onClick={() => run(c.id, () => answerChallenge(c, true))} className="py-2 rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer">
-                  Accept
-                </button>
-                <button
-                  type="button"
-                  disabled={busyId === c.id}
-                  onClick={() => window.confirm(`Decline? Declining or ignoring 2 challenges in a row costs ${POINTS.duck} points.`) && run(c.id, () => answerChallenge(c, false))}
-                  className="py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold cursor-pointer"
-                >
-                  Decline
-                </button>
-              </div>
-            )}
-            {iAmFrom && c.status === 'pending' && !expired && (
-              <button type="button" disabled={busyId === c.id} onClick={() => run(c.id, () => cancelChallenge(c))} className="text-[11px] font-bold text-rose-600 cursor-pointer">
-                Cancel challenge
-              </button>
-            )}
-
-            {c.status === 'accepted' && !myClaim && !winner && !disputed && (
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300 cursor-pointer">
-                  <Camera className="w-3.5 h-3.5 text-[#0e9f55]" />
-                  <span>{proofs[c.id]?.name || 'Screenshot of the final score (recommended)'}</span>
-                  <input type="file" accept="image/*" className="hidden" onChange={(e) => setProofs({ ...proofs, [c.id]: e.target.files?.[0] || null })} />
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button type="button" disabled={busyId === c.id} onClick={() => run(c.id, () => reportResult(c, uid, proofs[c.id] || null))} className="py-2 rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer">
-                    I won
-                  </button>
-                  <button type="button" disabled={busyId === c.id} onClick={() => run(c.id, () => reportResult(c, oppUid, proofs[c.id] || null))} className="py-2 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-xs font-bold cursor-pointer">
-                    {oppName} won
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {disputed && c.status === 'disputed' && (
-              <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300 cursor-pointer">
-                <Camera className="w-3.5 h-3.5 text-[#0e9f55]" />
-                <span>{(iAmFrom ? c.proofFrom : c.proofTo) ? 'Screenshot sent. Replace it' : 'Upload your screenshot for Roomly'}</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) run(c.id, () => addDisputeProof(c, f));
-                  }}
-                />
-              </label>
-            )}
+            <button type="button" disabled={busy === 'ready'} onClick={() => run('ready', () => setReady(game, null))} className="shrink-0 h-8 px-3 rounded-lg text-[11px] font-bold text-rose-600 border border-rose-200 dark:border-rose-900 cursor-pointer">
+              Turn off
+            </button>
           </div>
-        );
-      })}
+        ) : (
+          <>
+            <div>
+              <p className="text-xs font-extrabold text-slate-900 dark:text-white">Ready to play {gameLabel(game)}?</p>
+              <p className="text-[11px] text-slate-500">Show up as ready so players can challenge you on WhatsApp.</p>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {READY_CHOICES.map((c) => (
+                <button key={c.id} type="button" disabled={busy === 'ready'} onClick={() => run('ready', () => setReady(game, c.id))} className={`h-9 ${c.id === '1w' ? btnGreen : 'rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer'}`}>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Results waiting for me */}
+      {toConfirm.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[11px] font-bold text-slate-500">Confirm these results</p>
+          {toConfirm.map((m) => (
+            <ConfirmCard key={m.id} m={m} game={game} highlight={m.id === focusMatch} onDone={onFocusDone} />
+          ))}
+        </div>
+      )}
+
+      {/* Log a result */}
+      {logging ? (
+        <LogResultForm game={game} me={me} all={all} onClose={() => setLogging(false)} />
+      ) : (
+        <button type="button" onClick={() => setLogging(true)} className={`w-full h-10 ${btnDark}`}>
+          Log a match result
+        </button>
+      )}
+
+      {/* Ready players */}
+      <div className="space-y-1.5">
+        <p className="text-[11px] font-bold text-slate-500">Ready to play now ({ready.length})</p>
+        {ready.length === 0 ? (
+          <div className={`${card} text-center py-6 text-xs text-slate-400`}>Nobody is ready yet. Turn yours on so others can find you.</div>
+        ) : (
+          <div className={`${card} divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden`}>
+            {ready.map((r: any) => (
+              <PlayerRow key={r.id} r={r} game={game} me={me} uid={uid} myRating={myRating} ranked={Boolean(r.rank)} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* My results */}
+      {mine.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] font-bold text-slate-500">My results</p>
+          {mine.map((m) => {
+            const iLogged = m.aUid === uid;
+            const counted = matchCounts(m, nowMs);
+            const state =
+              m.status === 'cancelled'
+                ? 'Taken back'
+                : m.status === 'void'
+                ? 'Cancelled by Roomly'
+                : m.status === 'disputed'
+                ? 'Disputed: Roomly will decide'
+                : m.status === 'confirmed'
+                ? 'Confirmed'
+                : counted
+                ? 'Counted (not answered in 24 hours)'
+                : `Waiting for ${iLogged ? m.bName : 'you'} to confirm`;
+            return (
+              <div key={m.id} className={`${card} p-3 space-y-1.5`}>
+                <p className="text-xs font-bold text-slate-900 dark:text-white">{resultText(m, game)}</p>
+                <p className="text-[11px] text-slate-500">
+                  {state} · {when(m.loggedAtMs)}
+                </p>
+                {iLogged && m.status === 'pending' && !counted && (
+                  <button type="button" disabled={busy === m.id} onClick={() => run(m.id, () => cancelMatch(m))} className="text-[11px] font-bold text-rose-600 cursor-pointer">
+                    Take it back
+                  </button>
+                )}
+                {m.status === 'disputed' && (
+                  <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300 cursor-pointer">
+                    <Camera className="w-3.5 h-3.5 text-[#0e9f55]" />
+                    <span>{(iLogged ? m.proofA : m.proofB) ? 'Screenshot sent. Replace it' : 'Add a screenshot of the final score for Roomly'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) run(m.id, () => addMatchProof(m, f));
+                      }}
+                    />
+                  </label>
+                )}
+                {!iLogged && canDispute(m, nowMs) && m.status !== 'disputed' && m.status !== 'pending' && (
+                  <DisputeButton m={m} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const resultText = (m: any, game: string) =>
+  isScored(game) ? `${m.aName} ${m.scoreA} - ${m.scoreB} ${m.bName}` : `${m.scoreA > m.scoreB ? m.aName : m.bName} beat ${m.scoreA > m.scoreB ? m.bName : m.aName}`;
+
+const DisputeButton: React.FC<{ m: any }> = ({ m }) => {
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!open)
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="text-[11px] font-bold text-rose-600 cursor-pointer">
+        That's not the result
+      </button>
+    );
+  return (
+    <div className="space-y-2 p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/30">
+      <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} className={input} placeholder="What was the real result?" />
+      <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300 cursor-pointer">
+        <Camera className="w-3.5 h-3.5 text-rose-600" />
+        <span>{file ? file.name : 'Screenshot of the final score (recommended)'}</span>
+        <input type="file" accept="image/*" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+      </label>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            await disputeMatch(m, note, file);
+          } catch (e: any) {
+            window.alert(e?.message || 'Could not send.');
+          }
+          setBusy(false);
+        }}
+        className="w-full h-9 rounded-xl bg-rose-600 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+      >
+        Send to Roomly
+      </button>
+    </div>
+  );
+};
+
+const ConfirmCard: React.FC<{ m: any; game: string; highlight: boolean; onDone: () => void }> = ({ m, game, highlight, onDone }) => {
+  const [busy, setBusy] = useState(false);
+  const hoursLeft = Math.max(0, Math.ceil((AUTO_CONFIRM_HOURS * 3600000 - (Date.now() - (m.loggedAtMs || 0))) / 3600000));
+  return (
+    <div className={`${card} p-3 space-y-2 ${highlight ? 'ring-2 ring-[#0e9f55]' : ''}`}>
+      <p className="text-xs font-extrabold text-slate-900 dark:text-white">{resultText(m, game)}</p>
+      <p className="text-[11px] text-slate-500">
+        {m.aName} logged this. It counts by itself in {hoursLeft}h if you don't answer.
+      </p>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            await confirmMatch(m);
+            onDone();
+          } catch (e: any) {
+            window.alert(e?.message || 'Could not confirm.');
+          }
+          setBusy(false);
+        }}
+        className={`w-full h-9 ${btnGreen}`}
+      >
+        Confirm
+      </button>
+      <DisputeButton m={m} />
+    </div>
+  );
+};
+
+const LogResultForm: React.FC<{ game: string; me: any; all: any[]; onClose: () => void }> = ({ game, me, all, onClose }) => {
+  const [opps, setOpps] = useState<any[] | null>(null);
+  const [opp, setOpp] = useState('');
+  const [mine, setMine] = useState('');
+  const [theirs, setTheirs] = useState('');
+  const [winner, setWinner] = useState<'me' | 'them' | ''>('');
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const scored = isScored(game);
+
+  useEffect(() => {
+    getRecentOpponents(game)
+      .then((ids) => setOpps(all.filter((r) => ids.includes(r.id))))
+      .catch(() => setOpps([]));
+  }, [game]);
+
+  const submit = async () => {
+    setError('');
+    const o = all.find((r) => r.id === opp);
+    if (!o) return setError('Pick your opponent.');
+    let a = 0;
+    let b = 0;
+    if (scored) {
+      if (mine === '' || theirs === '') return setError('Enter both scores.');
+      a = Number(mine);
+      b = Number(theirs);
+    } else {
+      if (!winner) return setError('Pick who won.');
+      a = winner === 'me' ? 1 : 0;
+      b = winner === 'me' ? 0 : 1;
+    }
+    setBusy(true);
+    try {
+      const link = await logResult(game, me, o, a, b, file);
+      onClose();
+      goTo(link);
+    } catch (e: any) {
+      setError(e?.message || 'Could not save.');
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div className={`${card} p-4 space-y-2.5`}>
+      <div>
+        <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">Log a {gameLabel(game)} result</h3>
+        <p className="text-[11px] text-slate-500">Then send the confirm link to your opponent on WhatsApp.</p>
+      </div>
+      {opps === null ? (
+        <p className="text-xs text-slate-400">Loading...</p>
+      ) : opps.length === 0 ? (
+        <p className="text-[11px] text-slate-500">
+          You can log a result against players you challenged on WhatsApp through Roomly (or who challenged you) in the last 3 days.
+        </p>
+      ) : (
+        <>
+          <select value={opp} onChange={(e) => setOpp(e.target.value)} className={input}>
+            <option value="">Opponent</option>
+            {opps.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name} ({o.hostel})
+              </option>
+            ))}
+          </select>
+          {scored ? (
+            <div className="grid grid-cols-2 gap-2">
+              <input value={mine} onChange={(e) => setMine(e.target.value.replace(/\D/g, '').slice(0, 2))} inputMode="numeric" className={input} placeholder="Your goals" />
+              <input value={theirs} onChange={(e) => setTheirs(e.target.value.replace(/\D/g, '').slice(0, 2))} inputMode="numeric" className={input} placeholder="Their goals" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {(['me', 'them'] as const).map((w) => (
+                <button
+                  key={w}
+                  type="button"
+                  onClick={() => setWinner(w)}
+                  className={`h-9 rounded-xl text-xs font-bold cursor-pointer ${winner === w ? 'bg-[#0e9f55] text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200'}`}
+                >
+                  {w === 'me' ? 'I won' : 'They won'}
+                </button>
+              ))}
+            </div>
+          )}
+          <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300 cursor-pointer">
+            <Camera className="w-3.5 h-3.5 text-[#0e9f55]" />
+            <span>{file ? file.name : 'Screenshot of the final score (optional)'}</span>
+            <input type="file" accept="image/*" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+          </label>
+        </>
+      )}
+      {error && <p className="text-[11px] font-semibold text-rose-600">{error}</p>}
+      <div className="flex gap-2">
+        {opps && opps.length > 0 && (
+          <button type="button" disabled={busy} onClick={submit} className={`flex-1 h-10 ${btnGreen} flex items-center justify-center gap-1.5`}>
+            {busy && <Loader2 className="w-4 h-4 animate-spin" />} Save and send on WhatsApp
+          </button>
+        )}
+        <button type="button" onClick={onClose} className="px-4 h-10 rounded-xl text-xs font-bold text-slate-500 cursor-pointer">
+          Close
+        </button>
+      </div>
     </div>
   );
 };
@@ -511,11 +791,11 @@ const TournamentCard: React.FC<{ t: any; me: any; uid: string; account: any }> =
       {t.status === 'open' && !mine && (
         <button
           type="button"
-          disabled={busy || full || !me?.ids?.[t.game]}
+          disabled={busy || full || !playsGame(me, t.game)}
           onClick={() => run(() => joinTournament(t, me))}
           className="w-full py-2.5 rounded-xl bg-[#0e9f55] text-white text-xs font-black cursor-pointer disabled:opacity-50"
         >
-          {full ? 'Full' : !me?.ids?.[t.game] ? `Add your ${gameLabel(t.game)} ID to join` : 'Join tournament'}
+          {full ? 'Full' : !playsGame(me, t.game) ? `Add ${gameLabel(t.game)} to your games to join` : 'Join tournament'}
         </button>
       )}
       {mine && !mine.confirmed && fee > 0 && (
