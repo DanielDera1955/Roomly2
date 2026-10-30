@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { NoPhoto } from './NoPhoto';
 import { Plus, Minus, X, RotateCcw, Star, Sparkles } from 'lucide-react';
 import { Product, storeOfSource } from '../config';
 
@@ -17,7 +18,7 @@ const Thumb: React.FC<{ p: Product; big?: boolean }> = ({ p, big }) => {
     <img src={p.imageUrl} alt={p.name} onError={() => setErr(true)} referrerPolicy="no-referrer" className={`${cls} object-cover shrink-0`} />
   ) : (
     <div className={`${cls} shrink-0 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-800/70 flex items-center justify-center`}>
-      <span className={big ? 'text-5xl' : 'text-xl'}>{p.emoji}</span>
+      <NoPhoto name={p.name} className={big ? 'text-5xl' : 'text-xl'} />
     </div>
   );
 };
@@ -320,7 +321,7 @@ export const GreetingCard: React.FC<{
               morning ? 'bg-white/45' : 'bg-white/20'
             }`}
           >
-            🛍 {activeOrders} {activeOrders === 1 ? 'order' : 'orders'} on the way ›
+            {activeOrders} {activeOrders === 1 ? 'order' : 'orders'} on the way ›
           </button>
         )}
       </div>
@@ -401,7 +402,7 @@ export const PairingsBar: React.FC<{
                 }`}
               >
                 <span className="w-8 h-8 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
-                  {p.imageUrl ? <img src={p.imageUrl} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" /> : <span>{p.emoji}</span>}
+                  {p.imageUrl ? <img src={p.imageUrl} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" /> : <NoPhoto name={p.name} />}
                 </span>
                 <span className="min-w-0">
                   <span className="block text-[11px] font-bold text-slate-900 dark:text-white max-w-[110px] truncate">{p.name}</span>

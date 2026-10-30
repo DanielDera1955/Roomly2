@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { NoPhoto } from './NoPhoto';
 import { X, Plus, Minus, Utensils, AlertCircle } from 'lucide-react';
 import { Product } from '../config';
 import { CartItem } from '../types';
@@ -160,7 +161,7 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
             <div
               className={`w-full h-24 rounded-2xl bg-gradient-to-br ${product.gradient} flex items-center justify-center`}
             >
-              <span className="text-4xl filter drop-shadow-sm">{product.emoji}</span>
+              <NoPhoto name={product.name} className="text-4xl" />
             </div>
           )}
 

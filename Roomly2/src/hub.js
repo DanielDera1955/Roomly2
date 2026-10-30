@@ -32,12 +32,18 @@ import { uploadProductImage, getCustomerByPhone, normalizePhone, isValidNigerian
 /* ------------------------------------------------------------------ */
 
 export const HUB_TYPES = [
-  { id: 'service', label: 'Services', emoji: '💈', hint: 'Barbing, hair braiding, laundry, typing and more' },
-  { id: 'item', label: 'Pre-owned', emoji: '📦', hint: 'Your own used items: stove, bucket, power bank, phone, books' },
-  { id: 'wanted', label: 'Looking for', emoji: '🔎', hint: 'Tell everyone what you need' },
-  { id: 'rent', label: 'Rent or lend', emoji: '🔁', hint: 'Lend your stove or other items per day' },
-  { id: 'charging', label: 'Charging', emoji: '🔋', hint: 'Charge phones when there is no light' },
-  { id: 'water', label: 'Water', emoji: '🪣', hint: 'Fetch water for students during scarcity' },
+  { id: 'service', label: 'Service', hint: 'Barbing, hair braiding, laundry, typing and more' },
+  { id: 'charging', label: 'Phone charging', hint: 'Charge phones when there is no light' },
+  { id: 'water', label: 'Water fetching', hint: 'Fetch water for students during scarcity' },
+  { id: 'item', label: 'For sale', hint: 'Your own used items: stove, bucket, power bank, phone, books' },
+  { id: 'rent', label: 'For rent', hint: 'Lend your stove or other items per day' },
+  { id: 'wanted', label: 'Wanted', hint: 'Tell everyone what you need' },
+];
+/** Hostel Hub has three sections. Each listing type lives in one of them. */
+export const HUB_SECTIONS = [
+  { id: 'services', label: 'Services', types: ['service', 'charging', 'water'] },
+  { id: 'buysell', label: 'Buy & Sell', types: ['item', 'rent', 'wanted'] },
+  { id: 'games', label: 'Games', types: [] },
 ];
 /** These never expire; the poster confirms every 30 days that they are still available */
 export const LONG_LIVED = ['service', 'charging', 'water'];

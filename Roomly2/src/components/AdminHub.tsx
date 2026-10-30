@@ -190,7 +190,7 @@ const FlaggedRow: React.FC<{ l: any; reports: any[] }> = ({ l, reports }) => {
         {l.photo && <img src={l.photo} alt="" className="w-14 h-14 rounded-lg object-cover shrink-0" />}
         <div className="min-w-0">
           <p className="font-bold text-slate-900 dark:text-white">
-            {l.stolenFlag ? '🚨 ' : ''}
+            {l.stolenFlag ? 'STOLEN REPORT: ' : ''}
             {l.title}
           </p>
           <p className="text-[11px] text-slate-500">
@@ -472,7 +472,7 @@ const TournamentAdminRow: React.FC<{ t: any; onEdit: () => void }> = ({ t, onEdi
             <div key={e.id} className="flex items-center justify-between gap-2">
               <span className="min-w-0 truncate">
                 {e.name} <span className="text-slate-400">· {e.hostel} · ID {e.gameId}</span>
-                {e.confirmed ? ' ✅' : e.paid ? ' 💸 says paid' : ''}
+                {e.confirmed ? ' · confirmed' : e.paid ? ' · says paid' : ''}
               </span>
               <span className="shrink-0 flex gap-1">
                 {!e.confirmed && (
@@ -517,7 +517,7 @@ const TournamentAdminRow: React.FC<{ t: any; onEdit: () => void }> = ({ t, onEdi
               <p className="text-[11px] font-bold text-slate-500">Results (adds leaderboard points)</p>
               {(['first', 'second', 'third'] as const).map((k, i) => (
                 <select key={k} value={res[k]} onChange={(e) => setRes({ ...res, [k]: e.target.value })} className={input}>
-                  <option value="">{['🥇 1st', '🥈 2nd', '🥉 3rd'][i]}</option>
+                  <option value="">{['1st place', '2nd place', '3rd place'][i]}</option>
                   {confirmed.map((e) => (
                     <option key={e.id} value={e.id}>
                       {e.name}

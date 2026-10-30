@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { NoPhoto } from './NoPhoto';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -833,7 +834,7 @@ export const OrderHistorySection: React.FC<OrderHistorySectionProps> = ({
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-xl select-none">{cat.emoji}</span>
+                    <NoPhoto name={cat.name} className="text-xl" />
                     <div>
                       <h4 className="text-xs font-black text-slate-900 dark:text-white leading-tight">
                         {cat.name}

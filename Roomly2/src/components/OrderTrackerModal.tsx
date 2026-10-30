@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { NoPhoto } from './NoPhoto';
 import { OrderChat } from './OrderChat';
 import { Phone as PhoneIcon } from 'lucide-react';
 import {
@@ -1027,7 +1028,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                             }}
                           />
                         ) : (
-                          <span className="text-xl select-none">{item.emoji || ''}</span>
+                          <NoPhoto name={item.name} className="text-xl" />
                         )}
                       </div>
 

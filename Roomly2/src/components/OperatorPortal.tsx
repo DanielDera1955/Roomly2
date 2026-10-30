@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { NoPhoto } from './NoPhoto';
 import { ChevronDown, Package, Phone, Camera, Loader2, X } from 'lucide-react';
 import {
   subscribeOperatorOrders,
@@ -510,7 +511,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                           {i.imageUrl && !i.imageUrl.startsWith('data:image/svg') ? (
                             <img src={i.imageUrl} alt="" className="w-full h-full object-cover" />
                           ) : (
-                            <span>{i.emoji}</span>
+                            <NoPhoto name={i.name} />
                           )}
                         </div>
                         <div className="min-w-0 flex-1">

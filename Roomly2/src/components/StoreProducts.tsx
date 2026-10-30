@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { NoPhoto } from './NoPhoto';
 import { Camera, CheckCircle2, Loader2, X } from 'lucide-react';
 import {
   getProductsFresh,
@@ -191,7 +192,7 @@ export const OperatorProductsPanel: React.FC = () => {
                       {p.imageUrl ? (
                         <img src={p.imageUrl} alt="" referrerPolicy="no-referrer" className="w-14 h-14 rounded-lg object-cover shrink-0 bg-white dark:bg-slate-900" />
                       ) : (
-                        <span className="w-14 h-14 rounded-lg shrink-0 bg-white dark:bg-slate-900 flex items-center justify-center text-2xl">{p.emoji || '🛍️'}</span>
+                        <span className="w-14 h-14 rounded-lg shrink-0 bg-white dark:bg-slate-900 flex items-center justify-center text-2xl"><NoPhoto name={p.name} /></span>
                       )}
                       <div className="min-w-0 flex-1 space-y-0.5">
                         <p className="font-bold text-slate-900 dark:text-white leading-snug">{p.name}</p>

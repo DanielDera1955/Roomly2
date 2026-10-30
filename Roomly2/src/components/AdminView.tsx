@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { NoPhoto } from './NoPhoto';
 import { OrderChat } from './OrderChat';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { AdminSettlementsPanel } from './SettlementPanel';
@@ -683,7 +684,6 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
-            <span>🏠</span>
             <span>Hub & Games</span>
           </button>
         </div>
@@ -837,7 +837,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                     <option value="">No category (shows under All)</option>
                     {storeCats.map((c) => (
                       <option key={c.name} value={c.name}>
-                        {c.emoji} {c.name}
+                        {c.name}
                       </option>
                     ))}
                   </select>
@@ -874,7 +874,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                           }}
                         />
                       ) : (
-                        <span className="text-2xl select-none">{newProdEmoji}</span>
+                        <NoPhoto name={newProdName} className="text-2xl" />
                       )}
                     </div>
 
@@ -957,17 +957,6 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                     />
                   </div>
 
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-400 block mb-0.5">
-                      Emoji Fallback
-                    </label>
-                    <input
-                      type="text"
-                      value={newProdEmoji}
-                      onChange={(e) => setNewProdEmoji(e.target.value)}
-                      className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
-                    />
-                  </div>
                 </div>
 
                 <div className="flex items-center gap-2 pt-1">
@@ -1033,7 +1022,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                             }}
                           />
                         ) : (
-                          <span className="text-2xl select-none">{p.emoji}</span>
+                          <NoPhoto name={p.name} className="text-2xl" />
                         )}
                       </div>
 
@@ -1295,7 +1284,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                               }}
                             />
                           ) : (
-                            <span className="text-2xl">{editingProduct.emoji}</span>
+                            <NoPhoto name={editingProduct.name} className="text-2xl" />
                           )}
                         </div>
 
@@ -1506,14 +1495,6 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
               <form onSubmit={handleAddCategory} className="flex gap-2">
                 <input
                   type="text"
-                  maxLength={2}
-                  value={newCatEmoji}
-                  onChange={(e) => setNewCatEmoji(e.target.value)}
-                  placeholder="Emoji"
-                  className="w-14 text-center py-2 text-sm bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
-                />
-                <input
-                  type="text"
                   value={newCatName}
                   onChange={(e) => setNewCatName(e.target.value)}
                   placeholder="Category Name (e.g. Pastries, Pharmacy, Electronics)"
@@ -1538,7 +1519,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-2xl select-none">{cat.emoji}</span>
+                      <NoPhoto name={cat.name} className="text-2xl" />
                       <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">
                         {cat.name}
                       </h4>

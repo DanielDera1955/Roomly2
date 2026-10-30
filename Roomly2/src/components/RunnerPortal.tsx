@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { NoPhoto } from './NoPhoto';
 import { OrderChat } from './OrderChat';
 import { ThemeToggle } from './ThemeToggle';
 import { SoundToggle } from './SoundToggle';
@@ -83,7 +84,7 @@ const OrderItemRow: React.FC<{ item: CartItem }> = ({ item }) => {
             className="w-full h-full object-cover"
           />
         ) : (
-          <span className="text-2xl select-none">{item.emoji || ''}</span>
+          <NoPhoto name={item.name} className="text-2xl" />
         )}
         <span className="absolute bottom-0 right-0 bg-[#0e9f55] text-white text-[9px] font-black px-1.5 py-0.2 rounded-tl-lg shadow-xs">
           {item.quantity}x
@@ -519,7 +520,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
               </span>
             </div>
             <p className="text-xs text-rose-800 dark:text-rose-300 leading-snug">
-              ⏳ Student has a <strong>15-minute countdown window</strong> to transfer to Kuda Bank.
+              Student has a <strong>15-minute countdown window</strong> to transfer to Kuda Bank.
               Once student clicks they made the payment, a verification prompt will appear here for you to verify.
             </p>
           </div>

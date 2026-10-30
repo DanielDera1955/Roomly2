@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { NoPhoto } from './NoPhoto';
 import {
   X,
   Plus,
@@ -473,7 +474,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                             }}
                           />
                         ) : (
-                          <span className="text-xl select-none">{item.emoji || ''}</span>
+                          <NoPhoto name={item.name} className="text-xl" />
                         )}
                       </div>
                       <div className="min-w-0">
@@ -1033,7 +1034,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             !items.some((i) => i.productId === suggestWater.id || /water/i.test(i.name)) && (
               <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-900/60">
                 <span className="min-w-0 text-xs text-sky-900 dark:text-sky-100">
-                  <strong className="block">💧 {suggestWater.name}? ₦{suggestWater.price.toLocaleString()}</strong>
+                  <strong className="block">{suggestWater.name}? ₦{suggestWater.price.toLocaleString()}</strong>
                   <span className="text-[11px] text-sky-700 dark:text-sky-300">
                     {isBagOfWater(suggestWater.name) && deliveryFee === DELIVERY_FEES.small
                       ? `A bag is heavy: delivery goes from ₦${DELIVERY_FEES.small} to ₦${DELIVERY_FEES.large}.`

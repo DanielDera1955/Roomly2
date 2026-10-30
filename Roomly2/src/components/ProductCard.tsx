@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { NoPhoto } from './NoPhoto';
 import { Plus, Minus, Utensils } from 'lucide-react';
 import { Product } from '../config';
 
@@ -68,7 +69,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             <div
               className="w-full h-full flex items-center justify-center p-3 select-none"
             >
-              <span className="text-4xl filter drop-shadow-sm">{product.emoji}</span>
+              <NoPhoto name={product.name} className="text-4xl" />
             </div>
           )}
 

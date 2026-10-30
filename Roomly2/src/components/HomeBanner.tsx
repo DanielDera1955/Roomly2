@@ -207,9 +207,7 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
                   <div key={s} className="flex flex-col items-center">
                     <div className="h-5 flex items-end">
                       {i === stepIdx ? (
-                        <span className="rb-bob text-base leading-none" aria-hidden>
-                          🏃
-                        </span>
+                        <span className="rb-bob w-3.5 h-3.5 mb-[3px] rounded-full bg-[#0e9f55] ring-4 ring-emerald-200/70 dark:ring-emerald-900" aria-hidden />
                       ) : (
                         <span
                           className={`w-2.5 h-2.5 rounded-full mb-[5px] ${i < stepIdx ? 'bg-[#0e9f55]' : 'bg-slate-300 dark:bg-slate-600'}`}
@@ -282,7 +280,7 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
                 morning ? 'bg-white/45' : 'bg-white/20'
               }`}
             >
-              🛍 My orders ›
+              My orders ›
             </button>
           </div>
         )}

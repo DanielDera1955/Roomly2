@@ -20,7 +20,8 @@ interface CategoryNavProps {
   searching?: boolean;
 }
 
-const EMOJI: Record<ShopGroup, string> = { store: '🛒', food: '🍛' };
+/** Short tab names so three fit on one line on any phone */
+const shortLabel = (g: ShopGroup, side: 'inside' | 'outside') => (g === 'food' && side === 'inside' ? 'Food' : shopGroupLabel(g, side));
 
 /** Two categories per side: Store Items, and Cooked Food (inside and outside). */
 export const CategoryNav: React.FC<CategoryNavProps> = ({
@@ -36,42 +37,34 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
 }) => {
   return (
     <div className="space-y-2.5">
-      <div className={`grid gap-2 ${side === 'inside' ? 'grid-cols-3' : 'grid-cols-2'}`}>
-        {(['store', 'food'] as ShopGroup[]).map((g) => {
-          const isSelected = selected === g;
+      {/* One slim segmented bar: equal widths, short labels, fits small phones */}
+      <div
+        role="tablist"
+        className={`grid gap-1 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/70 ${side === 'inside' ? 'grid-cols-3' : 'grid-cols-2'}`}
+      >
+        {[
+          ...(['store', 'food'] as ShopGroup[]).map((g) => ({ id: g as ShopTab, label: shortLabel(g, side) })),
+          ...(side === 'inside' ? [{ id: 'hub' as ShopTab, label: 'Hostel Hub' }] : []),
+        ].map((t) => {
+          const isSelected = selected === t.id;
           return (
             <button
-              key={g}
+              key={t.id}
               type="button"
+              role="tab"
+              aria-selected={isSelected}
               onClick={() => {
-                onSelect(g);
+                onSelect(t.id);
                 onSelectFilter('All');
               }}
-              className={`flex items-center justify-center gap-2 p-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer text-center ${
-                isSelected
-                  ? 'bg-[#0e9f55] text-white shadow-md shadow-[#0e9f55]/20 ring-2 ring-[#0e9f55]'
-                  : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
+              className={`h-10 px-1 rounded-xl text-[13px] font-bold truncate transition-all cursor-pointer ${
+                isSelected ? 'bg-white dark:bg-slate-900 text-[#0e9f55] shadow-xs' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
-              <span className="text-lg leading-none select-none">{EMOJI[g]}</span>
-              <span className="leading-tight">{shopGroupLabel(g, side)}</span>
+              {t.label}
             </button>
           );
         })}
-        {side === 'inside' && (
-          <button
-            type="button"
-            onClick={() => onSelect('hub')}
-            className={`flex items-center justify-center gap-2 p-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer text-center ${
-              selected === 'hub'
-                ? 'bg-[#0e9f55] text-white shadow-md shadow-[#0e9f55]/20 ring-2 ring-[#0e9f55]'
-                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
-            }`}
-          >
-            <span className="text-lg leading-none select-none">🏠</span>
-            <span className="leading-tight">Hostel Hub</span>
-          </button>
-        )}
       </div>
 
       {selected !== 'hub' && searchSlot}

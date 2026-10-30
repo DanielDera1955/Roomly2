@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Phone, Flag, Plus, X, ShoppingBag, MessageCircle, Camera, Loader2, BatteryCharging } from 'lucide-react';
+import { Phone, Flag, Plus, X, ShoppingBag, MessageCircle, Camera, Loader2, BatteryCharging, HelpCircle, ChevronDown } from 'lucide-react';
+import { NoPhoto } from './NoPhoto';
 import { HOSTELS } from '../config';
 import {
   HUB_TYPES,
+  HUB_SECTIONS,
   LONG_LIVED,
   EXPIRY_DAYS,
   MAX_ITEMS,
@@ -22,7 +24,8 @@ import {
 } from '../hub.js';
 import { Gaming } from './Gaming';
 
-type HubTab = 'service' | 'item' | 'wanted' | 'rent' | 'charging' | 'water' | 'games';
+type Section = 'services' | 'buysell' | 'games';
+type Kind = 'all' | 'service' | 'charging' | 'water' | 'item' | 'rent' | 'wanted';
 
 interface Props {
   /** Inside-school product names: anything Roomly already sells can't be listed */
@@ -36,16 +39,100 @@ const input =
   'w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30';
 const card = 'bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800';
 const waLink = (phone: string) => `https://wa.me/234${String(phone).replace(/\D/g, '').replace(/^0/, '')}`;
+const typeLabel = (id: string) => HUB_TYPES.find((t) => t.id === id)?.label || '';
+const chip = (on: boolean) =>
+  `shrink-0 whitespace-nowrap h-8 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+    on ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
+  }`;
 
-/** Hostel Hub: services, pre-owned items, looking for, rent or lend, charging, water, and gaming */
-export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore }) => {
-  const [tab, setTab] = useState<HubTab>(() => {
+/* ------------------------------------------------------------------ */
+/* "How this works" guides, one per section                            */
+/* ------------------------------------------------------------------ */
+
+const GUIDES: Record<Section, { title: string; points: string[] }> = {
+  services: {
+    title: 'How Services works',
+    points: [
+      'Students offer skills to other students in the hostel: barbing, hair braiding, laundry, typing, phone charging when there is no light, and fetching water during scarcity.',
+      'To hire someone: find them here, tap Contact, then call or WhatsApp them to agree the price and time.',
+      'To offer a service: tap Post, choose what you offer, add a real photo and your price range.',
+      'Your service stays up. Every 30 days, tap "Still available" in My listings to keep it showing.',
+      'Phone charging: switch "Charging now" on in My listings whenever you can charge, so students see you first.',
+      'Payment is between you and the other student. Roomly takes nothing during launch.',
+      'See something fake? Tap the flag to report it.',
+    ],
+  },
+  buysell: {
+    title: 'How Buy & Sell works',
+    points: [
+      'For your own used items only: stove, bucket, power bank, phone, textbooks. Reselling new stock is not allowed.',
+      'For sale: sell an item once. For rent: lend it per day and agree a deposit first. Wanted: post what you need and people who have it will contact you.',
+      'You choose how long your post stays up: 1, 3, 7 or 14 days. You can have 3 items for sale at a time. Tap "Mark sold" when it is gone.',
+      'Selling a phone? Add a photo of the box or receipt and the IMEI. Only Roomly sees them.',
+      'Meet in a public place and check the item before you pay. Anyone selling stolen items is banned and reported.',
+      "Things Roomly already delivers (bread, eggs, bag of water, provisions, food) can't be listed here. Order them from Store Items or Food.",
+    ],
+  },
+  games: {
+    title: 'How Games works',
+    points: [
+      'Add your gamer name and your player ID for each game you play (eFootball, FIFA, DLS, Free Fire, CODM). Your phone number stays private.',
+      'Leaderboard: each game has its own. The number one player wears the crown.',
+      'Challenge: tap Challenge next to any player, even the leader. They have 48 hours to accept. Play the match, then both of you tap who won.',
+      'If you disagree on the result, upload a screenshot of the final score and Roomly decides.',
+      `Points: win +${10} (+15 if they had more points than you), lose -5. Tournament 1st +50, 2nd +30, 3rd +15. Declining or ignoring 2 challenges in a row costs 10 points.`,
+      'Tournaments: Roomly hosts them on a set date. Tap Join, pay the entry fee (if any) to the account shown, then tap "I\'ve paid". Once Roomly confirms you, you get the players\' WhatsApp group.',
+      'If a tournament does not fill up by the start time, everyone is refunded in full. Challenges are free and there is no betting.',
+    ],
+  },
+};
+
+/** Collapsible guide. Opens by itself the first time a student visits that section. */
+const Guide: React.FC<{ section: Section }> = ({ section }) => {
+  const key = `roomly_hub_guide_${section}`;
+  const [open, setOpen] = useState(() => {
     try {
-      return (localStorage.getItem('roomly_hub_tab') as HubTab) || 'service';
+      return !localStorage.getItem(key);
     } catch {
-      return 'service';
+      return false;
     }
   });
+  useEffect(() => {
+    try {
+      localStorage.setItem(key, '1');
+    } catch {}
+  }, [key]);
+  const g = GUIDES[section];
+  return (
+    <div className="rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-900">
+      <button type="button" onClick={() => setOpen(!open)} className="w-full flex items-center justify-between gap-2 px-3 py-2.5 cursor-pointer text-left">
+        <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-900 dark:text-emerald-200">
+          <HelpCircle className="w-3.5 h-3.5" /> {g.title}
+        </span>
+        <ChevronDown className={`w-4 h-4 text-emerald-700 dark:text-emerald-300 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <ol className="px-3 pb-3 space-y-1.5 list-decimal pl-7 text-[11px] leading-snug text-emerald-950 dark:text-emerald-100">
+          {g.points.map((p, i) => (
+            <li key={i}>{p}</li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+};
+
+/** Hostel Hub: Services, Buy & Sell, Games */
+export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore }) => {
+  const [section, setSection] = useState<Section>(() => {
+    try {
+      const v = localStorage.getItem('roomly_hub_section');
+      return v === 'buysell' || v === 'games' ? v : 'services';
+    } catch {
+      return 'services';
+    }
+  });
+  const [kind, setKind] = useState<Kind>('all');
   const [listings, setListings] = useState<any[]>([]);
   const [settings, setSettings] = useState<any>({});
   const [posting, setPosting] = useState(false);
@@ -60,62 +147,70 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
   }, []);
   useEffect(() => {
     try {
-      localStorage.setItem('roomly_hub_tab', tab);
+      localStorage.setItem('roomly_hub_section', section);
     } catch {}
-  }, [tab]);
+    setKind(section === 'buysell' ? 'item' : 'all');
+    setPosting(false);
+    setShowMine(false);
+  }, [section]);
 
   const waterOn = Boolean(settings.waterOn);
-  const tabs = HUB_TYPES.filter((t) => t.id !== 'water' || waterOn);
+  const sectionTypes = HUB_SECTIONS.find((x) => x.id === section)?.types || [];
+  const kinds = sectionTypes.filter((t) => t !== 'water' || waterOn);
   useEffect(() => {
-    if (tab === 'water' && !waterOn) setTab('service');
-  }, [tab, waterOn]);
+    if (kind === 'water' && !waterOn) setKind('all');
+  }, [kind, waterOn]);
 
   const shown = useMemo(() => {
-    const list = listings.filter((l) => l.type === tab && isLive(l, nowMs, waterOn));
-    // Charging: whoever can charge right now first
-    if (tab === 'charging') list.sort((a, b) => Number(Boolean(b.chargingNow)) - Number(Boolean(a.chargingNow)));
+    const list = listings.filter(
+      (l) => sectionTypes.includes(l.type) && (kind === 'all' || l.type === kind) && isLive(l, nowMs, waterOn)
+    );
+    // Whoever can charge right now first
+    list.sort((a, b) => Number(Boolean(b.chargingNow)) - Number(Boolean(a.chargingNow)));
     return list;
-  }, [listings, tab, nowMs, waterOn]);
-
-  const info = HUB_TYPES.find((t) => t.id === tab);
+  }, [listings, section, kind, nowMs, waterOn]);
 
   return (
     <div className="space-y-3">
+      <p className="text-[11px] text-slate-500 leading-snug">
+        Students helping students. Roomly connects you; you arrange the rest. <span className="font-bold text-[#0e9f55]">Free during launch.</span>
+      </p>
+
       {/* Sections */}
-      <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4 pb-0.5">
-        {[...tabs, { id: 'games', label: 'Games', emoji: '🎮' }].map((t) => (
+      <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/70">
+        {HUB_SECTIONS.map((x) => (
           <button
-            key={t.id}
+            key={x.id}
             type="button"
-            onClick={() => {
-              setTab(t.id as HubTab);
-              setPosting(false);
-              setShowMine(false);
-            }}
-            className={`shrink-0 whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-              tab === t.id
-                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-300/80 dark:border-slate-700'
+            onClick={() => setSection(x.id as Section)}
+            className={`h-9 rounded-xl text-[13px] font-bold truncate cursor-pointer transition-all ${
+              section === x.id ? 'bg-white dark:bg-slate-900 text-[#0e9f55] shadow-xs' : 'text-slate-500 dark:text-slate-400'
             }`}
           >
-            {t.emoji} {t.label}
+            {x.label}
           </button>
         ))}
       </div>
 
-      {tab === 'games' ? (
+      <Guide key={section} section={section} />
+
+      {section === 'games' ? (
         <Gaming session={session} />
       ) : (
         <>
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-                {info?.label}
-                <span className="text-[10px] font-bold text-[#0e9f55] bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200/60">
-                  Free during launch
-                </span>
-              </h2>
-              <p className="text-[11px] text-slate-400">{info?.hint}</p>
+          {/* Filters inside the section */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+              {section === 'services' && (
+                <button type="button" onClick={() => setKind('all')} className={chip(kind === 'all')}>
+                  All
+                </button>
+              )}
+              {kinds.map((t) => (
+                <button key={t} type="button" onClick={() => setKind(t as Kind)} className={chip(kind === t)}>
+                  {typeLabel(t)}
+                </button>
+              ))}
             </div>
             <button
               type="button"
@@ -133,16 +228,16 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
             <button
               type="button"
               onClick={() => setPosting(true)}
-              className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#0e9f55] text-white text-xs font-black cursor-pointer"
+              className="w-full h-10 flex items-center justify-center gap-1.5 rounded-xl bg-[#0e9f55] text-white text-xs font-black cursor-pointer"
             >
-              <Plus className="w-4 h-4" /> Post in {info?.label}
+              <Plus className="w-4 h-4" /> Post in {section === 'services' ? 'Services' : 'Buy & Sell'}
             </button>
           )}
 
           {posting && (
             <PostForm
-              type={tab}
-              waterOn={waterOn}
+              types={kinds}
+              startType={kind === 'all' ? kinds[0] : kind}
               productNames={productNames}
               session={session}
               onDone={() => setPosting(false)}
@@ -153,14 +248,8 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
 
           {!posting && !showMine && (
             <>
-              <p className="text-[10px] leading-snug text-slate-500 bg-slate-50 dark:bg-slate-800/60 rounded-xl p-2.5">
-                Roomly connects students. Payment and handover are between you. Meet in a public place. Selling stolen items gets you
-                banned and reported.
-              </p>
               {shown.length === 0 ? (
-                <div className={`${card} text-center py-8 px-4 text-xs text-slate-400`}>
-                  Nothing here yet. Be the first to post.
-                </div>
+                <div className={`${card} text-center py-8 px-4 text-xs text-slate-400`}>Nothing here yet. Be the first to post.</div>
               ) : (
                 <div className="space-y-2.5">
                   {shown.map((l) => (
@@ -179,9 +268,7 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
         onClick={onGoStore}
         className="w-full flex items-center justify-between gap-2 p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-900 text-left cursor-pointer"
       >
-        <span className="text-[11px] font-bold text-emerald-900 dark:text-emerald-200">
-          Need something delivered to your room? Order from Store Items
-        </span>
+        <span className="text-[11px] font-bold text-emerald-900 dark:text-emerald-200">Need something delivered to your room? Order from Store Items</span>
         <ShoppingBag className="w-4 h-4 text-[#0e9f55] shrink-0" />
       </button>
     </div>
@@ -217,11 +304,12 @@ const ListingCard: React.FC<{ l: any }> = ({ l }) => {
         {l.photo ? (
           <img src={l.photo} alt="" loading="lazy" className="w-20 h-20 rounded-xl object-cover shrink-0 bg-slate-100 dark:bg-slate-800" />
         ) : (
-          <div className="w-20 h-20 rounded-xl shrink-0 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-2xl">
-            {HUB_TYPES.find((t) => t.id === l.type)?.emoji}
+          <div className="w-20 h-20 rounded-xl shrink-0 bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+            <NoPhoto name={l.title} className="text-2xl" />
           </div>
         )}
         <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{typeLabel(l.type)}</p>
           <p className="text-sm font-extrabold text-slate-900 dark:text-white leading-tight">{l.title}</p>
           <p className="text-xs font-bold text-[#0e9f55] mt-0.5">{priceLabel(l)}</p>
           <p className="text-[11px] text-slate-500 mt-0.5">
@@ -318,13 +406,13 @@ const ListingCard: React.FC<{ l: any }> = ({ l }) => {
 /* ------------------------------------------------------------------ */
 
 const PostForm: React.FC<{
-  type: HubTab;
-  waterOn: boolean;
+  types: string[];
+  startType: string;
   productNames: string[];
   session: Props['session'];
   onDone: () => void;
-}> = ({ type: startType, waterOn, productNames, session, onDone }) => {
-  const [type, setType] = useState<string>(startType === 'games' ? 'service' : startType);
+}> = ({ types, startType, productNames, session, onDone }) => {
+  const [type, setType] = useState<string>(startType || types[0]);
   const [title, setTitle] = useState('');
   const [price, setPrice] = useState('');
   const [price2, setPrice2] = useState('');
@@ -391,13 +479,29 @@ const PostForm: React.FC<{
         </button>
       </div>
 
-      <select value={type} onChange={(e) => setType(e.target.value)} className={input}>
-        {HUB_TYPES.filter((t) => t.id !== 'water' || waterOn).map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.emoji} {t.label}
-          </option>
-        ))}
-      </select>
+      <div>
+        <p className="text-[11px] font-bold text-slate-500 mb-1.5">What do you want to post?</p>
+        <div className="grid gap-1.5">
+          {types.map((t) => {
+            const info = HUB_TYPES.find((x) => x.id === t);
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setType(t)}
+                className={`text-left px-3 py-2 rounded-xl border cursor-pointer ${
+                  type === t
+                    ? 'border-[#0e9f55] bg-emerald-50 dark:bg-emerald-950/40'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'
+                }`}
+              >
+                <span className="block text-xs font-bold text-slate-900 dark:text-white">{info?.label}</span>
+                <span className="block text-[10px] text-slate-500">{info?.hint}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       <div>
         <input

@@ -277,7 +277,12 @@ const Leaderboard: React.FC<{ game: string; board: any[]; me: any; uid: string; 
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
                   {r.name}
-                  {r.titles > 0 && <span className="ml-1 text-[10px] text-amber-600">🏆{r.titles > 1 ? `x${r.titles}` : ''}</span>}
+                  {r.titles > 0 && (
+                    <span className="ml-1 inline-flex items-center gap-0.5 text-[10px] text-amber-600">
+                      <Trophy className="w-3 h-3" />
+                      {r.titles > 1 ? `x${r.titles}` : ''}
+                    </span>
+                  )}
                 </p>
                 <p className="text-[10px] text-slate-500 truncate">
                   {r.hostel} · {r.wins}W {r.losses}L · ID {r.gameId}
@@ -489,13 +494,14 @@ const TournamentCard: React.FC<{ t: any; me: any; uid: string; account: any }> =
           <Users className="w-3 h-3" /> {entries.length}/{t.slots} joined · {confirmed.length} confirmed
         </span>
       </div>
-      {t.prizeText && <p className="text-[11px] text-slate-700 dark:text-slate-200 whitespace-pre-line bg-amber-50/60 dark:bg-amber-950/20 rounded-xl p-2.5">🏆 {t.prizeText}</p>}
+      {t.prizeText && <p className="text-[11px] text-slate-700 dark:text-slate-200 whitespace-pre-line bg-amber-50/60 dark:bg-amber-950/20 rounded-xl p-2.5"><strong>Prizes</strong>
+{t.prizeText}</p>}
 
       {t.status === 'done' && t.results && (
         <div className="text-[11px] space-y-0.5">
-          {t.results.first?.name && <p>🥇 {t.results.first.name}</p>}
-          {t.results.second?.name && <p>🥈 {t.results.second.name}</p>}
-          {t.results.third?.name && <p>🥉 {t.results.third.name}</p>}
+          {t.results.first?.name && <p><strong>1st:</strong> {t.results.first.name}</p>}
+          {t.results.second?.name && <p><strong>2nd:</strong> {t.results.second.name}</p>}
+          {t.results.third?.name && <p><strong>3rd:</strong> {t.results.third.name}</p>}
         </div>
       )}
 
