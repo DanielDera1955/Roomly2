@@ -32,6 +32,7 @@ import {
 import { sellingPrice, isOutsideSource } from '../config';
 import { OrderRecord, CategoryDefinition, DeliveryRunner, locationText, shortLocation, roomText } from '../types';
 import { Product, FoodExtraOption, PRESET_PRODUCT_IMAGES, StoreKey, STORE_LABEL, STORE_SOURCE, categoriesForStore, storeOfSource } from '../config';
+import { AdminHub } from './AdminHub';
 import { AdminDispatch, AdminTeam, AdminMoney, useOpenSettlements, needsAction } from './AdminDispatch';
 import { AdminInsights } from './AdminInsights';
 import { AdminFeedbackPanel } from './FeedbackPanels';
@@ -143,7 +144,7 @@ const FoodOptionsEditor: React.FC<{ value: FoodOptions; source: Product['source'
   );
 };
 
-type AdminTab = 'dashboard' | 'orders' | 'team' | 'money' | 'feedback' | 'products' | 'categories' | 'customers' | 'activity';
+type AdminTab = 'dashboard' | 'orders' | 'team' | 'money' | 'feedback' | 'products' | 'categories' | 'customers' | 'activity' | 'hub';
 
 export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpdated }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -672,6 +673,19 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
             <History className="w-3.5 h-3.5" />
             <span>Activity</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setCurrentTab('hub')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+              currentTab === 'hub'
+                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <span>🏠</span>
+            <span>Hub & Games</span>
+          </button>
         </div>
       </header>
 
@@ -689,6 +703,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
         {/* ================= ORDERS & DISPATCH: Inside / Outside Store / Food ================= */}
         {currentTab === 'orders' && <AdminDispatch />}
+
+        {/* ================= HOSTEL HUB & GAMING ================= */}
+        {currentTab === 'hub' && <AdminHub />}
 
         {/* ================= TEAM: runners, operators, accounts, switches ================= */}
         {currentTab === 'team' && <AdminTeam />}

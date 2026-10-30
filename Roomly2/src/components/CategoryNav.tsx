@@ -2,7 +2,8 @@ import React from 'react';
 import { Sparkles } from 'lucide-react';
 import { ShopGroup, shopGroupLabel } from '../config';
 
-export type ShopTab = ShopGroup | 'Request';
+/** 'hub' = Hostel Hub (inside school only) */
+export type ShopTab = ShopGroup | 'Request' | 'hub';
 
 interface CategoryNavProps {
   side: 'inside' | 'outside';
@@ -35,7 +36,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
 }) => {
   return (
     <div className="space-y-2.5">
-      <div className="grid grid-cols-2 gap-2">
+      <div className={`grid gap-2 ${side === 'inside' ? 'grid-cols-3' : 'grid-cols-2'}`}>
         {(['store', 'food'] as ShopGroup[]).map((g) => {
           const isSelected = selected === g;
           return (
@@ -57,11 +58,25 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
             </button>
           );
         })}
+        {side === 'inside' && (
+          <button
+            type="button"
+            onClick={() => onSelect('hub')}
+            className={`flex items-center justify-center gap-2 p-3 rounded-2xl text-xs font-extrabold transition-all cursor-pointer text-center ${
+              selected === 'hub'
+                ? 'bg-[#0e9f55] text-white shadow-md shadow-[#0e9f55]/20 ring-2 ring-[#0e9f55]'
+                : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
+            }`}
+          >
+            <span className="text-lg leading-none select-none">🏠</span>
+            <span className="leading-tight">Hostel Hub</span>
+          </button>
+        )}
       </div>
 
-      {searchSlot}
+      {selected !== 'hub' && searchSlot}
 
-      {!searching && selected !== 'Request' && filters.length > 1 && (
+      {!searching && selected !== 'Request' && selected !== 'hub' && filters.length > 1 && (
         <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-4 px-4 pb-0.5">
           {['All', ...filters].map((f) => {
             const on = selectedFilter.toLowerCase() === f.toLowerCase();
@@ -83,7 +98,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
         </div>
       )}
 
-      {!searching && (
+      {!searching && selected !== 'hub' && (
       <button
         type="button"
         onClick={() => onSelect(selected === 'Request' ? 'store' : 'Request')}

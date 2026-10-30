@@ -4,7 +4,10 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ---------- helpers ----------
-    function signedIn() { return request.auth != null; }
+    // Staff log in with email and password. Students in Hostel Hub and Gaming are signed in anonymously
+    // (one id per phone) and are never treated as staff.
+    function signedIn() { return request.auth != null && request.auth.token.firebase.sign_in_provider != 'anonymous'; }
+    function anyUser() { return request.auth != null; }
     function isAdmin() {
       return signedIn() && request.auth.token.email == 'chideraugwu75@gmail.com';
     }
@@ -220,6 +223,156 @@ service cloud.firestore {
         && request.resource.data.get('comment', '').size() <= 300;
       allow update: if false;
       allow delete: if isAdmin();
+    }
+
+
+    // ================= HOSTEL HUB =================
+    // Everyone can read live listings. Only the phone that posted one can change its status.
+    match /hubListings/{id} {
+      allow read: if true;
+      allow create: if anyUser()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.status == 'active'
+        && request.resource.data.reportCount == 0
+        && request.resource.data.contacts == 0
+        && request.resource.data.hidden == false
+        && request.resource.data.stolenFlag == false
+        && request.resource.data.type in ['service', 'item', 'wanted', 'rent', 'charging', 'water']
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 2 && request.resource.data.title.size() <= 60
+        && request.resource.data.note is string && request.resource.data.note.size() <= 300
+        && request.resource.data.phone is string && request.resource.data.phone.size() == 11
+        && !exists(/databases/$(database)/documents/hubBans/$(request.resource.data.phone));
+      allow update: if isAdmin()
+        // The poster: sold, removed, renewed, still available, charging now
+        || (anyUser() && request.auth.uid == resource.data.ownerUid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'expiresAtMs', 'confirmedAtMs', 'chargingNow', 'updatedAtMs'])
+            && request.resource.data.status in ['active', 'sold', 'removed'])
+        // Anyone: one more tap on Call / WhatsApp
+        || (anyUser()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['contacts'])
+            && request.resource.data.contacts == resource.data.get('contacts', 0) + 1)
+        // A report: one per phone, written together with the report itself. It can hide, never unhide.
+        || (anyUser()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reportCount', 'hidden', 'stolenFlag'])
+            && request.resource.data.reportCount == resource.data.reportCount + 1
+            && !exists(/databases/$(database)/documents/hubReports/$(id + '_' + request.auth.uid))
+            && existsAfter(/databases/$(database)/documents/hubReports/$(id + '_' + request.auth.uid))
+            && (request.resource.data.hidden == resource.data.hidden || request.resource.data.hidden == true)
+            && (request.resource.data.stolenFlag == resource.data.stolenFlag || request.resource.data.stolenFlag == true));
+      allow delete: if isAdmin();
+    }
+
+    // Phone sales: IMEI and box/receipt photo. Only the admin can read them.
+    match /hubPrivate/{id} {
+      allow read: if isAdmin();
+      allow create: if anyUser()
+        && request.resource.data.ownerUid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/hubListings/$(id)).data.ownerUid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    match /hubReports/{id} {
+      allow read: if isAdmin();
+      allow create: if anyUser()
+        && request.resource.data.uid == request.auth.uid
+        && id == request.resource.data.listingId + '_' + request.auth.uid
+        && request.resource.data.reason in ['stolen', 'scam', 'fake', 'other']
+        && request.resource.data.note.size() <= 300;
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // Phone numbers that can't post in the Hub (they can still order from Roomly)
+    match /hubBans/{phone} {
+      allow get: if true;
+      allow list, write: if isAdmin();
+    }
+
+    // ================= GAMING =================
+    match /gamers/{uid} {
+      allow read: if true;
+      allow create: if anyUser() && request.auth.uid == uid
+        && request.resource.data.get('banned', false) == false
+        && request.resource.data.name is string && request.resource.data.name.size() <= 40;
+      allow update: if isAdmin()
+        || (anyUser() && request.auth.uid == uid
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['banned'])
+            && request.resource.data.name.size() <= 40);
+      allow delete: if isAdmin();
+    }
+
+    match /gamerPrivate/{uid} {
+      allow read: if isAdmin();
+      allow write: if anyUser() && request.auth.uid == uid;
+    }
+
+    // 1v1 challenges. Each player can only answer for themselves; points are worked out from these, never stored.
+    match /challenges/{id} {
+      function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+      function me() { return request.auth.uid; }
+      // After a player says who won: waiting for the other player, agreed (done) or disputed
+      function resultOk(mine, theirs) {
+        return (theirs == '' && request.resource.data.status == 'accepted' && request.resource.data.winnerUid == '')
+          || (theirs == mine && request.resource.data.status == 'done' && request.resource.data.winnerUid == mine)
+          || (theirs != '' && theirs != mine && request.resource.data.status == 'disputed' && request.resource.data.winnerUid == '');
+      }
+      allow read: if true;
+      allow create: if anyUser()
+        && request.resource.data.fromUid == me()
+        && request.resource.data.toUid != me()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.claimFrom == '' && request.resource.data.claimTo == ''
+        && request.resource.data.winnerUid == ''
+        && request.resource.data.game in ['efootball', 'fifa', 'dls', 'freefire', 'codm']
+        && exists(/databases/$(database)/documents/gamers/$(me()))
+        && get(/databases/$(database)/documents/gamers/$(me())).data.get('banned', false) == false
+        && exists(/databases/$(database)/documents/gamers/$(request.resource.data.toUid));
+      allow update: if isAdmin()
+        // The challenger cancels before it is answered
+        || (anyUser() && me() == resource.data.fromUid && resource.data.status == 'pending'
+            && changed().hasOnly(['status', 'updatedAtMs']) && request.resource.data.status == 'cancelled')
+        // The challenged player accepts or declines
+        || (anyUser() && me() == resource.data.toUid && resource.data.status == 'pending'
+            && changed().hasOnly(['status', 'respondedAtMs', 'updatedAtMs'])
+            && request.resource.data.status in ['accepted', 'declined'])
+        // The challenger says who won
+        || (anyUser() && me() == resource.data.fromUid && resource.data.status == 'accepted' && resource.data.claimFrom == ''
+            && changed().hasOnly(['claimFrom', 'proofFrom', 'status', 'winnerUid', 'updatedAtMs'])
+            && request.resource.data.claimFrom in [resource.data.fromUid, resource.data.toUid]
+            && resultOk(request.resource.data.claimFrom, resource.data.claimTo))
+        // The challenged player says who won
+        || (anyUser() && me() == resource.data.toUid && resource.data.status == 'accepted' && resource.data.claimTo == ''
+            && changed().hasOnly(['claimTo', 'proofTo', 'status', 'winnerUid', 'updatedAtMs'])
+            && request.resource.data.claimTo in [resource.data.fromUid, resource.data.toUid]
+            && resultOk(request.resource.data.claimTo, resource.data.claimFrom))
+        // Disputed: each player can add a screenshot for the admin
+        || (anyUser() && resource.data.status == 'disputed'
+            && ((me() == resource.data.fromUid && changed().hasOnly(['proofFrom', 'updatedAtMs']))
+                || (me() == resource.data.toUid && changed().hasOnly(['proofTo', 'updatedAtMs']))));
+      allow delete: if isAdmin();
+    }
+
+    // Tournaments: only the admin creates and runs them
+    match /tournaments/{tid} {
+      allow read: if true;
+      allow write: if isAdmin();
+
+      match /entries/{uid} {
+        allow read: if true;
+        allow create: if anyUser() && request.auth.uid == uid
+          && request.resource.data.uid == uid
+          && get(/databases/$(database)/documents/tournaments/$(tid)).data.status == 'open'
+          && exists(/databases/$(database)/documents/gamers/$(uid))
+          && get(/databases/$(database)/documents/gamers/$(uid)).data.get('banned', false) == false
+          && request.resource.data.paid == false
+          && (request.resource.data.confirmed == false
+              || get(/databases/$(database)/documents/tournaments/$(tid)).data.fee == 0);
+        allow update: if isAdmin()
+          || (anyUser() && request.auth.uid == uid && resource.data.confirmed == false
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paid', 'paidAtMs']));
+        allow delete: if isAdmin() || (anyUser() && request.auth.uid == uid && resource.data.confirmed == false);
+      }
     }
 
     // ---------- orders ----------

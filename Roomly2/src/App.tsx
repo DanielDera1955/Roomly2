@@ -21,7 +21,7 @@ import {
   createProductRequest,
   subscribeProductRequest,
 } from './api.js';
-import { SCHOOL_NAME, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
+import { SCHOOL_NAME, ShopGroup, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
 import { MessageCircle } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
@@ -34,6 +34,7 @@ import { PhoneLookupBar } from './components/PhoneLookupBar';
 import { SearchBar } from './components/SearchBar';
 import { DeliveryPromiseBanner } from './components/DeliveryPromiseBanner';
 import { CategoryNav, ShopTab } from './components/CategoryNav';
+import { HostelHub } from './components/HostelHub';
 import { ProductCard } from './components/ProductCard';
 import { FoodCustomizerSheet } from './components/FoodCustomizerSheet';
 import { ProductSheet, OrderAgainRow, FeaturedRow, PairingsBar } from './components/ShopExtras';
@@ -108,8 +109,12 @@ export default function App() {
   // The last section browsed (store or food), so the request form and delivery card know where the student is
   const [lastGroup, setLastGroup] = useState<'store' | 'food'>(lastShop.tab);
   useEffect(() => {
-    if (selectedTab !== 'Request') setLastGroup(selectedTab);
+    if (selectedTab !== 'Request' && selectedTab !== 'hub') setLastGroup(selectedTab);
   }, [selectedTab]);
+  // Hostel Hub is inside school only
+  useEffect(() => {
+    if (sourceMode === 'outside' && selectedTab === 'hub') setSelectedTab('store');
+  }, [sourceMode, selectedTab]);
 
   // Customer & Phone Lookup
   // Remember the customer on this device until they press Sign out
@@ -739,7 +744,7 @@ export default function App() {
 
   // Quick filters inside a category, taken from the products' own categories (Drinks, Toiletries...)
   const groupFilters = useMemo(() => {
-    if (selectedTab === 'Request') return [];
+    if (selectedTab === 'Request' || selectedTab === 'hub') return [];
     // Every category of this store always shows (even empty), in the store's standard order.
     // Products without a category, or with another store's category, show under All only.
     if (sourceMode === 'inside') {
@@ -764,7 +769,7 @@ export default function App() {
           (p.description && p.description.toLowerCase().includes(q))
       );
     }
-    if (selectedTab === 'Request') return [];
+    if (selectedTab === 'Request' || selectedTab === 'hub') return [];
     let list = sideProducts.filter((p) => shopGroupOf(p) === selectedTab);
     if (selectedFilter !== 'All') list = list.filter((p) => p.category.toLowerCase() === selectedFilter.toLowerCase());
     return list;
@@ -1136,7 +1141,16 @@ export default function App() {
           />
 
           {/* Request Tab vs Product Grid */}
-          {!searchQuery && selectedTab === 'Request' ? (
+          {!searchQuery && selectedTab === 'hub' ? (
+            <HostelHub
+              productNames={sideProducts.map((p) => p.name)}
+              session={{ name: customer?.name || localName, phone, pin }}
+              onGoStore={() => {
+                setSelectedTab('store');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+            />
+          ) : !searchQuery && selectedTab === 'Request' ? (
             <RequestTab
               key={requestPrefill}
               defaultSide={sourceMode === 'inside' ? 'inside' : lastGroup}
@@ -1157,8 +1171,8 @@ export default function App() {
                       : selectedTab === 'Request'
                       ? ''
                       : selectedFilter !== 'All'
-                      ? `${shopGroupLabel(selectedTab, sourceMode)} › ${selectedFilter}`
-                      : shopGroupLabel(selectedTab, sourceMode)}
+                      ? `${shopGroupLabel(selectedTab as ShopGroup, sourceMode)} › ${selectedFilter}`
+                      : shopGroupLabel(selectedTab as ShopGroup, sourceMode)}
                   </h2>
                   <p className="text-[11px] text-slate-400">
                     {filteredProducts.length} {filteredProducts.length === 1 ? 'item' : 'items'} available
