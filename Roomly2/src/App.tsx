@@ -35,6 +35,7 @@ import { SearchBar } from './components/SearchBar';
 import { DeliveryPromiseBanner } from './components/DeliveryPromiseBanner';
 import { CategoryNav, ShopTab } from './components/CategoryNav';
 import { HostelHub } from './components/HostelHub';
+import { HowRoomlyWorks } from './components/HowRoomlyWorks';
 import { subscribeHubSettings, outsideStoreOpensAt } from './hub.js';
 import { ProductCard } from './components/ProductCard';
 import { FoodCustomizerSheet } from './components/FoodCustomizerSheet';
@@ -1077,6 +1078,21 @@ export default function App() {
             )}
           </div>
 
+          {/* How Roomly works: folded guide for first-time visitors */}
+          <HowRoomlyWorks
+            storeOpensMs={storeOpensMs}
+            onStart={() => {
+              setSourceMode('inside');
+              setSelectedTab('store');
+              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+            }}
+            onHub={() => {
+              setSourceMode('inside');
+              setSelectedTab('hub');
+              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+            }}
+          />
+
           {/* No sign-in box on the home screen: new students give their details once, at checkout.
               Returning students on a new phone use "Sign in" in the header, which opens this popup. */}
           {signInOpen && !signedInCustomer && (
@@ -1148,6 +1164,7 @@ export default function App() {
           )}
 
           {/* Store Items / Food toggle, then search, then category chips and request */}
+          <div id="shop-sections" className="scroll-mt-20" />
           <CategoryNav
             side={sourceMode}
             selected={selectedTab}

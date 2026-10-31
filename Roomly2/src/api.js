@@ -1279,10 +1279,34 @@ async function patchOrder(orderId, mutate) {
 }
 
 /** @returns {Promise<any>} */
+export const BANNED_MESSAGE = 'This account has been banned from Roomly. Contact Roomly if you think this is a mistake.';
+/**
+ * Banned from the whole of Roomly (orders, Hostel Hub and Games): by phone number, and this browser once
+ * a banned number has been used on it.
+ */
+export async function isBannedFromRoomly(phone) {
+  try {
+    if (localStorage.getItem('roomly_banned') === '1') return true;
+  } catch {}
+  const p = normalizePhone(phone);
+  if (!isValidNigerianPhone(p)) return false;
+  try {
+    const s = await getDoc(doc(db, 'hubBans', p));
+    if (s.exists()) {
+      try {
+        localStorage.setItem('roomly_banned', '1');
+      } catch {}
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
 export async function createOrder(orderPayload) {
   const phone = normalizePhone(orderPayload.phone);
   const pin = orderPayload.pin;
   if (!isValidNigerianPhone(phone)) throw new Error('Invalid phone number');
+  if (await isBannedFromRoomly(phone)) throw new Error(BANNED_MESSAGE);
   if (!isValidPin(pin)) throw new Error('A 4-digit PIN is required');
 
   const pk = await phoneKey(phone);

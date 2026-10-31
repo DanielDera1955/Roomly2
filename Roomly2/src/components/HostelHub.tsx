@@ -71,7 +71,8 @@ const GUIDES: Record<Section, string[]> = {
     'Need something new? Order it on Roomly and a runner brings it to your room, or order from Outside school to restock.',
     'For sale: sell an item once. For rent: lend it per day and agree a deposit first. Wanted: post what you need and people who have it contact you.',
     'Your post stays up for 1, 3, 7 or 14 days. You can have 3 items for sale at a time. Tap "Mark sold" when it is gone.',
-    'Roomly connects students. You arrange the payment and meeting yourselves. Anyone selling stolen items is banned and reported.',
+    'Roomly connects students. You arrange the payment and meeting yourselves.',
+    'Anyone found with stolen items will be reported to hall reps or any reachable authority, and their account and device will be banned from Roomly.',
   ],
   services: [
     'Offer a skill to students in your hostel: barbing, hair braiding, laundry, typing, phone charging when there is no light, or fetching water during scarcity.',
@@ -124,14 +125,8 @@ const Guide: React.FC<{ section: Section }> = ({ section }) => {
 
 /** Hostel Hub: Games, Buy & Sell, Services */
 export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore }) => {
-  const [section, setSection] = useState<Section>(() => {
-    try {
-      const v = localStorage.getItem('roomly_hub_section');
-      return v === 'buysell' || v === 'services' ? v : 'games';
-    } catch {
-      return 'games';
-    }
-  });
+  // Hostel Hub always opens on Games
+  const [section, setSection] = useState<Section>('games');
   const [kind, setKind] = useState<Kind>('all');
   const [listings, setListings] = useState<any[]>([]);
   const [settings, setSettings] = useState<any>({});
@@ -146,9 +141,6 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
     return () => window.clearInterval(id);
   }, []);
   useEffect(() => {
-    try {
-      localStorage.setItem('roomly_hub_section', section);
-    } catch {}
     setKind('all');
     setPosting(false);
     setShowMine(false);
@@ -279,6 +271,9 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
                 <p className="flex items-center gap-2 text-xs text-slate-500 px-1">
                   <ShieldCheck className="w-4 h-4 text-[#0e9f55] shrink-0" /> Meet in a public place and check the item before you pay.
                 </p>
+              )}
+              {section === 'buysell' && (
+                <p className="px-1 text-[11px] text-rose-600 dark:text-rose-400 leading-snug">Anyone found with stolen items will be reported to hall reps or any reachable authority, and their account and device will be banned from Roomly.</p>
               )}
             </>
           )}

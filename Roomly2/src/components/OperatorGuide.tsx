@@ -41,7 +41,7 @@ const steps = (kind: 'store' | 'food'): Step[] => [
   },
 ];
 
-/** Runners: inside orders to the room, batches, gate pickups and express, 30% of the profit */
+/** Runners: inside orders to the room, batches and express, 30% of the profit */
 const runnerSteps: Step[] = [
   { title: 'Add your payment account', text: 'Students pay you directly. Until your account is added, you cannot take orders.' },
   {
@@ -58,7 +58,7 @@ const runnerSteps: Step[] = [
   },
   {
     title: 'Extra ways to earn',
-    text: 'Gate pickup: bring an outside order from the gate to a room for ₦1,000, you keep ₦800. Express: ₦1,200, you keep ₦600, refunded to the student if it takes over 20 minutes. Shared deliveries split 50/50.',
+    text: 'Express: ₦1,200, you keep ₦600, refunded to the student if it takes over 20 minutes. Shared deliveries split 50/50.',
   },
   { title: 'Products and requests', text: 'You can change inside prices, add products, and send a price when a student requests something not listed.' },
   {

@@ -400,7 +400,7 @@ export const AdminDispatch: React.FC = () => {
   );
 };
 
-/** Admin: switch each runner off or back on. OFF hides them from checkout, express and gate pickups. */
+/** Admin: switch each runner off or back on. OFF hides them from checkout and express. */
 const RunnerOverridePanel: React.FC<{ runners: any[] }> = ({ runners }) => {
   const [busy, setBusy] = useState('');
   const off: Record<string, boolean> = getRunnerOffMap();
@@ -430,7 +430,7 @@ const RunnerOverridePanel: React.FC<{ runners: any[] }> = ({ runners }) => {
             <div className="min-w-0">
               <span className="font-bold text-slate-900 dark:text-white">{r.name || email}</span>
               <span className={`block text-[11px] font-bold ${isOff ? 'text-rose-600 dark:text-rose-400' : 'text-[#0e9f55]'}`}>
-                {isOff ? 'OFF: hidden from students, no new batches, express or gate pickups' : 'ON: can take batches'}
+                {isOff ? 'OFF: hidden from students, no new batches or express' : 'ON: can take batches'}
               </span>
             </div>
             <div className="shrink-0 grid grid-cols-2 rounded-xl overflow-hidden border border-slate-300 dark:border-slate-600">

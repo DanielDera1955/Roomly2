@@ -27,7 +27,6 @@ import {
   STORE_CONFIG,
   OUT_OF_STOCK_LABEL,
   HOSTELS,
-  GATE_PICKUP_FEE,
   EXPRESS_MINUTES,
   EXPRESS_REFUND,
   EXPRESS_ACCEPT_MINUTES,
@@ -36,7 +35,7 @@ import {
   INSIDE_ARRIVAL_MINUTES,
   insideArrivalLeftMs,
 } from '../config';
-import { markPaymentSent, paymentState, requestGatePickup, markGatePickupPaid, getPayProvider, cancelExpress, markExpressReceived, markExpressNotHere, cancelGatePickup, gateExpired, gateCancelIn, gateCanAskAgain, markNotReceived, canFlagNotReceived } from '../api.js';
+import { markPaymentSent, paymentState, getPayProvider, cancelExpress, markExpressReceived, markExpressNotHere, markNotReceived, canFlagNotReceived } from '../api.js';
 import { RateExperience } from './RateExperience';
 import { InstallBanner } from './InstallPrompt';
 
@@ -199,48 +198,12 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
   // Express orders are paid to the runner who accepted, never to the batch runner
   const liveProvider = currentOrder && !(currentOrder as any).payTo && !currentOrder.express ? getPayProvider(currentOrder) : null;
   const payAcct = (currentOrder as any)?.payTo || liveProvider?.payTo || null;
-  const [askingGate, setAskingGate] = useState(false);
-  // Gate to room: where to bring it, then pay the runner who accepts
-  const [gateHostel, setGateHostel] = useState(HOSTELS[0]);
-  const [gateRoom, setGateRoom] = useState('');
-  const [gateFormOpen, setGateFormOpen] = useState(false);
-  const payRunner = async () => {
-    if (!currentOrder) return;
-    setAskingGate(true);
-    const updated = await markGatePickupPaid(currentOrder.id);
-    if (updated) setCurrentOrder(updated as OrderRecord);
-    else window.alert('Could not save. Please try again.');
-    setAskingGate(false);
-  };
-  const cancelGate = async () => {
-    if (!currentOrder) return;
-    if (!window.confirm('Cancel the gate pickup? You will collect the parcel at the school gate yourself.')) return;
-    setAskingGate(true);
-    const updated = await cancelGatePickup(currentOrder.id);
-    if (updated) setCurrentOrder(updated as OrderRecord);
-    else window.alert('Could not cancel. Please try again.');
-    setAskingGate(false);
-  };
-  const askGatePickup = async () => {
-    if (!currentOrder) return;
-    if (!/\d/.test(gateRoom)) {
-      window.alert('Type your room, for example A12');
-      return;
-    }
-    setAskingGate(true);
-    const updated = await requestGatePickup(currentOrder.id, gateHostel, gateRoom);
-    if (updated) setCurrentOrder(updated as OrderRecord);
-    else window.alert('Could not send the request. Please try again.');
-    setAskingGate(false);
-  };
-
   // Live clock for express orders and the outside "at the gate in under 15 minutes" countdown
   const [nowMs, setNowMs] = useState(Date.now());
   const ex = currentOrder?.express || null;
   const isOutside = currentOrder?.cart === 'store' || currentOrder?.cart === 'food';
   const clockRunning = Boolean(
     (ex && ex.status !== 'cancelled' && !ex.receivedAt) ||
-      (currentOrder?.gatePickup?.status === 'pending' && !gateExpired(currentOrder.gatePickup)) ||
       (isOutside && currentOrder?.status === 'Delivered' && currentOrder?.deliveredAt && Date.now() - Date.parse(currentOrder.deliveredAt) < GATE_ARRIVAL_MINUTES * 60000) ||
       (currentOrder?.status === 'On the way' && (insideArrivalLeftMs(currentOrder, Date.now()) ?? 0) > 0)
   );
@@ -370,156 +333,9 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                 )}
               </div>
 
-              {/* Outside orders come to the gate; the student can ask a runner to bring it to the room */}
-              {(currentOrder.cart === 'store' || currentOrder.cart === 'food') &&
-                currentOrder.paymentStatus !== 'unpaid' &&
-                currentOrder.status === 'Delivered' &&
-                gateCanAskAgain(currentOrder.gatePickup, nowMs) && (
-                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs space-y-2">
-                    <p className="text-slate-700 dark:text-slate-200">
-                      Want it brought from the <strong>school gate</strong> to your room? An inside runner can collect it for a flat ₦{GATE_PICKUP_FEE.toLocaleString()}. Ask first: a runner checks the parcel and accepts, then you pay the runner.
-                    </p>
-                    {!gateFormOpen ? (
-                      <button
-                        type="button"
-                        onClick={() => setGateFormOpen(true)}
-                        className="w-full py-2 rounded-xl bg-[#0e9f55] text-white font-bold cursor-pointer"
-                      >
-                        Get this delivered to my room
-                      </button>
-                    ) : (
-                      <div className="space-y-2">
-                        <div className="grid grid-cols-2 gap-2">
-                          <select
-                            value={gateHostel}
-                            onChange={(e) => setGateHostel(e.target.value)}
-                            className="px-2.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs"
-                          >
-                            {HOSTELS.map((h) => (
-                              <option key={h} value={h}>
-                                {h}
-                              </option>
-                            ))}
-                          </select>
-                          <input
-                            value={gateRoom}
-                            onChange={(e) => setGateRoom(e.target.value.toUpperCase().slice(0, 8))}
-                            placeholder="Room, e.g. A12"
-                            className="px-2.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          disabled={askingGate}
-                          onClick={askGatePickup}
-                          className="w-full py-2 rounded-xl bg-[#0e9f55] text-white font-bold disabled:opacity-50 cursor-pointer"
-                        >
-                          {askingGate ? 'Sending…' : 'Send request to the runners'}
-                        </button>
-                        <p className="text-[11px] text-slate-500">A runner accepts it first, then you pay them. You don't pay anything yet.</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-              {/* GATE PICKUP: separate request to an inside runner */}
-              {currentOrder.gatePickup && (
-                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs space-y-1">
-                  <p className="font-bold text-slate-800 dark:text-slate-100">Gate to room pickup</p>
-                  {(() => {
-                    const gp: any = currentOrder.gatePickup;
-                    const who = gp.runnerName || 'The runner';
-                    const lastRefund = (gp.refunds || [])[(gp.refunds || []).length - 1];
-                    const expired = gateExpired(gp, nowMs);
-                    const cancelIn = gateCancelIn(gp, nowMs);
-                    const text =
-                      gp.status === 'pending'
-                        ? expired
-                          ? 'No runner accepted within 30 minutes, so the pickup was cancelled. Please collect it at the school gate, or ask again.'
-                          : 'Waiting for an inside runner to accept.'
-                        : gp.status === 'accepted'
-                        ? !gp.paid
-                          ? `${who} accepted. Pay ₦${gp.fee.toLocaleString()} to the runner, then tap "I have paid the runner".`
-                          : !gp.payConfirmed
-                          ? `Waiting for ${who} to confirm your ₦${gp.fee.toLocaleString()} reached their account.`
-                          : `${who} confirmed your payment and is bringing it to your room.`
-                        : gp.status === 'delivered'
-                        ? 'Brought to your room.'
-                        : gp.status === 'cancelled'
-                        ? 'You cancelled the pickup. Please collect it at the school gate, or ask again.'
-                        : gp.status === 'refunded'
-                        ? 'The runner refunded this pickup. Please collect at the gate.'
-                        : 'No runner could take this one. Please collect at the school gate.';
-                    return (
-                      <>
-                        <p className="text-slate-600 dark:text-slate-300">{text}</p>
-                        {gp.status === 'pending' && lastRefund && !expired && (
-                          <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">
-                            {lastRefund.runnerName} couldn't do it and is sending your ₦{Number(lastRefund.amount || 0).toLocaleString()} back. Another runner can take it now.
-                          </p>
-                        )}
-                        {gp.status === 'pending' && !expired && (
-                          cancelIn > 0 ? (
-                            <p className="text-[11px] text-slate-400">If no runner accepts, you can cancel in {cancelIn} min.</p>
-                          ) : (
-                            <button
-                              type="button"
-                              disabled={askingGate}
-                              onClick={cancelGate}
-                              className="w-full py-2 rounded-xl bg-slate-200 dark:bg-slate-700 font-bold disabled:opacity-50 cursor-pointer"
-                            >
-                              Cancel, I'll collect it at the gate
-                            </button>
-                          )
-                        )}
-                      </>
-                    );
-                  })()}
-                  {currentOrder.gatePickup.status === 'accepted' && !currentOrder.gatePickup.paid && (
-                    <div className="space-y-2 pt-1">
-                      {currentOrder.gatePickup.runnerPay ? (
-                        <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-1">
-                          <div className="flex justify-between">
-                            <span className="text-slate-400">Bank</span>
-                            <span className="font-bold">{currentOrder.gatePickup.runnerPay.bankName}</span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-slate-400">Account number</span>
-                            <span className="flex items-center gap-1 font-bold">
-                              {currentOrder.gatePickup.runnerPay.accountNumber}
-                              <button
-                                type="button"
-                                onClick={() => copyToClipboard(currentOrder.gatePickup!.runnerPay!.accountNumber, 'gate')}
-                                className="p-1 text-slate-400 hover:text-slate-700"
-                              >
-                                <Copy className="w-3 h-3" />
-                              </button>
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-slate-400">Account name</span>
-                            <span className="font-semibold">{currentOrder.gatePickup.runnerPay.accountName}</span>
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-[11px] text-slate-500">Call the runner for their account number.</p>
-                      )}
-                      <button
-                        type="button"
-                        disabled={askingGate}
-                        onClick={payRunner}
-                        className="w-full py-2 rounded-xl bg-[#0e9f55] text-white font-bold disabled:opacity-50 cursor-pointer"
-                      >
-                        I have paid the runner
-                      </button>
-                    </div>
-                  )}
-                  {currentOrder.gatePickup.runnerPhone && currentOrder.gatePickup.status === 'accepted' && (
-                    <a href={`tel:${currentOrder.gatePickup.runnerPhone}`} className="inline-block font-bold text-[#0e9f55]">
-                      Call {currentOrder.gatePickup.runnerName}
-                    </a>
-                  )}
-                </div>
+              {/* Outside orders: the student collects at the school gate */}
+              {(currentOrder.cart === 'store' || currentOrder.cart === 'food') && currentOrder.paymentStatus !== 'unpaid' && (
+                <p className="px-1 text-[11px] text-slate-500">Outside orders come to the school gate. Collect it there when it arrives.</p>
               )}
 
               {/* EXPRESS: waiting for a runner, the 20-minute clock, received, refund */}
@@ -812,9 +628,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                           {gateLeftMs !== null && gateLeftMs > 0 ? 'Your order is on its way to the gate' : 'Your order has been delivered'}
                         </h4>
                         <p className="text-[11px] text-emerald-800 dark:text-emerald-400">
-                          {currentOrder.gatePickup && !gateCanAskAgain(currentOrder.gatePickup)
-                            ? `It will be at the school gate in under ${GATE_ARRIVAL_MINUTES} minutes, and the runner will bring it to your room.`
-                            : gateLeftMs !== null && gateLeftMs > 0
+                          {gateLeftMs !== null && gateLeftMs > 0
                             ? `It will be at the school gate in under ${GATE_ARRIVAL_MINUTES} minutes. Head to the gate when the timer is nearly done.`
                             : 'It should be at the school gate now. Please collect it.'}
                         </p>

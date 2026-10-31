@@ -11,6 +11,7 @@ import {
   adminRemoveListing,
   adminBanPhone,
   adminUnbanPhone,
+  adminBanAnyPhone,
   adminSubscribeBans,
   adminSubscribeDisputes,
   adminResolveMatch,
@@ -96,7 +97,9 @@ export const AdminHub: React.FC = () => {
 
       {/* Bans */}
       <div className={card}>
-        <p className={h}>Banned from posting ({bans.length})</p>
+        <p className={h}>Banned from Roomly ({bans.length})</p>
+        <p className="text-[11px] text-slate-500">A banned number can't order, post in Hostel Hub or play in Games, and the browser they used is blocked too.</p>
+        <BanForm />
         {bans.length === 0 && <p className="text-xs text-slate-400">No one.</p>}
         {bans.map((b) => (
           <div key={b.phone} className="flex items-center justify-between gap-2 text-xs">
@@ -170,6 +173,31 @@ const LaunchDates: React.FC<{ settings: any }> = ({ settings }) => {
           </button>
         )}
       </div>
+    </div>
+  );
+};
+
+const BanForm: React.FC = () => {
+  const [phone, setPhone] = useState('');
+  const [busy, setBusy] = useState(false);
+  const ban = async () => {
+    const why = window.prompt(`Ban ${phone} from Roomly? Reason (optional):`);
+    if (why === null) return;
+    setBusy(true);
+    try {
+      await adminBanAnyPhone(phone, why);
+      setPhone('');
+    } catch (e: any) {
+      window.alert(e?.message || 'Could not ban.');
+    }
+    setBusy(false);
+  };
+  return (
+    <div className="flex gap-2">
+      <input value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))} inputMode="numeric" maxLength={11} className={input} placeholder="Phone number to ban" />
+      <button type="button" disabled={busy || phone.length !== 11} onClick={ban} className={`${btn} bg-rose-600 text-white shrink-0`}>
+        Ban
+      </button>
     </div>
   );
 };
@@ -274,12 +302,12 @@ const FlaggedRow: React.FC<{ l: any; reports: any[] }> = ({ l, reports }) => {
           type="button"
           disabled={busy}
           onClick={() => {
-            const why = window.prompt(`Ban ${l.phone} from posting? Their listings come down. Reason (optional):`);
+            const why = window.prompt(`Ban ${l.phone} from Roomly? They can't order, post or play, and their listings come down. Reason (optional):`);
             if (why !== null) run(() => adminBanPhone(l.phone, why));
           }}
           className={`${btn} text-rose-600 border border-rose-200 dark:border-rose-900`}
         >
-          Ban seller
+          Ban from Roomly
         </button>
       </div>
     </div>

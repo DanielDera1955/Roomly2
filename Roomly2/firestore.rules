@@ -431,6 +431,8 @@ service cloud.firestore {
 
       allow create: if request.resource.data.status == 'Received'
         && request.resource.data.runnerId == ''
+        // Numbers banned from Roomly can't order
+        && !exists(/databases/$(database)/documents/hubBans/$(request.resource.data.phone))
         && request.resource.data.paymentStatus == 'unpaid'
         && request.resource.data.deliveryFee in [300, 390, 400, 500, 800, 1000, 1200, 1500]
         && request.resource.data.totalAmount == request.resource.data.subtotal + request.resource.data.deliveryFee
@@ -455,18 +457,7 @@ service cloud.firestore {
          && resource.data.paymentStatus == 'unpaid'
          && request.resource.data.paymentStatus == 'payment_sent'
          && request.resource.data.payReady == true) ||
-        // Customers may ask for gate to room pickup on an outside order
-        // (again after cancelling, after 30 minutes with no runner, or after an old refused / refunded one)
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['gateReq', 'gatePickup', 'history', 'area', 'building', 'room'])
-         && resource.data.get('cart', '') in ['store', 'food']
-         && (resource.data.get('gatePickup', null) == null
-             || resource.data.gatePickup.status in ['refused', 'refunded', 'cancelled']
-             || (resource.data.gatePickup.status == 'pending'
-                 && request.time.toMillis() >= resource.data.gatePickup.get('requestedAt', 0) + 1800000))
-         && request.resource.data.gatePickup.status == 'pending'
-         && request.resource.data.gatePickup.get('runnerName', '') == ''
-         && request.resource.data.gatePickup.get('payConfirmed', false) == false
-         && request.resource.data.gatePickup.fee == 1000) ||
+        // (Gate to room pickup was removed: students collect outside orders at the gate)
         // Customers may cancel a gate pickup no runner has accepted for 10 minutes (they collect it at the gate)
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['gatePickup', 'history'])
          && resource.data.get('cart', '') in ['store', 'food']

@@ -25,7 +25,7 @@ import {
   increment,
 } from 'firebase/firestore';
 import { app, db } from './firebase.ts';
-import { uploadProductImage, getCustomerByPhone, normalizePhone, isValidNigerianPhone, isValidPin, ensureCustomerProfile } from './api.js';
+import { uploadProductImage, getCustomerByPhone, normalizePhone, isValidNigerianPhone, isValidPin, ensureCustomerProfile, isBannedFromRoomly, BANNED_MESSAGE } from './api.js';
 import { DEFAULT_GAMES_OPEN_MS, DEFAULT_OUTSIDE_STORE_OPEN_MS } from './config.ts';
 
 /* ------------------------------------------------------------------ */
@@ -234,8 +234,7 @@ async function checkPoster(phone, pin) {
   const p = normalizePhone(phone);
   if (!isValidNigerianPhone(p)) throw new Error('Enter a valid 11-digit phone number.');
   if (!isValidPin(pin)) throw new Error('Enter your Roomly PIN (the one you use at checkout).');
-  const ban = await getDoc(doc(hubDb, 'hubBans', p));
-  if (ban.exists()) throw new Error('This phone number can no longer post in Hostel Hub.');
+  if (await isBannedFromRoomly(p)) throw new Error(BANNED_MESSAGE);
   const cust = await getCustomerByPhone(p, pin);
   if (cust && cust.wrongPin) throw new Error('Wrong PIN for this phone number. Use the PIN you set at checkout.');
   return p;
@@ -373,9 +372,19 @@ export async function adminRemoveListing(id) {
 export async function adminBanPhone(phone, reason = '') {
   const p = normalizePhone(phone);
   await setDoc(doc(db, 'hubBans', p), { phone: p, reason: String(reason).slice(0, 200), atMs: Date.now() });
-  // Take down everything this number has up
+  // Take down everything this number has up, and their player profile
   const snap = await getDocs(query(collection(db, 'hubListings'), where('phone', '==', p)));
   await Promise.all(snap.docs.map((d) => updateDoc(d.ref, { hidden: true, status: 'removed', updatedAtMs: Date.now() })));
+  try {
+    const g = doc(db, 'gamers', await gamerIdOf(p));
+    if ((await getDoc(g)).exists()) await updateDoc(g, { banned: true });
+  } catch {}
+}
+/** Admin: ban any number from Roomly (orders, Hub and Games) */
+export async function adminBanAnyPhone(phone, reason = '') {
+  const p = normalizePhone(phone);
+  if (!isValidNigerianPhone(p)) throw new Error('Enter an 11-digit phone number.');
+  await adminBanPhone(p, reason);
 }
 export async function adminUnbanPhone(phone) {
   await deleteDoc(doc(db, 'hubBans', normalizePhone(phone)));
@@ -435,6 +444,7 @@ export async function registerGamer(input) {
   if (!isValidPin(pin)) throw new Error('Enter your Roomly PIN (4 digits). New to Roomly? Choose one now and use it at checkout too.');
   const games = GAMES.map((g) => g.id).filter((id) => (input.games || []).includes(id));
   if (!games.length) throw new Error('Tap at least one game you play.');
+  if (await isBannedFromRoomly(phone)) throw new Error(BANNED_MESSAGE);
   const cust = await getCustomerByPhone(phone, pin);
   if (cust && cust.wrongPin) throw new Error('Wrong PIN for this number. Use the PIN you use at Roomly checkout.');
 
@@ -626,11 +636,11 @@ export function shareWinLink(m, meId, myRank) {
 }
 /** WhatsApp: invite friends during registration week */
 export function inviteLink(me, opensAtMs) {
-  const games = me?.games?.length ? me.games.map(gameLabel).join(', ') : 'eFootball, FIFA, DLS, Free Fire and CODM';
+  const soon = opensAtMs > Date.now();
   const when = new Date(opensAtMs).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
   return waShare(
-    `${me ? "I've registered" : 'Register'} for ${games} on Roomly Caritas. Best in Caritas challenges start ${when}. ` +
-      `Register here: ${appLink({ game: me?.games?.[0] || 'efootball' })}`
+    `See who's the best in Caritas at eFootball, Free Fire, DLS, CODM, FIFA and more, then challenge them. ` +
+      `${soon ? `Challenges start ${when}. ` : ''}Register free on Roomly Caritas: ${appLink({ game: me?.games?.[0] || 'efootball' })}`
   );
 }
 

@@ -242,10 +242,9 @@ const slot = (id: DeliveryBatchId, start: number, end: number, orderBy: number):
 const SCHOOL_DAY = [slot('afternoon', T(14), T(15), T(12, 30)), slot('late', T(17), T(18), T(15, 30)), slot('evening', T(20), T(21), T(18, 30))];
 /** 0 = Sunday ... 6 = Saturday. Runners and admin can switch any batch off for a day. */
 export const WEEKLY_BATCHES: Record<number, BatchSlotDef[]> = {
-  // Sunday: four batches, delivered by 12pm, 4pm, 6pm and 9pm
+  // Sunday: three batches, delivered by 12pm, 6pm and 9pm
   0: [
     slot('midday', T(11), T(12), T(10)),
-    slot('afternoon', T(15), T(16), T(13, 30)),
     slot('late', T(17), T(18), T(15, 30)),
     slot('evening', T(20), T(21), T(18, 30)),
   ],

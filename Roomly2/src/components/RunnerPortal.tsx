@@ -4,7 +4,6 @@ import { OrderChat } from './OrderChat';
 import { ThemeToggle } from './ThemeToggle';
 import { SoundToggle } from './SoundToggle';
 import { BatchSwitches } from './BatchSwitches';
-import { GatePickupPanel } from './GatePickupPanel';
 import { ExpressPanel } from './ExpressPanel';
 import { MyRatingsPanel } from './FeedbackPanels';
 import { ProviderSettlement, PayAccountForm } from './SettlementPanel';
@@ -53,8 +52,6 @@ import {
   logoutStaff,
   setOrderHelper,
   syncMyHelpCredits,
-  subscribeGatePickups,
-  gateExpired,
   getMyUid,
   autoDeliverOverdue,
 } from '../api.js';
@@ -311,13 +308,6 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
     (o) => o.runnerId === activeRunner?.id && o.paymentStatus === 'payment_confirmed' && (!o.deliveryDate || o.deliveryDate <= todayR)
   ).length;
   const attExpress = openInside.filter((o) => o.express?.status === 'requested').length;
-  const [gateList, setGateList] = useState<OrderRecord[]>([]);
-  useEffect(() => subscribeGatePickups((l: OrderRecord[]) => setGateList(l)), []);
-  const myUidR = getMyUid();
-  const attGate = gateList.filter((o: any) => {
-    const gp = o.gatePickup;
-    return gp && gp.status === 'pending' && !gateExpired(gp) && !(gp.refusedBy || []).includes(myUidR);
-  }).length;
   const goToRunnerOrders = () => {
     setActiveFilter('all');
     window.setTimeout(() => jumpTo('op-orders'), 60);
@@ -883,7 +873,6 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
             toSend={attSend}
             requests={openRequests}
             express={attExpress}
-            gate={attGate}
             onOrders={goToRunnerOrders}
           />
         )}
@@ -912,10 +901,6 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
             <ExpressPanel orders={insideOrders} />
           </div>
         )}
-
-        <div id="op-gate" className="scroll-mt-20">
-          <GatePickupPanel />
-        </div>
 
         {/* A request waiting for a price blocks the student's cart, so it comes up here */}
         {isRunner && openRequests > 0 && (
