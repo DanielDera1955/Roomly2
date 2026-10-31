@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { Clock, Store, UtensilsCrossed } from 'lucide-react';
-import { getNextBatch } from '../api.js';
-import { slotsForDay, SwitchSide, dayWord, OUTSIDE_BANNER, OUTSIDE_ORDER_BY_MIN } from '../config';
+import { getNextBatch, getOutsideChoices } from '../api.js';
+import { slotsForDay, SwitchSide, dayWord, OUTSIDE_BANNER, OUTSIDE_ORDER_BY_MIN, openDateText } from '../config';
 
 interface DeliveryPromiseBannerProps {
   mode: 'inside' | 'outside';
   /** Which outside section is open: store items or cooked food and drinks */
-  tab?: 'store' | 'food' | 'Request';
+  tab?: 'store' | 'food' | 'Request' | 'hub';
+  /** Outside store items not open yet: when they open (ms), or 0 when open */
+  storeOpensAtMs?: number;
 }
 
 /** Sits under the Inside / Outside toggle: how many batches run today and the next one. No fees (shown at checkout). */
-export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mode, tab }) => {
+export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mode, tab, storeOpensAtMs = 0 }) => {
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -36,6 +38,8 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
     const todayOpt = slotsForDay(side, now, 0)[0];
     const closedToday = !todayOpt || now.getTime() >= new Date(todayOpt.date + 'T00:00:00').getTime() + OUTSIDE_ORDER_BY_MIN * 60000;
     const forToday = Boolean(next && dayWord(next.batch.date, now) === 'today');
+    const notOpenYet = side === 'store' && storeOpensAtMs > now.getTime();
+    const dayOff = !notOpenYet && Boolean(getOutsideChoices(side, now).dayOff);
     return (
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 via-teal-700 to-emerald-800 text-white p-4 shadow-md shadow-emerald-950/10">
         <div className="absolute -right-4 -bottom-4 w-28 h-28 bg-white/10 rounded-full blur-xl pointer-events-none" />
@@ -47,7 +51,19 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
             </p>
             <span className="shrink-0 px-2 py-0.5 rounded-full bg-white/15 text-[10px] font-bold text-white whitespace-nowrap">To the school gate</span>
           </div>
-          {!next ? (
+          {notOpenYet ? (
+            <>
+              <h2 className="text-lg font-extrabold tracking-tight">Opening {openDateText(storeOpensAtMs)}</h2>
+              <p className="text-xs text-emerald-100/90">Browse what's coming. Outside store orders open on launch day, delivered to the school gate.</p>
+            </>
+          ) : dayOff && next ? (
+            <>
+              <h2 className="text-lg font-extrabold tracking-tight">Closed today</h2>
+              <p className="text-xs text-emerald-100/90">
+                {side === 'food' ? 'Outside food' : 'Outside store'} is off today. Orders placed now will be delivered {dayWord(next.batch.date, now)}.
+              </p>
+            </>
+          ) : !next ? (
             <>
               <h2 className="text-lg font-extrabold tracking-tight">Back soon</h2>
               <p className="text-xs text-emerald-100/90">

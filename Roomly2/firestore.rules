@@ -281,99 +281,141 @@ service cloud.firestore {
     }
 
     // ================= GAMING =================
-    match /gamers/{uid} {
+    // A player id is a hash of their phone number. ownerUid = the phone (anonymous id) that uses it now.
+    function ownsGamer(gid) {
+      return anyUser() && exists(/databases/$(database)/documents/gamers/$(gid))
+        && get(/databases/$(database)/documents/gamers/$(gid)).data.ownerUid == request.auth.uid;
+    }
+    function gamerOk(gid) {
+      return exists(/databases/$(database)/documents/gamers/$(gid))
+        && get(/databases/$(database)/documents/gamers/$(gid)).data.get('banned', false) == false;
+    }
+    // Challenges and results open after registration week (the admin sets the date)
+    function gamesOpen() {
+      return (!exists(/databases/$(database)/documents/settings/hub) && request.time.toMillis() >= 1794092400000)
+        || (exists(/databases/$(database)/documents/settings/hub)
+            && request.time.toMillis() >= get(/databases/$(database)/documents/settings/hub).data.get('gamesOpenAtMs', 1794092400000));
+    }
+
+    match /gamers/{gid} {
       allow read: if true;
-      allow create: if anyUser() && request.auth.uid == uid
+      allow create: if anyUser()
+        && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.get('banned', false) == false
-        && request.resource.data.name is string && request.resource.data.name.size() <= 40;
+        && request.resource.data.name is string && request.resource.data.name.size() <= 40
+        && !exists(/databases/$(database)/documents/gamerSecret/$(gid))
+        && existsAfter(/databases/$(database)/documents/gamerSecret/$(gid));
       allow update: if isAdmin()
-        || (anyUser() && request.auth.uid == uid
+        // The owner edits their profile and Ready switches
+        || (anyUser() && resource.data.ownerUid == request.auth.uid
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['banned', 'ownerUid'])
+            && request.resource.data.name.size() <= 40)
+        // Same number on a new phone: allowed only with a PIN claim written in the same save
+        || (anyUser() && request.resource.data.ownerUid == request.auth.uid
             && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['banned'])
-            && request.resource.data.name.size() <= 40);
+            && existsAfter(/databases/$(database)/documents/gamerClaims/$(gid + '_' + request.auth.uid))
+            && !exists(/databases/$(database)/documents/gamerClaims/$(gid + '_' + request.auth.uid)));
       allow delete: if isAdmin();
     }
 
-    // A player's WhatsApp number: other players can open it only while that player is "Ready to play"
-    match /gamerContact/{uid} {
-      allow get: if isAdmin()
-        || (anyUser() && request.auth.uid == uid)
+    // PIN check for a player. Nobody can read it; the rules compare against it.
+    match /gamerSecret/{gid} {
+      allow read: if false;
+      allow create: if anyUser()
+        && getAfter(/databases/$(database)/documents/gamers/$(gid)).data.ownerUid == request.auth.uid
+        && !exists(/databases/$(database)/documents/gamers/$(gid))
+        && request.resource.data.keys().hasOnly(['pinHash'])
+        && request.resource.data.pinHash is string && request.resource.data.pinHash.size() == 64;
+      allow update, delete: if isAdmin();
+    }
+
+    // Moving a player to a new phone: the PIN hash must match
+    match /gamerClaims/{id} {
+      allow read: if isAdmin();
+      allow create: if anyUser()
+        && request.resource.data.uid == request.auth.uid
+        && id == request.resource.data.gid + '_' + request.auth.uid
+        && request.resource.data.pinHash == get(/databases/$(database)/documents/gamerSecret/$(request.resource.data.gid)).data.pinHash;
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // A player's WhatsApp number: others can open it only while that player is Ready to play
+    match /gamerContact/{gid} {
+      allow get: if isAdmin() || ownsGamer(gid)
         || (anyUser() && resource.data.readyUntil > request.time.toMillis());
       allow list: if isAdmin();
-      allow write: if anyUser() && request.auth.uid == uid;
+      allow create: if anyUser()
+        && getAfter(/databases/$(database)/documents/gamers/$(gid)).data.ownerUid == request.auth.uid
+        && !exists(/databases/$(database)/documents/gamers/$(gid));
+      allow update: if ownsGamer(gid) && request.resource.data.phone == resource.data.phone;
+      allow delete: if isAdmin();
     }
 
     // Who messaged whom through Roomly (needed to log a result). Id = from_to_game.
     match /gameContacts/{id} {
-      allow get, list: if isAdmin()
-        || (anyUser() && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid));
-      allow create, update: if anyUser()
-        && request.resource.data.from == request.auth.uid
+      allow read: if anyUser() || isAdmin();
+      allow create, update: if ownsGamer(request.resource.data.from)
+        && gamerOk(request.resource.data.from)
+        && gamerOk(request.resource.data.to)
         && id == request.resource.data.from + '_' + request.resource.data.to + '_' + request.resource.data.game
-        && exists(/databases/$(database)/documents/gamers/$(request.auth.uid))
-        && exists(/databases/$(database)/documents/gamers/$(request.resource.data.to));
+        && gamesOpen();
       allow delete: if isAdmin();
     }
 
-    // Match results. One player logs it; the other confirms or disputes. Ratings are worked out from these.
+    // Match results. One player logs it; the other confirms or disputes. The table is worked out from these.
     match /matches/{id} {
       function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
-      function me() { return request.auth.uid; }
       function contact(f, t) {
         return exists(/databases/$(database)/documents/gameContacts/$(f + '_' + t + '_' + request.resource.data.game))
           && get(/databases/$(database)/documents/gameContacts/$(f + '_' + t + '_' + request.resource.data.game)).data.atMs
              >= request.time.toMillis() - 259200000;
       }
       allow read: if true;
-      allow create: if anyUser()
-        && request.resource.data.aUid == me()
-        && request.resource.data.bUid != me()
+      allow create: if ownsGamer(request.resource.data.aUid)
+        && gamerOk(request.resource.data.aUid)
+        && gamerOk(request.resource.data.bUid)
+        && request.resource.data.aUid != request.resource.data.bUid
+        && request.resource.data.v == 2
         && request.resource.data.game in ['efootball', 'fifa', 'dls', 'freefire', 'codm']
         && request.resource.data.status == 'pending'
         && request.resource.data.scoreA is int && request.resource.data.scoreA >= 0 && request.resource.data.scoreA <= 99
         && request.resource.data.scoreB is int && request.resource.data.scoreB >= 0 && request.resource.data.scoreB <= 99
         && request.resource.data.loggedAtMs > request.time.toMillis() - 600000
         && request.resource.data.loggedAtMs < request.time.toMillis() + 600000
-        && exists(/databases/$(database)/documents/gamers/$(me()))
-        && get(/databases/$(database)/documents/gamers/$(me())).data.get('banned', false) == false
-        && exists(/databases/$(database)/documents/gamers/$(request.resource.data.bUid))
-        && (contact(me(), request.resource.data.bUid) || contact(request.resource.data.bUid, me()));
+        && gamesOpen()
+        && (contact(request.resource.data.aUid, request.resource.data.bUid) || contact(request.resource.data.bUid, request.resource.data.aUid));
       allow update: if isAdmin()
-        // The opponent confirms
-        || (anyUser() && me() == resource.data.bUid && resource.data.status == 'pending'
+        || (ownsGamer(resource.data.bUid) && resource.data.status == 'pending'
             && changed().hasOnly(['status', 'confirmedAtMs']) && request.resource.data.status == 'confirmed')
-        // The opponent disputes, within 3 days of the log (even after it was confirmed or counted)
-        || (anyUser() && me() == resource.data.bUid && resource.data.status in ['pending', 'confirmed']
+        || (ownsGamer(resource.data.bUid) && resource.data.status in ['pending', 'confirmed']
             && request.time.toMillis() < resource.data.loggedAtMs + 259200000
             && changed().hasOnly(['status', 'disputeNote', 'proofB']) && request.resource.data.status == 'disputed')
-        // The logger takes it back before it is confirmed
-        || (anyUser() && me() == resource.data.aUid && resource.data.status == 'pending'
+        || (ownsGamer(resource.data.aUid) && resource.data.status == 'pending'
             && changed().hasOnly(['status']) && request.resource.data.status == 'cancelled')
-        // Screenshots while disputed
-        || (anyUser() && resource.data.status == 'disputed'
-            && ((me() == resource.data.aUid && changed().hasOnly(['proofA']))
-                || (me() == resource.data.bUid && changed().hasOnly(['proofB']))));
+        || (resource.data.status == 'disputed'
+            && ((ownsGamer(resource.data.aUid) && changed().hasOnly(['proofA']))
+                || (ownsGamer(resource.data.bUid) && changed().hasOnly(['proofB']))));
       allow delete: if isAdmin();
     }
 
-    // Tournaments: only the admin creates and runs them
+    // Tournaments: only the admin creates and runs them. Entry id = player id.
     match /tournaments/{tid} {
       allow read: if true;
       allow write: if isAdmin();
 
-      match /entries/{uid} {
+      match /entries/{gid} {
         allow read: if true;
-        allow create: if anyUser() && request.auth.uid == uid
-          && request.resource.data.uid == uid
+        allow create: if ownsGamer(gid) && gamerOk(gid)
+          && request.resource.data.uid == gid
           && get(/databases/$(database)/documents/tournaments/$(tid)).data.status == 'open'
-          && exists(/databases/$(database)/documents/gamers/$(uid))
-          && get(/databases/$(database)/documents/gamers/$(uid)).data.get('banned', false) == false
           && request.resource.data.paid == false
           && (request.resource.data.confirmed == false
               || get(/databases/$(database)/documents/tournaments/$(tid)).data.fee == 0);
         allow update: if isAdmin()
-          || (anyUser() && request.auth.uid == uid && resource.data.confirmed == false
+          || (ownsGamer(gid) && resource.data.confirmed == false
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paid', 'paidAtMs']));
-        allow delete: if isAdmin() || (anyUser() && request.auth.uid == uid && resource.data.confirmed == false);
+        allow delete: if isAdmin() || (ownsGamer(gid) && resource.data.confirmed == false);
       }
     }
 

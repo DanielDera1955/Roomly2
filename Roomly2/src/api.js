@@ -387,6 +387,30 @@ export function outsideDayOn(sw) {
   return !sw || sw.on !== false;
 }
 
+/**
+ * An operator's switch for one day. A weekday they don't work (Faith: Sunday) counts as OFF
+ * unless they switched that exact day ON themselves.
+ */
+export function opDaySwitch(op, opt) {
+  const sw = ((op && op.slots) || {})[opt.key];
+  if (sw) return sw;
+  const wd = new Date(opt.date + 'T00:00:00').getDay();
+  return ((op && op.offDays) || []).includes(wd) ? { on: false, dayOff: true } : undefined;
+}
+
+/** Operator: the weekdays they never work (0 = Sunday ... 6 = Saturday) */
+export async function setMyOffDays(days) {
+  const staff = getCurrentStaff();
+  const uid = auth.currentUser?.uid;
+  if (!uid || !staff || (staff.role !== 'store' && staff.role !== 'food')) throw new Error('Operators only');
+  const offDays = [...new Set((days || []).map(Number).filter((d) => d >= 0 && d <= 6))].sort();
+  const mine = operatorDocs[uid] || {};
+  operatorDocs = { ...operatorDocs, [uid]: { ...mine, id: uid, kind: staff.role, name: staff.name, offDays } };
+  fireBatches();
+  await setDoc(doc(db, 'operatorStatus', uid), { kind: staff.role, name: staff.name || 'Operator', offDays, updatedAt: Date.now() }, { merge: true });
+  logActivity('days', offDays.length ? `set days off: ${offDays.map((d) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')}` : 'cleared days off');
+}
+
 /** Switched ON and not past the batch's last moment. side: 'inside' | 'store' | 'food' */
 export function batchOpen(opt, sw, side, now = new Date()) {
   if (side !== 'inside') return outsideDayOn(sw) && now.getTime() < batchCloseDate(opt, side).getTime();
@@ -550,7 +574,7 @@ export function getOutsideChoices(kind, now = new Date()) {
     let found = null;
     for (let d = 0; d < OUTSIDE_DAYS_AHEAD && !found; d++) {
       for (const opt of slotsForDay(kind, now, d)) {
-        const sw = (op.slots || {})[opt.key];
+        const sw = opDaySwitch(op, opt);
         if (accepting(opt, sw, kind, now)) {
           const start = switchStartDate(opt, sw);
           found = {
@@ -560,6 +584,8 @@ export function getOutsideChoices(kind, now = new Date()) {
             start: payDeadline(start, now),
             startText: startTextOf(start),
             late: start <= now,
+            // Why not the current day: a weekday they don't work, or switched off (fully booked)
+            reason: current && opt.key !== current.key && opDaySwitch(op, current)?.dayOff ? 'dayoff' : 'booked',
           };
           break;
         }
@@ -572,7 +598,9 @@ export function getOutsideChoices(kind, now = new Date()) {
   ops.sort((a, b) => rank[a.status] - rank[b.status] || a.start - b.start || a.load - b.load);
   const anyNow = ops.some((o) => o.status === 'now');
   if (!ops.length) return { batch: null, current, operators: [], anyNow: false, note: '', backSoon: true };
-  return { batch: anyNow ? current : ops[0].batch, current, operators: ops, anyNow, note: '' };
+  // Nobody works today because it is their day off (e.g. food on Sunday)
+  const dayOff = !anyNow && ops.every((o) => o.reason === 'dayoff');
+  return { batch: anyNow ? current : ops[0].batch, current, operators: ops, anyNow, note: '', dayOff };
 }
 
 /**
@@ -777,7 +805,6 @@ async function moveOrderToNextDay__raw(orderId) {
   const uid = auth.currentUser?.uid;
   if (!uid || !staff || (staff.role !== 'store' && staff.role !== 'food')) throw new Error('Operators only');
   const kind = staff.role;
-  const slots = (operatorDocs[uid] || {}).slots || {};
   let target = '';
   const updated = await patchOrder(orderId, (o) => {
     const part = kind === 'food' ? o.foodStatus : o.storeStatus;
@@ -790,7 +817,7 @@ async function moveOrderToNextDay__raw(orderId) {
     let opt = null;
     for (let d = 1; d <= 7 && !opt; d++) {
       const day = slotsForDay(kind, base, d)[0];
-      if (day && outsideDayOn(slots[day.key])) opt = day;
+      if (day && outsideDayOn(opDaySwitch(operatorDocs[uid], day))) opt = day;
     }
     if (!opt) opt = slotsForDay(kind, base, 1)[0];
     if (!opt) return;
@@ -1085,6 +1112,25 @@ export async function getCustomerByPhone(phone, pin) {
   } catch (err) {
     console.error('Error fetching customer:', err);
     return null;
+  }
+}
+
+/**
+ * Hostel Hub / Games registration: make sure this phone + PIN has a store profile, so the student
+ * is remembered at checkout with the same PIN. Never touches a profile that already exists.
+ */
+export async function ensureCustomerProfile(phone, pin, name, building) {
+  const p = normalizePhone(phone);
+  if (!isValidNigerianPhone(p) || !isValidPin(pin)) return;
+  try {
+    const ref = doc(db, 'customers', await profileKey(p, pin));
+    const snap = await getDoc(ref);
+    if (snap.exists()) return;
+    const known = await getDoc(doc(db, 'phones', await phoneKey(p)));
+    if (known.exists()) return; // a number that has ordered before keeps its original PIN
+    await setDoc(ref, { phone: p, name: String(name || '').slice(0, 40), area: 'Hostels', building: String(building || ''), room: '', orderIds: [], updatedAt: new Date().toISOString() });
+  } catch (e) {
+    console.error('Profile not saved', e);
   }
 }
 

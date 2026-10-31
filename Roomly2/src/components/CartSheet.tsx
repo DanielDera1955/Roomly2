@@ -826,7 +826,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                       {op.status === 'now'
                         ? `Delivering ${dayWord(op.batch.date)}, to the school gate before 6pm`
                         : op.status === 'next'
-                        ? `${op.name} is fully booked ${currentBatch ? dayWord(currentBatch.date) : 'today'}. Orders placed now will be delivered ${dayWord(op.batch.date)}.`
+                        ? `${op.name} ${op.reason === 'dayoff' ? 'is closed' : 'is fully booked'} ${currentBatch ? dayWord(currentBatch.date) : 'today'}. Orders placed now will be delivered ${dayWord(op.batch.date)}.`
                         : 'Not available yet'}
                     </span>
                   </button>
@@ -883,7 +883,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                   className="w-4 h-4 mt-0.5 accent-[#0e9f55]"
                 />
                 <span>
-                  <strong>This order is for {outsideDay.replace(/^on /, '')}, {outsideDate}.</strong> {chosenOp?.name} is fully booked{' '}
+                  <strong>This order is for {outsideDay.replace(/^on /, '')}, {outsideDate}.</strong> {chosenOp?.name} {chosenOp?.reason === 'dayoff' ? 'is closed' : 'is fully booked'}{' '}
                   {currentBatch ? dayWord(currentBatch.date) : 'today'}, so it reaches the school gate {outsideDay}. Tick to accept.
                 </span>
               </label>

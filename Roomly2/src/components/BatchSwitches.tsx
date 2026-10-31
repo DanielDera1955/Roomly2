@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { slotsForDay, timeLabel, SwitchSide, BatchOption, OUTSIDE_DAYS_AHEAD, longDayLabel } from '../config';
+import { slotsForDay, timeLabel, SwitchSide, BatchOption, OUTSIDE_DAYS_AHEAD, longDayLabel, weekdayName } from '../config';
 import {
   outsideDayOn,
+  opDaySwitch,
+  setMyOffDays,
   getInsideSwitches,
   getMyOperatorStatus,
   getCurrentStaff,
@@ -199,13 +201,22 @@ const OutsideDaySwitches: React.FC<{ side: 'store' | 'food' }> = ({ side }) => {
   const now = new Date();
   const staff = getCurrentStaff();
   const mine = getMyOperatorStatus();
-  const switches: Record<string, any> = mine?.slots || {};
   const days = Array.from({ length: OUTSIDE_DAYS_AHEAD }, (_, d) => slotsForDay(side, now, d)[0]).filter(Boolean) as BatchOption[];
   const todayClosed = days[0] ? now.getTime() >= batchCloseDate(days[0], side).getTime() : false;
   const hidden = getMyHiddenReason(now);
   const locked = Boolean(mine?.adminOff) || hidden?.reason === 'admin';
   const noAccount = !staff?.payAccount;
-  const allOff = days.filter((_, i) => !(i === 0 && todayClosed)).every((o) => !outsideDayOn(switches[o.key]));
+  const allOff = days.filter((_, i) => !(i === 0 && todayClosed)).every((o) => !outsideDayOn(opDaySwitch(mine, o)));
+  const offDays: number[] = mine?.offDays || [];
+  const toggleOffDay = async (d: number) => {
+    setBusy(`wd${d}`);
+    try {
+      await setMyOffDays(offDays.includes(d) ? offDays.filter((x) => x !== d) : [...offDays, d]);
+    } catch (e) {
+      window.alert('Could not save. Check your connection and try again.');
+    }
+    setBusy('');
+  };
   const [open, setOpen] = useState(true);
 
   const set = async (o: BatchOption, on: boolean) => {
@@ -247,7 +258,9 @@ const OutsideDaySwitches: React.FC<{ side: 'store' | 'food' }> = ({ side }) => {
             </div>
           )}
           {days.map((o, i) => {
-            const on = outsideDayOn(switches[o.key]);
+            const daySw = opDaySwitch(mine, o);
+            const on = outsideDayOn(daySw);
+            const isDayOff = Boolean(daySw?.dayOff);
             const name = i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : longDayLabel(o.date).split(' ')[0];
             const closed = i === 0 && todayClosed;
             return (
@@ -270,6 +283,8 @@ const OutsideDaySwitches: React.FC<{ side: 'store' | 'food' }> = ({ side }) => {
                       ? "Today's orders closed at 5:10pm. New orders are for your next day that is ON."
                       : on
                       ? 'ON: students can order for this day'
+                      : isDayOff
+                      ? "Your day off. Students' orders go to your next working day. Switch ON to work this day."
                       : 'OFF: students see you are fully booked, and their order goes to your next day that is ON'}
                   </span>
                 </div>
@@ -302,6 +317,33 @@ const OutsideDaySwitches: React.FC<{ side: 'store' | 'food' }> = ({ side }) => {
               </div>
             );
           })}
+          <div className="pt-2 space-y-1.5">
+            <p className="text-xs font-bold text-slate-700 dark:text-slate-200">Days I don't work (every week)</p>
+            <div className="grid grid-cols-7 gap-1">
+              {[1, 2, 3, 4, 5, 6, 0].map((d) => {
+                const off = offDays.includes(d);
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    disabled={busy === `wd${d}`}
+                    onClick={() => toggleOffDay(d)}
+                    aria-pressed={off}
+                    className={`h-9 rounded-lg text-[11px] font-bold cursor-pointer ${
+                      off ? 'bg-rose-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    {weekdayName(d).slice(0, 3)}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-slate-400 leading-snug">
+              {offDays.length
+                ? `You don't work on ${offDays.map((d) => weekdayName(d) + 's').join(', ')}. Students see this and their orders go to your next working day.`
+                : 'Tap a day you never work (for example Sunday). It stays off every week.'}
+            </p>
+          </div>
           <p className="text-[11px] text-slate-400 leading-snug">
             Every day starts ON. Switch a day OFF only when you can't deliver that day, for example when you are done early. Students can
             still order: their order goes to your next day that is ON.

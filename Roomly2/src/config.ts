@@ -351,6 +351,14 @@ export function formatRemaining(ms: number): string {
  */
 export const OUTSIDE_ORDER_BY_MIN = T(17, 10);
 export const OUTSIDE_DAYS_AHEAD = 3;
+/** Launch dates (Lagos time). The admin can change both in Admin > Hub & Games; these are the defaults. */
+export const DEFAULT_OUTSIDE_STORE_OPEN_MS = Date.parse('2026-11-09T00:00:00+01:00');
+export const DEFAULT_GAMES_OPEN_MS = Date.parse('2026-11-08T00:00:00+01:00');
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+export const weekdayName = (d: number) => WEEKDAYS[d] || '';
+/** "Monday 9 November" */
+export const openDateText = (ms: number) =>
+  new Date(ms).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 export const OUTSIDE_BANNER = 'Order before 5:10pm. Sec men are strict with late deliveries.';
 /** Outside store items: one delivery a day */
 export const OUTSIDE_STORE_BATCHES: BatchSlotDef[] = [

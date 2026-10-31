@@ -21,7 +21,7 @@ import {
   createProductRequest,
   subscribeProductRequest,
 } from './api.js';
-import { SCHOOL_NAME, ShopGroup, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
+import { openDateText, SCHOOL_NAME, ShopGroup, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
 import { MessageCircle } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
@@ -35,6 +35,7 @@ import { SearchBar } from './components/SearchBar';
 import { DeliveryPromiseBanner } from './components/DeliveryPromiseBanner';
 import { CategoryNav, ShopTab } from './components/CategoryNav';
 import { HostelHub } from './components/HostelHub';
+import { subscribeHubSettings, outsideStoreOpensAt } from './hub.js';
 import { ProductCard } from './components/ProductCard';
 import { FoodCustomizerSheet } from './components/FoodCustomizerSheet';
 import { ProductSheet, OrderAgainRow, FeaturedRow, PairingsBar } from './components/ShopExtras';
@@ -85,6 +86,16 @@ export default function App() {
   // Categories & Products from API
   const [categories, setCategories] = useState<CategoryDefinition[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  // Outside store items open on launch day (Admin > Hub & Games can change the date or open it now)
+  const [hubSettings, setHubSettings] = useState<any>({});
+  useEffect(() => subscribeHubSettings(setHubSettings), []);
+  const storeOpensMs = outsideStoreOpensAt(hubSettings);
+  const [clockMs, setClockMs] = useState(Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setClockMs(Date.now()), 60000);
+    return () => window.clearInterval(id);
+  }, []);
+  const storeLocked = storeOpensMs > clockMs;
   // The app opens on the side and category of the student's last placed order (saved on this phone).
   // Nothing saved, or unreadable storage: Inside school > Store Items.
   const lastShop = useMemo(() => {
@@ -432,6 +443,10 @@ export default function App() {
 
   // Cart operations
   const handleAddSimpleProduct = (product: Product) => {
+    if (storeLocked && cartOf(product) === 'store') {
+      window.alert(`Outside store orders open ${openDateText(storeOpensMs)}. You can browse until then.`);
+      return;
+    }
     addSimpleToCart(product);
     showPairs(product);
   };
@@ -987,7 +1002,7 @@ export default function App() {
   // RENDER PORTAL 3: CUSTOMER STOREFRONT
   return (
     <div className="min-h-screen bg-[#e8efeb] dark:bg-slate-950 flex justify-center selection:bg-[#0e9f55]/20">
-      <div className="w-full max-w-[480px] bg-[#f4f8f6] dark:bg-slate-900 min-h-screen flex flex-col relative shadow-2xl border-x border-slate-200/60 dark:border-slate-800/60 pb-24">
+      <div className="w-full max-w-[480px] bg-[#f4f8f6] dark:bg-slate-900 min-h-screen flex flex-col relative shadow-2xl border-x border-slate-200/60 dark:border-slate-800/60 pb-36">
         <AdminSwitcher current="customer" onSelect={handleSelectPortal} />
         {/* Header */}
         <Header
@@ -1109,7 +1124,7 @@ export default function App() {
           </div>
 
           {/* Delivery bar: changes with the toggle above */}
-          <DeliveryPromiseBanner mode={sourceMode} tab={lastGroup} />
+          <DeliveryPromiseBanner mode={sourceMode} tab={lastGroup} storeOpensAtMs={storeLocked ? storeOpensMs : 0} />
 
           {!searchQuery && <InstallBanner variant="home" />}
 
@@ -1222,6 +1237,7 @@ export default function App() {
                         onRemove={handleRemoveSimpleProduct}
                         onOpenFoodCustomizer={(prod) => setCustomizingFood(prod)}
                         onOpenDetails={setDetailProduct}
+                        lockedLabel={storeLocked && cartOf(product) === 'store' ? `Opens ${new Date(storeOpensMs).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : undefined}
                       />
                     ))}
                   </div>

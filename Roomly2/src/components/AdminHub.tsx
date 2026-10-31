@@ -27,6 +27,8 @@ import {
   priceLabel,
   timeAgo,
   isLive,
+  gamesOpensAt,
+  outsideStoreOpensAt,
 } from '../hub.js';
 
 const card = 'p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-3';
@@ -117,6 +119,61 @@ export const AdminHub: React.FC = () => {
 
 /* ------------------------------------------------------------------ */
 
+const toLocal = (ms: number) => {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+/** Admin: when challenges open, and when outside store items can be ordered */
+const LaunchDates: React.FC<{ settings: any }> = ({ settings }) => {
+  const games = gamesOpensAt(settings);
+  const store = outsideStoreOpensAt(settings);
+  const now = Date.now();
+  const [g, setG] = useState(toLocal(games));
+  const [st, setSt] = useState(toLocal(store));
+  useEffect(() => setG(toLocal(games)), [games]);
+  useEffect(() => setSt(toLocal(store)), [store]);
+  const save = async (key: string, v: string) => {
+    const ms = new Date(v).getTime();
+    if (!Number.isFinite(ms)) return window.alert('Pick a date and time.');
+    await saveHubSettings({ [key]: ms });
+  };
+  return (
+    <div className={card}>
+      <p className={h}>Launch dates</p>
+      <div className="space-y-1.5">
+        <p className="text-xs font-bold text-slate-900 dark:text-white">
+          Games challenges {now >= games ? <span className="text-[#0e9f55]">· open</span> : <span className="text-amber-600">· registration week</span>}
+        </p>
+        <div className="flex gap-2">
+          <input type="datetime-local" value={g} onChange={(e) => setG(e.target.value)} className={input} />
+          <button type="button" onClick={() => save('gamesOpenAtMs', g)} className={`${btn} bg-slate-900 text-white dark:bg-white dark:text-slate-900 shrink-0`}>
+            Save
+          </button>
+        </div>
+      </div>
+      <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+        <p className="text-xs font-bold text-slate-900 dark:text-white">
+          Outside store orders {now >= store ? <span className="text-[#0e9f55]">· open</span> : <span className="text-amber-600">· opens soon</span>}
+        </p>
+        <p className="text-[11px] text-slate-500">Before this date students can browse outside store items but can't add them to a cart.</p>
+        <div className="flex gap-2">
+          <input type="datetime-local" value={st} onChange={(e) => setSt(e.target.value)} className={input} />
+          <button type="button" onClick={() => save('outsideStoreOpenAtMs', st)} className={`${btn} bg-slate-900 text-white dark:bg-white dark:text-slate-900 shrink-0`}>
+            Save
+          </button>
+        </div>
+        {now < store && (
+          <button type="button" onClick={() => window.confirm('Open outside store orders now?') && saveHubSettings({ outsideStoreOpenAtMs: Date.now() - 60000 })} className={`${btn} bg-[#0e9f55] text-white`}>
+            Open outside store now
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const HubSettings: React.FC<{ settings: any }> = ({ settings }) => {
   const acc = settings.tourneyAccount || {};
   const [bank, setBank] = useState(acc.bank || '');
@@ -136,6 +193,8 @@ const HubSettings: React.FC<{ settings: any }> = ({ settings }) => {
   };
 
   return (
+    <>
+    <LaunchDates settings={settings} />
     <div className={card}>
       <p className={h}>Switches and accounts</p>
       <div className="flex items-center justify-between gap-2">
@@ -164,6 +223,7 @@ const HubSettings: React.FC<{ settings: any }> = ({ settings }) => {
         </button>
       </div>
     </div>
+    </>
   );
 };
 
@@ -236,7 +296,7 @@ const Disputes: React.FC = () => {
   const banned = gamers.filter((g) => g.banned);
 
   const text = (m: any) =>
-    isScored(m.game) ? `${m.aName} ${m.scoreA} - ${m.scoreB} ${m.bName}` : `${m.scoreA > m.scoreB ? m.aName : m.bName} won`;
+    isScored(m.game) ? `${m.aName} ${m.scoreA}-${m.scoreB} ${m.bName}` : `${m.scoreA > m.scoreB ? m.aName : m.bName} won`;
   const setScore = async (m: any) => {
     const v = window.prompt(
       isScored(m.game) ? `Correct score as "${m.aName} goals-${m.bName} goals", e.g. 2-1` : `Who won? Type 1 for ${m.aName} or 2 for ${m.bName}`

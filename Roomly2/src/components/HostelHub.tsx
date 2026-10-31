@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Phone, Flag, Plus, X, ShoppingBag, MessageCircle, Camera, Loader2, BatteryCharging, HelpCircle, ChevronDown } from 'lucide-react';
+import { Phone, Flag, Plus, X, ShoppingBag, MessageCircle, Camera, Loader2, BatteryCharging, CircleCheck, ChevronDown, ChevronRight, Gamepad2, Wrench, ShieldCheck, Users } from 'lucide-react';
 import { NoPhoto } from './NoPhoto';
 import { HOSTELS } from '../config';
 import {
@@ -24,11 +24,11 @@ import {
 } from '../hub.js';
 import { Gaming } from './Gaming';
 
-type Section = 'services' | 'buysell' | 'games';
+type Section = 'games' | 'buysell' | 'services';
 type Kind = 'all' | 'service' | 'charging' | 'water' | 'item' | 'rent' | 'wanted';
 
 interface Props {
-  /** Inside-school product names: anything Roomly already sells can't be listed */
+  /** Inside-school product names: things the school doesn't allow reselling in the hostel */
   productNames: string[];
   /** The student signed in on this phone (prefills the forms) */
   session: { name?: string; phone?: string; pin?: string };
@@ -36,56 +36,50 @@ interface Props {
 }
 
 const input =
-  'w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30';
+  'w-full h-11 px-3 text-sm bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30';
 const card = 'bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800';
 const waLink = (phone: string) => `https://wa.me/234${String(phone).replace(/\D/g, '').replace(/^0/, '')}`;
 const typeLabel = (id: string) => HUB_TYPES.find((t) => t.id === id)?.label || '';
 const chip = (on: boolean) =>
-  `shrink-0 whitespace-nowrap h-8 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-    on ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
+  `shrink-0 whitespace-nowrap h-10 px-4 rounded-full text-xs font-bold border transition-all cursor-pointer ${
+    on
+      ? 'bg-emerald-50 dark:bg-emerald-950/50 border-[#0e9f55] text-[#0e9f55]'
+      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
   }`;
+const SECTION_ICON: Record<Section, React.FC<{ className?: string }>> = { games: Gamepad2, buysell: ShoppingBag, services: Wrench };
+const SECTION_HEAD: Record<'buysell' | 'services', { title: string; sub: string }> = {
+  buysell: { title: 'Buy & Sell', sub: 'Good finds, shared around your hostel.' },
+  services: { title: 'Services', sub: 'Helpful skills, right around the hostel.' },
+};
 
 /* ------------------------------------------------------------------ */
 /* "How this works" guides, one per section                            */
 /* ------------------------------------------------------------------ */
 
-const GUIDES: Record<Section, { title: string; points: string[] }> = {
-  services: {
-    title: 'How Services works',
-    points: [
-      'Students offer skills to other students in the hostel: barbing, hair braiding, laundry, typing, phone charging when there is no light, and fetching water during scarcity.',
-      'To hire someone: find them here, tap Contact, then call or WhatsApp them to agree the price and time.',
-      'To offer a service: tap Post, choose what you offer, add a real photo and your price range.',
-      'Your service stays up. Every 30 days, tap "Still available" in My listings to keep it showing.',
-      'Phone charging: switch "Charging now" on in My listings whenever you can charge, so students see you first.',
-      'Payment is between you and the other student. Roomly takes nothing during launch.',
-      'See something fake? Tap the flag to report it.',
-    ],
-  },
-  buysell: {
-    title: 'How Buy & Sell works',
-    points: [
-      "Selling new stock inside the hostel isn't allowed by the school, so Buy & Sell is only for your own used items: stove, bucket, power bank, phone, textbooks.",
-      'Need something new? Order it on Roomly and a runner brings it to your room, or order from Outside school to restock. It is all easy on Roomly.',
-      'For sale: sell an item once. For rent: lend it per day and agree a deposit first. Wanted: post what you need and people who have it will contact you.',
-      'You choose how long your post stays up: 1, 3, 7 or 14 days. You can have 3 items for sale at a time. Tap "Mark sold" when it is gone.',
-      'Meet in a public place and check the item before you pay. Anyone selling stolen items is banned and reported.',
-    ],
-  },
-  games: {
-    title: 'How Games works',
-    points: [
-      'Join once: your gamer name, hostel, WhatsApp number and the games you play (eFootball, FIFA, DLS, Free Fire, CODM). Player IDs are optional.',
-      'Leaderboard: every game has its own. Everyone starts at 1,000. Beat stronger players to climb faster. The best active player wears the crown as the best in Caritas.',
-      'Go "Ready to play" for today, 3 days or a week. Ready players show a Challenge button that opens WhatsApp with the message already written.',
-      'Challenge any ready player on the leaderboard, including the leader. Agree a time on WhatsApp and play.',
-      'After the match, one of you taps "Log a match result" and enters the score (draws count for football games). Send the confirm link to your opponent.',
-      'If your opponent does not answer in 24 hours, the result counts. They can still dispute it for 3 days with a screenshot, and Roomly decides.',
-      'No match for a week and your rating slowly drops, so keep playing to stay on top.',
-      'Tournaments: Roomly hosts them on a set date. Tap Join, pay the entry fee (if any) to the account shown, then tap "I\'ve paid". If a tournament does not fill up, everyone is refunded in full.',
-      '1v1 challenges are free and there is no betting. Challenge the best in Caritas at any game you play, and see every player on the leaderboard.',
-    ],
-  },
+const GUIDES: Record<Section, string[]> = {
+  games: [
+    'Register once: gamer name, hostel, WhatsApp number, your Roomly PIN and the games you play. Your number stays private.',
+    'Week one is registration week. Challenges open on the date shown at the top.',
+    'It works like a football league table: a win earns 3 points, a draw 1 (football games), a loss 0. The top player in each game wears the crown as Best in Caritas.',
+    'Switch on Ready to play, then challenge any ready player on WhatsApp, including the leader.',
+    'After the match, one of you logs the score and your opponent confirms. No reply in 24 hours and it counts. A wrong result can be disputed with a screenshot.',
+    'Roomly hosts tournaments on set dates: 1st +10, 2nd +6, 3rd +3 points. If a tournament does not fill up, everyone is refunded in full.',
+    '1v1 challenges are free and there is no betting. Challenge the best in Caritas at any game you play, and see every player on the table.',
+  ],
+  buysell: [
+    "Selling new stock inside the hostel isn't allowed by the school, so Buy & Sell is only for your own used items: stove, bucket, power bank, phone, textbooks.",
+    'Need something new? Order it on Roomly and a runner brings it to your room, or order from Outside school to restock.',
+    'For sale: sell an item once. For rent: lend it per day and agree a deposit first. Wanted: post what you need and people who have it contact you.',
+    'Your post stays up for 1, 3, 7 or 14 days. You can have 3 items for sale at a time. Tap "Mark sold" when it is gone.',
+    'Roomly connects students. You arrange the payment and meeting yourselves. Anyone selling stolen items is banned and reported.',
+  ],
+  services: [
+    'Offer a skill to students in your hostel: barbing, hair braiding, laundry, typing, phone charging when there is no light, or fetching water during scarcity.',
+    'To hire someone, tap Contact and agree the price and time on a call or WhatsApp.',
+    'To offer a service, tap Post and add a real photo, your price range and your hostel. It stays up; tap "Still available" every 30 days.',
+    'Phone charging: switch "Charging now" on in My listings whenever you can charge, so students see you first.',
+    'Payment is between you. Roomly takes nothing during launch. See something fake? Tap the flag.',
+  ],
 };
 
 /** Collapsible guide. Opens by itself the first time a student visits that section. */
@@ -103,19 +97,24 @@ const Guide: React.FC<{ section: Section }> = ({ section }) => {
       localStorage.setItem(key, '1');
     } catch {}
   }, [key]);
-  const g = GUIDES[section];
   return (
-    <div className="rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-900">
-      <button type="button" onClick={() => setOpen(!open)} className="w-full flex items-center justify-between gap-2 px-3 py-2.5 cursor-pointer text-left">
-        <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-900 dark:text-emerald-200">
-          <HelpCircle className="w-3.5 h-3.5" /> {g.title}
+    <div className={`${card} overflow-hidden`}>
+      <button type="button" onClick={() => setOpen(!open)} className="w-full flex items-center justify-between gap-2 px-4 py-3.5 cursor-pointer text-left">
+        <span className="flex items-center gap-2.5 text-sm font-bold text-slate-900 dark:text-white">
+          <span className="w-8 h-8 rounded-full bg-emerald-50 dark:bg-emerald-950/60 flex items-center justify-center">
+            <CircleCheck className="w-4 h-4 text-[#0e9f55]" />
+          </span>
+          How this works
         </span>
-        <ChevronDown className={`w-4 h-4 text-emerald-700 dark:text-emerald-300 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <ol className="px-3 pb-3 space-y-1.5 list-decimal pl-7 text-[11px] leading-snug text-emerald-950 dark:text-emerald-100">
-          {g.points.map((p, i) => (
-            <li key={i}>{p}</li>
+        <ol className="px-4 pb-4 pt-1 space-y-2.5 border-t border-slate-100 dark:border-slate-800">
+          {GUIDES[section].map((p, i) => (
+            <li key={i} className="flex gap-3 text-xs leading-relaxed text-slate-700 dark:text-slate-300 pt-2 first:pt-3">
+              <span className="w-5 h-5 shrink-0 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-[#0e9f55] text-[10px] font-black flex items-center justify-center">{i + 1}</span>
+              <span>{p}</span>
+            </li>
           ))}
         </ol>
       )}
@@ -123,14 +122,14 @@ const Guide: React.FC<{ section: Section }> = ({ section }) => {
   );
 };
 
-/** Hostel Hub: Services, Buy & Sell, Games */
+/** Hostel Hub: Games, Buy & Sell, Services */
 export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore }) => {
   const [section, setSection] = useState<Section>(() => {
     try {
       const v = localStorage.getItem('roomly_hub_section');
-      return v === 'buysell' || v === 'games' ? v : 'services';
+      return v === 'buysell' || v === 'services' ? v : 'games';
     } catch {
-      return 'services';
+      return 'games';
     }
   });
   const [kind, setKind] = useState<Kind>('all');
@@ -150,7 +149,7 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
     try {
       localStorage.setItem('roomly_hub_section', section);
     } catch {}
-    setKind(section === 'buysell' ? 'item' : 'all');
+    setKind('all');
     setPosting(false);
     setShowMine(false);
   }, [section]);
@@ -163,34 +162,32 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
   }, [kind, waterOn]);
 
   const shown = useMemo(() => {
-    const list = listings.filter(
-      (l) => sectionTypes.includes(l.type) && (kind === 'all' || l.type === kind) && isLive(l, nowMs, waterOn)
-    );
-    // Whoever can charge right now first
+    const list = listings.filter((l) => sectionTypes.includes(l.type) && (kind === 'all' || l.type === kind) && isLive(l, nowMs, waterOn));
     list.sort((a, b) => Number(Boolean(b.chargingNow)) - Number(Boolean(a.chargingNow)));
     return list;
   }, [listings, section, kind, nowMs, waterOn]);
 
   return (
-    <div className="space-y-3">
-      <p className="text-[11px] text-slate-500 leading-snug">
-        Students helping students. Roomly connects you; you arrange the rest. <span className="font-bold text-[#0e9f55]">Free during launch.</span>
-      </p>
-
+    <div className="space-y-4">
       {/* Sections */}
       <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/70">
-        {HUB_SECTIONS.map((x) => (
-          <button
-            key={x.id}
-            type="button"
-            onClick={() => setSection(x.id as Section)}
-            className={`h-9 rounded-xl text-[13px] font-bold truncate cursor-pointer transition-all ${
-              section === x.id ? 'bg-white dark:bg-slate-900 text-[#0e9f55] shadow-xs' : 'text-slate-500 dark:text-slate-400'
-            }`}
-          >
-            {x.label}
-          </button>
-        ))}
+        {HUB_SECTIONS.map((x) => {
+          const Icon = SECTION_ICON[x.id as Section];
+          const on = section === x.id;
+          return (
+            <button
+              key={x.id}
+              type="button"
+              onClick={() => setSection(x.id as Section)}
+              className={`h-11 rounded-xl text-[13px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                on ? 'bg-white dark:bg-slate-900 text-[#0e9f55] shadow-xs' : 'text-slate-500 dark:text-slate-400'
+              }`}
+            >
+              <Icon className="w-4 h-4 shrink-0" />
+              <span className="truncate">{x.label}</span>
+            </button>
+          );
+        })}
       </div>
 
       <Guide key={section} section={section} />
@@ -199,50 +196,70 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
         <Gaming session={session} />
       ) : (
         <>
-          {/* Filters inside the section */}
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
-              {section === 'services' && (
-                <button type="button" onClick={() => setKind('all')} className={chip(kind === 'all')}>
-                  All
-                </button>
-              )}
-              {kinds.map((t) => (
-                <button key={t} type="button" onClick={() => setKind(t as Kind)} className={chip(kind === t)}>
-                  {typeLabel(t)}
-                </button>
-              ))}
+          {/* Section header */}
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-black text-slate-900 dark:text-white">{SECTION_HEAD[section].title}</h2>
+              <p className="text-xs text-slate-500">{SECTION_HEAD[section].sub}</p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setShowMine(!showMine);
-                setPosting(false);
-              }}
-              className="shrink-0 text-[11px] font-bold text-[#0e9f55] cursor-pointer"
-            >
-              {showMine ? 'Back' : 'My listings'}
-            </button>
+            {!posting && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPosting(true);
+                  setShowMine(false);
+                }}
+                className="shrink-0 h-11 px-4 rounded-xl bg-[#0e9f55] text-white text-sm font-bold flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" /> Post
+              </button>
+            )}
           </div>
 
-          {!posting && !showMine && (
-            <button
-              type="button"
-              onClick={() => setPosting(true)}
-              className="w-full h-10 flex items-center justify-center gap-1.5 rounded-xl bg-[#0e9f55] text-white text-xs font-black cursor-pointer"
-            >
-              <Plus className="w-4 h-4" /> Post in {section === 'services' ? 'Services' : 'Buy & Sell'}
+          {/* Filters */}
+          <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 pb-0.5">
+            <button type="button" onClick={() => setKind('all')} className={chip(kind === 'all' && !showMine)}>
+              All
             </button>
+            {kinds.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => {
+                  setKind(t as Kind);
+                  setShowMine(false);
+                }}
+                className={chip(kind === t && !showMine)}
+              >
+                {typeLabel(t)}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setShowMine(!showMine);
+              setPosting(false);
+            }}
+            className="flex items-center gap-1.5 text-xs font-bold text-[#0e9f55] cursor-pointer"
+          >
+            <Users className="w-3.5 h-3.5" /> {showMine ? 'Back to all listings' : 'My listings'}
+          </button>
+
+          {section === 'buysell' && !posting && !showMine && (
+            <div className={`${card} p-3.5 flex gap-3`}>
+              <span className="w-9 h-9 shrink-0 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 flex items-center justify-center">
+                <ShoppingBag className="w-4 h-4 text-[#0e9f55]" />
+              </span>
+              <div>
+                <p className="text-sm font-bold text-slate-900 dark:text-white">Used items only in the hostel</p>
+                <p className="text-xs text-slate-500 leading-snug">Need something new? Order it on Roomly and a runner brings it to your room.</p>
+              </div>
+            </div>
           )}
 
           {posting && (
-            <PostForm
-              types={kinds}
-              startType={kind === 'all' ? kinds[0] : kind}
-              productNames={productNames}
-              session={session}
-              onDone={() => setPosting(false)}
-            />
+            <PostForm types={kinds} startType={kind === 'all' ? kinds[0] : kind} productNames={productNames} session={session} onDone={() => setPosting(false)} />
           )}
 
           {showMine && <MyListings />}
@@ -250,13 +267,18 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
           {!posting && !showMine && (
             <>
               {shown.length === 0 ? (
-                <div className={`${card} text-center py-8 px-4 text-xs text-slate-400`}>Nothing here yet. Be the first to post.</div>
+                <div className={`${card} text-center py-10 px-4 text-xs text-slate-400`}>Nothing here yet. Be the first to post.</div>
               ) : (
-                <div className="space-y-2.5">
+                <div className="space-y-3">
                   {shown.map((l) => (
-                    <ListingCard key={l.id} l={l} />
+                    <ListingCard key={l.id} l={l} nowMs={nowMs} />
                   ))}
                 </div>
+              )}
+              {section === 'buysell' && (
+                <p className="flex items-center gap-2 text-xs text-slate-500 px-1">
+                  <ShieldCheck className="w-4 h-4 text-[#0e9f55] shrink-0" /> Meet in a public place and check the item before you pay.
+                </p>
               )}
             </>
           )}
@@ -267,10 +289,16 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
       <button
         type="button"
         onClick={onGoStore}
-        className="w-full flex items-center justify-between gap-2 p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-900 text-left cursor-pointer"
+        className="w-full flex items-center gap-3 p-3.5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-900 text-left cursor-pointer"
       >
-        <span className="text-[11px] font-bold text-emerald-900 dark:text-emerald-200">Need something delivered to your room? Order from Store Items</span>
-        <ShoppingBag className="w-4 h-4 text-[#0e9f55] shrink-0" />
+        <span className="w-10 h-10 shrink-0 rounded-xl bg-white dark:bg-slate-900 flex items-center justify-center">
+          <ShoppingBag className="w-4 h-4 text-[#0e9f55]" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-bold text-slate-900 dark:text-white">Need something delivered to your room?</span>
+          <span className="block text-xs text-[#0e9f55]">Order from Store Items</span>
+        </span>
+        <ChevronRight className="w-4 h-4 text-[#0e9f55] shrink-0" />
       </button>
     </div>
   );
@@ -278,13 +306,14 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
 
 /* ------------------------------------------------------------------ */
 
-const ListingCard: React.FC<{ l: any }> = ({ l }) => {
+const ListingCard: React.FC<{ l: any; nowMs: number }> = ({ l, nowMs }) => {
   const [showPhone, setShowPhone] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState('');
+  const daysLeft = LONG_LIVED.includes(l.type) ? 0 : Math.max(1, Math.ceil((Number(l.expiresAtMs) - nowMs) / 86400000));
 
   const sendReport = async () => {
     if (!reason) return;
@@ -300,87 +329,80 @@ const ListingCard: React.FC<{ l: any }> = ({ l }) => {
   };
 
   return (
-    <div className={`${card} p-3 space-y-2.5`}>
+    <div className={`${card} p-3.5 space-y-3`}>
       <div className="flex gap-3">
         {l.photo ? (
-          <img src={l.photo} alt="" loading="lazy" className="w-20 h-20 rounded-xl object-cover shrink-0 bg-slate-100 dark:bg-slate-800" />
+          <img src={l.photo} alt="" loading="lazy" className="w-[88px] h-[88px] rounded-xl object-cover shrink-0 bg-slate-100 dark:bg-slate-800" />
         ) : (
-          <div className="w-20 h-20 rounded-xl shrink-0 bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+          <div className="w-[88px] h-[88px] rounded-xl shrink-0 bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
             <NoPhoto name={l.title} className="text-2xl" />
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{typeLabel(l.type)}</p>
-          <p className="text-sm font-extrabold text-slate-900 dark:text-white leading-tight">{l.title}</p>
-          <p className="text-xs font-bold text-[#0e9f55] mt-0.5">{priceLabel(l)}</p>
-          <p className="text-[11px] text-slate-500 mt-0.5">
-            {l.name} · {l.hostel} · {timeAgo(l.createdAtMs)}
-          </p>
-          {l.type === 'charging' && l.chargingNow && (
-            <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full">
-              <BatteryCharging className="w-3 h-3" /> Charging available now
+          <div className="flex items-start justify-between gap-2">
+            <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[9px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-300">
+              {typeLabel(l.type)}
             </span>
-          )}
+            <button type="button" onClick={() => setReporting(!reporting)} aria-label="Report this listing" className="-mt-1 -mr-1 p-1.5 text-slate-400 cursor-pointer">
+              <Flag className="w-4 h-4" />
+            </button>
+          </div>
+          <p className="mt-1 text-sm font-black text-slate-900 dark:text-white leading-tight">{l.title}</p>
+          <p className="text-sm font-bold text-[#0e9f55] mt-0.5">{priceLabel(l)}</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            {l.name} · {l.hostel}
+          </p>
         </div>
       </div>
-      {l.note && <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-snug">{l.note}</p>}
-      {l.type === 'rent' && (
-        <p className="text-[10px] text-amber-700 dark:text-amber-400">Agree the deposit and who pays for damage before you hand it over.</p>
+      {l.type === 'charging' && l.chargingNow && (
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[#0e9f55] bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-full">
+          <BatteryCharging className="w-3.5 h-3.5" /> Charging available now
+        </span>
       )}
-      {l.type === 'charging' && (
-        <p className="text-[10px] text-amber-700 dark:text-amber-400">Only hand your phone to someone in your hostel.</p>
-      )}
+      {l.note && <p className="text-xs text-slate-600 dark:text-slate-300 leading-snug">{l.note}</p>}
+      {l.type === 'rent' && <p className="text-[11px] text-amber-700 dark:text-amber-400">Agree the deposit and who pays for damage before you hand it over.</p>}
+      {l.type === 'charging' && <p className="text-[11px] text-amber-700 dark:text-amber-400">Only hand your phone to someone in your hostel.</p>}
 
-      {showPhone ? (
-        <div className="grid grid-cols-2 gap-2">
-          <a
-            href={`tel:${l.phone}`}
-            className="flex items-center justify-center gap-1 py-2 rounded-xl bg-[#0e9f55] text-white text-xs font-bold"
-          >
-            <Phone className="w-3.5 h-3.5" /> {l.phone}
-          </a>
-          <a
-            href={waLink(l.phone)}
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center justify-center gap-1 py-2 rounded-xl border border-emerald-300 dark:border-emerald-800 text-[#0e9f55] text-xs font-bold"
-          >
-            <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
-          </a>
-        </div>
-      ) : (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setShowPhone(true);
-              countContact(l.id);
-            }}
-            className="flex-1 flex items-center justify-center gap-1 py-2 rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer"
-          >
-            <Phone className="w-3.5 h-3.5" /> {l.type === 'wanted' ? 'I have this' : 'Contact'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setReporting(!reporting)}
-            className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 text-xs font-bold cursor-pointer"
-            aria-label="Report this listing"
-          >
-            <Flag className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
+      <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+        {showPhone ? (
+          <div className="grid grid-cols-2 gap-2">
+            <a href={`tel:${l.phone}`} className="h-10 flex items-center justify-center gap-1.5 rounded-xl bg-[#0e9f55] text-white text-xs font-bold">
+              <Phone className="w-3.5 h-3.5" /> Call
+            </a>
+            <a href={waLink(l.phone)} target="_blank" rel="noreferrer" className="h-10 flex items-center justify-center gap-1.5 rounded-xl border border-emerald-300 dark:border-emerald-800 text-[#0e9f55] text-xs font-bold">
+              <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+            </a>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] text-slate-400">
+              {timeAgo(l.createdAtMs)}
+              {daysLeft ? ` · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left` : ''}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setShowPhone(true);
+                countContact(l.id);
+              }}
+              className="h-10 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5 cursor-pointer"
+            >
+              <MessageCircle className="w-3.5 h-3.5" /> {l.type === 'wanted' ? 'I have this' : 'Contact'}
+            </button>
+          </div>
+        )}
+      </div>
 
       {reporting && (
-        <div className="space-y-2 p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/30">
-          <p className="text-[11px] font-bold text-rose-700 dark:text-rose-300">Report this listing</p>
+        <div className="space-y-2 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30">
+          <p className="text-xs font-bold text-rose-700 dark:text-rose-300">Report this listing</p>
           <div className="flex flex-wrap gap-1.5">
             {REPORT_REASONS.map((r) => (
               <button
                 key={r.id}
                 type="button"
                 onClick={() => setReason(r.id)}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold cursor-pointer ${
+                className={`h-9 px-3 rounded-lg text-xs font-semibold cursor-pointer ${
                   reason === r.id ? 'bg-rose-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200'
                 }`}
               >
@@ -389,12 +411,7 @@ const ListingCard: React.FC<{ l: any }> = ({ l }) => {
             ))}
           </div>
           <input value={note} onChange={(e) => setNote(e.target.value)} className={input} placeholder="Anything else? (optional)" />
-          <button
-            type="button"
-            onClick={sendReport}
-            disabled={!reason || busy}
-            className="w-full py-2 rounded-xl bg-rose-600 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
-          >
+          <button type="button" onClick={sendReport} disabled={!reason || busy} className="w-full h-10 rounded-xl bg-rose-600 text-white text-xs font-bold cursor-pointer disabled:opacity-50">
             {busy ? 'Sending...' : 'Send report'}
           </button>
         </div>

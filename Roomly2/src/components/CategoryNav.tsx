@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, ShoppingBasket, UtensilsCrossed, Users } from 'lucide-react';
 import { ShopGroup, shopGroupLabel } from '../config';
 
 /** 'hub' = Hostel Hub (inside school only) */
@@ -37,31 +37,35 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
 }) => {
   return (
     <div className="space-y-2.5">
-      {/* One slim segmented bar: equal widths, short labels, fits small phones */}
+      {/* Main sections: icon over label, the open one in solid green */}
       <div
         role="tablist"
-        className={`grid gap-1 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/70 ${side === 'inside' ? 'grid-cols-3' : 'grid-cols-2'}`}
+        className={`grid gap-1.5 p-1.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 ${side === 'inside' ? 'grid-cols-3' : 'grid-cols-2'}`}
       >
         {[
-          ...(['store', 'food'] as ShopGroup[]).map((g) => ({ id: g as ShopTab, label: shortLabel(g, side) })),
-          ...(side === 'inside' ? [{ id: 'hub' as ShopTab, label: 'Hostel Hub' }] : []),
-        ].map((t) => {
-          const isSelected = selected === t.id;
+          { id: 'store' as ShopTab, label: shortLabel('store', side), Icon: ShoppingBasket },
+          { id: 'food' as ShopTab, label: shortLabel('food', side), Icon: UtensilsCrossed },
+          ...(side === 'inside' ? [{ id: 'hub' as ShopTab, label: 'Hostel Hub', Icon: Users }] : []),
+        ].map(({ id, label, Icon }) => {
+          const isSelected = selected === id;
           return (
             <button
-              key={t.id}
+              key={id}
               type="button"
               role="tab"
               aria-selected={isSelected}
               onClick={() => {
-                onSelect(t.id);
+                onSelect(id);
                 onSelectFilter('All');
               }}
-              className={`h-10 px-1 rounded-xl text-[13px] font-bold truncate transition-all cursor-pointer ${
-                isSelected ? 'bg-white dark:bg-slate-900 text-[#0e9f55] shadow-xs' : 'text-slate-500 dark:text-slate-400'
+              className={`h-14 px-1 rounded-xl flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                isSelected
+                  ? 'bg-[#0e9f55] text-white shadow-md shadow-[#0e9f55]/25'
+                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
               }`}
             >
-              {t.label}
+              <Icon className="w-[18px] h-[18px]" />
+              <span className="text-[12px] font-bold leading-none truncate max-w-full">{label}</span>
             </button>
           );
         })}

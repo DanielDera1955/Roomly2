@@ -11,6 +11,8 @@ interface ProductCardProps {
   onOpenFoodCustomizer?: (product: Product) => void;
   /** Tap the card (not the Add button): details and similar products */
   onOpenDetails?: (product: Product) => void;
+  /** Not orderable yet (e.g. outside store before launch): shown instead of the Add button */
+  lockedLabel?: string;
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({
@@ -20,6 +22,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   onRemove,
   onOpenFoodCustomizer,
   onOpenDetails,
+  lockedLabel,
 }) => {
   const [imageError, setImageError] = useState(false);
 
@@ -105,7 +108,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         </div>
 
         {/* Action Button */}
-        {product.isFood ? (
+        {lockedLabel ? (
+          <span className="px-2 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-bold whitespace-nowrap">
+            {lockedLabel}
+          </span>
+        ) : product.isFood ? (
           <button
             type="button"
             onClick={handleAddClick}
