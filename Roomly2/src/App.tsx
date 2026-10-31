@@ -1042,7 +1042,7 @@ export default function App() {
         )}
 
         {/* Main Storefront Body */}
-        <main className="p-4 space-y-4 flex-1">
+        <main className="px-3 py-4 space-y-4 flex-1">
 
           {/* Phone Number Input & Customer Recognition */}
           <div className="-mx-4 -mt-4 px-4 pt-5 pb-3 bg-gradient-to-b from-emerald-100/70 to-transparent dark:from-emerald-950/40">

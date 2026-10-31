@@ -45,7 +45,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
   ];
   // The notch under the open tab (Request belongs to Store Items)
   const activeIdx = Math.max(0, tabs.findIndex((t) => t.id === (selected === 'Request' ? 'store' : selected)));
-  const notchLeft = `calc(${((activeIdx + 0.5) / tabs.length) * 100}% - 9px)`;
+  const notchLeft = `calc(${((activeIdx + 0.5) / tabs.length) * 100}% - 6px)`;
 
   return (
     <div>
@@ -81,14 +81,16 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
         })}
       </div>
 
-      {/* Everything for the open tab hangs from it: green top line and a notch under the active tab */}
-      <div className="relative mt-3 rounded-3xl bg-white dark:bg-slate-950 border border-slate-200/80 dark:border-slate-800 border-t-2 border-t-[#0e9f55] p-3 space-y-3">
+      {/* A thin green arc under the bar, with an arrow rising under the open tab */}
+      <div aria-hidden className="relative h-4 mt-2 mb-1 mx-1">
+        <span className="absolute inset-x-0 bottom-0 h-3 border-t-2 border-x-2 border-[#0e9f55]/60 rounded-t-xl" />
         <span
-          aria-hidden
-          className="absolute -top-[10px] w-[18px] h-[18px] rotate-45 bg-white dark:bg-slate-950 border-l-2 border-t-2 border-[#0e9f55] rounded-tl-[3px] transition-all duration-300"
+          className="absolute bottom-[3px] w-3 h-3 rotate-45 bg-[#f4f8f6] dark:bg-slate-900 border-l-2 border-t-2 border-[#0e9f55]/60 transition-all duration-300"
           style={{ left: notchLeft }}
         />
+      </div>
 
+      <div className="space-y-3">
       {selected !== 'hub' && searchSlot}
 
       {!searching && selected !== 'Request' && selected !== 'hub' && filters.length > 1 && (
@@ -115,7 +117,7 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
             <span className="shrink-0 w-6" aria-hidden />
           </div>
           {/* Fade on the right: there are more categories to scroll to */}
-          <span aria-hidden className="pointer-events-none absolute right-0 top-0 bottom-0 w-10 bg-gradient-to-l from-white dark:from-slate-950 to-transparent" />
+          <span aria-hidden className="pointer-events-none absolute right-0 top-0 bottom-0 w-10 bg-gradient-to-l from-[#f4f8f6] dark:from-slate-900 to-transparent" />
         </div>
       )}
 
