@@ -92,24 +92,30 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
       {selected !== 'hub' && searchSlot}
 
       {!searching && selected !== 'Request' && selected !== 'hub' && filters.length > 1 && (
-        <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-3 px-3 pb-0.5">
-          {['All', ...filters].map((f) => {
-            const on = selectedFilter.toLowerCase() === f.toLowerCase();
-            return (
-              <button
-                key={f}
-                type="button"
-                onClick={() => onSelectFilter(f)}
-                className={`shrink-0 whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  on
-                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                    : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-300/80 dark:border-slate-700 shadow-xs hover:border-[#0e9f55]'
-                }`}
-              >
-                {f}
-              </button>
-            );
-          })}
+        <div className="relative -mx-3">
+          <div className="flex gap-1 overflow-x-auto no-scrollbar px-3 pb-0.5">
+            {['All', ...filters].map((f) => {
+              const on = selectedFilter.toLowerCase() === f.toLowerCase();
+              return (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => onSelectFilter(f)}
+                  aria-pressed={on}
+                  className={`shrink-0 whitespace-nowrap h-9 px-3 rounded-full text-xs font-semibold border transition-all cursor-pointer ${
+                    on
+                      ? 'border-[#0e9f55] bg-emerald-50 dark:bg-emerald-950/50 text-[#0e9f55] font-bold'
+                      : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  {f}
+                </button>
+              );
+            })}
+            <span className="shrink-0 w-6" aria-hidden />
+          </div>
+          {/* Fade on the right: there are more categories to scroll to */}
+          <span aria-hidden className="pointer-events-none absolute right-0 top-0 bottom-0 w-10 bg-gradient-to-l from-white dark:from-slate-950 to-transparent" />
         </div>
       )}
 

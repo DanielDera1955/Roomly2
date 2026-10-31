@@ -3839,3 +3839,48 @@ export async function resolveNotReceived(orderId, note = '') {
     return null;
   }
 }
+
+
+/* ---------------------- feedback box (suggestions, complaints) ---------------------- */
+
+export const FEEDBACK_TYPES = ['Suggestion', 'Complaint', 'Problem with an order', 'Other'];
+
+/** Student: send a message to Roomly. info: { name, hostel, ordersCount, lastOrderId } when signed in */
+export async function sendFeedback(type, message, phone, info = {}) {
+  const text = String(message || '').trim().slice(0, 500);
+  if (text.length < 3) throw new Error('Write your message first.');
+  if (!FEEDBACK_TYPES.includes(type)) throw new Error('Pick what this is about.');
+  try {
+    const last = Number(localStorage.getItem('roomly_feedback_at') || 0);
+    if (Date.now() - last < 2 * 60000) throw new Error('You just sent one. Please wait a couple of minutes before sending another.');
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith('You just')) throw e;
+  }
+  const p = normalizePhone(phone || '');
+  await addDoc(collection(db, 'feedback'), {
+    type,
+    message: text,
+    phone: isValidNigerianPhone(p) ? p : '',
+    name: String(info.name || '').slice(0, 40),
+    hostel: String(info.hostel || '').slice(0, 40),
+    ordersCount: Math.max(0, Math.round(Number(info.ordersCount) || 0)),
+    lastOrderId: String(info.lastOrderId || '').slice(0, 40),
+    status: 'new',
+    atMs: Date.now(),
+  });
+  try {
+    localStorage.setItem('roomly_feedback_at', String(Date.now()));
+  } catch {}
+}
+
+/** Admin: every message, newest first */
+export function subscribeFeedbackMessages(cb) {
+  return onSnapshot(
+    query(collection(db, 'feedback'), orderBy('atMs', 'desc'), limit(200)),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    () => cb([])
+  );
+}
+export async function setFeedbackStatus(id, status) {
+  await updateDoc(doc(db, 'feedback', id), { status, doneAtMs: status === 'done' ? Date.now() : 0 });
+}

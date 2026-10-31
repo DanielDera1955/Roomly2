@@ -206,6 +206,22 @@ service cloud.firestore {
 
     // ---------- rate your experience (one rating per delivered cart, id = order id) ----------
     // Students send it once; it can't be changed. The admin sees all; runners and operators see their own.
+    // ---------- feedback box: anyone can send, only the admin reads ----------
+    match /feedback/{id} {
+      allow read, update, delete: if isAdmin();
+      allow create: if request.resource.data.keys().hasOnly(['type', 'message', 'phone', 'name', 'hostel', 'ordersCount', 'lastOrderId', 'status', 'atMs'])
+        && request.resource.data.type in ['Suggestion', 'Complaint', 'Problem with an order', 'Other']
+        && request.resource.data.message is string
+        && request.resource.data.message.size() >= 3 && request.resource.data.message.size() <= 500
+        && request.resource.data.phone is string && request.resource.data.phone.size() <= 11
+        && request.resource.data.name.size() <= 40
+        && request.resource.data.hostel.size() <= 40
+        && request.resource.data.lastOrderId.size() <= 40
+        && request.resource.data.status == 'new'
+        && request.resource.data.atMs > request.time.toMillis() - 600000
+        && request.resource.data.atMs < request.time.toMillis() + 600000;
+    }
+
     match /ratings/{orderId} {
       allow get: if true;
       allow list: if isAdmin()

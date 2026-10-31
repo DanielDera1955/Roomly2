@@ -22,7 +22,7 @@ import {
   subscribeProductRequest,
 } from './api.js';
 import { openDateText, SCHOOL_NAME, ShopGroup, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
-import { MessageCircle } from 'lucide-react';
+import { MessageCircle, Info } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
 import { notify } from './notify';
@@ -36,6 +36,7 @@ import { DeliveryPromiseBanner } from './components/DeliveryPromiseBanner';
 import { CategoryNav, ShopTab } from './components/CategoryNav';
 import { HostelHub } from './components/HostelHub';
 import { HowRoomlyWorks } from './components/HowRoomlyWorks';
+import { FeedbackBox } from './components/FeedbackBox';
 import { subscribeHubSettings, outsideStoreOpensAt } from './hub.js';
 import { ProductCard } from './components/ProductCard';
 import { FoodCustomizerSheet } from './components/FoodCustomizerSheet';
@@ -89,6 +90,7 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   // Outside store items open on launch day (Admin > Hub & Games can change the date or open it now)
   const [hubSettings, setHubSettings] = useState<any>({});
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   useEffect(() => subscribeHubSettings(setHubSettings), []);
   const storeOpensMs = outsideStoreOpensAt(hubSettings);
   const [clockMs, setClockMs] = useState(Date.now());
@@ -1217,13 +1219,14 @@ export default function App() {
                     {filteredProducts.length} {filteredProducts.length === 1 ? 'item' : 'items'} available
                     {filteredProducts.length > visibleCount ? `, showing ${visibleCount}. Search to find any item fast.` : ''}
                   </p>
+                  {selectedTab === 'food' && !searchQuery && (
+                    <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-[#0e9f55]">
+                      <Info className="w-3.5 h-3.5 shrink-0" /> Optional: You can order proteins without the food.
+                    </p>
+                  )}
                 </div>
 
-                {selectedTab === 'food' && !searchQuery && (
-                  <span className="text-[10px] font-bold text-[#0e9f55] bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200/60">
-                    0-plate protein orders supported
-                  </span>
-                )}
+
               </div>
 
               {filteredProducts.length === 0 ? (
@@ -1273,16 +1276,32 @@ export default function App() {
           </CategoryNav>
 
 
-          {/* Feedback on WhatsApp */}
-          <a
-            href={`https://wa.me/${STORE_CONFIG.feedbackWhatsApp}?text=${encodeURIComponent('Hi Roomly, I have a suggestion / complaint: ')}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/30 text-xs font-bold text-[#0e9f55]"
+          {/* Feedback: a short form that lands in Admin > Feedback */}
+          <button
+            type="button"
+            onClick={() => setFeedbackOpen(true)}
+            className="cursor-pointer w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/30 text-xs font-bold text-[#0e9f55]"
           >
             <MessageCircle className="w-4 h-4" />
-            <span>Suggest a feature or send a complaint on WhatsApp</span>
-          </a>
+            <span>Suggest a feature or send a complaint</span>
+          </button>
+          {feedbackOpen && (
+            <FeedbackBox
+              onClose={() => setFeedbackOpen(false)}
+              phone={signedInCustomer ? phone : ''}
+              info={
+                signedInCustomer && customer
+                  ? {
+                      name: customer.name,
+                      hostel: [customer.building, customer.room].filter(Boolean).join(' '),
+                      ordersCount: customer.ordersCount,
+                      lastOrderId: screenOrders[0]?.id || '',
+                    }
+                  : {}
+              }
+              whatsAppNumber={STORE_CONFIG.feedbackWhatsApp}
+            />
+          )}
         </main>
 
         {/* Floating Cart Bar */}

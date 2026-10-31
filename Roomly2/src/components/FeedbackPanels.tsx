@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Star } from 'lucide-react';
-import { subscribeMyRatings, subscribeAllRatings } from '../api.js';
+import { subscribeMyRatings, subscribeAllRatings, subscribeFeedbackMessages, setFeedbackStatus } from '../api.js';
 
 const card = 'bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-4 space-y-3';
 const avg = (list: any[]) => (list.length ? list.reduce((t, r) => t + (r.score || 0), 0) / list.length : 0);
@@ -89,6 +89,57 @@ export const MyRatingsPanel: React.FC = () => {
 };
 
 /** Admin: every rating, per runner / operator, with the most common complaints */
+/** Admin: messages from the feedback box, new first */
+const FeedbackMessages: React.FC = () => {
+  const [list, setList] = useState<any[]>([]);
+  const [showDone, setShowDone] = useState(false);
+  useEffect(() => subscribeFeedbackMessages(setList), []);
+  const fresh = list.filter((m) => m.status !== 'done');
+  const shown = showDone ? list : fresh;
+  const wa = (phone: string) => `https://wa.me/234${String(phone).replace(/^0/, '')}?text=${encodeURIComponent('Hi, this is Roomly about your message: ')}`;
+  return (
+    <div className={card}>
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-black uppercase tracking-wider text-slate-500">Messages ({fresh.length} new)</p>
+        <button type="button" onClick={() => setShowDone(!showDone)} className="text-[11px] font-bold text-[#0e9f55] cursor-pointer">
+          {showDone ? 'Hide done' : 'Show done'}
+        </button>
+      </div>
+      {shown.length === 0 && <p className="text-xs text-slate-400">No messages{showDone ? '' : ' waiting'}.</p>}
+      {shown.map((m) => (
+        <div key={m.id} className={`p-3 rounded-xl text-xs space-y-1.5 ${m.status === 'done' ? 'bg-slate-50 dark:bg-slate-800/40 opacity-70' : m.type === 'Complaint' || m.type === 'Problem with an order' ? 'bg-rose-50 dark:bg-rose-950/30' : 'bg-slate-50 dark:bg-slate-800/60'}`}>
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-bold text-slate-900 dark:text-white">{m.type}</span>
+            <span className="text-[10px] text-slate-400">{new Date(m.atMs).toLocaleString([], { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</span>
+          </div>
+          <p className="text-slate-700 dark:text-slate-200 whitespace-pre-line">{m.message}</p>
+          <p className="text-[11px] text-slate-500">
+            {m.name || (m.phone ? 'Not signed in' : 'Anonymous')}
+            {m.phone ? ` · ${m.phone}` : ''}
+            {m.hostel ? ` · ${m.hostel}` : ''}
+            {m.ordersCount ? ` · ${m.ordersCount} order${m.ordersCount === 1 ? '' : 's'}` : m.name ? ' · no orders yet' : ''}
+            {m.lastOrderId ? ` · last order ${m.lastOrderId}` : ''}
+          </p>
+          <div className="flex gap-2 pt-1">
+            {m.phone && (
+              <a href={wa(m.phone)} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-lg bg-[#0e9f55] text-white text-[11px] font-bold">
+                Reply on WhatsApp
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={() => setFeedbackStatus(m.id, m.status === 'done' ? 'new' : 'done')}
+              className="px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 text-[11px] font-bold cursor-pointer"
+            >
+              {m.status === 'done' ? 'Mark as new' : 'Mark done'}
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 export const AdminFeedbackPanel: React.FC = () => {
   const [list, setList] = useState<any[]>([]);
   const [who, setWho] = useState('');
@@ -109,6 +160,7 @@ export const AdminFeedbackPanel: React.FC = () => {
 
   return (
     <div className="space-y-4">
+      <FeedbackMessages />
       <div className={card}>
         <div className="flex items-center justify-between">
           <p className="text-xs font-black uppercase tracking-wider text-slate-500">Feedback from students</p>
