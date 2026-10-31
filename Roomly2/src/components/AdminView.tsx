@@ -34,6 +34,7 @@ import { sellingPrice, isOutsideSource } from '../config';
 import { OrderRecord, CategoryDefinition, DeliveryRunner, locationText, shortLocation, roomText } from '../types';
 import { Product, FoodExtraOption, PRESET_PRODUCT_IMAGES, StoreKey, STORE_LABEL, STORE_SOURCE, categoriesForStore, storeOfSource } from '../config';
 import { AdminHub } from './AdminHub';
+import { AdminPriceLists } from './AdminPriceLists';
 import { AdminDispatch, AdminTeam, AdminMoney, useOpenSettlements, needsAction } from './AdminDispatch';
 import { AdminInsights } from './AdminInsights';
 import { AdminFeedbackPanel } from './FeedbackPanels';
@@ -719,6 +720,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
         {/* ================= TAB 3: PRODUCTS & PHOTOS (User prompt explicitly requested adding product images) ================= */}
         {currentTab === 'products' && (
           <div className="space-y-4">
+            {/* Supplier price lists: private links for canteen sellers to add their prices */}
+            <AdminPriceLists categories={categories} />
+
             {/* Store switcher: each store keeps its own products and categories */}
             <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800">
               {(['inside', 'store', 'food'] as StoreKey[]).map((k) => (

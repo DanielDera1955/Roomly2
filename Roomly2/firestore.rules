@@ -206,6 +206,38 @@ service cloud.firestore {
 
     // ---------- rate your experience (one rating per delivered cart, id = order id) ----------
     // Students send it once; it can't be changed. The admin sees all; runners and operators see their own.
+    // ---------- supplier price lists: a secret link per supplier (?prices=<token>) ----------
+    // The token is the key: only someone with the link can open that one list. Suppliers only fill in
+    // their own prices and new items; nothing changes the store until the admin applies it.
+    match /priceLinks/{token} {
+      function linkOn() { return get(/databases/$(database)/documents/priceLinks/$(token)).data.active == true; }
+      allow get: if true;
+      allow list, create, delete: if isAdmin();
+      allow update: if isAdmin()
+        || (resource.data.active == true
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['note', 'noteAtMs'])
+            && request.resource.data.note is string && request.resource.data.note.size() <= 500);
+
+      match /prices/{productId} {
+        allow read: if true;
+        allow delete: if isAdmin() || linkOn();
+        allow create, update: if isAdmin() || (linkOn()
+          && request.resource.data.keys().hasOnly(['price', 'atMs'])
+          && request.resource.data.price is int && request.resource.data.price > 0 && request.resource.data.price <= 5000000);
+      }
+      match /newItems/{id} {
+        allow read: if true;
+        allow delete: if isAdmin() || linkOn();
+        allow create, update: if isAdmin() || (linkOn()
+          && request.resource.data.keys().hasOnly(['name', 'price', 'size', 'photo', 'atMs', 'added'])
+          && request.resource.data.added == false
+          && request.resource.data.name is string && request.resource.data.name.size() <= 60
+          && request.resource.data.price is int && request.resource.data.price > 0 && request.resource.data.price <= 5000000
+          && request.resource.data.size.size() <= 40
+          && request.resource.data.photo.size() <= 500);
+      }
+    }
+
     // ---------- feedback box: anyone can send, only the admin reads ----------
     match /feedback/{id} {
       allow read, update, delete: if isAdmin();

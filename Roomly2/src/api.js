@@ -3884,3 +3884,131 @@ export function subscribeFeedbackMessages(cb) {
 export async function setFeedbackStatus(id, status) {
   await updateDoc(doc(db, 'feedback', id), { status, doneAtMs: status === 'done' ? Date.now() : 0 });
 }
+
+/* ---------------------- price lists for suppliers (private links) ---------------------- */
+// Each supplier gets a secret link (?prices=<token>). They type their own price for each item; nothing
+// reaches the store until the admin applies it. Their page never shows Roomly's prices or margin.
+
+const PRICE_LINK_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+const newPriceToken = () => Array.from(crypto.getRandomValues(new Uint8Array(22)), (b) => PRICE_LINK_CHARS[b % PRICE_LINK_CHARS.length]).join('');
+
+/** Admin: make a link for a supplier. categories: [] = every inside-school store category */
+export async function createPriceLink(name, categories = []) {
+  const token = newPriceToken();
+  await setDoc(doc(db, 'priceLinks', token), {
+    name: String(name || '').trim().slice(0, 40) || 'Supplier',
+    categories: (categories || []).slice(0, 40),
+    active: true,
+    note: '',
+    noteAtMs: 0,
+    createdAtMs: Date.now(),
+  });
+  return token;
+}
+export function subscribePriceLinks(cb) {
+  return onSnapshot(
+    collection(db, 'priceLinks'),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0))),
+    () => cb([])
+  );
+}
+export async function setPriceLinkActive(token, active) {
+  await updateDoc(doc(db, 'priceLinks', token), { active: Boolean(active) });
+}
+export async function deletePriceLink(token) {
+  await deleteDoc(doc(db, 'priceLinks', token));
+}
+
+/* the supplier's page (no login: the token is the key) */
+export async function getPriceLink(token) {
+  const s = await getDoc(doc(db, 'priceLinks', token));
+  return s.exists() ? { id: s.id, ...s.data() } : null;
+}
+export function subscribeLinkPrices(token, cb) {
+  return onSnapshot(
+    collection(db, 'priceLinks', token, 'prices'),
+    (snap) => {
+      const m = {};
+      snap.docs.forEach((d) => (m[d.id] = d.data()));
+      cb(m);
+    },
+    () => cb({})
+  );
+}
+export function subscribeLinkNewItems(token, cb) {
+  return onSnapshot(
+    collection(db, 'priceLinks', token, 'newItems'),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (b.atMs || 0) - (a.atMs || 0))),
+    () => cb([])
+  );
+}
+/** price 0 / empty = remove (she skips it) */
+export async function setLinkPrice(token, productId, price) {
+  const ref = doc(db, 'priceLinks', token, 'prices', productId);
+  const n = Math.round(Number(price) || 0);
+  if (n <= 0) await deleteDoc(ref);
+  else await setDoc(ref, { price: n, atMs: Date.now() });
+}
+/** item: { id?, name, price, size, photoFile? , photo? } */
+export async function saveLinkNewItem(token, item) {
+  const name = String(item.name || '').trim().slice(0, 60);
+  const price = Math.round(Number(item.price) || 0);
+  if (!name) throw new Error('Type the item name.');
+  if (price <= 0) throw new Error('Type the price.');
+  const photo = item.photoFile ? await uploadProductImage(item.photoFile) : item.photo || '';
+  const ref = item.id ? doc(db, 'priceLinks', token, 'newItems', item.id) : doc(collection(db, 'priceLinks', token, 'newItems'));
+  await setDoc(ref, { name, price, size: String(item.size || '').trim().slice(0, 40), photo, atMs: Date.now(), added: false });
+}
+export async function deleteLinkNewItem(token, id) {
+  await deleteDoc(doc(db, 'priceLinks', token, 'newItems', id));
+}
+export async function saveLinkNote(token, note) {
+  await updateDoc(doc(db, 'priceLinks', token), { note: String(note || '').slice(0, 500), noteAtMs: Date.now() });
+}
+
+/**
+ * Admin: set many products' cost at once (one catalog write). Each: { id, cost }.
+ * The selling price is the cost with Roomly's margin, the same rule as everywhere else.
+ */
+export async function applySupplierCosts(list) {
+  const cat = await readCatalog(true);
+  const byId = new Map((list || []).filter((x) => x && x.id && Number(x.cost) > 0).map((x) => [x.id, Math.round(Number(x.cost))]));
+  if (!byId.size) return 0;
+  let n = 0;
+  cat.products = cat.products.map((p) => {
+    const cost = byId.get(p.id);
+    if (!cost) return p;
+    n++;
+    return { ...p, costPrice: cost, price: sellingPrice(cost, p.source || 'school') };
+  });
+  await writeCatalog(cat);
+  // These prices now win over any older runner or operator change
+  try {
+    const clear = {};
+    byId.forEach((_, id) => (clear[id] = deleteField()));
+    await setDoc(doc(db, 'catalog', 'overrides'), { prices: clear }, { merge: true });
+  } catch (e) {
+    console.error(e);
+  }
+  logActivity('price', `applied supplier prices to ${n} item${n === 1 ? '' : 's'}`);
+  return n;
+}
+/** Admin: add a supplier's new item to the store (inside school) */
+export async function addSupplierItem(token, item, category) {
+  const cost = Math.round(Number(item.price) || 0);
+  await saveProduct({
+    id: `prod-${Date.now()}`,
+    name: item.name,
+    unit: item.size || '',
+    category,
+    subcategory: 'All',
+    costPrice: cost,
+    price: sellingPrice(cost, 'school'),
+    imageUrl: item.photo || '',
+    emoji: '',
+    gradient: 'from-slate-400/20 to-zinc-500/20',
+    isAvailable: true,
+    source: 'school',
+  });
+  await updateDoc(doc(db, 'priceLinks', token, 'newItems', item.id), { added: true });
+}
