@@ -99,6 +99,12 @@ export default function App() {
     return () => window.clearInterval(id);
   }, []);
   const storeLocked = storeOpensMs > clockMs;
+  // Opening the app on Outside school before the store opens: show Food first
+  useEffect(() => {
+    if (sourceMode === 'outside' && storeLocked && selectedTab === 'store') setSelectedTab('food');
+    // only when the open date is first known
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeLocked]);
   // The app opens on the side and category of the student's last placed order (saved on this phone).
   // Nothing saved, or unreadable storage: Inside school > Store Items.
   const lastShop = useMemo(() => {
@@ -1128,7 +1134,14 @@ export default function App() {
                 <button
                   key={m}
                   type="button"
-                  onClick={() => setSourceMode(m)}
+                  onClick={() => {
+                    setSourceMode(m);
+                    // Until outside store items open, Outside school opens on Food
+                    if (m === 'outside' && storeLocked) {
+                      setSelectedTab('food');
+                      setSelectedFilter('All');
+                    }
+                  }}
                   className={`py-2.5 rounded-xl text-sm font-bold cursor-pointer transition-all ${
                     sourceMode === m
                       ? 'bg-white dark:bg-slate-900 text-[#0e9f55] shadow-xs'
