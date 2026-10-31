@@ -1178,8 +1178,7 @@ export default function App() {
             requestCount={customRequest ? 1 : 0}
             searching={Boolean(searchQuery)}
             searchSlot={<SearchBar query={searchQuery} onChange={setSearchQuery} />}
-          />
-
+          >
           {/* Request Tab vs Product Grid */}
           {!searchQuery && selectedTab === 'hub' ? (
             <HostelHub
@@ -1271,6 +1270,8 @@ export default function App() {
               )}
             </div>
           )}
+          </CategoryNav>
+
 
           {/* Feedback on WhatsApp */}
           <a

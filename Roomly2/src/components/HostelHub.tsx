@@ -161,8 +161,8 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
 
   return (
     <div className="space-y-4">
-      {/* Sections */}
-      <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/70">
+      {/* Hub sections: one level down from the main bar, so plain tabs with a green underline */}
+      <div role="tablist" className="grid grid-cols-3 border-b border-slate-200 dark:border-slate-800">
         {HUB_SECTIONS.map((x) => {
           const Icon = SECTION_ICON[x.id as Section];
           const on = section === x.id;
@@ -170,13 +170,16 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
             <button
               key={x.id}
               type="button"
+              role="tab"
+              aria-selected={on}
               onClick={() => setSection(x.id as Section)}
-              className={`h-11 rounded-xl text-[13px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
-                on ? 'bg-white dark:bg-slate-900 text-[#0e9f55] shadow-xs' : 'text-slate-500 dark:text-slate-400'
+              className={`relative h-11 flex items-center justify-center gap-1.5 text-[13px] font-bold cursor-pointer transition-colors ${
+                on ? 'text-[#0e9f55]' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
               <Icon className="w-4 h-4 shrink-0" />
               <span className="truncate">{x.label}</span>
+              <span className={`absolute left-3 right-3 -bottom-px h-[3px] rounded-full ${on ? 'bg-[#0e9f55]' : 'bg-transparent'}`} />
             </button>
           );
         })}
@@ -209,7 +212,7 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
           </div>
 
           {/* Filters */}
-          <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 pb-0.5">
+          <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-3 px-3 pb-0.5">
             <button type="button" onClick={() => setKind('all')} className={chip(kind === 'all' && !showMine)}>
               All
             </button>

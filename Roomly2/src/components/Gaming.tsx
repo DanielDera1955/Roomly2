@@ -384,7 +384,7 @@ const GamePage: React.FC<{
           {ready.length === 0 ? (
             <div className={`${card} p-4 text-center text-xs text-slate-400`}>Nobody is ready yet. Switch yours on so others can find you.</div>
           ) : (
-            <div className="flex gap-2.5 overflow-x-auto no-scrollbar -mx-4 px-4 pb-1 snap-x">
+            <div className="flex gap-2.5 overflow-x-auto no-scrollbar -mx-3 px-3 pb-1 snap-x">
               {ready.map((r) => (
                 <div key={r.id} className={`${card} p-3 w-36 shrink-0 snap-start`}>
                   <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{r.name}</p>
