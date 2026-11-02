@@ -34,10 +34,19 @@ interface HomeBannerProps {
   onOpenOrders: () => void;
   onAnnouncementAction: (a: Announcement) => void;
   onDismissAnnouncement: () => void;
+  /** Not signed in yet: greet them and show what Roomly is */
+  isGuest?: boolean;
+  /** A line about this moment at Caritas (Inside school only), '' for none */
+  caritasLine?: string;
+  /** What is actually open right now, from the real schedule */
+  liveLine?: string;
+  /** Guests: jump to the products */
+  onStart?: () => void;
 }
 
 /**
- * The banner at the top of the home screen for signed-in students.
+ * The banner at the top of the home screen, for every student (guests get a welcome version).
+ * The greeting follows the time of day; the Caritas line and live line follow the real schedule.
  * It shows the most useful thing, in this order:
  *  1. an order on the way (tracker)  2. an order waiting for payment  3. the active announcement  4. the greeting.
  * Animation is CSS only and stops for people who ask their phone for reduced motion.
@@ -53,6 +62,10 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
   onOpenOrders,
   onAnnouncementAction,
   onDismissAnnouncement,
+  isGuest = false,
+  caritasLine = '',
+  liveLine = '',
+  onStart,
 }) => {
   const morning = dayPart === 'Good morning';
   const afternoon = dayPart === 'Good afternoon';
@@ -169,7 +182,9 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
       <div className="relative z-10">
         {/* top strip: day part on the left, who is signed in on the right */}
         <div className="flex items-center justify-between gap-2">
-          <p className={`text-[11px] font-extrabold uppercase tracking-[0.14em] ${morning ? 'text-orange-800' : 'opacity-90'}`}>{dayPart}</p>
+          <p className={`text-[11px] font-extrabold uppercase tracking-[0.14em] ${morning ? 'text-orange-800' : 'opacity-90'}`}>
+            {isGuest ? `Hey there, ${dayPart.toLowerCase()}` : dayPart}
+          </p>
           {name && (
             <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full backdrop-blur-sm ${morning ? 'bg-white/45' : 'bg-white/20'}`}>
               Hi {name}
@@ -269,18 +284,26 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
         ) : (
           /* 4. greeting */
           <div className="mt-1">
-            <h1 className="text-[30px] font-extrabold tracking-tight leading-tight truncate">{isNew ? (name ? `Welcome, ${name}.` : 'Welcome.') : name || 'Welcome back'}</h1>
-            <p className="text-[13px] opacity-90 max-w-[230px] leading-snug">
-              {isNew ? 'Your food and other items, delivered in scheduled batches.' : `Nice to have you back.${hasUsuals ? ' Your usuals are one tap away.' : ''}`}
+            <h1 className={`${isGuest ? 'text-[24px]' : 'text-[30px]'} font-extrabold tracking-tight leading-tight ${isGuest ? 'max-w-[250px]' : 'truncate'}`}>
+              {isGuest ? 'Welcome to Roomly Caritas' : isNew ? (name ? `Welcome, ${name}.` : 'Welcome.') : `Welcome back, ${name || 'friend'}`}
+            </h1>
+            <p className="text-[13px] opacity-90 max-w-[250px] leading-snug mt-1">
+              {caritasLine ||
+                (isGuest
+                  ? 'Food and everyday items delivered to your room or the school gate.'
+                  : isNew
+                  ? 'Your food and other items, delivered in scheduled batches.'
+                  : `Nice to have you back.${hasUsuals ? ' Your usuals are one tap away.' : ''}`)}
             </p>
+            {liveLine && <p className="text-[12px] font-bold max-w-[260px] leading-snug mt-1.5">{liveLine}</p>}
             <button
               type="button"
-              onClick={onOpenOrders}
+              onClick={isGuest ? onStart : onOpenOrders}
               className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold cursor-pointer backdrop-blur-sm ${
                 morning ? 'bg-white/45' : 'bg-white/20'
               }`}
             >
-              My orders ›
+              {isGuest ? 'Start ordering ›' : 'My orders ›'}
             </button>
           </div>
         )}

@@ -21,7 +21,7 @@ import {
   createProductRequest,
   subscribeProductRequest,
 } from './api.js';
-import { openDateText, INSIDE_LAUNCH_MS, SCHOOL_NAME, ShopGroup, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
+import { openDateText, INSIDE_LAUNCH_MS, caritasLineFor, liveLineFor, SCHOOL_NAME, ShopGroup, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
 import { MessageCircle, Info } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
@@ -1088,8 +1088,12 @@ export default function App() {
 
           {/* Phone Number Input & Customer Recognition */}
           <div className="-mx-4 -mt-4 px-4 pt-5 pb-3 bg-gradient-to-b from-emerald-100/70 to-transparent dark:from-emerald-950/40">
-            {signedInCustomer ? (
+            {(
               <HomeBanner
+                isGuest={!signedInCustomer}
+                caritasLine={sourceMode === 'inside' && clockMs >= INSIDE_LAUNCH_MS ? caritasLineFor(new Date(clockMs)) : ''}
+                liveLine={liveLineFor(sourceMode, new Date(clockMs))}
+                onStart={() => window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)}
                 dayPart={dayPart as 'Good morning' | 'Good afternoon' | 'Good evening'}
                 name={firstName}
                 isNew={!hasCompletedOrder}
@@ -1104,21 +1108,11 @@ export default function App() {
                 onAnnouncementAction={handleAnnouncementAction}
                 onDismissAnnouncement={handleDismissAnnouncement}
               />
-            ) : (
-              <p className="font-semibold text-[#0b8044] dark:text-[#0e9f55] leading-snug text-sm mb-1">{heroGreeting}</p>
             )}
             {!signedInCustomer && (
-              <>
-                <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-snug">
-                  Order Food, Provisions and Your Everyday Essentials
-                </h1>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  From inside or outside {SCHOOL_NAME}, delivered to your room or the school gate.
-                </p>
-                <p className="text-xs font-semibold text-[#0b8044] dark:text-[#0e9f55] mt-1.5">
-                  No sign-up needed. Just pick what you need and check out.
-                </p>
-              </>
+              <p className="text-xs font-semibold text-[#0b8044] dark:text-[#0e9f55] mt-2 px-1">
+                No sign-up needed. Just pick what you need and check out.
+              </p>
             )}
           </div>
 

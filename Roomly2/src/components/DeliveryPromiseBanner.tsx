@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Clock, Store, UtensilsCrossed } from 'lucide-react';
 import { getNextBatch, getOutsideChoices } from '../api.js';
-import { slotsForDay, SwitchSide, dayWord, OUTSIDE_BANNER, OUTSIDE_ORDER_BY_MIN, openDateText } from '../config';
+import { slotsForDay, SwitchSide, dayWord, OUTSIDE_BANNER, OUTSIDE_ORDER_BY_MIN, openDateText, INSIDE_LAUNCH_MS } from '../config';
 
 interface DeliveryPromiseBannerProps {
   mode: 'inside' | 'outside';
@@ -104,7 +104,12 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
             {todayCount} {todayCount === 1 ? 'batch' : 'batches'} today
           </span>
         </div>
-        {next && next.batch.dayLabel !== 'Today' ? (
+        {side === 'inside' && Date.now() < INSIDE_LAUNCH_MS ? (
+          <>
+            <h2 className="text-lg font-extrabold tracking-tight">Starting {openDateText(INSIDE_LAUNCH_MS)}</h2>
+            <p className="text-xs text-emerald-100/90">Delivery to your room starts then. You can add items to your cart now.</p>
+          </>
+        ) : next && next.batch.dayLabel !== 'Today' ? (
           <>
             <h2 className="text-lg font-extrabold tracking-tight">{todayCount > 0 ? 'Done for today' : 'No batch today'}</h2>
             <p className="text-xs text-emerald-100/90">

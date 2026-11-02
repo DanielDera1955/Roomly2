@@ -253,17 +253,19 @@ const slot = (id: DeliveryBatchId, start: number, end: number, orderBy: number):
 });
 /**
  * Each batch is 30 minutes: runners are at the canteen by the start and deliver everything by the end.
- * Orders close 90 minutes before the start (60 minutes for the first batch of the day).
+ * Orders close 30 minutes before the start, so students waiting at the hostel gate at 1pm can still make 2:30pm.
  */
-const SCHOOL_DAY = [slot('afternoon', T(14, 30), T(15), T(13)), slot('late', T(17, 30), T(18), T(16)), slot('evening', T(20, 30), T(21), T(19))];
+const ORDER_GAP = 30;
+const run = (id: DeliveryBatchId, start: number, end: number) => slot(id, start, end, start - ORDER_GAP);
+const SCHOOL_DAY = [run('afternoon', T(14, 30), T(15)), run('late', T(17, 30), T(18)), run('evening', T(20, 30), T(21))];
 /** 0 = Sunday ... 6 = Saturday. Runners and admin can switch any batch off for a day. */
 export const WEEKLY_BATCHES: Record<number, BatchSlotDef[]> = {
   // Sunday: 11:30am to 12pm, 2:30 to 3pm, 6:30 to 7pm, 8:30 to 9pm
   0: [
-    slot('midday', T(11, 30), T(12), T(10, 30)),
-    slot('afternoon', T(14, 30), T(15), T(13)),
-    slot('late', T(18, 30), T(19), T(17)),
-    slot('evening', T(20, 30), T(21), T(19)),
+    run('midday', T(11, 30), T(12)),
+    run('afternoon', T(14, 30), T(15)),
+    run('late', T(18, 30), T(19)),
+    run('evening', T(20, 30), T(21)),
   ],
   // Monday to Friday: 2:30 to 3pm, 5:30 to 6pm, 8:30 to 9pm
   1: SCHOOL_DAY,
@@ -273,10 +275,10 @@ export const WEEKLY_BATCHES: Record<number, BatchSlotDef[]> = {
   5: SCHOOL_DAY,
   // Saturday: 9:30 to 10am, 1:30 to 2pm, 4:30 to 5pm, 8:30 to 9pm
   6: [
-    slot('morning', T(9, 30), T(10), T(8, 30)),
-    slot('midday', T(13, 30), T(14), T(12)),
-    slot('late', T(16, 30), T(17), T(15)),
-    slot('evening', T(20, 30), T(21), T(19)),
+    run('morning', T(9, 30), T(10)),
+    run('midday', T(13, 30), T(14)),
+    run('late', T(16, 30), T(17)),
+    run('evening', T(20, 30), T(21)),
   ],
 };
 
@@ -1413,4 +1415,79 @@ export function announcementActive(a: Announcement | null | undefined, now: Date
 /** Dismissal key: a dismissed announcement returns when it is edited, or the next day for weekly ones */
 export function announcementKey(a: Announcement, now: Date = new Date()): string {
   return `${a.updatedAt || ''}|${a.repeatFriday ? ymd(new Date(now.getTime() - (now.getDay() === 5 ? 86400000 : 0))) : 'once'}`;
+}
+
+
+// ---------- Home banner: lines about life at Caritas (Inside school only) ----------
+/**
+ * One line per moment of the Caritas week, shown under the greeting when Inside school is selected
+ * (only once inside delivery has started). Edit freely: days 0 = Sunday ... 6 = Saturday, from/to in minutes
+ * after midnight (to may pass midnight, e.g. 22:00 to 1:00). The first matching line wins.
+ * These fill in from the real schedule:
+ *   {next delivery}  start of the next batch, e.g. "2:30pm" or "11:30am tomorrow"
+ *   {cutoff}         when orders for the next batch close, e.g. "2pm"
+ *   {delivery end}   when the next batch should be done, e.g. "3:00pm"
+ *   {last delivery}  start of today's last batch, e.g. "8:30pm"
+ */
+export interface CaritasLine { days: number[]; from: number; to: number; text: string }
+const MON_FRI = [1, 2, 3, 4, 5];
+export const CARITAS_LINES: CaritasLine[] = [
+  { days: [5], from: T(5), to: T(9), text: "Good morning. Even the CSO knows you don't like Ayi. You deserve a proper breakfast afterwards." },
+  { days: [1, 2, 3, 4], from: T(5), to: T(9), text: 'Good morning. Beat the rush out. Lunch will be waiting at your room after class.' },
+  { days: MON_FRI, from: T(9), to: T(12, 30), text: 'In class and already thinking of lunch? Same. Order before {cutoff}.' },
+  { days: MON_FRI, from: T(12, 30), to: T(14), text: 'Waiting for the gate to open? Order now and eat in your room by {delivery end}.' },
+  { days: MON_FRI, from: T(14), to: T(16), text: 'Too tired to step out? Stay in, the {next delivery} delivery is coming.' },
+  { days: MON_FRI, from: T(16), to: T(18), text: "Ball first, food after. Order now and it's waiting when you're back." },
+  { days: [3], from: T(18), to: T(21), text: "Adoration tonight. Order before you go, eat when you're back." },
+  { days: [5], from: T(17), to: T(23), text: 'Washing and cleanup tomorrow. Get your detergent ready.' },
+  { days: MON_FRI, from: T(18), to: T(20, 30), text: 'Field done, bath done. Now food. Last delivery tonight is {last delivery}.' },
+  { days: [6], from: T(7), to: T(10), text: 'Cleanup time. Need anything? We deliver from {next delivery}.' },
+  { days: [6], from: T(10), to: T(22), text: "Free Saturday. Stay in, we'll bring it to you." },
+  { days: [0], from: T(5), to: T(10, 30), text: "Good morning. After mass, we've got breakfast covered." },
+  // Only until the 11:30am batch closes: after that the next delivery is 2:30pm, when the store is shut
+  { days: [0], from: T(10, 30), to: T(11), text: 'Canteen closes at 12. Order before {cutoff} to catch the {next delivery} delivery.' },
+  { days: [0], from: T(12), to: T(18), text: 'Quiet Sunday. Store items are back by 6pm, but you can still order food.' },
+  { days: [0, 1, 2, 3, 4, 5, 6], from: T(22), to: T(1), text: "You're supposed to be reading, not scrolling socials or playing games. Your next delivery is {next delivery}." },
+];
+
+/** The Caritas line for this moment, with the schedule parts filled in. '' when nothing fits. */
+export function caritasLineFor(now: Date = new Date()): string {
+  const min = now.getHours() * 60 + now.getMinutes();
+  const today = now.getDay();
+  const yesterday = (today + 6) % 7;
+  const line = CARITAS_LINES.find((l) =>
+    l.from <= l.to
+      ? l.days.includes(today) && min >= l.from && min < l.to
+      : (l.days.includes(today) && min >= l.from) || (l.days.includes(yesterday) && min < l.to)
+  );
+  if (!line) return '';
+  const next = getBookableSlots(now)[0];
+  const daySuffix = (o: BatchOption) => (o.dayLabel === 'Today' ? '' : o.dayLabel === 'Tomorrow' ? ' tomorrow' : ` on ${o.dayLabel}`);
+  const startText = (o: BatchOption) => timeLabel(o.startMin) + daySuffix(o);
+  const todaySlots = listDaySlots(now, 0);
+  const last = todaySlots[todaySlots.length - 1];
+  const fill: Record<string, string> = {
+    '{next delivery}': next ? startText(next) : 'soon',
+    '{cutoff}': next ? timeLabel(next.orderBy.getHours() * 60 + next.orderBy.getMinutes()) : 'the next batch',
+    '{delivery end}': next ? next.window.split(' to ')[1] || next.window : 'the next batch',
+    '{last delivery}': last ? timeLabel(last.startMin) : 'tonight',
+  };
+  return line.text.replace(/\{[a-z ]+\}/g, (k) => fill[k] ?? k);
+}
+
+/** The live line: what is actually open right now. side = which toggle is selected. */
+export function liveLineFor(side: 'inside' | 'outside', now: Date = new Date()): string {
+  if (side === 'inside') {
+    if (now.getTime() < INSIDE_LAUNCH_MS) return `Delivery to your room starts ${openDateText(INSIDE_LAUNCH_MS)}.`;
+    const next = getBookableSlots(now)[0];
+    if (!next) return '';
+    const when = next.dayLabel === 'Today' ? 'today' : next.dayLabel === 'Tomorrow' ? 'tomorrow' : `on ${next.dayLabel}`;
+    return `Next delivery to your room: ${timeLabel(next.startMin)} ${when}.`;
+  }
+  // Outside food runs Monday to Saturday; same-day orders close at 5:10pm
+  const day = now.getDay();
+  const min = now.getHours() * 60 + now.getMinutes();
+  if (day === 0) return 'Outside food is back tomorrow. You can order now for Monday.';
+  if (min < OUTSIDE_ORDER_BY_MIN) return `Outside food is open. Order before ${timeLabel(OUTSIDE_ORDER_BY_MIN)} for delivery to the gate today.`;
+  return day === 6 ? "Outside food orders now go to Monday's delivery." : "Outside food orders now go to tomorrow's delivery.";
 }
