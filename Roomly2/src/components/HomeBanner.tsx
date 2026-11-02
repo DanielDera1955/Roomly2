@@ -38,8 +38,8 @@ interface HomeBannerProps {
   isGuest?: boolean;
   /** A line about this moment at Caritas (Inside school only), '' for none */
   caritasLine?: string;
-  /** What is actually open right now, from the real schedule */
-  liveLine?: string;
+  /** What is actually open right now, from the real schedule (open = green dot, otherwise amber) */
+  live?: { text: string; open: boolean };
   /** Guests: jump to the products */
   onStart?: () => void;
 }
@@ -64,7 +64,7 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
   onDismissAnnouncement,
   isGuest = false,
   caritasLine = '',
-  liveLine = '',
+  live = { text: '', open: false },
   onStart,
 }) => {
   // Midnight to 5am says "Good morning" but keeps the night sky (moon and stars)
@@ -76,6 +76,11 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
     ? 'linear-gradient(180deg,#0ea5e9 0%,#38bdf8 55%,#7dd3fc 100%)'
     : 'linear-gradient(180deg,#1e1b4b 0%,#312e81 55%,#0e7490 100%)';
   const ink = morning ? 'text-orange-950' : 'text-white';
+  // Colour touches that follow the sky: the name, the faded welcome line, the delivery chip and the button
+  const nameColor = morning ? 'text-orange-700' : afternoon ? 'text-yellow-200' : 'text-amber-200';
+  const softText = morning ? 'text-orange-950/70' : afternoon ? 'text-white/85' : 'text-white/70';
+  const chipBg = morning ? 'bg-orange-900/15' : afternoon ? 'bg-sky-900/35' : 'bg-indigo-950/45';
+  const buttonInk = morning ? 'text-orange-800' : afternoon ? 'text-sky-700' : 'text-indigo-900';
 
   // Ticks every second while an outside order is counting down to the gate (and every 30s otherwise)
   const [nowMs, setNowMs] = useState(Date.now());
@@ -285,10 +290,18 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
           <div className="mt-1">
             <div className="pr-[96px]">
               <h1 className={`${isGuest ? 'text-[24px]' : 'text-[26px]'} font-extrabold tracking-tight leading-tight`}>
-                {isGuest ? 'Welcome to Roomly Caritas' : `${dayPart}${name ? `, ${name}` : ''}`}
+                {isGuest ? (
+                  'Welcome to Roomly Caritas'
+                ) : (
+                  <>
+                    {dayPart}
+                    {name ? ', ' : ''}
+                    {name && <span className={nameColor}>{name}</span>}
+                  </>
+                )}
               </h1>
               {!isGuest && (
-                <p className="text-[14px] font-semibold leading-snug mt-0.5">{isNew ? 'Welcome to Roomly.' : 'Welcome back to Roomly.'}</p>
+                <p className={`text-[14px] font-medium leading-snug mt-0.5 ${softText}`}>{isNew ? 'Welcome to Roomly.' : 'Welcome back to Roomly.'}</p>
               )}
               {(caritasLine || isGuest) && (
                 <p className="text-[13px] opacity-90 leading-snug mt-1.5">
@@ -296,14 +309,19 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
                 </p>
               )}
             </div>
-            <div className="mt-5 mb-2 flex items-end justify-between gap-3">
-              <p className="min-w-0 text-[12px] font-bold leading-snug">{liveLine}</p>
+            <div className="mt-5 mb-2 flex items-center justify-between gap-3">
+              {live.text ? (
+                <span className={`min-w-0 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-[12px] font-bold leading-snug backdrop-blur-sm ${chipBg}`}>
+                  <span className={`w-[7px] h-[7px] shrink-0 rounded-full ${live.open ? 'bg-emerald-400 rb-twinkle' : 'bg-amber-300'}`} />
+                  <span className="min-w-0">{live.text}</span>
+                </span>
+              ) : (
+                <span />
+              )}
               <button
                 type="button"
                 onClick={isGuest ? onStart : onOpenOrders}
-                className={`shrink-0 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer backdrop-blur-sm ${
-                  morning ? 'bg-white/45' : 'bg-white/25'
-                }`}
+                className={`shrink-0 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer bg-white shadow-sm ${buttonInk}`}
               >
                 {isGuest ? 'Start ordering ›' : 'My orders ›'}
               </button>

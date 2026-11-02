@@ -1475,19 +1475,28 @@ export function caritasLineFor(now: Date = new Date()): string {
   return line.text.replace(/\{[a-z ]+\}/g, (k) => fill[k] ?? k);
 }
 
-/** The live line: what is actually open right now. side = which toggle is selected. */
-export function liveLineFor(side: 'inside' | 'outside', now: Date = new Date()): string {
+/**
+ * The live line for the customers' card: what is actually open right now, short enough for one chip.
+ * open = true shows a green dot, false an amber one. side = which toggle is selected.
+ */
+export function liveStatusFor(side: 'inside' | 'outside', now: Date = new Date()): { text: string; open: boolean } {
   if (side === 'inside') {
-    if (now.getTime() < INSIDE_LAUNCH_MS) return `Delivery to your room starts ${openDateText(INSIDE_LAUNCH_MS)}.`;
+    if (now.getTime() < INSIDE_LAUNCH_MS) {
+      const d = new Date(INSIDE_LAUNCH_MS).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+      return { text: `Room delivery: ${d}`, open: false };
+    }
     const next = getBookableSlots(now)[0];
-    if (!next) return '';
-    const when = next.dayLabel === 'Today' ? 'today' : next.dayLabel === 'Tomorrow' ? 'tomorrow' : `on ${next.dayLabel}`;
-    return `Next delivery to your room: ${timeLabel(next.startMin)} ${when}.`;
+    if (!next) return { text: '', open: false };
+    if (next.dayLabel === 'Today') return { text: `Next delivery: ${timeLabel(next.startMin)}`, open: true };
+    const when = next.dayLabel === 'Tomorrow' ? 'tomorrow' : next.dayLabel;
+    return { text: `Next: ${timeLabel(next.startMin)} ${when}`, open: true };
   }
   // Outside food runs Monday to Saturday; same-day orders close at 5:10pm
   const day = now.getDay();
   const min = now.getHours() * 60 + now.getMinutes();
-  if (day === 0) return 'Outside food is back tomorrow. You can order now for Monday.';
-  if (min < OUTSIDE_ORDER_BY_MIN) return `Outside food is open. Order before ${timeLabel(OUTSIDE_ORDER_BY_MIN)} for delivery to the gate today.`;
-  return day === 6 ? "Outside food orders now go to Monday's delivery." : "Outside food orders now go to tomorrow's delivery.";
+  if (day === 0) return { text: 'Food back Monday', open: false };
+  if (min < OUTSIDE_ORDER_BY_MIN) return { text: `Food open till ${timeLabel(OUTSIDE_ORDER_BY_MIN)}`, open: true };
+  return { text: day === 6 ? 'Food: next is Monday' : 'Food: next is tomorrow', open: false };
 }
+/** Text only (kept for any older screen that uses it) */
+export const liveLineFor = (side: 'inside' | 'outside', now: Date = new Date()): string => liveStatusFor(side, now).text;

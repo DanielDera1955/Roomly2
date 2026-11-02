@@ -21,7 +21,7 @@ import {
   createProductRequest,
   subscribeProductRequest,
 } from './api.js';
-import { openDateText, INSIDE_LAUNCH_MS, caritasLineFor, liveLineFor, SCHOOL_NAME, ShopGroup, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
+import { openDateText, INSIDE_LAUNCH_MS, caritasLineFor, liveStatusFor, SCHOOL_NAME, ShopGroup, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
 import { MessageCircle, Info } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
@@ -1094,7 +1094,7 @@ export default function App() {
             ) : (
               <HomeBanner
                 caritasLine={sourceMode === 'inside' && clockMs >= INSIDE_LAUNCH_MS ? caritasLineFor(new Date(clockMs)) : ''}
-                liveLine={liveLineFor(sourceMode, new Date(clockMs))}
+                live={liveStatusFor(sourceMode, new Date(clockMs))}
                 onStart={() => window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)}
                 dayPart={dayPart as 'Good morning' | 'Good afternoon' | 'Good evening'}
                 name={firstName}
