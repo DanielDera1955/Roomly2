@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Clock, Store, UtensilsCrossed } from 'lucide-react';
 import { getNextBatch, getOutsideChoices } from '../api.js';
-import { slotsForDay, SwitchSide, dayWord, OUTSIDE_BANNER, OUTSIDE_ORDER_BY_MIN, openDateText, INSIDE_LAUNCH_MS } from '../config';
+import { slotsForDay, SwitchSide, dayWord, outsideBannerFor, outsideOrderByFor, openDateText, INSIDE_LAUNCH_MS } from '../config';
 
 interface DeliveryPromiseBannerProps {
   mode: 'inside' | 'outside';
@@ -32,11 +32,11 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
   const title = side === 'inside' ? 'Delivery to your room' : side === 'food' ? 'Cooked food' : 'Outside store items';
   const where = side === 'inside' ? 'to your room' : 'to the school gate';
 
-  // Outside: one delivery a day, ordered before 5:10pm
+  // Outside: one delivery a day, ordered before 5:10pm (store) or 5:30pm (food)
   if (side !== 'inside') {
     const now = new Date();
     const todayOpt = slotsForDay(side, now, 0)[0];
-    const closedToday = !todayOpt || now.getTime() >= new Date(todayOpt.date + 'T00:00:00').getTime() + OUTSIDE_ORDER_BY_MIN * 60000;
+    const closedToday = !todayOpt || now.getTime() >= new Date(todayOpt.date + 'T00:00:00').getTime() + outsideOrderByFor(side) * 60000;
     const forToday = Boolean(next && dayWord(next.batch.date, now) === 'today');
     const notOpenYet = side === 'store' && storeOpensAtMs > now.getTime();
     const dayOff = !notOpenYet && Boolean(getOutsideChoices(side, now).dayOff);
@@ -73,7 +73,7 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
           ) : forToday ? (
             <>
               <h2 className="text-lg font-extrabold tracking-tight">Order today, get it today</h2>
-              <p className="text-xs font-semibold text-amber-200">{OUTSIDE_BANNER}</p>
+              <p className="text-xs font-semibold text-amber-200">{outsideBannerFor(side)}</p>
             </>
           ) : closedToday ? (
             <>

@@ -17,7 +17,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
-import { HOSTELS, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, OUTSIDE_BANNER } from '../config';
+import { HOSTELS, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, outsideBannerFor } from '../config';
 import { getNextBatch, getOutsideChoices, getExpressRunners } from '../api.js';
 import { isValidNigerianPhone, isValidPin, normalizePhone } from '../api.js';
 
@@ -222,7 +222,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   // Outside: which day this order is for ("today" / "tomorrow" / "on Friday"), and the fixed date
   const outsideDay = cart !== 'inside' && selectedBatch ? dayWord(selectedBatch.date) : '';
   const outsideDate = cart !== 'inside' && selectedBatch ? longDayLabel(selectedBatch.date) : '';
-  // Today's outside orders closed at 5:10pm: "this batch" is already another day
+  // Today's outside orders closed (5:10pm store, 5:30pm food): "this batch" is already another day
   const outsideClosedToday = cart !== 'inside' && Boolean(currentBatch) && dayWord(currentBatch.date) !== 'today';
   const otherCarts = (['inside', 'store', 'food'] as CartKind[]).filter((k) => k !== cart && cartCounts[k] > 0);
   const atGate = cart !== 'inside' && !gatePickup;
@@ -832,7 +832,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                   {cart === 'food' ? 'Every food vendor' : 'Every store'} is fully booked today. Orders placed now will be delivered {outsideDay || 'on the next day'}.
                 </div>
               ) : (
-                <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">{OUTSIDE_BANNER}</p>
+                <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">{outsideBannerFor(cart)}</p>
               )}
               {operators.map((op) => {
                 const on = (chosenOp?.uid || '') === op.uid;
@@ -983,7 +983,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                     : `Pay before ${payByText} to join the ${selectedBatch.window} batch.`}
                 </p>
                 <p className="text-[10px] text-slate-400 mt-0.5">
-                  {cart !== 'inside' ? OUTSIDE_BANNER : 'Every order joins the next batch.'}
+                  {cart !== 'inside' ? outsideBannerFor(cart) : 'Every order joins the next batch.'}
                 </p>
               </div>
             ) : (

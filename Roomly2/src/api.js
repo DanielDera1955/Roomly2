@@ -349,13 +349,13 @@ try {
 
 const ymdOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-/** On, and not yet turned off by the night cut-off (10pm inside, 6pm outside). Switching on after the cut-off lasts until the next night. */
+/** On, and not yet turned off by the cut-off (10pm inside, 5:10pm store, 5:30pm food). Switching on after the cut-off lasts until the next night. */
 export function switchIsLive(sw, side, now = new Date()) {
   if (!sw || !sw.on) return false;
   const at = new Date(sw.at || 0);
   const cut = new Date(at);
   cut.setHours(0, 0, 0, 0);
-  cut.setMinutes(side === 'inside' ? SWITCH_CUTOFF_MIN.inside : SWITCH_CUTOFF_MIN.outside);
+  cut.setMinutes(side === 'inside' ? SWITCH_CUTOFF_MIN.inside : side === 'food' ? SWITCH_CUTOFF_MIN.food : SWITCH_CUTOFF_MIN.outside);
   if (at.getTime() >= cut.getTime()) cut.setDate(cut.getDate() + 1);
   return now.getTime() < cut.getTime();
 }
@@ -373,7 +373,7 @@ export function switchStartDate(opt, sw) {
  */
 export function batchCloseDate(opt, side) {
   const day = new Date(opt.date + 'T00:00:00');
-  const cut = side === 'inside' ? SWITCH_CUTOFF_MIN.inside : SWITCH_CUTOFF_MIN.outside;
+  const cut = side === 'inside' ? SWITCH_CUTOFF_MIN.inside : side === 'food' ? SWITCH_CUTOFF_MIN.food : SWITCH_CUTOFF_MIN.outside;
   const later = slotsForDay(side, day, 0)
     .map((o) => o.startMin)
     .filter((m) => m > opt.startMin)
@@ -550,7 +550,7 @@ function fallbackOperators(kind) {
 
 /**
  * Outside checkout: every store (or food vendor) of this kind and the day their order would come.
- * "This batch" = today's delivery, or tomorrow's once today's orders closed at 5:10pm.
+ * "This batch" = today's delivery, or tomorrow's once today's orders closed (5:10pm store, 5:30pm food).
  * Each operator: { uid, name, status, batch, start, startText, late, load, payTo }
  *   status 'now'  = delivering on "this batch" day
  *          'next' = fully booked that day; the order goes to their next day that is ON (batch = that day)
@@ -559,7 +559,7 @@ function fallbackOperators(kind) {
  */
 export function getOutsideChoices(kind, now = new Date()) {
   const today = ymdOf(now);
-  // "This batch": the first day's delivery that has not closed yet (today before 5:10pm, else tomorrow)
+  // "This batch": the first day's delivery that has not closed yet (today before the cut-off: 5:10pm store, 5:30pm food; else tomorrow)
   let current = null;
   for (let d = 0; d < OUTSIDE_DAYS_AHEAD && !current; d++) {
     for (const opt of slotsForDay(kind, now, d)) {

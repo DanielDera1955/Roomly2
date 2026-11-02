@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { INSIDE_LAUNCH_MS, OUTSIDE_ORDER_BY_MIN, getBookableSlots, timeLabel } from '../config';
+import { INSIDE_LAUNCH_MS, OUTSIDE_FOOD_ORDER_BY_MIN, getBookableSlots, timeLabel } from '../config';
 
 /**
  * Home screen hero for first-time visitors (not signed in). Open layout, no card.
@@ -69,8 +69,8 @@ export const GuestHero: React.FC<{
   const food: Pick<Tile, 'status' | 'tone' | 'note'> =
     day === 0
       ? { status: 'Back Monday', tone: 'soon', note: 'Order now for Monday' }
-      : min < OUTSIDE_ORDER_BY_MIN
-      ? { status: 'Open now', tone: 'open', note: `To the gate, order by ${timeLabel(OUTSIDE_ORDER_BY_MIN)}` }
+      : min < OUTSIDE_FOOD_ORDER_BY_MIN
+      ? { status: 'Open now', tone: 'open', note: `To the gate, order before ${timeLabel(OUTSIDE_FOOD_ORDER_BY_MIN)}` }
       : { status: day === 6 ? 'Next: Monday' : 'Next: tomorrow', tone: 'soon', note: 'To the gate, order now' };
 
   let room: Pick<Tile, 'status' | 'tone' | 'note'>;

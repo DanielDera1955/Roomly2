@@ -370,11 +370,17 @@ export function formatRemaining(ms: number): string {
 
 // ---------- Outside school schedule ----------
 /**
- * Outside orders: one delivery a day. Order before 5:10pm and it reaches the school gate the same day, before 6pm.
- * After 5:10pm, or when the operator has switched today off, the order is for their next day that is on.
+ * Outside orders: one delivery a day, reaching the school gate before 6pm.
+ * Store items: order before 5:10pm. Cooked food packs faster: order before 5:30pm.
+ * After the cut-off, or when the operator has switched today off, the order is for their next day that is on.
  * Operators switch whole days on or off: today, tomorrow and the day after. Every day starts on.
  */
+/** Outside store items: same-day orders close at 5:10pm */
 export const OUTSIDE_ORDER_BY_MIN = T(17, 10);
+/** Outside cooked food: same-day orders close at 5:30pm (food packs faster) */
+export const OUTSIDE_FOOD_ORDER_BY_MIN = T(17, 30);
+/** Same-day cut-off for an outside kind */
+export const outsideOrderByFor = (kind: string) => (kind === 'food' ? OUTSIDE_FOOD_ORDER_BY_MIN : OUTSIDE_ORDER_BY_MIN);
 export const OUTSIDE_DAYS_AHEAD = 3;
 /** Launch dates (Lagos time). The admin can change both in Admin > Hub & Games; these are the defaults. */
 export const DEFAULT_OUTSIDE_STORE_OPEN_MS = Date.parse('2026-11-09T00:00:00+01:00');
@@ -387,6 +393,9 @@ export const weekdayName = (d: number) => WEEKDAYS[d] || '';
 export const openDateText = (ms: number) =>
   new Date(ms).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 export const OUTSIDE_BANNER = 'Order before 5:10pm. Sec men are strict with late deliveries.';
+export const OUTSIDE_FOOD_BANNER = 'Order before 5:30pm. Sec men are strict with late deliveries.';
+/** The order-before banner for the store or food side */
+export const outsideBannerFor = (kind: string) => (kind === 'food' ? OUTSIDE_FOOD_BANNER : OUTSIDE_BANNER);
 /** Outside store items: one delivery a day */
 export const OUTSIDE_STORE_BATCHES: BatchSlotDef[] = [
   { id: 'late', name: 'Store delivery', startMin: OUTSIDE_ORDER_BY_MIN, endMin: T(18), orderByMin: OUTSIDE_ORDER_BY_MIN },
@@ -395,9 +404,9 @@ export const OUTSIDE_STORE_BATCHES: BatchSlotDef[] = [
 export const OUTSIDE_FOOD_BATCH: BatchSlotDef = {
   id: 'evening',
   name: 'Food delivery',
-  startMin: OUTSIDE_ORDER_BY_MIN,
+  startMin: OUTSIDE_FOOD_ORDER_BY_MIN,
   endMin: T(18),
-  orderByMin: OUTSIDE_ORDER_BY_MIN,
+  orderByMin: OUTSIDE_FOOD_ORDER_BY_MIN,
 };
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "2026-10-29" -> "Thursday 29 Oct" (a fixed date, so it never goes stale like "Tomorrow") */
@@ -443,8 +452,8 @@ export function slotsForDay(side: SwitchSide, base: Date, dayOffset: number): Ba
   const defs = side === 'food' ? [OUTSIDE_FOOD_BATCH] : OUTSIDE_STORE_BATCHES;
   return defs.map((s) => buildOption(day, dayOffset, s));
 }
-/** Switches turn themselves off at night: 10pm inside. Outside, today's orders close at 5:10pm (parcels must reach the gate before 6pm) */
-export const SWITCH_CUTOFF_MIN = { inside: T(22), outside: OUTSIDE_ORDER_BY_MIN };
+/** Switches turn themselves off at night: 10pm inside. Outside, today's orders close at 5:10pm for store and 5:30pm for food (parcels must reach the gate before 6pm) */
+export const SWITCH_CUTOFF_MIN = { inside: T(22), outside: OUTSIDE_ORDER_BY_MIN, food: OUTSIDE_FOOD_ORDER_BY_MIN };
 
 /** "will start sending by 2pm" style label for a batch */
 export const startLabel = (opt: BatchOption): string => {
@@ -1491,11 +1500,11 @@ export function liveStatusFor(side: 'inside' | 'outside', now: Date = new Date()
     const when = next.dayLabel === 'Tomorrow' ? 'tomorrow' : next.dayLabel;
     return { text: `Next: ${timeLabel(next.startMin)} ${when}`, open: true };
   }
-  // Outside food runs Monday to Saturday; same-day orders close at 5:10pm
+  // Outside food runs Monday to Saturday; same-day orders close at 5:30pm
   const day = now.getDay();
   const min = now.getHours() * 60 + now.getMinutes();
   if (day === 0) return { text: 'Food back Monday', open: false };
-  if (min < OUTSIDE_ORDER_BY_MIN) return { text: `Food open till ${timeLabel(OUTSIDE_ORDER_BY_MIN)}`, open: true };
+  if (min < OUTSIDE_FOOD_ORDER_BY_MIN) return { text: `Food open till ${timeLabel(OUTSIDE_FOOD_ORDER_BY_MIN)}`, open: true };
   return { text: day === 6 ? 'Food: next is Monday' : 'Food: next is tomorrow', open: false };
 }
 /** Text only (kept for any older screen that uses it) */
