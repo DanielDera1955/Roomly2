@@ -37,6 +37,7 @@ import { CategoryNav, ShopTab } from './components/CategoryNav';
 import { HostelHub } from './components/HostelHub';
 import { HowRoomlyWorks } from './components/HowRoomlyWorks';
 import { BecomeRunner } from './components/BecomeRunner';
+import { GuestHero } from './components/GuestHero';
 import { FeedbackBox } from './components/FeedbackBox';
 import { subscribeHubSettings, outsideStoreOpensAt } from './hub.js';
 import { ProductCard } from './components/ProductCard';
@@ -882,8 +883,9 @@ export default function App() {
   const hasCompletedOrder =
     signedInCustomer &&
     ((customer?.deliveredOrdersCount || 0) > 0 || screenOrders.some((o) => o.status === 'Delivered' && o.paymentStatus !== 'unpaid'));
-  const hour = new Date().getHours();
-  const dayPart = hour >= 5 && hour < 12 ? 'Good morning' : hour >= 12 && hour < 17 ? 'Good afternoon' : 'Good evening';
+  // Midnight to noon is morning (the banner keeps a night sky until 5am)
+  const hour = new Date(clockMs).getHours();
+  const dayPart = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const heroGreeting = "Hi there, we've got you covered.";
 
   // Home announcement: one at a time, set by the admin. A student can dismiss it.
@@ -1088,9 +1090,21 @@ export default function App() {
 
           {/* Phone Number Input & Customer Recognition */}
           <div className="-mx-4 -mt-4 px-4 pt-5 pb-3 bg-gradient-to-b from-emerald-100/70 to-transparent dark:from-emerald-950/40">
-            {(
+            {!signedInCustomer ? (
+              <GuestHero
+                dayPart={dayPart}
+                nowMs={clockMs}
+                storeOpensMs={storeOpensMs}
+                onStart={() => window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)}
+                onOpenSection={(side, tab) => {
+                  setSourceMode(side);
+                  setSelectedTab(tab);
+                  setSelectedFilter('All');
+                  window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+                }}
+              />
+            ) : (
               <HomeBanner
-                isGuest={!signedInCustomer}
                 caritasLine={sourceMode === 'inside' && clockMs >= INSIDE_LAUNCH_MS ? caritasLineFor(new Date(clockMs)) : ''}
                 liveLine={liveLineFor(sourceMode, new Date(clockMs))}
                 onStart={() => window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)}
@@ -1108,11 +1122,6 @@ export default function App() {
                 onAnnouncementAction={handleAnnouncementAction}
                 onDismissAnnouncement={handleDismissAnnouncement}
               />
-            )}
-            {!signedInCustomer && (
-              <p className="text-xs font-semibold text-[#0b8044] dark:text-[#0e9f55] mt-2 px-1">
-                No sign-up needed. Just pick what you need and check out.
-              </p>
             )}
           </div>
 

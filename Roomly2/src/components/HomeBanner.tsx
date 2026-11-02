@@ -67,7 +67,8 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
   liveLine = '',
   onStart,
 }) => {
-  const morning = dayPart === 'Good morning';
+  // Midnight to 5am says "Good morning" but keeps the night sky (moon and stars)
+  const morning = dayPart === 'Good morning' && new Date().getHours() >= 5;
   const afternoon = dayPart === 'Good afternoon';
   const sky = morning
     ? 'linear-gradient(180deg,#fb923c 0%,#fbbf24 45%,#fde68a 100%)'
