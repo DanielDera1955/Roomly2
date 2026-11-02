@@ -15,9 +15,9 @@ const BATCH_DAYS: { day: string; times: string[] }[] = [
   { day: 'Saturday', times: ['9:30am', '1:30pm', '4:30pm', '8:30pm'] },
 ];
 const SCHEDULE: { day: string; slots: string }[] = [
-  { day: 'Sunday', slots: '11:30am to 12pm, 2:30 to 3pm, 6:30 to 7pm, 8:30 to 9pm' },
-  { day: 'Monday to Friday', slots: '2:30 to 3pm, 5:30 to 6pm, 8:30 to 9pm' },
-  { day: 'Saturday', slots: '9:30 to 10am, 1:30 to 2pm, 4:30 to 5pm, 8:30 to 9pm' },
+  { day: 'Sunday', slots: '11:30am to 12:00pm, 2:30 to 3:00pm, 6:30 to 7:00pm, 8:30 to 9:00pm' },
+  { day: 'Monday to Friday', slots: '2:30 to 3:00pm, 5:30 to 6:00pm, 8:30 to 9:00pm' },
+  { day: 'Saturday', slots: '9:30 to 10:00am, 1:30 to 2:00pm, 4:30 to 5:00pm, 8:30 to 9:00pm' },
 ];
 
 const card = 'bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-4 space-y-2.5';

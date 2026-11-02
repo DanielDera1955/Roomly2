@@ -102,9 +102,9 @@ export interface DeliveryBatchOption {
 export const DELIVERY_BATCHES: DeliveryBatchOption[] = [
   { id: 'morning', name: 'Morning Batch', timeWindow: 'Saturday morning', price: 0, badge: '', description: 'Free-day morning delivery' },
   { id: 'midday', name: 'Midday Batch', timeWindow: 'Midday', price: 0, badge: '', description: 'Midday delivery' },
-  { id: 'afternoon', name: 'Afternoon Batch', timeWindow: '2:30 to 3pm', price: 0, badge: '', description: 'Afternoon delivery' },
+  { id: 'afternoon', name: 'Afternoon Batch', timeWindow: '2:30 to 3:00pm', price: 0, badge: '', description: 'Afternoon delivery' },
   { id: 'late', name: 'Early Evening Batch', timeWindow: 'Early evening', price: 0, badge: '', description: 'Early evening delivery' },
-  { id: 'evening', name: 'Evening Batch', timeWindow: '8:30 to 9pm', price: 0, badge: '', description: 'Evening delivery' },
+  { id: 'evening', name: 'Evening Batch', timeWindow: '8:30 to 9:00pm', price: 0, badge: '', description: 'Evening delivery' },
 ];
 
 /**
@@ -299,10 +299,16 @@ export const timeLabel = (min: number): string => {
   const h12 = h % 12 || 12;
   return m ? `${h12}:${String(m).padStart(2, '0')}${suffix}` : `${h12}${suffix}`;
 };
+/** "2:30 to 3:00pm", "11:30am to 12:00pm": the end always shows its minutes */
+const timeLabelFull = (min: number): string => {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')}${h >= 12 ? 'pm' : 'am'}`;
+};
 const windowLabel = (a: number, b: number): string => {
   const same = (a >= 720) === (b >= 720);
   const start = timeLabel(a);
-  return same ? `${start.replace(/(am|pm)$/, '')} to ${timeLabel(b)}` : `${start} to ${timeLabel(b)}`;
+  return same ? `${start.replace(/(am|pm)$/, '')} to ${timeLabelFull(b)}` : `${start} to ${timeLabelFull(b)}`;
 };
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -370,6 +376,8 @@ export const OUTSIDE_ORDER_BY_MIN = T(17, 10);
 export const OUTSIDE_DAYS_AHEAD = 3;
 /** Launch dates (Lagos time). The admin can change both in Admin > Hub & Games; these are the defaults. */
 export const DEFAULT_OUTSIDE_STORE_OPEN_MS = Date.parse('2026-11-09T00:00:00+01:00');
+/** Inside-school delivery (runners) starts on this date. Until then new visitors open on Outside > Cooked Food. */
+export const INSIDE_LAUNCH_MS = Date.parse('2026-11-04T00:00:00+01:00');
 export const DEFAULT_GAMES_OPEN_MS = Date.parse('2026-11-08T00:00:00+01:00');
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 export const weekdayName = (d: number) => WEEKDAYS[d] || '';

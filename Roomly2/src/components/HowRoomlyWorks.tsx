@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { HelpCircle, ChevronDown } from 'lucide-react';
 
 /**
- * Home page: "New here? How Roomly works". Folded so it never pushes the products down;
+ * Home page: "New here? How you can use Roomly". Folded so it never pushes the products down;
  * shows a small "New here?" label until the student has opened it once.
  */
 export const HowRoomlyWorks: React.FC<{ storeOpensMs: number; onStart: () => void; onHub: () => void }> = ({ storeOpensMs, onStart, onHub }) => {
@@ -60,7 +60,7 @@ export const HowRoomlyWorks: React.FC<{ storeOpensMs: number; onStart: () => voi
           <span className="w-8 h-8 shrink-0 rounded-full bg-emerald-50 dark:bg-emerald-950/60 flex items-center justify-center">
             <HelpCircle className="w-4 h-4 text-[#0e9f55]" />
           </span>
-          <span className="text-sm font-bold text-slate-900 dark:text-white truncate">How Roomly works</span>
+          <span className="text-sm font-bold text-slate-900 dark:text-white truncate">How you can use Roomly</span>
           {!seen && (
             <span className="shrink-0 px-2 py-0.5 rounded-full bg-[#0e9f55] text-white text-[10px] font-bold">New here?</span>
           )}

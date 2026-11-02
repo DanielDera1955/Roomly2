@@ -21,7 +21,7 @@ import {
   createProductRequest,
   subscribeProductRequest,
 } from './api.js';
-import { openDateText, SCHOOL_NAME, ShopGroup, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
+import { openDateText, INSIDE_LAUNCH_MS, SCHOOL_NAME, ShopGroup, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
 import { MessageCircle, Info } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
@@ -111,7 +111,8 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeLocked]);
   // The app opens on the side and category of the student's last placed order (saved on this phone).
-  // Nothing saved, or unreadable storage: Inside school > Store Items.
+  // Nothing saved, or unreadable storage: Inside school > Store Items
+  // (Outside > Cooked Food before inside delivery launches, so first visitors land where they can order).
   const lastShop = useMemo(() => {
     // A WhatsApp link from Games (?game= or ?match=) opens Hostel Hub > Games
     try {
@@ -122,7 +123,11 @@ export default function App() {
       }
     } catch {}
     try {
-      const v = JSON.parse(localStorage.getItem('roomly_last_shop') || '{}');
+      const saved = localStorage.getItem('roomly_last_shop');
+      if (!saved && Date.now() < INSIDE_LAUNCH_MS) {
+        return { side: 'outside', tab: 'food' } as { side: 'inside' | 'outside'; tab: 'store' | 'food' | 'hub' };
+      }
+      const v = JSON.parse(saved || '{}');
       return {
         side: v.side === 'outside' ? 'outside' : 'inside',
         tab: v.tab === 'food' ? 'food' : 'store',
@@ -1176,6 +1181,14 @@ export default function App() {
 
           {/* Delivery bar: changes with the toggle above */}
           <DeliveryPromiseBanner mode={sourceMode} tab={lastGroup} storeOpensAtMs={storeLocked ? storeOpensMs : 0} />
+
+          {/* Before inside delivery launches: say when it starts (Hostel Hub works already) */}
+          {sourceMode === 'inside' && selectedTab !== 'hub' && clockMs < INSIDE_LAUNCH_MS && (
+            <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-xs text-amber-900 dark:text-amber-200">
+              <strong className="block">Delivery to your room starts {openDateText(INSIDE_LAUNCH_MS)}.</strong>
+              You can browse now. Outside food is open today, delivered to the school gate.
+            </div>
+          )}
 
           {!searchQuery && <InstallBanner variant="home" />}
 
