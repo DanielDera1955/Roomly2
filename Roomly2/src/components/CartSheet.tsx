@@ -53,6 +53,7 @@ interface CartSheetProps {
   onPlaceOrder: (orderPayload: {
     phone: string;
     name: string;
+    callName?: string;
     area: string;
     building: string;
     room: string;
@@ -111,6 +112,10 @@ export const CartSheet: React.FC<CartSheetProps> = ({
 
   // Form states
   const [name, setName] = useState(customer?.name || guestName || '');
+  // "What should we call you?": follows the first word of the name until the student edits it
+  const firstWordOf = (n: string) => n.trim().split(/\s+/)[0] || '';
+  const [callName, setCallName] = useState((customer as any)?.callName || firstWordOf(customer?.name || guestName || ''));
+  const [callNameEdited, setCallNameEdited] = useState(Boolean((customer as any)?.callName));
   // Location: hostel (JV, TA, New Hostel) plus a typed room number
   const area = 'Hostels';
   const savedHostel = (b?: string) => (b && HOSTELS.includes(b) ? b : HOSTELS[0]);
@@ -325,6 +330,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       await onPlaceOrder({
         phone: normalizePhone(phone),
         name: name.trim(),
+        callName: callName.trim(),
         // Outside orders stop at the school gate unless a runner is bringing them to the room
         area: atGate ? 'Custom' : customMode ? 'Custom' : area,
         building: atGate ? 'School gate' : customMode ? customLocation.trim() : building,
@@ -667,10 +673,31 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                 <input
                   type="text"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (!callNameEdited) setCallName(firstWordOf(e.target.value));
+                  }}
                   placeholder="e.g. Chidi Okon"
                   className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55]"
                 />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  What should we call you? <span className="font-normal text-slate-400">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={callName}
+                  maxLength={30}
+                  onChange={(e) => {
+                    setCallName(e.target.value);
+                    setCallNameEdited(true);
+                  }}
+                  placeholder="e.g. Dera"
+                  className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55]"
+                />
+                <p className="mt-1 text-[10px] text-slate-400">Only used to greet you in the app. Runners still see your full name.</p>
               </div>
 
               {(cart === 'inside' || gatePickup) && !customMode && (

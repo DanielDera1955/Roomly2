@@ -867,7 +867,8 @@ export default function App() {
   useEffect(() => {
     if (signedInCustomer) setSignInOpen(false);
   }, [signedInCustomer]);
-  const firstName = String(customer?.name || localName || '').trim().split(/\s+/)[0] || '';
+  // Greeting name: what they asked to be called, else the first word of their name
+  const firstName = String((customer as any)?.callName || '').trim() || String(customer?.name || localName || '').trim().split(/\s+/)[0] || '';
   const hasCompletedOrder =
     signedInCustomer &&
     ((customer?.deliveredOrdersCount || 0) > 0 || screenOrders.some((o) => o.status === 'Delivered' && o.paymentStatus !== 'unpaid'));

@@ -1448,6 +1448,8 @@ export async function createOrder(orderPayload) {
     slim({
       phone,
       name: orderPayload.name,
+      // Greeting name: what they typed in "What should we call you?", else the one saved before
+      callName: String(orderPayload.callName ?? existingProfile?.callName ?? '').trim().slice(0, 30),
       ...savedLoc,
       orderIds: [orderId, ...(existingProfile?.orderIds || [])].slice(0, 40),
       updatedAt: createdAtIso,

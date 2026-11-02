@@ -28,6 +28,8 @@ export interface CartItem {
 export interface CustomerProfile {
   phone: string;
   name: string;
+  /** What the student wants the app to call them (greeting only). Empty = first word of name. */
+  callName?: string;
   area: 'Hostels' | 'Lodge';
   building: string;
   room: string;
