@@ -32,7 +32,7 @@ export const HowRoomlyWorks: React.FC<{ storeOpensMs: number; onStart: () => voi
       title: 'Order inside school',
       lines: [
         'Store items and canteen food, brought to your room by a Roomly runner.',
-        "Orders go out in batches: 3 a day from Sunday to Friday, and 4 on Saturday. You see the next batch time at checkout, so it's never long until the next one.",
+        "Orders go out in batches: 3 a day from Monday to Friday, and 4 on Saturday and Sunday. You see the next batch time at checkout, so it's never long until the next one.",
       ],
     },
     {
@@ -110,6 +110,14 @@ export const HowRoomlyWorks: React.FC<{ storeOpensMs: number; onStart: () => voi
           </div>
         </div>
       )}
+      {/* Runner sign-up: small and always visible, so students who want to earn can find it */}
+      <a
+        href="#join"
+        className="flex items-center justify-between gap-2 px-4 py-2.5 border-t border-slate-100 dark:border-slate-800 text-xs font-bold text-[#0b8044] dark:text-[#0e9f55]"
+      >
+        <span>Earn ₦500 per delivery. Become a Roomly runner</span>
+        <ChevronDown className="w-4 h-4 shrink-0 -rotate-90" />
+      </a>
     </div>
   );
 };

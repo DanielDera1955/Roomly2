@@ -1036,7 +1036,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                 <span className="min-w-0 text-xs text-sky-900 dark:text-sky-100">
                   <strong className="block">{suggestWater.name}? ₦{suggestWater.price.toLocaleString()}</strong>
                   <span className="text-[11px] text-sky-700 dark:text-sky-300">
-                    {isBagOfWater(suggestWater.name) && deliveryFee === DELIVERY_FEES.small
+                    {isBagOfWater(suggestWater.name) && DELIVERY_FEES.small !== DELIVERY_FEES.large && deliveryFee === DELIVERY_FEES.small
                       ? `A bag is heavy: delivery goes from ₦${DELIVERY_FEES.small} to ₦${DELIVERY_FEES.large}.`
                       : 'Goes with this delivery. No extra fee.'}
                   </span>
@@ -1052,7 +1052,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             )}
 
           {/* Why the inside delivery fee is what it is */}
-          {cart === 'inside' && itemTotal > 0 && deliveryFee === DELIVERY_FEES.large && (
+          {cart === 'inside' && itemTotal > 0 && DELIVERY_FEES.small !== DELIVERY_FEES.large && deliveryFee === DELIVERY_FEES.large && (
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
               {hasBag
                 ? `A bag of water is heavy, so delivery is ₦${DELIVERY_FEES.large.toLocaleString()}.`

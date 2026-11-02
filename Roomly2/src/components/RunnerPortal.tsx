@@ -723,7 +723,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
             return (
               <div className="p-3 rounded-2xl bg-violet-50 dark:bg-violet-950/30 text-xs flex items-center justify-between gap-2">
                 <span>
-                  Helped by <strong>{helperName}</strong>. Your 30% is split 50/50 with them; Roomly's 70% does not change.
+                  Helped by <strong>{helperName}</strong>. Your delivery pay is split 50/50 with them; Roomly's margin does not change.
                 </span>
                 {!delivered && (
                   <button
@@ -760,7 +760,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
                   disabled={!helperPick[ord.id] || updatingId === ord.id}
                   onClick={() => {
                     const r = runners.find((x) => x.id === helperPick[ord.id]);
-                    if (window.confirm(`Record ${r?.name} as your helper? Your 30% share on this delivery will be split 50/50 with them.`)) {
+                    if (window.confirm(`Record ${r?.name} as your helper? Your delivery pay on this order will be split 50/50 with them.`)) {
                       recordHelper(ord, helperPick[ord.id]);
                     }
                   }}

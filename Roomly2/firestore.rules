@@ -238,6 +238,22 @@ service cloud.firestore {
       }
     }
 
+    // ---------- runner applications: anyone can apply, only the admin reads and manages ----------
+    match /runnerApplications/{id} {
+      allow read, update, delete: if isAdmin();
+      allow create: if request.resource.data.keys().hasOnly(['name', 'phone', 'hostel', 'level', 'batches', 'message', 'status', 'note', 'atMs'])
+        && request.resource.data.name is string && request.resource.data.name.size() >= 2 && request.resource.data.name.size() <= 60
+        && request.resource.data.phone is string && request.resource.data.phone.size() >= 10 && request.resource.data.phone.size() <= 14
+        && request.resource.data.hostel is string && request.resource.data.hostel.size() <= 40
+        && request.resource.data.level in ['100', '200', '300', '400', '500', 'Other']
+        && request.resource.data.batches is list && request.resource.data.batches.size() >= 1 && request.resource.data.batches.size() <= 12
+        && request.resource.data.message is string && request.resource.data.message.size() <= 500
+        && request.resource.data.status == 'new'
+        && request.resource.data.note == ''
+        && request.resource.data.atMs > request.time.toMillis() - 600000
+        && request.resource.data.atMs < request.time.toMillis() + 600000;
+    }
+
     // ---------- feedback box: anyone can send, only the admin reads ----------
     match /feedback/{id} {
       allow read, update, delete: if isAdmin();

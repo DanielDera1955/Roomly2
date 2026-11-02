@@ -5,7 +5,8 @@ import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { AdminSettlementsPanel } from './SettlementPanel';
 import { AnnouncementsPanel } from './AnnouncementsPanel';
 import { playChime } from '../sound';
-import { Phone as PhoneIcon, ChevronDown as ChevronDownIcon, History } from 'lucide-react';
+import { Phone as PhoneIcon, ChevronDown as ChevronDownIcon, History, UserPlus } from 'lucide-react';
+import { AdminRunnerApplications, useNewApplicationCount } from './AdminRunnerApplications';
 import {
   ArrowLeft,
   Lock,
@@ -146,7 +147,7 @@ const FoodOptionsEditor: React.FC<{ value: FoodOptions; source: Product['source'
   );
 };
 
-type AdminTab = 'dashboard' | 'orders' | 'team' | 'money' | 'feedback' | 'products' | 'categories' | 'customers' | 'activity' | 'hub';
+type AdminTab = 'dashboard' | 'orders' | 'team' | 'applications' | 'money' | 'feedback' | 'products' | 'categories' | 'customers' | 'activity' | 'hub';
 
 export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpdated }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -157,6 +158,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
   // Active Admin Tab
   const [currentTab, setCurrentTab] = useState<AdminTab>('dashboard');
+  const newApplications = useNewApplicationCount();
   // Red count on the Money tab: days sent and waiting for your confirmation, or overdue
   const moneyAlerts = needsAction(useOpenSettlements()).length;
 
@@ -595,6 +597,24 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
           <button
             type="button"
+            onClick={() => setCurrentTab('applications')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+              currentTab === 'applications'
+                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            <span>Applications</span>
+            {newApplications > 0 && (
+              <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#0e9f55] text-white text-[10px] font-black flex items-center justify-center">
+                {newApplications}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={() => setCurrentTab('money')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
               currentTab === 'money'
@@ -710,6 +730,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
         {/* ================= TEAM: runners, operators, accounts, switches ================= */}
         {currentTab === 'team' && <AdminTeam />}
+
+        {/* ================= APPLICATIONS: students who applied to be runners (#join page) ================= */}
+        {currentTab === 'applications' && <AdminRunnerApplications />}
 
         {/* ================= MONEY: real totals from settlement records ================= */}
         {currentTab === 'money' && <AdminMoney />}

@@ -41,12 +41,12 @@ const steps = (kind: 'store' | 'food'): Step[] => [
   },
 ];
 
-/** Runners: inside orders to the room, batches and express, 30% of the profit */
+/** Runners: inside orders to the room, batches and express, ₦500 per delivery */
 const runnerSteps: Step[] = [
   { title: 'Add your payment account', text: 'Students pay you directly. Until your account is added, you cannot take orders.' },
   {
     title: 'Your batches',
-    text: 'Switch ON the batches you can deliver. Students see the next open batch and pay into your account. Switch a batch OFF if you cannot make it. All switches turn off by themselves at 10pm.',
+    text: 'Switch ON the batches you can deliver and be at the canteen by the start time: Sunday 11:30am, 2:30pm, 6:30pm, 8:30pm; Monday to Friday 2:30pm, 5:30pm, 8:30pm; Saturday 9:30am, 1:30pm, 4:30pm, 8:30pm. Each batch is 30 minutes. Switch a batch OFF if you cannot make it, and once you finish buying for it. All switches turn off by themselves at 10pm.',
   },
   {
     title: 'When an order comes',
@@ -54,16 +54,16 @@ const runnerSteps: Step[] = [
   },
   {
     title: 'If something is out of stock',
-    text: 'Follow what the student chose on the order: refund, next batch, or a similar item at the same price. Use the Call button if you need them.',
+    text: 'Follow what the student chose on the order: a refund for that item, or a similar item at the same price. Use the Call button if you need them.',
   },
   {
     title: 'Extra ways to earn',
-    text: 'Express: ₦1,200, you keep ₦600, refunded to the student if it takes over 20 minutes. Shared deliveries split 50/50.',
+    text: 'Express: ₦1,200, you keep ₦600, refunded to the student if it takes over 20 minutes. With a helper, you split the delivery pay 50/50.',
   },
   { title: 'Products and requests', text: 'You can change inside prices, add products, and send a price when a student requests something not listed.' },
   {
     title: 'How you earn',
-    text: 'You keep what you spent on the items plus 30% of the profit (the item margin plus the delivery fee). The other 70% goes to Roomly.',
+    text: 'You keep the ₦500 delivery fee on every order (₦600 on express) plus what you spent on the items. The small margin on each item is Roomly\'s, and that is what you settle.',
   },
   {
     title: 'Settle at the end of the day',

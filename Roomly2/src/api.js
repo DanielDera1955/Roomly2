@@ -31,6 +31,8 @@ import {
   EXPRESS_CONFIRM_MINUTES,
   SETTLE_BY_HOUR,
   RUNNER_SHARE,
+  isOldPayOrder,
+  runnerPayFor,
   sellingPrice,
   CATEGORY_SETUP,
   STORE_SOURCE,
@@ -2115,20 +2117,27 @@ async function insideProfitOf(order) {
 }
 
 /**
- * Runner: an inside order was delivered. 30% of the profit is the runners', 70% is owed to Roomly.
- * Shared delivery (Phase 6): with a helper, the 30% splits 50/50; the 70% does not change.
+ * Runner: an inside order was delivered.
+ * Current rule: the runner keeps the delivery fee (₦600 on express) and owes Roomly the item margin
+ * (plus Roomly's ₦600 on express). With a helper, the delivery pay splits 50/50; Roomly's part does not change.
+ * Orders placed before the change keep the old rule (30% of the profit to the runner).
  */
+/** The runner's pay on one inside order, before any helper split */
+function runnerPayOf(order, profit, itemProfit, fee, express) {
+  if (isOldPayOrder(order)) return express ? itemProfit * RUNNER_SHARE + EXPRESS_RUNNER_SHARE : profit * RUNNER_SHARE;
+  return runnerPayFor(fee, express);
+}
 /** @returns {Promise<void>} */
 async function recordRunnerDelivery(order) {
   const staff = getCurrentStaff();
   if (!staff || staff.role !== 'runner') return; // admin taps are not a runner's delivery
   if (order.cart && order.cart !== 'inside') return;
   const { paid, spent, fee, profit, estimated } = await insideProfitOf(order);
-  // Express: the item margin still splits 70/30, but the ₦1,200 fee splits 50/50 (₦600 each)
   const express = Boolean(order.express && order.express.status === 'accepted');
   const itemProfit = Math.max(0, paid - spent);
-  const share = express ? itemProfit * RUNNER_SHARE + EXPRESS_RUNNER_SHARE : profit * RUNNER_SHARE;
-  const owed = express ? itemProfit * (1 - RUNNER_SHARE) + EXPRESS_ROOMLY_SHARE : profit * (1 - RUNNER_SHARE);
+  const share = runnerPayOf(order, profit, itemProfit, fee, express);
+  // Everything collected minus what was spent and the runner's pay is Roomly's
+  const owed = Math.max(0, paid + fee - spent - share);
   const helperShare = order.helperEmail ? Math.round(share / 2) : 0;
   await addToMyDay(
     'runner',
@@ -2162,7 +2171,7 @@ async function recordRunnerDelivery(order) {
   );
   // Keep the numbers on the order, so the helper's share and a later helper can be worked out exactly
   try {
-    await updateDoc(doc(db, 'orders', order.id), { runnerProfit: profit, helperShare });
+    await updateDoc(doc(db, 'orders', order.id), { runnerProfit: profit, runnerPay: share, helperShare });
   } catch (e) {
     console.error(e);
   }
@@ -2194,15 +2203,24 @@ export async function setOrderHelper(orderId, helper) {
       {
         status: o.status,
         timestamp: now,
-        note: helper ? `${helper.name} helped with this delivery (30% share split 50/50)` : 'Helper removed',
+        note: helper
+          ? `${helper.name} helped with this delivery (${isOldPayOrder(o) ? '30% share' : 'delivery pay'} split 50/50)`
+          : 'Helper removed',
         updatedBy: staff.name || 'Runner',
       },
     ],
   };
-  // Helper added after delivery: move half of the delivering runner's 30% to the helper
+  // Helper added after delivery: move half of the delivering runner's pay to the helper
   if (delivered && helper) {
-    const profit = Number.isFinite(o.runnerProfit) ? o.runnerProfit : (await insideProfitOf(o)).profit;
-    const half = Math.round((profit * RUNNER_SHARE) / 2);
+    let pay = Number.isFinite(o.runnerPay) ? o.runnerPay : NaN;
+    let profit = Number.isFinite(o.runnerProfit) ? o.runnerProfit : NaN;
+    if (!Number.isFinite(pay)) {
+      const r = await insideProfitOf(o);
+      profit = r.profit;
+      const exp = Boolean(o.express && o.express.status === 'accepted');
+      pay = runnerPayOf(o, r.profit, Math.max(0, r.paid - r.spent), r.fee, exp);
+    }
+    const half = Math.round(pay / 2);
     patch.helperShare = half;
     patch.runnerProfit = profit;
     if (staff.role === 'runner' && staff.id === o.runnerId) {
@@ -3187,10 +3205,12 @@ function orderMoney(o, products) {
     const c = costOf(i, products, inside, inside ? '' : o.operatorId || '');
     const m = Math.max(0, (i.totalPrice || 0) - c.cost);
     margin += m;
-    lines.push({ i, m: inside ? m * (1 - RUNNER_SHARE) : m });
+    lines.push({ i, m: inside && isOldPayOrder(o) ? m * (1 - RUNNER_SHARE) : m });
   }
-  const earnings =
-    store === 'inside' ? (margin + (o.deliveryFee || 0)) * (1 - RUNNER_SHARE) : margin + (o.cart === store ? OP_OWE_PER_CART : OP_OWE_PER_CART / 2);
+  // Inside: Roomly earns the item margin (+ ₦600 on express). Orders before the change: 70% of margin + fee.
+  const exp = Boolean(o.express && o.express.status === 'accepted');
+  const insideEarn = isOldPayOrder(o) ? (margin + (o.deliveryFee || 0)) * (1 - RUNNER_SHARE) : margin + (exp ? EXPRESS_ROOMLY_SHARE : 0);
+  const earnings = store === 'inside' ? insideEarn : margin + (o.cart === store ? OP_OWE_PER_CART : OP_OWE_PER_CART / 2);
   return { store, earnings, lines };
 }
 
@@ -3883,6 +3903,63 @@ export function subscribeFeedbackMessages(cb) {
 }
 export async function setFeedbackStatus(id, status) {
   await updateDoc(doc(db, 'feedback', id), { status, doneAtMs: status === 'done' ? Date.now() : 0 });
+}
+
+/* ---------------------- runner applications (Become a Roomly Runner page) ---------------------- */
+
+export const RUNNER_APP_LEVELS = ['100', '200', '300', '400', '500', 'Other'];
+export const RUNNER_APP_STATUSES = ['new', 'contacted', 'accepted', 'rejected'];
+
+/** Anyone: apply to be a runner. Batches is a list of labels the student ticked. */
+export async function submitRunnerApplication(form) {
+  const name = String(form.name || '').trim().slice(0, 60);
+  const phone = normalizePhone(form.phone || '');
+  const hostel = String(form.hostel || '').trim().slice(0, 40);
+  const level = String(form.level || '').trim();
+  const batches = (form.batches || []).map((b) => String(b).slice(0, 40)).slice(0, 12);
+  const message = String(form.message || '').trim().slice(0, 500);
+  if (name.length < 2) throw new Error('Enter your full name.');
+  if (!isValidNigerianPhone(phone)) throw new Error('Enter a valid WhatsApp number, e.g. 08012345678.');
+  if (!hostel) throw new Error('Pick your hostel.');
+  if (!RUNNER_APP_LEVELS.includes(level)) throw new Error('Pick your level.');
+  if (batches.length === 0) throw new Error('Tick at least one batch you can usually do.');
+  try {
+    const last = Number(localStorage.getItem('roomly_runner_app_at') || 0);
+    if (Date.now() - last < 10 * 60000) throw new Error('Your application was already sent. We will reach you on WhatsApp.');
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith('Your application')) throw e;
+  }
+  await addDoc(collection(db, 'runnerApplications'), {
+    name,
+    phone,
+    hostel,
+    level,
+    batches,
+    message,
+    status: 'new',
+    note: '',
+    atMs: Date.now(),
+  });
+  try {
+    localStorage.setItem('roomly_runner_app_at', String(Date.now()));
+  } catch {}
+}
+
+/** Admin: every application, newest first */
+export function subscribeRunnerApplications(cb) {
+  return onSnapshot(
+    query(collection(db, 'runnerApplications'), orderBy('atMs', 'desc'), limit(200)),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    () => cb([])
+  );
+}
+
+/** Admin: move an application along (new, contacted, accepted, rejected), with an optional private note */
+export async function setRunnerApplicationStatus(id, status, note) {
+  if (!RUNNER_APP_STATUSES.includes(status)) throw new Error('Unknown status');
+  const patch = { status, updatedAtMs: Date.now() };
+  if (typeof note === 'string') patch.note = note.slice(0, 300);
+  await updateDoc(doc(db, 'runnerApplications', id), patch);
 }
 
 /* ---------------------- price lists for suppliers (private links) ---------------------- */

@@ -36,6 +36,7 @@ import { DeliveryPromiseBanner } from './components/DeliveryPromiseBanner';
 import { CategoryNav, ShopTab } from './components/CategoryNav';
 import { HostelHub } from './components/HostelHub';
 import { HowRoomlyWorks } from './components/HowRoomlyWorks';
+import { BecomeRunner } from './components/BecomeRunner';
 import { FeedbackBox } from './components/FeedbackBox';
 import { subscribeHubSettings, outsideStoreOpensAt } from './hub.js';
 import { ProductCard } from './components/ProductCard';
@@ -66,6 +67,8 @@ export default function App() {
   const [currentPortal, setCurrentPortal] = useState<PortalMode>(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash.toLowerCase();
+      // The runner sign-up page (yourlink/#join) is a customer page, even on a staff phone
+      if (hash === '#join') return 'customer';
       if (hash.includes('admin')) return 'admin';
       if (hash.includes('operator')) return 'operator';
       if (hash.includes('runner')) return 'runner';
@@ -81,6 +84,8 @@ export default function App() {
     }
     return 'customer';
   });
+  // "Become a Roomly Runner" page: yourlink/#join
+  const [joinOpen, setJoinOpen] = useState(() => typeof window !== 'undefined' && window.location.hash.toLowerCase() === '#join');
 
   // Store status (6am - 11pm)
   const [storeStatus, setStoreStatus] = useState(() => getStoreStatus());
@@ -221,7 +226,9 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.toLowerCase();
-      if (hash.includes('admin')) setCurrentPortal('admin');
+      setJoinOpen(hash === '#join');
+      if (hash === '#join') setCurrentPortal('customer');
+      else if (hash.includes('admin')) setCurrentPortal('admin');
       else if (hash.includes('operator')) setCurrentPortal('operator');
       else if (hash.includes('runner')) setCurrentPortal('runner');
       else setCurrentPortal('customer');
@@ -1005,6 +1012,19 @@ export default function App() {
         }}
       />
       </StaffGate>
+    );
+  }
+
+  // RUNNER SIGN-UP PAGE (yourlink/#join)
+  if (joinOpen) {
+    return (
+      <BecomeRunner
+        onBack={() => {
+          window.location.hash = '';
+          setJoinOpen(false);
+          window.scrollTo(0, 0);
+        }}
+      />
     );
   }
 

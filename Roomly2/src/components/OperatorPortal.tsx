@@ -26,7 +26,7 @@ import { MyRatingsPanel } from './FeedbackPanels';
 import { OperatorGuide } from './OperatorGuide';
 import { AttentionCard, jumpTo } from './AttentionCard';
 import { OrderRecord, partLabel, shortLocation } from '../types';
-import { OUT_OF_STOCK_LABEL, RUNNER_SHARE, dayWord, longDayLabel } from '../config';
+import { OUT_OF_STOCK_LABEL, dayWord, longDayLabel } from '../config';
 import { playChime } from '../sound';
 import { SoundToggle } from './SoundToggle';
 import { ThemeToggle } from './ThemeToggle';
@@ -126,7 +126,7 @@ export const ProviderOverview: React.FC<{ kind: 'runner' | 'operator' }> = ({ ki
   const list = range === 'today' ? (today ? [today] : []) : days.filter((d) => d.date !== todayKey).concat(today ? [today] : []);
   const inRange = range === 'today' ? list : list.filter((d) => d.date >= shown[0] && d.date <= shown[1]);
   const t = addUp(inRange);
-  const share = t.earnings - t.itemsCost - t.gateKeep - t.helpShare; // their 30%, after helper splits and late express refunds
+  const share = t.earnings - t.itemsCost - t.gateKeep - t.helpShare; // their delivery pay, after helper splits and late express refunds
   const tabs: [Range, string][] = [
     ['today', 'Today'],
     ['week', '7 days'],
@@ -171,13 +171,13 @@ export const ProviderOverview: React.FC<{ kind: 'runner' | 'operator' }> = ({ ki
             <Tile label="Deliveries" value={t.orders} sub="completed" />
             <Tile label="Collected" value={naira(t.paid + t.deliveryFees)} sub={`items ${naira(t.paid)} + delivery ${naira(t.deliveryFees)}`} />
             <Tile label="Item cost" value={naira(t.itemsCost)} sub="what you spent buying items" />
-            <Tile label="Profit" value={naira(t.profit)} sub="item margin + delivery fees" />
-            <Tile label={`Your ${Math.round(RUNNER_SHARE * 100)}% share`} value={naira(share)} sub="of the profit, after helper splits" tone="green" />
-            <Tile label="Owed to Roomly" value={naira(t.owed)} sub="settle by 6am the next day" tone="amber" />
+            <Tile label="Item margin" value={naira(Math.max(0, t.profit - t.deliveryFees))} sub="Roomly's margin on the items" />
+            <Tile label="Your delivery pay" value={naira(share)} sub="delivery fees you keep, after helper splits" tone="green" />
+            <Tile label="Owed to Roomly" value={naira(t.owed)} sub="item margins, settle by 6am the next day" tone="amber" />
           </div>
           {(t.gatePickups > 0 || t.helpShare > 0) && (
             <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
-              On top of your share {when}:{t.gatePickups > 0 ? ` ${naira(t.gateKeep)} from ${t.gatePickups} gate pickup(s)` : ''}
+              On top of your delivery pay {when}:{t.gatePickups > 0 ? ` ${naira(t.gateKeep)} from ${t.gatePickups} gate pickup(s)` : ''}
               {t.gatePickups > 0 && t.helpShare > 0 ? ',' : ''}
               {t.helpShare > 0 ? ` ${naira(t.helpShare)} for helping other runners` : ''}.
             </p>

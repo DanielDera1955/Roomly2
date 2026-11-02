@@ -102,9 +102,9 @@ export interface DeliveryBatchOption {
 export const DELIVERY_BATCHES: DeliveryBatchOption[] = [
   { id: 'morning', name: 'Morning Batch', timeWindow: 'Saturday morning', price: 0, badge: '', description: 'Free-day morning delivery' },
   { id: 'midday', name: 'Midday Batch', timeWindow: 'Midday', price: 0, badge: '', description: 'Midday delivery' },
-  { id: 'afternoon', name: 'Afternoon Batch', timeWindow: '2 to 3pm', price: 0, badge: '', description: 'Afternoon delivery' },
-  { id: 'late', name: 'Late Afternoon Batch', timeWindow: 'Late afternoon', price: 0, badge: '', description: 'Late afternoon delivery' },
-  { id: 'evening', name: 'Evening Batch', timeWindow: '8 to 9pm', price: 0, badge: '', description: 'Evening delivery' },
+  { id: 'afternoon', name: 'Afternoon Batch', timeWindow: '2:30 to 3pm', price: 0, badge: '', description: 'Afternoon delivery' },
+  { id: 'late', name: 'Early Evening Batch', timeWindow: 'Early evening', price: 0, badge: '', description: 'Early evening delivery' },
+  { id: 'evening', name: 'Evening Batch', timeWindow: '8:30 to 9pm', price: 0, badge: '', description: 'Evening delivery' },
 ];
 
 /**
@@ -138,8 +138,20 @@ export const CART_LABEL: Record<CartKind, string> = {
 };
 /** Daily settlement: a day must be cleared before this hour the next morning */
 export const SETTLE_BY_HOUR = 6;
-/** Inside runners keep 30% of the day's profit and owe 70% */
-export const RUNNER_SHARE = 0.3;
+/**
+ * Inside runners (from 2 Nov 2026): the runner keeps the delivery fee (₦500, or ₦600 on express)
+ * plus what they spent on the items, and owes Roomly the item margin.
+ * Orders placed before RUNNER_PAY_CHANGE_MS keep the old rule: runners kept 30% of the profit.
+ */
+export const RUNNER_SHARE = 0.3; // old rule, only for orders placed before the change
+export const RUNNER_PAY_CHANGE_MS = Date.parse('2026-11-02T00:00:00+01:00');
+/** True when this order was placed under the old 30% rule */
+export const isOldPayOrder = (o: any): boolean => {
+  const t = Date.parse(o?.createdAt || '');
+  return Number.isFinite(t) && t < RUNNER_PAY_CHANGE_MS;
+};
+/** What the runner earns on one delivery under the current rule (before any helper split) */
+export const runnerPayFor = (deliveryFee: number, express: boolean): number => (express ? EXPRESS_RUNNER_SHARE : deliveryFee);
 /**
  * Gate pickup: an inside runner brings the parcel from the gate to the room for a flat ₦1,000.
  * The student pays the runner; the runner keeps ₦800 and owes Roomly ₦200 in the daily settlement.
@@ -151,7 +163,7 @@ export const GATE_PICKUP_FEES = { normal: GATE_PICKUP_FEE, heavy: GATE_PICKUP_FE
 
 /**
  * Express (inside school only): ₦1,200 replaces the normal inside delivery fee.
- * Split 50/50: the runner keeps ₦600 and owes Roomly ₦600 (outside the 70/30 split).
+ * Split 50/50: the runner keeps ₦600 and owes Roomly ₦600, plus the item margin as on any order.
  * The 20 minutes start from the student's payment time; if it arrives later, the runner refunds their ₦600.
  */
 export const EXPRESS_FEE = 1200;
@@ -229,7 +241,7 @@ const SLOT_NAMES: Record<string, string> = {
   morning: 'Morning Batch',
   midday: 'Midday Batch',
   afternoon: 'Afternoon Batch',
-  late: 'Late Afternoon Batch',
+  late: 'Early Evening Batch',
   evening: 'Evening Batch',
 };
 const slot = (id: DeliveryBatchId, start: number, end: number, orderBy: number): BatchSlotDef => ({
@@ -239,26 +251,32 @@ const slot = (id: DeliveryBatchId, start: number, end: number, orderBy: number):
   endMin: end,
   orderByMin: orderBy,
 });
-const SCHOOL_DAY = [slot('afternoon', T(14), T(15), T(12, 30)), slot('late', T(17), T(18), T(15, 30)), slot('evening', T(20), T(21), T(18, 30))];
+/**
+ * Each batch is 30 minutes: runners are at the canteen by the start and deliver everything by the end.
+ * Orders close 90 minutes before the start (60 minutes for the first batch of the day).
+ */
+const SCHOOL_DAY = [slot('afternoon', T(14, 30), T(15), T(13)), slot('late', T(17, 30), T(18), T(16)), slot('evening', T(20, 30), T(21), T(19))];
 /** 0 = Sunday ... 6 = Saturday. Runners and admin can switch any batch off for a day. */
 export const WEEKLY_BATCHES: Record<number, BatchSlotDef[]> = {
-  // Sunday: three batches, delivered by 12pm, 6pm and 9pm
+  // Sunday: 11:30am to 12pm, 2:30 to 3pm, 6:30 to 7pm, 8:30 to 9pm
   0: [
-    slot('midday', T(11), T(12), T(10)),
-    slot('late', T(17), T(18), T(15, 30)),
-    slot('evening', T(20), T(21), T(18, 30)),
+    slot('midday', T(11, 30), T(12), T(10, 30)),
+    slot('afternoon', T(14, 30), T(15), T(13)),
+    slot('late', T(18, 30), T(19), T(17)),
+    slot('evening', T(20, 30), T(21), T(19)),
   ],
+  // Monday to Friday: 2:30 to 3pm, 5:30 to 6pm, 8:30 to 9pm
   1: SCHOOL_DAY,
   2: SCHOOL_DAY,
   3: SCHOOL_DAY,
   4: SCHOOL_DAY,
   5: SCHOOL_DAY,
-  // Saturday: 9 to 10am, 1 to 2pm, 4 to 5pm, 8 to 9pm
+  // Saturday: 9:30 to 10am, 1:30 to 2pm, 4:30 to 5pm, 8:30 to 9pm
   6: [
-    slot('morning', T(9), T(10), T(8)),
-    slot('midday', T(13), T(14), T(11, 30)),
-    slot('late', T(16), T(17), T(14, 30)),
-    slot('evening', T(20), T(21), T(18, 30)),
+    slot('morning', T(9, 30), T(10), T(8, 30)),
+    slot('midday', T(13, 30), T(14), T(12)),
+    slot('late', T(16, 30), T(17), T(15)),
+    slot('evening', T(20, 30), T(21), T(19)),
   ],
 };
 
@@ -426,15 +444,15 @@ export const startLabel = (opt: BatchOption): string => {
 };
 
 /**
- * Inside school: ₦390 under ₦4,000. ₦500 from ₦4,000 up, or whenever the order has a bag of water (heavy), even if it is the only item.
- * Outside-school items: ₦800.
+ * Inside school: a flat ₦500 on every order (the runner's pay). Outside-school items: ₦800.
+ * small/large are kept equal so older screens that compare them stay quiet.
  */
-export const DELIVERY_FEES = { small: 390, large: 500, threshold: 4000 };
+export const DELIVERY_FEES = { small: 500, large: 500, threshold: 4000 };
 /** A bag of water, by name: it has "bag" and "water" in it (for example "Sachet Water (Full Bag of 20)") */
 export const isBagOfWater = (name?: string): boolean => /bag/i.test(name || '') && /water/i.test(name || '');
 export function deliveryFeeFor(itemTotal: number, hasOutside: boolean = false, hasBagOfWater: boolean = false): number {
   if (hasOutside) return OUTSIDE_DELIVERY_FEE;
-  return hasBagOfWater || itemTotal >= DELIVERY_FEES.threshold ? DELIVERY_FEES.large : DELIVERY_FEES.small;
+  return DELIVERY_FEES.large;
 }
 
 export function nextBatchId(now: Date = new Date()): DeliveryBatchId {
