@@ -22,6 +22,8 @@ import { getNextBatch, getOutsideChoices, getExpressRunners } from '../api.js';
 import { isValidNigerianPhone, isValidPin, normalizePhone } from '../api.js';
 
 interface CartSheetProps {
+  /** When this cart's section starts taking orders (ms). Before then the cart is kept but can't be paid. 0 = open now. */
+  startsAtMs?: number;
   /** Inside cart: a bag of water to suggest when the cart has none */
   suggestWater?: { id: string; name: string; price: number } | null;
   onAddSuggested?: () => void;
@@ -100,8 +102,12 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   onPinChange,
   signedIn = false,
   onPlaceOrder,
+  startsAtMs = 0,
 }) => {
   if (!isOpen) return null;
+  const notStarted = startsAtMs > Date.now();
+  const startsText = notStarted ? new Date(startsAtMs).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }) : '';
+  const sectionName = cart === 'inside' ? 'Inside school delivery' : cart === 'store' ? 'Outside store delivery' : 'Delivery';
 
   // Form states
   const [name, setName] = useState(customer?.name || guestName || '');
@@ -244,6 +250,10 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
+    if (notStarted) {
+      setErrorMessage(`${sectionName} starts ${startsText}. Your cart is saved, come back then to order.`);
+      return;
+    }
 
     if (!isPhoneValid) {
       setErrorMessage('Please enter a valid 11-digit Nigerian phone number (e.g. 08012345678)');
@@ -1091,7 +1101,13 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             </div>
           )}
 
-          {/* Submit Button */}
+          {/* Submit Button (before this section starts: a notice instead, the cart stays saved) */}
+          {notStarted ? (
+            <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+              <strong className="block text-sm">{sectionName} starts {startsText}.</strong>
+              <span className="block">Your cart is saved on this phone, so come back then to order. Prices are still being updated and may change before then.</span>
+            </div>
+          ) : (
           <div className="pt-1">
             <button
               type="submit"
@@ -1113,6 +1129,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                 : `Goes to ${chosenOp?.name || 'the operator'}, delivered to the school gate`}
             </p>
           </div>
+          )}
         </form>
         )}
       </div>

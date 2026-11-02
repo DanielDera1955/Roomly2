@@ -462,12 +462,22 @@ export default function App() {
     return () => window.clearTimeout(t);
   }, [pairFor]);
 
+  // Sections that haven't started yet: items can go in the cart, but checkout waits for the start date.
+  // The first add to such a section says so once per visit, so nobody fills a big cart and is surprised at checkout.
+  const startsAtFor = (kind: CartKind): number =>
+    kind === 'inside' ? (clockMs < INSIDE_LAUNCH_MS ? INSIDE_LAUNCH_MS : 0) : kind === 'store' ? (storeLocked ? storeOpensMs : 0) : 0;
+  const toldNotStarted = useRef<Set<string>>(new Set());
+  const noteIfNotStarted = (kind: CartKind) => {
+    const at = startsAtFor(kind);
+    if (!at || toldNotStarted.current.has(kind)) return;
+    toldNotStarted.current.add(kind);
+    const what = kind === 'inside' ? 'Inside school delivery' : 'Outside store delivery';
+    window.alert(`${what} starts ${openDateText(at)}. You can add items now and they stay in your cart, then check out from that day.`);
+  };
+
   // Cart operations
   const handleAddSimpleProduct = (product: Product) => {
-    if (storeLocked && cartOf(product) === 'store') {
-      window.alert(`Outside store orders open ${openDateText(storeOpensMs)}. You can browse until then.`);
-      return;
-    }
+    noteIfNotStarted(cartOf(product));
     addSimpleToCart(product);
     showPairs(product);
   };
@@ -523,6 +533,7 @@ export default function App() {
   const handleAddCustomizedFood = (foodItem: CartItem) => {
     // Keep the product's source so outside food reaches the food operator
     const source = foodItem.source ?? customizingFood?.source;
+    noteIfNotStarted(cartOf({ source }));
     setCartItems((prev) => [...prev, source ? { ...foodItem, source } : foodItem]);
     showPairs(products.find((p) => p.id === foodItem.productId));
   };
@@ -1186,7 +1197,13 @@ export default function App() {
           {sourceMode === 'inside' && selectedTab !== 'hub' && clockMs < INSIDE_LAUNCH_MS && (
             <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-xs text-amber-900 dark:text-amber-200">
               <strong className="block">Delivery to your room starts {openDateText(INSIDE_LAUNCH_MS)}.</strong>
-              You can browse now. Outside food is open today, delivered to the school gate.
+              You can add items to your cart now and check out from that day. Prices are still being updated and may change before then. Outside food is open today, delivered to the school gate.
+            </div>
+          )}
+          {sourceMode === 'outside' && selectedTab === 'store' && storeLocked && (
+            <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-xs text-amber-900 dark:text-amber-200">
+              <strong className="block">Outside store delivery starts {openDateText(storeOpensMs)}.</strong>
+              You can add items to your cart now and check out from that day. Prices are still being updated and may change before then.
             </div>
           )}
 
@@ -1302,7 +1319,7 @@ export default function App() {
                         onRemove={handleRemoveSimpleProduct}
                         onOpenFoodCustomizer={(prod) => setCustomizingFood(prod)}
                         onOpenDetails={setDetailProduct}
-                        lockedLabel={storeLocked && cartOf(product) === 'store' ? `Opens ${new Date(storeOpensMs).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : undefined}
+                        lockedLabel={undefined}
                       />
                     ))}
                   </div>
@@ -1387,6 +1404,7 @@ export default function App() {
 
         {/* Cart & Checkout Sheet (delivery fee, basket nudge, water add-on, no-cancellation check) */}
         <CartSheet
+          startsAtMs={startsAtFor(cartKind)}
           isOpen={isCartOpen}
           onClose={() => setIsCartOpen(false)}
           cart={cartKind}
