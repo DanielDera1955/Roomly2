@@ -3,6 +3,10 @@ import App from './App.tsx';
 import './index.css';
 import { registerApp } from './notify';
 import { PriceListPage } from './components/PriceListPage';
+import { inject } from '@vercel/analytics';
+
+// Vercel Web Analytics: counts visits (no names, phone numbers or orders). View them in Vercel > Analytics.
+inject();
 
 // A supplier's private price list link (?prices=<token>) opens only that page
 const priceToken = new URLSearchParams(window.location.search).get('prices');
