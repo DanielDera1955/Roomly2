@@ -118,18 +118,19 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
     ? 'Payment confirmed. Your order is being packaged'
     : 'Your order is received';
   const carrier = trackOrder ? firstWord(trackOrder.runnerName || trackOrder.operatorName) : '';
+  // Stars sit inside the right-hand sky area (left, top within that area, delay)
   const stars: Array<[number, number, number]> = [
-    [190, 40, 0],
-    [235, 70, 0.6],
-    [262, 34, 1.2],
-    [205, 96, 0.3],
-    [290, 110, 0.9],
+    [8, 18, 0],
+    [30, 92, 0.6],
+    [88, 14, 1.2],
+    [14, 60, 0.3],
+    [96, 104, 0.9],
   ];
 
   return (
     <div className={`relative overflow-hidden rounded-3xl p-4 min-h-[176px] shadow-md ${ink}`} style={{ background: sky }}>
       <style>{`
-        @keyframes rb-drift { 0% { transform: translateX(-14px); } 50% { transform: translateX(14px); } 100% { transform: translateX(-14px); } }
+        @keyframes rb-drift { 0% { transform: translateX(-8px); } 50% { transform: translateX(8px); } 100% { transform: translateX(-8px); } }
         @keyframes rb-glow { 0%, 100% { opacity: .85; transform: scale(1); } 50% { opacity: 1; transform: scale(1.07); } }
         @keyframes rb-twinkle { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
         @keyframes rb-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
@@ -143,52 +144,52 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
         }
       `}</style>
 
-      {/* scenery */}
-      {morning && (
-        <div
-          className="rb-glow absolute right-5 top-12 w-14 h-14 rounded-full bg-orange-50"
-          style={{ boxShadow: '0 0 40px 14px rgba(255,237,213,.8)' }}
-        />
-      )}
-      {afternoon && (
-        <>
+      {/* scenery: kept in the top-right corner so it never moves behind the text */}
+      <div className="absolute right-0 top-0 w-[112px] h-[128px] overflow-hidden pointer-events-none">
+        {morning && (
           <div
-            className="rb-glow absolute right-6 top-12 w-12 h-12 rounded-full bg-yellow-300"
-            style={{ boxShadow: '0 0 30px 10px rgba(253,224,71,.6)' }}
+            className="rb-glow absolute right-6 top-9 w-12 h-12 rounded-full bg-orange-50"
+            style={{ boxShadow: '0 0 34px 12px rgba(255,237,213,.8)' }}
           />
-          <span className="rb-drift absolute right-[70px] top-14 w-[70px] h-5 rounded-full bg-white/85" />
-          <span className="rb-drift-slow absolute right-5 top-[92px] w-[46px] h-3.5 rounded-full bg-white/85" />
-        </>
-      )}
-      {!morning && !afternoon && (
-        <>
-          {stars.map(([l, t, delay]) => (
-            <span
-              key={`${l}-${t}`}
-              className="rb-twinkle absolute w-[3px] h-[3px] rounded-full bg-white/85"
-              style={{ left: l, top: t, animationDelay: `${delay}s` }}
+        )}
+        {afternoon && (
+          <>
+            <div
+              className="rb-glow absolute right-6 top-9 w-12 h-12 rounded-full bg-yellow-300"
+              style={{ boxShadow: '0 0 26px 8px rgba(253,224,71,.6)' }}
             />
-          ))}
-          <div
-            className="absolute right-[22px] top-12 w-10 h-10 rounded-full bg-amber-200 overflow-hidden"
-            style={{ boxShadow: '0 0 30px 8px rgba(253,230,138,.35)' }}
-          >
-            <div className="absolute w-10 h-10 rounded-full left-[11px] -top-1.5" style={{ background: '#262266' }} />
-          </div>
-        </>
-      )}
+            <span className="rb-drift absolute right-[42px] top-[46px] w-[50px] h-4 rounded-full bg-white/90" />
+            <span className="rb-drift-slow absolute right-3 top-[82px] w-9 h-3 rounded-full bg-white/90" />
+          </>
+        )}
+        {!morning && !afternoon && (
+          <>
+            {stars.map(([l, t, delay]) => (
+              <span
+                key={`${l}-${t}`}
+                className="rb-twinkle absolute w-[3px] h-[3px] rounded-full bg-white/85"
+                style={{ left: l, top: t, animationDelay: `${delay}s` }}
+              />
+            ))}
+            <div
+              className="absolute right-[26px] top-9 w-10 h-10 rounded-full bg-amber-200 overflow-hidden"
+              style={{ boxShadow: '0 0 26px 6px rgba(253,230,138,.35)' }}
+            >
+              <div className="absolute w-10 h-10 rounded-full left-[11px] -top-1.5" style={{ background: '#262266' }} />
+            </div>
+          </>
+        )}
+      </div>
       <div className="absolute -left-8 -right-8 -bottom-12 h-20 rounded-[50%] bg-[#0e9f55]/55" />
       <div className="absolute left-[120px] -right-16 -bottom-14 h-20 rounded-[50%] bg-[#0b8044]/50" />
 
       <div className="relative z-10">
-        {/* top strip: today's day and date (the greeting itself is the headline below) */}
-        <div className="flex items-center justify-between gap-2">
+        {/* No date strip: the greeting is the first thing they read */}
+        {isGuest && (
           <p className={`text-[11px] font-extrabold uppercase tracking-[0.14em] ${morning ? 'text-orange-800' : 'opacity-90'}`}>
-            {isGuest
-              ? `Hey there, ${dayPart.toLowerCase()}`
-              : now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+            Hey there, {dayPart.toLowerCase()}
           </p>
-        </div>
+        )}
 
         {trackOrder ? (
           /* 1. order on the way */
@@ -280,15 +281,15 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
             )}
           </div>
         ) : (
-          /* 4. greeting */
-          <div className="mt-1">
-            <h1 className={`${isGuest ? 'text-[24px] max-w-[250px]' : 'text-[26px] max-w-[260px]'} font-extrabold tracking-tight leading-tight`}>
+          /* 4. greeting (right padding keeps the text clear of the sky in the corner) */
+          <div className="mt-1 pr-[96px]">
+            <h1 className={`${isGuest ? 'text-[24px]' : 'text-[26px]'} font-extrabold tracking-tight leading-tight`}>
               {isGuest ? 'Welcome to Roomly Caritas' : `${dayPart}${name ? `, ${name}` : ''}`}
             </h1>
             {!isGuest && (
-              <p className="text-[14px] font-semibold max-w-[250px] leading-snug mt-0.5">{isNew ? 'Welcome to Roomly.' : 'Welcome back to Roomly.'}</p>
+              <p className="text-[14px] font-semibold leading-snug mt-0.5">{isNew ? 'Welcome to Roomly.' : 'Welcome back to Roomly.'}</p>
             )}
-            <p className="text-[13px] opacity-90 max-w-[250px] leading-snug mt-1">
+            <p className="text-[13px] opacity-90 leading-snug mt-1">
               {caritasLine ||
                 (isGuest
                   ? 'Food and everyday items delivered to your room or the school gate.'
@@ -296,7 +297,7 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
                   ? 'Your usuals are one tap away.'
                   : 'Your food and other items, delivered in scheduled batches.')}
             </p>
-            {liveLine && <p className="text-[12px] font-bold max-w-[260px] leading-snug mt-1.5">{liveLine}</p>}
+            {liveLine && <p className="text-[12px] font-bold leading-snug mt-1.5">{liveLine}</p>}
             <button
               type="button"
               onClick={isGuest ? onStart : onOpenOrders}

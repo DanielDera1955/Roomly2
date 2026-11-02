@@ -101,7 +101,10 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
             <span className="truncate">{title}</span>
           </p>
           <span className="shrink-0 px-2 py-0.5 rounded-full bg-white/15 text-[10px] font-bold text-white whitespace-nowrap">
-            {todayCount} {todayCount === 1 ? 'batch' : 'batches'} today
+            {/* Before room delivery starts: how it will run ("3 batches a day"); after: today's count */}
+            {side === 'inside' && Date.now() < INSIDE_LAUNCH_MS
+              ? `${todayCount} ${todayCount === 1 ? 'batch' : 'batches'} a day`
+              : `${todayCount} ${todayCount === 1 ? 'batch' : 'batches'} today`}
           </span>
         </div>
         {side === 'inside' && Date.now() < INSIDE_LAUNCH_MS ? (
