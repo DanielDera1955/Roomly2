@@ -463,22 +463,11 @@ export default function App() {
     return () => window.clearTimeout(t);
   }, [pairFor]);
 
-  // Sections that haven't started yet: items can go in the cart, but checkout waits for the start date.
-  // The first add to such a section says so once per visit, so nobody fills a big cart and is surprised at checkout.
+  // Sections that haven't started yet: items go in the cart with no message; the home notices and checkout say when it starts.
   const startsAtFor = (kind: CartKind): number =>
     kind === 'inside' ? (clockMs < INSIDE_LAUNCH_MS ? INSIDE_LAUNCH_MS : 0) : kind === 'store' ? (storeLocked ? storeOpensMs : 0) : 0;
-  const toldNotStarted = useRef<Set<string>>(new Set());
-  const noteIfNotStarted = (kind: CartKind) => {
-    const at = startsAtFor(kind);
-    if (!at || toldNotStarted.current.has(kind)) return;
-    toldNotStarted.current.add(kind);
-    const what = kind === 'inside' ? 'Inside school delivery' : 'Outside store delivery';
-    window.alert(`${what} starts ${openDateText(at)}. You can add items now and they stay in your cart, then check out from that day.`);
-  };
-
   // Cart operations
   const handleAddSimpleProduct = (product: Product) => {
-    noteIfNotStarted(cartOf(product));
     addSimpleToCart(product);
     showPairs(product);
   };
@@ -534,7 +523,6 @@ export default function App() {
   const handleAddCustomizedFood = (foodItem: CartItem) => {
     // Keep the product's source so outside food reaches the food operator
     const source = foodItem.source ?? customizingFood?.source;
-    noteIfNotStarted(cartOf({ source }));
     setCartItems((prev) => [...prev, source ? { ...foodItem, source } : foodItem]);
     showPairs(products.find((p) => p.id === foodItem.productId));
   };

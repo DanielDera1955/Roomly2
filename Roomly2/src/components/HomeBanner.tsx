@@ -181,16 +181,13 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
       <div className="absolute left-[120px] -right-16 -bottom-14 h-20 rounded-[50%] bg-[#0b8044]/50" />
 
       <div className="relative z-10">
-        {/* top strip: day part on the left, who is signed in on the right */}
+        {/* top strip: today's day and date (the greeting itself is the headline below) */}
         <div className="flex items-center justify-between gap-2">
           <p className={`text-[11px] font-extrabold uppercase tracking-[0.14em] ${morning ? 'text-orange-800' : 'opacity-90'}`}>
-            {isGuest ? `Hey there, ${dayPart.toLowerCase()}` : dayPart}
+            {isGuest
+              ? `Hey there, ${dayPart.toLowerCase()}`
+              : now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
-          {name && (
-            <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full backdrop-blur-sm ${morning ? 'bg-white/45' : 'bg-white/20'}`}>
-              Hi {name}
-            </span>
-          )}
         </div>
 
         {trackOrder ? (
@@ -285,16 +282,19 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
         ) : (
           /* 4. greeting */
           <div className="mt-1">
-            <h1 className={`${isGuest ? 'text-[24px]' : 'text-[30px]'} font-extrabold tracking-tight leading-tight ${isGuest ? 'max-w-[250px]' : 'truncate'}`}>
-              {isGuest ? 'Welcome to Roomly Caritas' : isNew ? (name ? `Welcome, ${name}.` : 'Welcome.') : `Welcome back, ${name || 'friend'}`}
+            <h1 className={`${isGuest ? 'text-[24px] max-w-[250px]' : 'text-[26px] max-w-[260px]'} font-extrabold tracking-tight leading-tight`}>
+              {isGuest ? 'Welcome to Roomly Caritas' : `${dayPart}${name ? `, ${name}` : ''}`}
             </h1>
+            {!isGuest && (
+              <p className="text-[14px] font-semibold max-w-[250px] leading-snug mt-0.5">{isNew ? 'Welcome to Roomly.' : 'Welcome back to Roomly.'}</p>
+            )}
             <p className="text-[13px] opacity-90 max-w-[250px] leading-snug mt-1">
               {caritasLine ||
                 (isGuest
                   ? 'Food and everyday items delivered to your room or the school gate.'
-                  : isNew
-                  ? 'Your food and other items, delivered in scheduled batches.'
-                  : `Nice to have you back.${hasUsuals ? ' Your usuals are one tap away.' : ''}`)}
+                  : hasUsuals
+                  ? 'Your usuals are one tap away.'
+                  : 'Your food and other items, delivered in scheduled batches.')}
             </p>
             {liveLine && <p className="text-[12px] font-bold max-w-[260px] leading-snug mt-1.5">{liveLine}</p>}
             <button
