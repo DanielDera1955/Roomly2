@@ -281,32 +281,33 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
             )}
           </div>
         ) : (
-          /* 4. greeting (right padding keeps the text clear of the sky in the corner) */
-          <div className="mt-1 pr-[96px]">
-            <h1 className={`${isGuest ? 'text-[24px]' : 'text-[26px]'} font-extrabold tracking-tight leading-tight`}>
-              {isGuest ? 'Welcome to Roomly Caritas' : `${dayPart}${name ? `, ${name}` : ''}`}
-            </h1>
-            {!isGuest && (
-              <p className="text-[14px] font-semibold leading-snug mt-0.5">{isNew ? 'Welcome to Roomly.' : 'Welcome back to Roomly.'}</p>
-            )}
-            <p className="text-[13px] opacity-90 leading-snug mt-1">
-              {caritasLine ||
-                (isGuest
-                  ? 'Food and everyday items delivered to your room or the school gate.'
-                  : hasUsuals
-                  ? 'Your usuals are one tap away.'
-                  : 'Your food and other items, delivered in scheduled batches.')}
-            </p>
-            {liveLine && <p className="text-[12px] font-bold leading-snug mt-1.5">{liveLine}</p>}
-            <button
-              type="button"
-              onClick={isGuest ? onStart : onOpenOrders}
-              className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold cursor-pointer backdrop-blur-sm ${
-                morning ? 'bg-white/45' : 'bg-white/20'
-              }`}
-            >
-              {isGuest ? 'Start ordering ›' : 'My orders ›'}
-            </button>
+          /* 4. greeting: two lines at the top (clear of the sky), then the live line and My orders in one row */
+          <div className="mt-1">
+            <div className="pr-[96px]">
+              <h1 className={`${isGuest ? 'text-[24px]' : 'text-[26px]'} font-extrabold tracking-tight leading-tight`}>
+                {isGuest ? 'Welcome to Roomly Caritas' : `${dayPart}${name ? `, ${name}` : ''}`}
+              </h1>
+              {!isGuest && (
+                <p className="text-[14px] font-semibold leading-snug mt-0.5">{isNew ? 'Welcome to Roomly.' : 'Welcome back to Roomly.'}</p>
+              )}
+              {(caritasLine || isGuest) && (
+                <p className="text-[13px] opacity-90 leading-snug mt-1.5">
+                  {caritasLine || 'Food and everyday items delivered to your room or the school gate.'}
+                </p>
+              )}
+            </div>
+            <div className="mt-5 mb-2 flex items-end justify-between gap-3">
+              <p className="min-w-0 text-[12px] font-bold leading-snug">{liveLine}</p>
+              <button
+                type="button"
+                onClick={isGuest ? onStart : onOpenOrders}
+                className={`shrink-0 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer backdrop-blur-sm ${
+                  morning ? 'bg-white/45' : 'bg-white/25'
+                }`}
+              >
+                {isGuest ? 'Start ordering ›' : 'My orders ›'}
+              </button>
+            </div>
           </div>
         )}
       </div>
