@@ -389,7 +389,7 @@ const GamePage: React.FC<{
                 <div key={r.id} className={`${card} p-3 w-36 shrink-0 snap-start`}>
                   <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{r.name}</p>
                   <p className="text-[10px] text-slate-500 truncate">
-                    {r.pts} pts · {r.hostel}
+                    {r.pts} pts · {r.tag || r.hostel}
                   </p>
                   {r.freeNote && <p className="text-[10px] text-slate-400 truncate mt-0.5">{r.freeNote}</p>}
                   <div className="mt-2.5">
@@ -512,7 +512,10 @@ const MyProfileCard: React.FC<{ me: any; row: any; game: string; isOpen: boolean
         <div className="min-w-0 flex-1">
           <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">My profile</p>
           <p className="text-sm font-bold text-slate-900 dark:text-white truncate">
-            {me.name} <span className="font-normal text-slate-400">· {me.hostel}</span>
+            {me.name}{' '}
+            <span className="font-normal text-slate-400">
+              · {me.school === 'guest' ? 'Guest' : me.school === 'other' ? me.schoolName || 'Other school' : me.hostel}
+            </span>
           </p>
           <p className="text-[11px] text-slate-500">
             {row ? `${row.pts} pts · #${row.rank} in ${gameLabel(game)}` : ''}
@@ -603,6 +606,11 @@ const LeagueTable: React.FC<{ game: string; board: any[]; meId?: string }> = ({ 
           </span>
           <span className="min-w-0 flex items-center gap-1">
             <span className={`text-xs truncate ${r.id === meId ? 'font-black text-slate-900 dark:text-white' : 'font-semibold text-slate-800 dark:text-slate-200'}`}>{r.name}</span>
+            {r.tag && (
+              <span className="shrink-0 px-1.5 py-px rounded-md bg-slate-100 dark:bg-slate-800 text-[9px] font-bold text-slate-500 dark:text-slate-400 max-w-[70px] truncate">
+                {r.tag}
+              </span>
+            )}
             {r.titles > 0 && <Trophy className="w-3 h-3 text-amber-500 shrink-0" />}
             {r.ready && <span className="w-1.5 h-1.5 rounded-full bg-[#0e9f55] shrink-0" title="Ready to play" />}
           </span>
@@ -615,7 +623,7 @@ const LeagueTable: React.FC<{ game: string; board: any[]; meId?: string }> = ({ 
         </div>
       ))}
       <p className="mt-2 px-1 text-[10px] text-slate-400 flex items-center gap-1">
-        <Crown className="w-3 h-3 text-amber-500" /> #1 wears the Best in Caritas crown. Win 3, draw 1, loss 0.
+        <Crown className="w-3 h-3 text-amber-500" /> The top Caritas player wears the Best in Caritas crown. Win 3, draw 1, loss 0.
       </p>
     </div>
   );
@@ -775,6 +783,8 @@ const RegisterSheet: React.FC<{ me: any; session: { name?: string; phone?: strin
 }) => {
   const [name, setName] = useState(me?.name || session.name || '');
   const [hostel, setHostel] = useState(me?.hostel || '');
+  const [school, setSchool] = useState<'caritas' | 'other' | 'guest'>(me?.school || 'caritas');
+  const [schoolName, setSchoolName] = useState(me?.schoolName || '');
   const [phone, setPhone] = useState(() => {
     try {
       return localStorage.getItem('roomly_gamer_phone') || session.phone || '';
@@ -794,7 +804,7 @@ const RegisterSheet: React.FC<{ me: any; session: { name?: string; phone?: strin
     setBusy(true);
     setError('');
     try {
-      await registerGamer({ name, hostel, phone, pin, games, ids, freeNote });
+      await registerGamer({ name, school, schoolName, hostel, phone, pin, games, ids, freeNote });
       onSaved();
     } catch (e: any) {
       setError(e?.message || 'Could not save.');
@@ -810,6 +820,36 @@ const RegisterSheet: React.FC<{ me: any; session: { name?: string; phone?: strin
         <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} className={input} placeholder="e.g. Tobi" />
       </div>
       <div>
+        <label className={label}>School</label>
+        <div className="grid grid-cols-3 gap-1.5">
+          {([
+            ['caritas', 'Caritas'],
+            ['other', 'Other school'],
+            ['guest', 'Guest'],
+          ] as const).map(([k, t]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setSchool(k)}
+              aria-pressed={school === k}
+              className={`py-2 rounded-xl text-xs font-bold border cursor-pointer ${
+                school === k ? 'bg-[#0e9f55] border-[#0e9f55] text-white' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        {school === 'guest' && <p className="mt-1 text-[11px] text-slate-400">Not a student? You can still play and challenge anyone.</p>}
+      </div>
+      {school === 'other' && (
+        <div>
+          <label className={label}>Your school</label>
+          <input value={schoolName} onChange={(e) => setSchoolName(e.target.value)} maxLength={30} className={input} placeholder="e.g. ESUT" />
+        </div>
+      )}
+      {school === 'caritas' && (
+      <div>
         <label className={label}>Hostel</label>
         <select value={hostel} onChange={(e) => setHostel(e.target.value)} className={input}>
           <option value="">Choose your hostel</option>
@@ -821,6 +861,7 @@ const RegisterSheet: React.FC<{ me: any; session: { name?: string; phone?: strin
           <option value="Lodge">Lodge</option>
         </select>
       </div>
+      )}
       <div className="grid grid-cols-[1fr_110px] gap-2">
         <div>
           <label className={label}>WhatsApp number</label>
@@ -933,7 +974,7 @@ const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; onClose: (
               <option value="">Choose your opponent</option>
               {opps.map((o) => (
                 <option key={o.id} value={o.id}>
-                  {o.name} ({o.hostel})
+                  {o.name} ({o.school === 'guest' ? 'Guest' : o.school === 'other' ? o.schoolName || 'Other school' : o.hostel})
                 </option>
               ))}
             </select>

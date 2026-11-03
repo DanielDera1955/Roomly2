@@ -437,7 +437,11 @@ export function myGamer(gamers, uid) {
 export async function registerGamer(input) {
   const name = String(input.name || '').trim().slice(0, 40);
   if (!name) throw new Error('Add the gamer name other players will see.');
-  if (!input.hostel) throw new Error('Choose your hostel.');
+  // School: Caritas (with a hostel), another school (with its name), or a guest. One table for everyone for now.
+  const school = ['caritas', 'other', 'guest'].includes(input.school) ? input.school : 'caritas';
+  const schoolName = school === 'other' ? String(input.schoolName || '').trim().slice(0, 30) : '';
+  if (school === 'other' && !schoolName) throw new Error('Type the name of your school.');
+  if (school === 'caritas' && !input.hostel) throw new Error('Choose your hostel.');
   const phone = normalizePhone(input.phone);
   if (!isValidNigerianPhone(phone)) throw new Error('Enter your WhatsApp number (11 digits).');
   const pin = String(input.pin || '');
@@ -457,7 +461,9 @@ export async function registerGamer(input) {
   });
   const profile = {
     name,
-    hostel: String(input.hostel).slice(0, 30),
+    school,
+    schoolName,
+    hostel: school === 'caritas' ? String(input.hostel).slice(0, 30) : '',
     games,
     ids,
     freeNote: String(input.freeNote || '').trim().slice(0, 60),
@@ -483,7 +489,7 @@ export async function registerGamer(input) {
     if (snap.exists() && snap.data().ownerUid !== uid) throw new Error('This number is already registered. Use the same PIN you registered with.');
     throw new Error('Could not save. Check your connection and try again.');
   }
-  ensureCustomerProfile(phone, pin, name, input.hostel);
+  ensureCustomerProfile(phone, pin, name, school === 'caritas' ? input.hostel : '');
   try {
     localStorage.setItem('roomly_gamer_phone', phone);
   } catch {}
@@ -743,7 +749,9 @@ export async function adminRemoveEntry(tid, uid) {
  * League table per game, worked out from results that count and tournament places (nothing stored):
  * win 3, draw 1, loss 0; tournament 1st +10, 2nd +6, 3rd +3. Every registered player is on it.
  * Order: points, then goal difference (football games), then wins, then fewer matches, then name.
- * The crown goes to the top player once they have points.
+ * Everyone plays on one table (Caritas, other schools and guests). Players registered before
+ * schools were recorded count as Caritas. The Best in Caritas crown goes to the highest-ranked
+ * Caritas player with points, even if a player from another school is above them.
  */
 export function computeBoard(game, gamers, matches, tournaments, nowMs = Date.now()) {
   const scored = isScored(game);
@@ -755,6 +763,9 @@ export function computeBoard(game, gamers, matches, tournaments, nowMs = Date.no
         id: g.id,
         name: g.name,
         hostel: g.hostel,
+        school: g.school || 'caritas',
+        // Tag shown next to non-Caritas players: their school's name, or "Guest"
+        tag: (g.school || 'caritas') === 'caritas' ? '' : g.school === 'guest' ? 'Guest' : g.schoolName || 'Other school',
         gameId: g.ids?.[game] || '',
         freeNote: g.freeNote || '',
         p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0, titles: 0,
@@ -797,5 +808,6 @@ export function computeBoard(game, gamers, matches, tournaments, nowMs = Date.no
     (x, y) =>
       y.pts - x.pts || (scored ? y.gd - x.gd : 0) || y.w - x.w || x.p - y.p || String(x.name).localeCompare(String(y.name))
   );
-  return list.map((r, i) => ({ ...r, rank: i + 1, crown: i === 0 && r.pts > 0 }));
+  const champ = list.find((r) => r.school === 'caritas' && r.pts > 0);
+  return list.map((r, i) => ({ ...r, rank: i + 1, crown: Boolean(champ) && r.id === champ.id }));
 }
