@@ -494,7 +494,23 @@ export function calculateDeliveryFee(batchId: string = 'morning'): number {
 }
 
 // Campus hostels (students type their own room, e.g. A12)
-export const HOSTELS = ['JV', 'TA', 'New Hostel'];
+// Boys' and girls' hostels are served by separate runners: only girls can enter the girls' hostels.
+export const BOYS_HOSTELS = ['JV', 'TA', 'New Hostel'];
+export const GIRLS_HOSTELS = ['Emmanuel', 'London', 'St Mary'];
+export const HOSTELS = [...BOYS_HOSTELS, ...GIRLS_HOSTELS];
+export type HostelSide = 'boys' | 'girls';
+/** Which runners serve this hostel. Anything that isn't a girls' hostel (including custom spots) is the boys' side. */
+export const hostelSideOf = (building?: string): HostelSide => (GIRLS_HOSTELS.includes(String(building || '')) ? 'girls' : 'boys');
+export const HOSTEL_SIDE_LABEL: Record<HostelSide, string> = { boys: "Boys' hostels", girls: "Girls' hostels" };
+/** Hostels where every floor repeats the same room numbers, so students also pick their floor */
+export const HOSTEL_FLOORS: Record<string, string[]> = {
+  London: ['Ground floor', 'First floor', 'Second floor', 'Third floor'],
+};
+/** London: "12 (Second floor)" -> { room: '12', floor: 'Second floor' } */
+export function splitFloorRoom(room?: string): { room: string; floor: string } {
+  const m = String(room || '').match(/^(.*?)\s*\((.+)\)\s*$/);
+  return m ? { room: m[1].trim(), floor: m[2].trim() } : { room: String(room || ''), floor: '' };
+}
 export const CAMPUS_LOCATIONS: Record<string, string[]> = {
   Hostels: HOSTELS,
 };

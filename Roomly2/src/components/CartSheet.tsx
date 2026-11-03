@@ -17,7 +17,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
-import { HOSTELS, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, outsideBannerFor } from '../config';
+import { HOSTELS, BOYS_HOSTELS, GIRLS_HOSTELS, HOSTEL_FLOORS, hostelSideOf, splitFloorRoom, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, outsideBannerFor } from '../config';
 import { getNextBatch, getOutsideChoices, getExpressRunners } from '../api.js';
 import { isValidNigerianPhone, isValidPin, normalizePhone } from '../api.js';
 
@@ -120,7 +120,10 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const area = 'Hostels';
   const savedHostel = (b?: string) => (b && HOSTELS.includes(b) ? b : HOSTELS[0]);
   const [building, setBuilding] = useState(savedHostel(customer?.building));
-  const [room, setRoom] = useState(customer?.room || '');
+  // London (and any hostel listed in HOSTEL_FLOORS): rooms repeat on every floor, so the floor is picked too
+  const [room, setRoom] = useState(splitFloorRoom(customer?.room).room);
+  const [floor, setFloor] = useState(splitFloorRoom(customer?.room).floor);
+  const floors = HOSTEL_FLOORS[building] || [];
   const [customMode, setCustomMode] = useState(false);
   const [customLocation, setCustomLocation] = useState('');
 
@@ -147,7 +150,11 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       if (customer.name) setName(customer.name);
       // Older saved locations (Hostel A, Lodge 1...) fall back to the first hostel
       if (customer.building) setBuilding(savedHostel(customer.building));
-      if (customer.room && HOSTELS.includes(customer.building)) setRoom(customer.room);
+      if (customer.room && HOSTELS.includes(customer.building)) {
+        const fr = splitFloorRoom(customer.room);
+        setRoom(fr.room);
+        setFloor(fr.floor);
+      }
     }
   }, [customer]);
 
@@ -166,7 +173,9 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const hasBag = items.some((i) => isBagOfWater(i.name));
   // Express (inside only): shows only while a runner has "Express available" switched on
   const [speed, setSpeed] = useState<'normal' | 'express'>('normal');
-  const expressRunners = cart === 'inside' ? getExpressRunners() : [];
+  // Boys' or girls' side, from the hostel picked: only that side's runners can take the order
+  const hostelSide = customMode ? 'boys' : hostelSideOf(building);
+  const expressRunners = cart === 'inside' ? getExpressRunners(new Date(), hostelSide) : [];
   const expressOn = expressRunners.length > 0;
   const isExpress = speed === 'express' && expressOn;
   useEffect(() => {
@@ -187,7 +196,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   }, []);
   // Next batch only. Inside: the runner whose turn it is. Outside: the operators taking that batch;
   // the student picks one (the one with fewer orders today is suggested).
-  const insideNext = cart === 'inside' ? getNextBatch('inside') : null;
+  const insideNext = cart === 'inside' ? getNextBatch('inside', new Date(), hostelSide) : null;
   const outside = cart !== 'inside' ? getOutsideChoices(cart) : null;
   // Every store / food vendor with its status for this batch; 'off' ones are shown but can't be picked
   const operators: any[] = outside?.operators || [];
@@ -294,6 +303,10 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       return;
     }
 
+    if ((cart === 'inside' || gatePickup) && !customMode && floors.length && !floor) {
+      setErrorMessage(`Please pick your floor in ${building}`);
+      return;
+    }
     if ((cart === 'inside' || gatePickup) && !customMode && !/\d/.test(room)) {
       setErrorMessage('Please type your room, for example A12');
       return;
@@ -334,7 +347,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
         // Outside orders stop at the school gate unless a runner is bringing them to the room
         area: atGate ? 'Custom' : customMode ? 'Custom' : area,
         building: atGate ? 'School gate' : customMode ? customLocation.trim() : building,
-        room: atGate || customMode ? '-' : room.replace(/\s+/g, '').toUpperCase(),
+        room: atGate || customMode ? '-' : `${room.replace(/\s+/g, '').toUpperCase()}${floors.length && floor ? ` (${floor})` : ''}`,
         isCustomLocation: atGate || customMode,
         items,
         customRequest: customRequest.trim(),
@@ -709,14 +722,26 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                   </label>
                   <select
                     value={building}
-                    onChange={(e) => setBuilding(e.target.value)}
+                    onChange={(e) => {
+                      setBuilding(e.target.value);
+                      setFloor('');
+                    }}
                     className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55] cursor-pointer"
                   >
-                    {HOSTELS.map((b) => (
-                      <option key={b} value={b}>
-                        {b}
-                      </option>
-                    ))}
+                    <optgroup label="Boys' hostels">
+                      {BOYS_HOSTELS.map((b) => (
+                        <option key={b} value={b}>
+                          {b}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Girls' hostels">
+                      {GIRLS_HOSTELS.map((b) => (
+                        <option key={b} value={b}>
+                          {b}
+                        </option>
+                      ))}
+                    </optgroup>
                   </select>
                 </div>
 
@@ -728,12 +753,34 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                     type="text"
                     value={room}
                     onChange={(e) => setRoom(e.target.value.toUpperCase().slice(0, 8))}
-                    placeholder="e.g. A12"
+                    placeholder={floors.length ? 'e.g. 12' : 'e.g. A12'}
                     autoCapitalize="characters"
                     className="w-full px-3 py-2 text-sm font-mono bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55]"
                   />
                 </div>
               </div>
+              {floors.length > 0 && (
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Floor in {building}</label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {floors.map((f) => (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => setFloor(f)}
+                        aria-pressed={floor === f}
+                        className={`py-2 rounded-xl text-xs font-bold border cursor-pointer ${
+                          floor === f
+                            ? 'bg-[#0e9f55] border-[#0e9f55] text-white'
+                            : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <p className="text-[11px] text-slate-500 dark:text-slate-400 -mt-1">
                 Enter the room where you will be when the delivery arrives.
               </p>
@@ -894,7 +941,9 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                   {noProvider ? (
                     <>
                       <strong>
-                        No {cart === 'inside' ? 'runner' : 'operator'} has switched on this batch yet.
+                        {cart === 'inside' && hostelSide === 'girls'
+                          ? "No runner for the girls' hostels has switched on this batch yet."
+                          : `No ${cart === 'inside' ? 'runner' : 'operator'} has switched on this batch yet.`}
                       </strong>{' '}
                       You can still order. Your order is scheduled for{' '}
                       {selectedBatch.dayLabel === 'Today' ? 'today' : selectedBatch.dayLabel.toLowerCase()}, {selectedBatch.window}. The

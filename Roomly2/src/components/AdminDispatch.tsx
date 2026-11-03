@@ -9,6 +9,7 @@ import {
   getSettlementsRange,
   isOverdue,
   getRunners,
+  setRunnerHostelSide,
   getAllOperatorStatus,
   subscribeAdminOwing,
   settlementState,
@@ -487,6 +488,34 @@ export const AdminTeam: React.FC = () => {
               {r.name} <span className="font-normal text-slate-500">· {r.phone}</span>
             </p>
             <p className={`text-[11px] ${r.payAccount ? 'text-slate-500' : 'text-rose-600'}`}>{acct(r.payAccount)}</p>
+            {/* Which hostels this runner serves. Only girls can enter the girls' hostels. */}
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <span className="text-[11px] text-slate-500">Delivers to:</span>
+              {(['boys', 'girls'] as const).map((hs) => {
+                const on = (r.hostelSide === 'girls' ? 'girls' : 'boys') === hs;
+                return (
+                  <button
+                    key={hs}
+                    type="button"
+                    onClick={async () => {
+                      if (on) return;
+                      if (!window.confirm(`Set ${r.name} to deliver to the ${hs === 'girls' ? "girls'" : "boys'"} hostels? They need to sign out and in again for it to apply.`)) return;
+                      try {
+                        await setRunnerHostelSide(r.id, hs);
+                        setRunners((list) => list.map((x) => (x.id === r.id ? { ...x, hostelSide: hs } : x)));
+                      } catch (e: any) {
+                        window.alert(e?.message || 'Could not save. Try again.');
+                      }
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer ${
+                      on ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    {hs === 'girls' ? "Girls' hostels" : "Boys' hostels"}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         ))}
         <p className="text-xs font-black uppercase tracking-wider text-slate-500 pt-2">Operators' payment accounts</p>

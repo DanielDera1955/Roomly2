@@ -34,6 +34,7 @@ import {
   isOldPayOrder,
   runnerPayFor,
   sellingPrice,
+  hostelSideOf,
   CATEGORY_SETUP,
   STORE_SOURCE,
   storeOfSource,
@@ -134,6 +135,8 @@ onAuthStateChanged(auth, async (user) => {
           name: d.name || 'Runner',
           phone: d.phone || '',
           payAccount: d.payAccount || null,
+          // Runners serve either the boys' or the girls' hostels (only girls can enter the girls' hostels)
+          hostelSide: d.hostelSide === 'girls' ? 'girls' : 'boys',
         },
         denied: false,
       });
@@ -299,6 +302,15 @@ export async function setBatchOff(key, off) {
  */
 
 let insideSwitches = {};
+// Girls' hostel batches are switched separately: their keys end in "|girls" ("2026-11-04|afternoon|girls")
+const GIRLS_SUFFIX = '|girls';
+const switchKey = (key, hs) => (hs === 'girls' && !String(key).endsWith(GIRLS_SUFFIX) ? key + GIRLS_SUFFIX : key);
+const isGirlsKey = (key) => String(key).endsWith(GIRLS_SUFFIX);
+/** The signed-in runner's side ('boys' for everyone else) */
+const myHostelSide = () => {
+  const st = getCurrentStaff();
+  return st && st.hostelSide === 'girls' ? 'girls' : 'boys';
+};
 let runnerUnsettled = {}; // runner uid -> dates not yet settled
 let runnerPay = {}; // runner uid -> payment account students pay into
 let expressRunners = {}; // runner uid -> { on, name, phone, email, payTo, at }: runners taking express runs now
@@ -425,9 +437,9 @@ const LATE_PAY_MS = 15 * 60000;
 const payDeadline = (start, now) => (start.getTime() > now.getTime() ? start : new Date(now.getTime() + LATE_PAY_MS));
 
 /** Someone opened this batch and has since switched it OFF: it is done for the day */
-function closedByStaff(opt, side) {
+function closedByStaff(opt, side, hs = 'boys') {
   if (side === 'inside') {
-    const sw = insideSwitches[opt.key];
+    const sw = insideSwitches[switchKey(opt.key, hs)];
     return Boolean(sw && sw.on === false && sw.at);
   }
   return activeOperators(side).some((op) => {
@@ -455,7 +467,7 @@ function activeOperators(kind) {
  * Next batch still taking orders for 'inside', 'store' or 'food'.
  * Returns { next: { batch, start, startText, by }, note } — next is null when ordering is paused.
  */
-export function getNextBatch(side, now = new Date()) {
+export function getNextBatch(side, now = new Date(), hs = 'boys') {
   // Demo: the next scheduled batch, taken by the demo runner
   if (DEMO && side === 'inside') {
     const slot = getBookableSlots(now)[0];
@@ -470,7 +482,7 @@ export function getNextBatch(side, now = new Date()) {
   for (let d = 0; d < 3; d++) {
     for (const opt of slotsForDay(side, now, d)) {
       if (side === 'inside') {
-        const sw = insideSwitches[opt.key];
+        const sw = insideSwitches[switchKey(opt.key, hs)];
         const blocked = sw && ((sw.byUid && isOverdue(runnerUnsettled[sw.byUid], now)) || isRunnerOff(sw.byEmail));
         if (!blocked && accepting(opt, sw, 'inside', now)) {
           const start = switchStartDate(opt, sw);
@@ -502,9 +514,9 @@ export function getNextBatch(side, now = new Date()) {
   if (side !== 'inside') return { next: null, note: '' };
   // Nobody has opened a batch: students can still order. The order joins the next scheduled batch
   // and goes to a runner / operator who can take it; the student is told it is not opened yet.
-  const fb = scheduledNext(side, now);
+  const fb = scheduledNext(side, now, hs);
   if (!fb) return { next: null, note: notes[0] || '' };
-  const who = side === 'inside' ? fallbackRunner(now) : fallbackOperators(side)[0];
+  const who = side === 'inside' ? fallbackRunner(now, hs) : fallbackOperators(side)[0];
   // Even with nobody available the student can order: it is scheduled and the account shows once someone takes the batch
   return {
     next: {
@@ -522,11 +534,11 @@ export function getNextBatch(side, now = new Date()) {
 }
 
 /** The next batch on the timetable still open: not closed by staff and not past its last moment */
-function scheduledNext(side, now = new Date()) {
+function scheduledNext(side, now = new Date(), hs = 'boys') {
   for (let d = 0; d < 3; d++) {
     for (const opt of slotsForDay(side, now, d)) {
       if (now.getTime() >= batchCloseDate(opt, side).getTime()) continue;
-      if (closedByStaff(opt, side)) continue;
+      if (closedByStaff(opt, side, hs)) continue;
       return { opt, start: switchStartDate(opt, null) };
     }
   }
@@ -534,10 +546,12 @@ function scheduledNext(side, now = new Date()) {
 }
 
 /** Inside: the runner who most recently opened a batch (settled up, with a payment account) */
-function fallbackRunner(now = new Date()) {
+function fallbackRunner(now = new Date(), hs = 'boys') {
   const seen = new Set();
-  const list = Object.values(insideSwitches)
-    .filter((sw) => sw && sw.byUid)
+  // Only runners on the same side: a girls' hostel order never shows a boys' runner's account
+  const list = Object.entries(insideSwitches)
+    .filter(([k, sw]) => sw && sw.byUid && isGirlsKey(k) === (hs === 'girls'))
+    .map(([, sw]) => sw)
     .sort((a, b) => (b.at || 0) - (a.at || 0));
   for (const sw of list) {
     if (seen.has(sw.byUid)) continue;
@@ -639,8 +653,8 @@ export function contactPhoneFor(order) {
   if (!order) return '';
   if (order.cart === 'store' || order.cart === 'food') return (operatorDocs[order.operatorId] || {}).phone || '';
   if (order.runnerPhone) return order.runnerPhone;
-  const sw = insideSwitches[`${order.deliveryDate}|${order.deliveryBatch}`];
-  return (sw && sw.phone) || '';
+  const sw = insideSwitches[switchKey(`${order.deliveryDate}|${order.deliveryBatch}`, order.hostelSide)];
+  return (sw && (sw.byPhone || sw.phone)) || '';
 }
 
 /**
@@ -650,7 +664,7 @@ export function contactPhoneFor(order) {
 export function getPayProvider(order, now = new Date()) {
   const side = order && (order.cart === 'store' || order.cart === 'food') ? order.cart : 'inside';
   if (side === 'inside') {
-    const n = getNextBatch('inside', now).next;
+    const n = getNextBatch('inside', now, order?.hostelSide || 'boys').next;
     return n && n.payTo ? { payTo: n.payTo, operatorId: '', operatorName: '', turnRunner: n.by || '' } : null;
   }
   const op = (getOutsideChoices(side, now).operators || []).find((o) => o.payTo && o.status !== 'off');
@@ -674,9 +688,18 @@ const startTextOf = (d) => {
   return timeLabel(min);
 };
 
-/** Switches for runners (inside) — today and later only */
-export function getInsideSwitches() {
-  return insideSwitches;
+/**
+ * Inside switches for one side, keyed by the plain batch key ("2026-11-04|afternoon").
+ * Default: the signed-in runner's own side (boys for the admin and everyone else).
+ */
+export function getInsideSwitches(hs) {
+  const side = hs || myHostelSide();
+  const out = {};
+  Object.entries(insideSwitches).forEach(([k, sw]) => {
+    if (isGirlsKey(k) !== (side === 'girls')) return;
+    out[side === 'girls' ? k.slice(0, -GIRLS_SUFFIX.length) : k] = sw;
+  });
+  return out;
 }
 
 /** Login uid of the signed-in staff member */
@@ -733,7 +756,7 @@ export function isDoneForToday(now = new Date()) {
   const side = staff.role === 'runner' ? 'inside' : staff.role === 'store' || staff.role === 'food' ? staff.role : '';
   if (!side) return false;
   const outer = side === 'inside' ? 'inside' : 'outside';
-  const all = side === 'inside' ? insideSwitches : (operatorDocs[uid] || {}).slots || {};
+  const all = side === 'inside' ? getInsideSwitches(myHostelSide()) : (operatorDocs[uid] || {}).slots || {};
   // Inside batches are shared: only count the ones this runner opened
   const mineOnly = (sw) => sw && (side !== 'inside' || sw.byUid === uid);
   const slots = slotsForDay(side, now, 0);
@@ -775,6 +798,8 @@ async function setInsideSwitch__raw(key, patch) {
   // Only runners switch inside batches, so students always pay the runner taking the batch
   if (!staff || staff.role !== 'runner') throw new Error('Only runners can switch inside batches.');
   if (patch.on && isRunnerOff(auth.currentUser?.email)) throw new Error('The admin has switched you off. You cannot open a batch until the admin switches you back on.');
+  // Girls' hostel runners open the girls' side of the batch
+  key = switchKey(key, staff.hostelSide === 'girls' ? 'girls' : 'boys');
   const prev = insideSwitches[key] || {};
   const sw = slim({ ...prev, ...patch, by: staff?.name || 'Runner', byPhone: staff?.phone || '', byUid: auth.currentUser?.uid || '', byEmail: emailKey(auth.currentUser?.email || staff?.email), payTo: staff?.payAccount || null, at: Date.now() });
   insideSwitches = { ...insideSwitches, [key]: sw };
@@ -789,9 +814,11 @@ async function setInsideSwitch__raw(key, patch) {
  */
 
 /** Runners taking express runs right now: [{ uid, name, phone, email, payTo }] */
-export function getExpressRunners(now = new Date()) {
+export function getExpressRunners(now = new Date(), hs) {
   return Object.entries(expressRunners)
     .filter(([uid, sw]) => sw && sw.on && sw.payTo && switchIsLive(sw, 'inside', now) && !isOverdue(runnerUnsettled[uid], now) && !isRunnerOff(sw.email))
+    // A girls' hostel order only sees girls' runners, and the other way round
+    .filter(([, sw]) => !hs || (sw.hostelSide === 'girls' ? 'girls' : 'boys') === hs)
     .map(([uid, sw]) => ({ uid, name: sw.name || 'Runner', phone: sw.phone || '', email: sw.email || '', payTo: sw.payTo }));
 }
 
@@ -810,7 +837,7 @@ async function setMyExpress__raw(on) {
   if (!uid || !staff || staff.role !== 'runner') throw new Error('Runners only');
   if (on && !staff.payAccount?.accountNumber) throw new Error('Save your bank account first. Express students pay you directly.');
   if (on && isRunnerOff(auth.currentUser?.email)) throw new Error('The admin has switched you off. You cannot take express runs until the admin switches you back on.');
-  const sw = slim({ on: Boolean(on), name: staff.name || 'Runner', phone: staff.phone || '', email: staff.email, payTo: staff.payAccount || null, at: Date.now() });
+  const sw = slim({ on: Boolean(on), name: staff.name || 'Runner', phone: staff.phone || '', email: staff.email, payTo: staff.payAccount || null, hostelSide: staff.hostelSide === 'girls' ? 'girls' : 'boys', at: Date.now() });
   expressRunners = { ...expressRunners, [uid]: sw };
   fireBatches();
   await setDoc(doc(db, 'availability', 'inside'), { express: { [uid]: sw } }, { merge: true });
@@ -1215,6 +1242,12 @@ export async function getRunners() {
   }
 }
 
+/** Admin: set which hostels a runner serves ('boys' or 'girls'). Takes effect the next time they sign in. */
+export async function setRunnerHostelSide(runnerId, hs) {
+  await updateDoc(doc(db, 'staff', runnerId), { hostelSide: hs === 'girls' ? 'girls' : 'boys' });
+  logActivity('team', `set a runner to ${hs === 'girls' ? "girls'" : "boys'"} hostels`);
+}
+
 /** @returns {Promise<any>} */
 export async function updateRunnerStatus(runnerId, isOnline) {
   try {
@@ -1315,6 +1348,7 @@ function demoCreateOrder(p) {
   const order = {
     ...p,
     id,
+    hostelSide: cart === 'inside' && !p.isCustomLocation ? hostelSideOf(p.building) : 'boys',
     cart,
     hasStore: cart === 'store',
     hasFood: cart === 'food',
@@ -1461,7 +1495,9 @@ export async function createOrder(orderPayload) {
   const hasFood = cart ? cart === 'food' : (orderPayload.items || []).some((i) => i.source === 'food');
   const hasOutside = hasStore || hasFood;
   // Express (inside only, while a runner has it on): ₦1,200 replaces the normal delivery fee
-  const isExpress = Boolean(orderPayload.express) && !hasOutside && getExpressRunners().length > 0;
+  // Inside orders belong to the boys' or girls' side by hostel (custom spots: boys' side)
+  const hostelSide = hasOutside || orderPayload.isCustomLocation ? 'boys' : hostelSideOf(orderPayload.building);
+  const isExpress = Boolean(orderPayload.express) && !hasOutside && getExpressRunners(new Date(), hostelSide).length > 0;
   if (orderPayload.express && !isExpress) throw new Error('Express is not available right now. Please choose normal delivery.');
   const deliveryFee = isExpress ? EXPRESS_FEE : deliveryFeeFor(subtotal, hasOutside, (orderPayload.items || []).some((i) => isBagOfWater(i.name)));
   const totalAmount = subtotal + deliveryFee;
@@ -1500,6 +1536,7 @@ export async function createOrder(orderPayload) {
 
   const newOrder = {
     id: orderId,
+    hostelSide,
     phone,
     name: orderPayload.name,
     area: orderPayload.area,
@@ -1620,7 +1657,7 @@ export async function markPaymentSent(orderId) {
       } else if (paymentState(o) === 'missed') {
         // Missed the batch: the order joins the next batch that is taking orders
         const side = o.cart === 'store' || o.cart === 'food' ? o.cart : 'inside';
-        const { next } = getNextBatch(side);
+        const { next } = getNextBatch(side, new Date(), o.hostelSide || 'boys');
         if (next) {
           o.deliveryBatch = next.batch.id;
           o.deliveryTime = next.batch.label;
@@ -3550,7 +3587,7 @@ export async function cancelExpress(orderId) {
     if (!o.express || o.express.status !== 'requested' || o.paymentStatus !== 'unpaid') throw new Error('This order can no longer be changed.');
     const now = new Date();
     const fee = deliveryFeeFor(o.subtotal || 0, false, (o.items || []).some((i) => isBagOfWater(i.name)));
-    const { next } = getNextBatch('inside', now);
+    const { next } = getNextBatch('inside', now, o.hostelSide || 'boys');
     o.express = { ...o.express, status: 'cancelled' };
     o.deliveryFee = fee;
     o.totalAmount = (o.subtotal || 0) + fee;

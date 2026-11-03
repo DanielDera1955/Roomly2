@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { ArrowLeft, Wallet, Clock, ListChecks, ToggleRight, Users, Star, ShieldCheck, Smartphone, CheckCircle2, Send } from 'lucide-react';
-import { HOSTELS, SCHOOL_NAME } from '../config';
+import { BOYS_HOSTELS, GIRLS_HOSTELS, SCHOOL_NAME } from '../config';
 import { submitRunnerApplication, RUNNER_APP_LEVELS } from '../api.js';
 
 /**
@@ -98,11 +98,20 @@ const ApplyForm: React.FC = () => {
           <span className="text-xs font-bold text-slate-500">Hostel</span>
           <select value={hostel} onChange={(e) => setHostel(e.target.value)} className={input}>
             <option value="">Pick one</option>
-            {HOSTELS.map((h) => (
-              <option key={h} value={h}>
-                {h}
-              </option>
-            ))}
+            <optgroup label="Boys' hostels">
+              {BOYS_HOSTELS.map((h) => (
+                <option key={h} value={h}>
+                  {h}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Girls' hostels">
+              {GIRLS_HOSTELS.map((h) => (
+                <option key={h} value={h}>
+                  {h}
+                </option>
+              ))}
+            </optgroup>
           </select>
         </label>
         <label className="block space-y-1">
@@ -317,12 +326,20 @@ export const BecomeRunner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </p>
         </Section>
 
+        <Section icon={<Users className="w-4 h-4" />} title="Boys' and girls' hostels">
+          <p>
+            Boys can't go into the girls' hostels, so we have runners for each side. Boys deliver to the boys' hostels ({BOYS_HOSTELS.join(', ')}), and girls
+            deliver to the girls' hostels ({GIRLS_HOSTELS.join(', ')}). Students in each hostel only ever see and pay a runner from their own side.
+          </p>
+          <p>Girls who want to earn: we're especially looking for runners in the girls' hostels right now.</p>
+        </Section>
+
         <Section icon={<CheckCircle2 className="w-4 h-4" />} title="What you need">
           <Bullets
             items={[
               'A smartphone with data',
               'A bank account to receive payments',
-              `A room in ${HOSTELS.slice(0, -1).join(', ')} or ${HOSTELS[HOSTELS.length - 1]}`,
+              `A room in one of the boys' hostels (${BOYS_HOSTELS.join(', ')}) or girls' hostels (${GIRLS_HOSTELS.join(', ')})`,
               'Time for at least one batch on the days you choose to work',
               'Honesty with money',
             ]}

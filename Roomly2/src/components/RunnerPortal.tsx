@@ -274,8 +274,10 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
     }
   };
 
-  // Runners handle inside-school orders; outside carts go to operators (gate pickups have their own panel)
-  const insideOrders = orders.filter((o) => !o.cart || o.cart === 'inside');
+  // Runners handle inside-school orders; outside carts go to operators (gate pickups have their own panel).
+  // Each runner only sees their own side: boys' hostels or girls' hostels (the admin sees both).
+  const mySide = isRunner ? (getCurrentStaff() as any)?.hostelSide || 'boys' : '';
+  const insideOrders = orders.filter((o) => (!o.cart || o.cart === 'inside') && (!mySide || ((o as any).hostelSide || 'boys') === mySide));
 
   // 1. Active Orders Available to Accept (unassigned or received)
   const unassignedOrders = insideOrders.filter(
@@ -809,6 +811,11 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
               <p className="text-[11px] font-bold text-[#0e9f55] truncate">
                 Welcome back, {getCurrentStaff()?.name || 'Runner'}
               </p>
+              {isRunner && (
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                  You deliver to the {mySide === 'girls' ? "girls' hostels" : "boys' hostels"}
+                </p>
+              )}
             </div>
           </div>
 
