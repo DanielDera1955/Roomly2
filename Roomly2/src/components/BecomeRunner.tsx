@@ -20,6 +20,11 @@ const SCHEDULE: { day: string; slots: string }[] = [
   { day: 'Saturday', slots: '9:30 to 10:00am, 1:30 to 2:00pm, 4:30 to 5:00pm, 8:30 to 9:00pm' },
 ];
 
+/** A tap-to-pick button (green when chosen) */
+const pick = (on: boolean) =>
+  `py-2 px-1 rounded-xl text-xs font-bold border cursor-pointer truncate ${
+    on ? 'bg-[#0e9f55] border-[#0e9f55] text-white' : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+  }`;
 const card = 'bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-4 space-y-2.5';
 const input =
   'w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/40';
@@ -93,38 +98,34 @@ const ApplyForm: React.FC = () => {
         <span className="text-xs font-bold text-slate-500">WhatsApp number</span>
         <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" maxLength={14} placeholder="08012345678" className={input} autoComplete="tel" />
       </label>
-      <div className="grid grid-cols-2 gap-2">
-        <label className="block space-y-1">
-          <span className="text-xs font-bold text-slate-500">Hostel</span>
-          <select value={hostel} onChange={(e) => setHostel(e.target.value)} className={input}>
-            <option value="">Pick one</option>
-            <optgroup label="Boys' hostels">
-              {BOYS_HOSTELS.map((h) => (
-                <option key={h} value={h}>
+      {/* Hostel and level: buttons instead of phone popups */}
+      <div className="space-y-1.5">
+        <span className="text-xs font-bold text-slate-500">Hostel</span>
+        {([
+          ["Boys' hostels", BOYS_HOSTELS],
+          ["Girls' hostels", GIRLS_HOSTELS],
+        ] as [string, string[]][]).map(([label, list]) => (
+          <div key={label}>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">{label}</p>
+            <div className="grid grid-cols-3 gap-1.5">
+              {list.map((h) => (
+                <button key={h} type="button" onClick={() => setHostel(h)} aria-pressed={hostel === h} className={pick(hostel === h)}>
                   {h}
-                </option>
+                </button>
               ))}
-            </optgroup>
-            <optgroup label="Girls' hostels">
-              {GIRLS_HOSTELS.map((h) => (
-                <option key={h} value={h}>
-                  {h}
-                </option>
-              ))}
-            </optgroup>
-          </select>
-        </label>
-        <label className="block space-y-1">
-          <span className="text-xs font-bold text-slate-500">Level</span>
-          <select value={level} onChange={(e) => setLevel(e.target.value)} className={input}>
-            <option value="">Pick one</option>
-            {RUNNER_APP_LEVELS.map((l: string) => (
-              <option key={l} value={l}>
-                {l === 'Other' ? 'Other' : `${l} level`}
-              </option>
-            ))}
-          </select>
-        </label>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="space-y-1.5">
+        <span className="text-xs font-bold text-slate-500">Level</span>
+        <div className="grid grid-cols-3 gap-1.5">
+          {RUNNER_APP_LEVELS.map((l: string) => (
+            <button key={l} type="button" onClick={() => setLevel(l)} aria-pressed={level === l} className={pick(level === l)}>
+              {l === 'Other' ? 'Other' : `${l} level`}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="space-y-1.5">

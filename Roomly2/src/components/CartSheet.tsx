@@ -715,49 +715,51 @@ export const CartSheet: React.FC<CartSheetProps> = ({
 
               {(cart === 'inside' || gatePickup) && !customMode && (
               <>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Hostel
-                  </label>
-                  <select
-                    value={building}
-                    onChange={(e) => {
-                      setBuilding(e.target.value);
-                      setFloor('');
-                    }}
-                    className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55] cursor-pointer"
-                  >
-                    <optgroup label="Boys' hostels">
-                      {BOYS_HOSTELS.map((b) => (
-                        <option key={b} value={b}>
+              {/* Hostel: one tap on a button, grouped by boys' and girls' hostels (no phone popup) */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Hostel</label>
+                {([
+                  ["Boys' hostels", BOYS_HOSTELS],
+                  ["Girls' hostels", GIRLS_HOSTELS],
+                ] as [string, string[]][]).map(([label, list]) => (
+                  <div key={label} className="mb-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">{label}</p>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {list.map((b) => (
+                        <button
+                          key={b}
+                          type="button"
+                          onClick={() => {
+                            if (b !== building) setFloor('');
+                            setBuilding(b);
+                          }}
+                          aria-pressed={building === b}
+                          className={`py-2 px-1 rounded-xl text-xs font-bold border cursor-pointer truncate ${
+                            building === b
+                              ? 'bg-[#0e9f55] border-[#0e9f55] text-white'
+                              : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
                           {b}
-                        </option>
+                        </button>
                       ))}
-                    </optgroup>
-                    <optgroup label="Girls' hostels">
-                      {GIRLS_HOSTELS.map((b) => (
-                        <option key={b} value={b}>
-                          {b}
-                        </option>
-                      ))}
-                    </optgroup>
-                  </select>
-                </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
 
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Room number
-                  </label>
-                  <input
-                    type="text"
-                    value={room}
-                    onChange={(e) => setRoom(e.target.value.toUpperCase().slice(0, 8))}
-                    placeholder={floors.length ? 'e.g. 12' : 'e.g. A12'}
-                    autoCapitalize="characters"
-                    className="w-full px-3 py-2 text-sm font-mono bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55]"
-                  />
-                </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Room number{floors.length ? ` in ${building}` : ''}
+                </label>
+                <input
+                  type="text"
+                  value={room}
+                  onChange={(e) => setRoom(e.target.value.toUpperCase().slice(0, 8))}
+                  placeholder={floors.length ? 'e.g. 12' : 'e.g. A12'}
+                  autoCapitalize="characters"
+                  className="w-full px-3 py-2 text-sm font-mono bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55]"
+                />
               </div>
               {floors.length > 0 && (
                 <div>
