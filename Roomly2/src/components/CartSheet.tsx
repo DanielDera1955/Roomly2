@@ -28,6 +28,8 @@ interface CartSheetProps {
   /** Soft drinks to suggest (already filtered: the cart has food or snacks but no drink) */
   suggestDrinks?: { id: string; name: string; price: number; imageUrl?: string; unit?: string }[];
   onAddDrink?: (p: any) => void;
+  /** Close the cart and open the full drinks list for this cart's store */
+  onSeeAllDrinks?: () => void;
   isOpen: boolean;
   onClose: () => void;
   /** Which of the three carts is open; items are only that cart's items */
@@ -91,6 +93,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   allItems,
   suggestDrinks = [],
   onAddDrink,
+  onSeeAllDrinks,
   items,
   customRequest,
   onUpdateQuantity,
@@ -1144,6 +1147,15 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                   </div>
                 ))}
               </div>
+              {onSeeAllDrinks && (
+                <button
+                  type="button"
+                  onClick={onSeeAllDrinks}
+                  className="w-full text-center text-xs font-bold text-[#0b8044] dark:text-emerald-400 pt-0.5 cursor-pointer"
+                >
+                  See all drinks ›
+                </button>
+              )}
             </div>
           )}
 

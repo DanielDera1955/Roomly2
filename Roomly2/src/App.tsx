@@ -1432,6 +1432,17 @@ export default function App() {
           onSwitchCart={setCartKind}
           allItems={cartItems}
           suggestDrinks={suggestedDrinks}
+          onSeeAllDrinks={() => {
+            // Close the cart (it stays saved) and open the drinks list for this cart's store
+            const food = cartKind === 'food';
+            const drinksCat = categoriesForStore(categories, food ? 'food' : 'inside').find((c) => /drink/i.test(c.name))?.name || 'All';
+            setIsCartOpen(false);
+            setSearchQuery('');
+            setSourceMode(food ? 'outside' : 'inside');
+            setSelectedTab(food ? 'food' : 'store');
+            setSelectedFilter(drinksCat);
+            window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+          }}
           onAddDrink={(p) => (p.isFood ? setCustomizingFood(p) : handleAddSimpleProduct(p))}
           items={cartItems.filter((i) => cartOf(i) === cartKind)}
           customRequest={cartKind === 'inside' ? customRequest : ''}
