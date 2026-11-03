@@ -385,7 +385,15 @@ export const OUTSIDE_DAYS_AHEAD = 3;
 /** Launch dates (Lagos time). The admin can change both in Admin > Hub & Games; these are the defaults. */
 export const DEFAULT_OUTSIDE_STORE_OPEN_MS = Date.parse('2026-11-09T00:00:00+01:00');
 /** Inside-school delivery (runners) starts on this date. Until then new visitors open on Outside > Cooked Food. */
-export const INSIDE_LAUNCH_MS = Date.parse('2026-11-04T00:00:00+01:00');
+// Demo mode (?demo=1) shows room delivery as already open
+const DEMO_LINK = (() => {
+  try {
+    return new URLSearchParams(window.location.search).get('demo') === '1';
+  } catch {
+    return false;
+  }
+})();
+export const INSIDE_LAUNCH_MS = DEMO_LINK ? 0 : Date.parse('2026-11-04T00:00:00+01:00');
 export const DEFAULT_GAMES_OPEN_MS = Date.parse('2026-11-08T00:00:00+01:00');
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 export const weekdayName = (d: number) => WEEKDAYS[d] || '';

@@ -10,6 +10,7 @@ import {
   getCustomerByPhone,
   subscribeAnnouncement,
   createOrder,
+  DEMO,
   getOrderById,
   getMyOrders,
   subscribeOrder,
@@ -1040,6 +1041,13 @@ export default function App() {
     <div className="min-h-screen bg-[#e8efeb] dark:bg-slate-950 flex justify-center selection:bg-[#0e9f55]/20">
       <div className="w-full max-w-[480px] bg-[#f4f8f6] dark:bg-slate-900 min-h-screen flex flex-col relative shadow-2xl border-x border-slate-200/60 dark:border-slate-800/60 pb-36">
         <AdminSwitcher current="customer" onSelect={handleSelectPortal} />
+        {DEMO && (
+          <div className="sticky top-0 z-[60] flex justify-center pointer-events-none">
+            <span className="mt-1 px-3 py-1 rounded-full bg-slate-900/85 dark:bg-white/90 text-white dark:text-slate-900 text-[11px] font-bold">
+              Demo: nothing is really ordered
+            </span>
+          </div>
+        )}
         {/* Header */}
         <Header
           currentPortal={currentPortal}

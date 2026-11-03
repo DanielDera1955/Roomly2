@@ -456,6 +456,16 @@ function activeOperators(kind) {
  * Returns { next: { batch, start, startText, by }, note } — next is null when ordering is paused.
  */
 export function getNextBatch(side, now = new Date()) {
+  // Demo: the next scheduled batch, taken by the demo runner
+  if (DEMO && side === 'inside') {
+    const slot = getBookableSlots(now)[0];
+    if (slot) {
+      return {
+        next: { batch: slot, start: new Date(now.getTime() + 15 * 60000), startText: timeLabel(slot.startMin), late: false, by: 'Demo Runner', payTo: DEMO_PAY_TO },
+        note: '',
+      };
+    }
+  }
   const notes = [];
   for (let d = 0; d < 3; d++) {
     for (const opt of slotsForDay(side, now, d)) {
@@ -1246,9 +1256,85 @@ export function subscribeOrders(cb) {
   };
 }
 
+/* ---------------------- demo mode (?demo=1) ---------------------- */
+// A demonstration of the full order journey for videos and showing people in person.
+// Demo orders live only in this browser tab: nothing is saved, no runner or vendor is notified.
+export const DEMO = (() => {
+  try {
+    return new URLSearchParams(window.location.search).get('demo') === '1';
+  } catch {
+    return false;
+  }
+})();
+export const DEMO_PAY_TO = { bankName: 'Demo Bank', accountNumber: '0123456789', accountName: 'Roomly Demo Runner' };
+const demoOrders = new Map();
+const demoSubs = new Map();
+const isDemoId = (id) => DEMO && String(id || '').startsWith('DEMO-');
+function demoPush(o) {
+  demoOrders.set(o.id, o);
+  (demoSubs.get(o.id) || new Set()).forEach((cb) => cb({ ...o }));
+}
+function demoCreateOrder(p) {
+  const now = new Date();
+  const cart = ['inside', 'store', 'food'].includes(p.cart) ? p.cart : 'inside';
+  const subtotal = Number(p.subtotal || 0);
+  const deliveryFee = deliveryFeeFor(subtotal, cart !== 'inside');
+  const id = `DEMO-${Math.floor(1000 + Math.random() * 9000)}`;
+  const order = {
+    ...p,
+    id,
+    cart,
+    hasStore: cart === 'store',
+    hasFood: cart === 'food',
+    pin: undefined,
+    status: 'Received',
+    paymentStatus: 'unpaid',
+    paymentMethod: 'pay_now',
+    payTo: DEMO_PAY_TO,
+    runnerId: '',
+    runnerName: cart === 'inside' ? 'Demo Runner' : '',
+    operatorName: cart !== 'inside' ? 'Demo Vendor' : '',
+    express: null,
+    subtotal,
+    deliveryFee,
+    totalAmount: subtotal + deliveryFee,
+    createdAt: now.toISOString(),
+    paymentDeadline: new Date(now.getTime() + 15 * 60000).toISOString(),
+    history: [{ status: 'Received', timestamp: now.toISOString(), note: 'Demo order: nothing was sent to anyone', updatedBy: 'Roomly' }],
+  };
+  demoPush(order);
+  return { ...order };
+}
+function demoPaid(id) {
+  const o = demoOrders.get(id);
+  if (!o) return null;
+  const step = (patch, status) => {
+    const cur = demoOrders.get(id);
+    if (!cur) return;
+    const at = new Date().toISOString();
+    demoPush({ ...cur, ...patch, history: [...(cur.history || []), { status: status || cur.status, timestamp: at, note: '', updatedBy: 'Demo' }] });
+  };
+  const sent = { ...o, paymentStatus: 'payment_sent', paymentSentAt: new Date().toISOString(), payReady: true };
+  demoPush(sent);
+  const outside = o.cart === 'store' || o.cart === 'food';
+  // The journey plays by itself, a few seconds per step
+  window.setTimeout(() => step({ paymentStatus: 'payment_confirmed', status: outside ? 'Received' : 'Packing' }, outside ? 'Received' : 'Packing'), 3000);
+  if (outside) {
+    window.setTimeout(
+      () => step({ [o.cart === 'food' ? 'foodStatus' : 'storeStatus']: 'sent', status: 'Delivered', deliveredAt: new Date().toISOString() }, 'Delivered'),
+      7000
+    );
+  } else {
+    window.setTimeout(() => step({ status: 'On the way', onTheWayAtMs: Date.now() }, 'On the way'), 7000);
+    window.setTimeout(() => step({ status: 'Delivered', deliveredAt: new Date().toISOString() }, 'Delivered'), 12000);
+  }
+  return { ...sent };
+}
+
 /** @returns {Promise<any>} */
 export async function getOrderById(orderId) {
   if (!orderId) return null;
+  if (isDemoId(String(orderId).trim().toUpperCase())) return demoOrders.get(String(orderId).trim().toUpperCase()) || null;
   try {
     const snap = await getDoc(doc(db, 'orders', orderId.trim().toUpperCase()));
     return snap.exists() ? { ...snap.data(), id: snap.id } : null;
@@ -1260,6 +1346,12 @@ export async function getOrderById(orderId) {
 /** Live updates for one order (customer or staff) */
 /** @returns {() => void} */
 export function subscribeOrder(orderId, cb) {
+  if (isDemoId(orderId)) {
+    const set = demoSubs.get(orderId) || new Set();
+    set.add(cb);
+    demoSubs.set(orderId, set);
+    return () => set.delete(cb);
+  }
   return onSnapshot(
     doc(db, 'orders', orderId),
     (s) => {
@@ -1305,6 +1397,7 @@ export async function isBannedFromRoomly(phone) {
 }
 
 export async function createOrder(orderPayload) {
+  if (DEMO) return demoCreateOrder(orderPayload);
   const phone = normalizePhone(orderPayload.phone);
   const pin = orderPayload.pin;
   if (!isValidNigerianPhone(phone)) throw new Error('Invalid phone number');
@@ -1484,6 +1577,7 @@ export function paymentState(o, now = new Date()) {
 
 /** @returns {Promise<any>} */
 export async function markPaymentSent(orderId) {
+  if (isDemoId(orderId)) return demoPaid(orderId);
   try {
     return await patchOrder(orderId, (o) => {
       if (paymentState(o) === 'expired') throw new Error('This order expired at the end of the day it was placed.');
@@ -1747,6 +1841,7 @@ export function subscribeMessages(orderId, cb) {
 
 /** @returns {Promise<any>} */
 export async function sendMessage(orderId, sender, name, text) {
+  if (isDemoId(orderId)) return null;
   const t = String(text || '').trim().slice(0, 500);
   if (!t) return null;
   return addDoc(collection(db, 'orders', orderId, 'messages'), {
@@ -3523,6 +3618,7 @@ export function providerOf(o) {
 /** Student: has this cart been rated already? */
 /** @returns {Promise<any>} */
 export async function getRating(orderId) {
+  if (isDemoId(orderId)) return null;
   try {
     const s = await getDoc(doc(db, 'ratings', orderId));
     return s.exists() ? s.data() : null;
@@ -3534,6 +3630,7 @@ export async function getRating(orderId) {
 /** Student: send the rating for one delivered cart */
 /** @returns {Promise<void>} */
 export async function submitRating(order, score, reasons, comment) {
+  if (isDemoId(order?.id)) return true;
   const s = Math.round(Number(score) || 0);
   if (s < 1 || s > 5) throw new Error('Tap a score from 1 to 5');
   const p = providerOf(order);
