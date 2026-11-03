@@ -30,6 +30,9 @@ import {
   isLive,
   gamesOpensAt,
   outsideStoreOpensAt,
+  schoolsList,
+  schoolKey,
+  addSchool,
 } from '../hub.js';
 
 const card = 'p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-3';
@@ -115,6 +118,7 @@ export const AdminHub: React.FC = () => {
       </div>
 
       <Disputes />
+      <Schools settings={settings} />
       <AdminTournaments />
     </div>
   );
@@ -315,6 +319,66 @@ const FlaggedRow: React.FC<{ l: any; reports: any[] }> = ({ l, reports }) => {
 };
 
 /* ------------------------------------------------------------------ */
+
+/** Schools players pick under "Other school": the official list, plus names players typed that aren't on it yet */
+const Schools: React.FC<{ settings: any }> = ({ settings }) => {
+  const [gamers, setGamers] = useState<any[]>([]);
+  const [busy, setBusy] = useState('');
+  useEffect(() => subscribeGamers(setGamers), []);
+  const list: string[] = schoolsList(settings);
+  const others = gamers.filter((g) => g.school === 'other' && g.schoolName && !g.banned);
+  const count = (name: string) => others.filter((g) => schoolKey(g.schoolName) === schoolKey(name)).length;
+  // Typed names not on the list, grouped so "Esut" and "ESUT" count once
+  const typed: { name: string; n: number }[] = [];
+  others.forEach((g) => {
+    if (list.some((x) => schoolKey(x) === schoolKey(g.schoolName))) return;
+    const t = typed.find((x) => schoolKey(x.name) === schoolKey(g.schoolName));
+    if (t) t.n++;
+    else typed.push({ name: g.schoolName, n: 1 });
+  });
+  const guests = gamers.filter((g) => g.school === 'guest' && !g.banned).length;
+  const caritas = gamers.filter((g) => (g.school || 'caritas') === 'caritas' && !g.banned).length;
+  const add = async (name: string) => {
+    if (!window.confirm(`Add "${name}" to the school list? Players will be able to pick it.`)) return;
+    setBusy(name);
+    try {
+      await addSchool(name, list);
+    } catch (e: any) {
+      window.alert(e?.message || 'Could not save.');
+    }
+    setBusy('');
+  };
+  return (
+    <div className={card}>
+      <p className={h}>Schools</p>
+      <p className="text-[11px] text-slate-500">
+        {caritas} Caritas · {others.length} from other schools · {guests} guests
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {list.map((x) => (
+          <span key={x} className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[11px] font-bold text-slate-600 dark:text-slate-300">
+            {x} <span className="font-normal text-slate-400">· {count(x)}</span>
+          </span>
+        ))}
+      </div>
+      <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 pt-1">Typed by players, not on the list yet</p>
+      {typed.length === 0 ? (
+        <p className="text-xs text-slate-400">None yet.</p>
+      ) : (
+        typed.map((t) => (
+          <div key={t.name} className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs">
+            <span className="min-w-0 truncate">
+              <strong>{t.name}</strong> <span className="text-slate-400">· {t.n} player{t.n === 1 ? '' : 's'}</span>
+            </span>
+            <button type="button" disabled={busy === t.name} onClick={() => add(t.name)} className={`${btn} bg-[#0e9f55] text-white shrink-0`}>
+              Add to list
+            </button>
+          </div>
+        ))
+      )}
+    </div>
+  );
+};
 
 const Disputes: React.FC = () => {
   const [list, setList] = useState<any[]>([]);

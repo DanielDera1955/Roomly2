@@ -195,6 +195,23 @@ export function subscribeHubSettings(cb) {
     () => cb({})
   );
 }
+/**
+ * Schools players can pick under "Other school". The admin adds names players typed
+ * (Admin > Hub & Games > Schools); until then this default list is used.
+ */
+export const DEFAULT_SCHOOLS = ['ESUT', 'UNN', 'IMT', 'Godfrey Okoye University', 'Coal City University', 'Renaissance University', 'ESCET'];
+export const schoolsList = (st) => (Array.isArray(st?.schools) && st.schools.length ? st.schools : DEFAULT_SCHOOLS);
+/** Matching ignores capitals, spaces and dots: "Esut", "E.S.U.T" and "ESUT " are the same school */
+export const schoolKey = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+/** A typed name in the official spelling when it matches a listed school */
+export const canonicalSchool = (name, list) => list.find((x) => schoolKey(x) === schoolKey(name)) || String(name || '').trim();
+/** Admin: make a typed school name official */
+export async function addSchool(name, current) {
+  const clean = String(name || '').trim().slice(0, 30);
+  if (!clean) return;
+  const list = current.some((x) => schoolKey(x) === schoolKey(clean)) ? current : [...current, clean];
+  await saveHubSettings({ schools: list });
+}
 /** When challenges open (registration week runs until then) */
 export const gamesOpensAt = (st) => (typeof st?.gamesOpenAtMs === 'number' ? st.gamesOpenAtMs : DEFAULT_GAMES_OPEN_MS);
 /** When outside store items can be ordered */
@@ -749,9 +766,9 @@ export async function adminRemoveEntry(tid, uid) {
  * League table per game, worked out from results that count and tournament places (nothing stored):
  * win 3, draw 1, loss 0; tournament 1st +10, 2nd +6, 3rd +3. Every registered player is on it.
  * Order: points, then goal difference (football games), then wins, then fewer matches, then name.
- * Everyone plays on one table (Caritas, other schools and guests). Players registered before
- * schools were recorded count as Caritas. The Best in Caritas crown goes to the highest-ranked
- * Caritas player with points, even if a player from another school is above them.
+ * Everyone plays on one table, the Caritas table (Caritas, other schools and guests). Players
+ * registered before schools were recorded count as Caritas. The #1 player wears the Best in Caritas
+ * crown whatever their school, shown with where they're from ("ESUT: Best in Caritas").
  */
 export function computeBoard(game, gamers, matches, tournaments, nowMs = Date.now()) {
   const scored = isScored(game);
@@ -766,6 +783,8 @@ export function computeBoard(game, gamers, matches, tournaments, nowMs = Date.no
         school: g.school || 'caritas',
         // Tag shown next to non-Caritas players: their school's name, or "Guest"
         tag: (g.school || 'caritas') === 'caritas' ? '' : g.school === 'guest' ? 'Guest' : g.schoolName || 'Other school',
+        // Where they're from, for the crown: "Caritas", "ESUT" or "Guest"
+        origin: (g.school || 'caritas') === 'caritas' ? 'Caritas' : g.school === 'guest' ? 'Guest' : g.schoolName || 'Other school',
         gameId: g.ids?.[game] || '',
         freeNote: g.freeNote || '',
         p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0, titles: 0,
@@ -808,6 +827,5 @@ export function computeBoard(game, gamers, matches, tournaments, nowMs = Date.no
     (x, y) =>
       y.pts - x.pts || (scored ? y.gd - x.gd : 0) || y.w - x.w || x.p - y.p || String(x.name).localeCompare(String(y.name))
   );
-  const champ = list.find((r) => r.school === 'caritas' && r.pts > 0);
-  return list.map((r, i) => ({ ...r, rank: i + 1, crown: Boolean(champ) && r.id === champ.id }));
+  return list.map((r, i) => ({ ...r, rank: i + 1, crown: i === 0 && r.pts > 0 }));
 }

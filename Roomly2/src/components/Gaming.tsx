@@ -31,6 +31,8 @@ import {
   subscribeEntries,
   subscribeHubSettings,
   gamesOpensAt,
+  schoolsList,
+  canonicalSchool,
   joinTournament,
   markEntryPaid,
   leaveTournament,
@@ -142,6 +144,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
         <RegisterSheet
           me={me}
           session={session}
+          schools={schoolsList(settings)}
           onClose={() => setRegistering(false)}
           onSaved={() => {
             knownHubUid().then(setUid);
@@ -241,7 +244,7 @@ const GamesHome: React.FC<{
               <p className="mt-3 text-sm font-black text-slate-900 dark:text-white">{g.label}</p>
               <p className="mt-0.5 text-[11px] text-slate-500 flex items-center gap-1 truncate">
                 <Crown className="w-3 h-3 text-amber-500 shrink-0" />
-                <span className="truncate">{leader ? `${leader.name} leads` : 'No leader yet'}</span>
+                <span className="truncate">{leader ? `${leader.name} leads${leader.origin !== 'Caritas' ? ` (${leader.origin})` : ''}` : 'No leader yet'}</span>
               </p>
               <div className="mt-3 flex items-center justify-between text-[10px]">
                 <span className="text-slate-400">{b.length} players</span>
@@ -340,13 +343,13 @@ const GamePage: React.FC<{
           <Trophy className="w-6 h-6" />
         </div>
         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-100 flex items-center gap-1.5">
-          <Crown className="w-3.5 h-3.5" /> Best in Caritas
+          <Crown className="w-3.5 h-3.5" /> {champ ? `${champ.origin}: Best in Caritas` : 'Best in Caritas'}
         </p>
         {champ ? (
           <>
             <h3 className="mt-1 text-2xl font-black">{champ.name}</h3>
             <p className="text-xs text-emerald-50/90 flex items-center gap-1 mt-0.5">
-              <MapPin className="w-3 h-3" /> {champ.hostel}
+              <MapPin className="w-3 h-3" /> {champ.origin === 'Caritas' ? champ.hostel : champ.origin === 'Guest' ? 'Guest player' : champ.origin}
             </p>
             <p className="mt-3 text-xs font-bold">
               {champ.pts} points <span className="font-medium text-emerald-50/90 ml-2">{isScored(game) ? `${champ.w}W · ${champ.d}D · ${champ.l}L` : `${champ.w}W · ${champ.l}L`}</span>
@@ -623,7 +626,7 @@ const LeagueTable: React.FC<{ game: string; board: any[]; meId?: string }> = ({ 
         </div>
       ))}
       <p className="mt-2 px-1 text-[10px] text-slate-400 flex items-center gap-1">
-        <Crown className="w-3 h-3 text-amber-500" /> The top Caritas player wears the Best in Caritas crown. Win 3, draw 1, loss 0.
+        <Crown className="w-3 h-3 text-amber-500" /> #1 wears the Best in Caritas crown, whatever their school. Win 3, draw 1, loss 0.
       </p>
     </div>
   );
@@ -775,9 +778,10 @@ const Sheet: React.FC<{ title: string; onClose: () => void; children: React.Reac
   </div>
 );
 
-const RegisterSheet: React.FC<{ me: any; session: { name?: string; phone?: string; pin?: string }; onClose: () => void; onSaved: () => void }> = ({
+const RegisterSheet: React.FC<{ me: any; session: { name?: string; phone?: string; pin?: string }; schools: string[]; onClose: () => void; onSaved: () => void }> = ({
   me,
   session,
+  schools,
   onClose,
   onSaved,
 }) => {
@@ -785,6 +789,8 @@ const RegisterSheet: React.FC<{ me: any; session: { name?: string; phone?: strin
   const [hostel, setHostel] = useState(me?.hostel || '');
   const [school, setSchool] = useState<'caritas' | 'other' | 'guest'>(me?.school || 'caritas');
   const [schoolName, setSchoolName] = useState(me?.schoolName || '');
+  // "Other school": pick from the list, or "My school isn't listed" and type it
+  const [typingSchool, setTypingSchool] = useState(Boolean(me?.schoolName) && !schools.some((x) => canonicalSchool(me.schoolName, schools) === x));
   const [phone, setPhone] = useState(() => {
     try {
       return localStorage.getItem('roomly_gamer_phone') || session.phone || '';
@@ -804,7 +810,7 @@ const RegisterSheet: React.FC<{ me: any; session: { name?: string; phone?: strin
     setBusy(true);
     setError('');
     try {
-      await registerGamer({ name, school, schoolName, hostel, phone, pin, games, ids, freeNote });
+      await registerGamer({ name, school, schoolName: canonicalSchool(schoolName, schools), hostel, phone, pin, games, ids, freeNote });
       onSaved();
     } catch (e: any) {
       setError(e?.message || 'Could not save.');
@@ -845,7 +851,40 @@ const RegisterSheet: React.FC<{ me: any; session: { name?: string; phone?: strin
       {school === 'other' && (
         <div>
           <label className={label}>Your school</label>
-          <input value={schoolName} onChange={(e) => setSchoolName(e.target.value)} maxLength={30} className={input} placeholder="e.g. ESUT" />
+          <div className="grid grid-cols-2 gap-1.5">
+            {schools.map((x) => (
+              <button
+                key={x}
+                type="button"
+                onClick={() => {
+                  setSchoolName(x);
+                  setTypingSchool(false);
+                }}
+                aria-pressed={!typingSchool && schoolName === x}
+                className={`py-2 px-2 rounded-xl text-xs font-bold border cursor-pointer truncate ${
+                  !typingSchool && schoolName === x ? 'bg-[#0e9f55] border-[#0e9f55] text-white' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                {x}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                setTypingSchool(true);
+                setSchoolName('');
+              }}
+              aria-pressed={typingSchool}
+              className={`col-span-2 py-2 rounded-xl text-xs font-bold border cursor-pointer ${
+                typingSchool ? 'bg-[#0e9f55] border-[#0e9f55] text-white' : 'border-dashed border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-400'
+              }`}
+            >
+              My school isn't listed
+            </button>
+          </div>
+          {typingSchool && (
+            <input value={schoolName} onChange={(e) => setSchoolName(e.target.value)} maxLength={30} className={`${input} mt-2`} placeholder="Type your school's name" />
+          )}
         </div>
       )}
       {school === 'caritas' && (
