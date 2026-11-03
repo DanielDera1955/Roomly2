@@ -78,6 +78,19 @@ service cloud.firestore {
          && request.resource.data.quotedBy.uid == request.auth.uid
          && ((resource.data.side == 'inside' && isRunner())
              || (resource.data.side == 'store' && isOperator('store'))
+             || (resource.data.side == 'food' && isOperator('food')))) ||
+        // Not theirs: the side that has an open request sends it to the side that sells it
+        (resource.data.status == 'open' && request.resource.data.status == 'open'
+         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['side', 'movedFrom', 'movedBy', 'movedAt'])
+         && request.resource.data.side in ['inside', 'store', 'food']
+         && ((resource.data.side == 'inside' && isRunner())
+             || (resource.data.side == 'store' && isOperator('store'))
+             || (resource.data.side == 'food' && isOperator('food')))) ||
+        // Already in the store: the side that has an open request closes it
+        (resource.data.status == 'open' && request.resource.data.status == 'closed'
+         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'closedReason', 'closedBy', 'closedAt'])
+         && ((resource.data.side == 'inside' && isRunner())
+             || (resource.data.side == 'store' && isOperator('store'))
              || (resource.data.side == 'food' && isOperator('food'))));
       allow delete: if isAdmin();
     }

@@ -1,3 +1,4 @@
+import { HEARD_OPTIONS, getHeardFrom, setHeardFrom } from '../tracking.js';
 import React, { useState, useEffect, useRef } from 'react';
 import { NoPhoto } from './NoPhoto';
 import {
@@ -146,6 +147,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const [operatorId, setOperatorId] = useState('');
 
   // Is repeat customer?
+  const [heard, setHeard] = useState<string>(() => getHeardFrom());
   const isRepeatCustomer = Boolean(customer && (customer.isReturning || (customer.ordersCount && customer.ordersCount > 0)));
 
   // Auto-fill when customer profile is available
@@ -683,6 +685,36 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                 </div>
               )}
 
+              {/* First order only, optional: helps Roomly know which promotion works */}
+              {!signedIn && !pinMatched && isPhoneValid && !needsExistingPin && (
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    How did you hear about Roomly? <span className="font-normal text-slate-400">(optional)</span>
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {HEARD_OPTIONS.map((h) => (
+                      <button
+                        key={h.id}
+                        type="button"
+                        aria-pressed={heard === h.id}
+                        onClick={() => {
+                          const v = heard === h.id ? '' : h.id;
+                          setHeard(v);
+                          setHeardFrom(v);
+                        }}
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-bold border cursor-pointer ${
+                          heard === h.id
+                            ? 'bg-[#0e9f55] border-[#0e9f55] text-white'
+                            : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        {h.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Student Name
@@ -944,13 +976,21 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                   className="w-4 h-4 mt-0.5 accent-[#0e9f55]"
                 />
                 <span>
-                  {noProvider ? (
+                  {noProvider && cart === 'inside' ? (
                     <>
                       <strong>
-                        {cart === 'inside' && hostelSide === 'girls'
-                          ? "No runner for the girls' hostels has switched on this batch yet."
-                          : `No ${cart === 'inside' ? 'runner' : 'operator'} has switched on this batch yet.`}
+                        {hostelSide === 'girls'
+                          ? "No runner for the girls' hostels has confirmed they'll be active for the next batch yet."
+                          : "No runner has confirmed they'll be active for the next batch yet."}
                       </strong>{' '}
+                      You can still order. Your order is scheduled for{' '}
+                      {selectedBatch.dayLabel === 'Today' ? 'today' : selectedBatch.dayLabel.toLowerCase()}, {selectedBatch.window}. The
+                      account to pay shows on your order screen as soon as a runner confirms. Don't send money to anyone before then. If no
+                      runner confirms, your order moves to the batch after. Tick to accept.
+                    </>
+                  ) : noProvider ? (
+                    <>
+                      <strong>No operator has switched on this batch yet.</strong>{' '}
                       You can still order. Your order is scheduled for{' '}
                       {selectedBatch.dayLabel === 'Today' ? 'today' : selectedBatch.dayLabel.toLowerCase()}, {selectedBatch.window}. The
                       account to pay will show on your order screen as soon as a {cart === 'inside' ? 'runner' : 'operator'} takes it. If
@@ -1014,7 +1054,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                         {pastBatchTime
                           ? "It's past the batch time, but orders are still being accepted."
                           : unconfirmed
-                          ? `Not opened yet. Usually starts around ${chosen.startText}.`
+                          ? `No runner has confirmed yet. Usually starts around ${chosen.startText}.`
                           : `Taking orders now. Starts sending around ${chosen.startText}.`}
                       </span>
                     </div>

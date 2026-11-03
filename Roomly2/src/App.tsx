@@ -654,6 +654,14 @@ export default function App() {
         playChime('chat');
         notify('Your price is ready', text, 'roomly-price-' + id);
       }
+      // Already in the store: the request is closed and the student is pointed to the product
+      if (before === 'open' && r.status === 'closed') {
+        const names = (r.items || []).map((q: any) => q.name).filter(Boolean);
+        const text = `${names.slice(0, 2).join(', ') || 'Your item'} is already in the store. Search for it to add it to your cart.`;
+        setPriceReady(text);
+        playChime('chat');
+        notify('Already in the store', text, 'roomly-price-' + id);
+      }
     });
   }, [requests]);
 
@@ -665,6 +673,16 @@ export default function App() {
         .map((i) => {
           if (!i.pendingQuote || !i.requestId) return i;
           const r = requests[i.requestId];
+          // Closed because it's already in the store: the waiting item leaves the cart so checkout isn't blocked
+          if (r && r.status === 'closed') {
+            changed = true;
+            return null;
+          }
+          // Moved to another side (e.g. food to store): the waiting item follows it to that cart
+          if (r && r.status === 'open' && sideSource(r.side) !== i.source) {
+            changed = true;
+            return { ...i, source: sideSource(r.side) };
+          }
           if (!r || r.status !== 'quoted') return i;
           changed = true;
           const q = r.quotes?.[i.requestIdx ?? -1];
@@ -1284,6 +1302,7 @@ export default function App() {
               cartRequestIds={new Set(cartItems.map((i) => i.requestId || '').filter(Boolean))}
               onSubmit={handleSubmitRequest}
               onAddQuoteToCart={handleAddQuoteToCart}
+              storeOpensMs={storeLocked ? storeOpensMs : 0}
             />
           ) : (
             <div className="space-y-3">

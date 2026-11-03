@@ -9,6 +9,7 @@
  * - Orders: customers create and track them; staff see the full list in real time.
  */
 
+import { getRef, getHeardFrom } from './tracking.js';
 import {
   INITIAL_PRODUCTS,
   INITIAL_CATEGORIES,
@@ -315,6 +316,7 @@ let runnerUnsettled = {}; // runner uid -> dates not yet settled
 let runnerPay = {}; // runner uid -> payment account students pay into
 let expressRunners = {}; // runner uid -> { on, name, phone, email, payTo, at }: runners taking express runs now
 let operatorDocs = {};
+let staffSeen = {}; // runner uid -> last time they had their portal open (ms)
 let runnerOff = {}; // runner login email (lower case) -> true when the admin has switched them off
 const emailKey = (e) => String(e || '').trim().toLowerCase();
 /** Has the admin switched this runner off? (by login email) */
@@ -330,6 +332,7 @@ try {
       runnerUnsettled = s.exists() ? s.data().runnerUnsettled || {} : {};
       runnerPay = s.exists() ? s.data().runnerPay || {} : {};
       expressRunners = s.exists() ? s.data().express || {} : {};
+      staffSeen = s.exists() ? s.data().seen || {} : {};
       fireBatches();
     },
     () => {}
@@ -367,6 +370,11 @@ export function switchIsLive(sw, side, now = new Date()) {
   const at = new Date(sw.at || 0);
   const cut = new Date(at);
   cut.setHours(0, 0, 0, 0);
+  // Confirmed at night for tomorrow's batch: it stays on until tomorrow's cut-off, not tonight's
+  if (sw.forDate) {
+    const f = new Date(String(sw.forDate) + 'T00:00:00');
+    if (Number.isFinite(f.getTime()) && f.getTime() > cut.getTime()) cut.setTime(f.getTime());
+  }
   cut.setMinutes(side === 'inside' ? SWITCH_CUTOFF_MIN.inside : side === 'food' ? SWITCH_CUTOFF_MIN.food : SWITCH_CUTOFF_MIN.outside);
   if (at.getTime() >= cut.getTime()) cut.setDate(cut.getDate() + 1);
   return now.getTime() < cut.getTime();
@@ -516,7 +524,9 @@ export function getNextBatch(side, now = new Date(), hs = 'boys') {
   // and goes to a runner / operator who can take it; the student is told it is not opened yet.
   const fb = scheduledNext(side, now, hs);
   if (!fb) return { next: null, note: notes[0] || '' };
-  const who = side === 'inside' ? fallbackRunner(now, hs) : fallbackOperators(side)[0];
+  // Inside: only a runner who confirmed (switched on) the batch is ever shown, so students never pay someone who isn't coming
+  const who = side === 'inside' ? null : fallbackOperators(side)[0];
+  void fallbackRunner;
   // Even with nobody available the student can order: it is scheduled and the account shows once someone takes the batch
   return {
     next: {
@@ -702,6 +712,51 @@ export function getInsideSwitches(hs) {
   return out;
 }
 
+/** Runner uid -> last time they had their portal open (ms) */
+export function getStaffSeen() {
+  return { ...staffSeen };
+}
+
+/**
+ * Runners and operators: record that this person has their portal open (at most every 5 minutes).
+ * Opening the portal on the day of a batch is how a runner shows they are active.
+ */
+let lastSeenWrite = 0;
+export async function markStaffSeen(force = false) {
+  const staff = getCurrentStaff();
+  const uid = auth.currentUser?.uid;
+  if (!staff || !uid || DEMO) return;
+  if (!force && Date.now() - lastSeenWrite < 5 * 60000) return;
+  lastSeenWrite = Date.now();
+  try {
+    if (staff.role === 'runner') {
+      staffSeen = { ...staffSeen, [uid]: Date.now() };
+      await setDoc(doc(db, 'availability', 'inside'), { seen: { [uid]: Date.now() } }, { merge: true });
+    } else if (staff.role === 'store' || staff.role === 'food') {
+      await setDoc(doc(db, 'operatorStatus', uid), { kind: staff.role, name: staff.name || 'Operator', seenAt: Date.now() }, { merge: true });
+    }
+  } catch (e) {
+    /* best effort */
+  }
+}
+
+/**
+ * Admin: the next inside batch for one side and its switch.
+ * Returns { opt, sw, start, live } or null when nothing is scheduled.
+ */
+export function getAdminNextInside(hs = 'boys', now = new Date()) {
+  const fb = scheduledNext('inside', now, hs);
+  if (!fb) return null;
+  const sw = insideSwitches[switchKey(fb.opt.key, hs)] || null;
+  const live = switchIsLive(sw, 'inside', now);
+  return { opt: fb.opt, sw, start: switchStartDate(fb.opt, sw), live };
+}
+
+/** Admin: has anyone ever opened a girls' hostel batch? (then the girls' side is checked too) */
+export function girlsSideInUse() {
+  return Object.keys(insideSwitches).some((k) => isGirlsKey(k));
+}
+
 /** Login uid of the signed-in staff member */
 export function getMyUid() {
   return auth.currentUser?.uid || '';
@@ -801,7 +856,7 @@ async function setInsideSwitch__raw(key, patch) {
   // Girls' hostel runners open the girls' side of the batch
   key = switchKey(key, staff.hostelSide === 'girls' ? 'girls' : 'boys');
   const prev = insideSwitches[key] || {};
-  const sw = slim({ ...prev, ...patch, by: staff?.name || 'Runner', byPhone: staff?.phone || '', byUid: auth.currentUser?.uid || '', byEmail: emailKey(auth.currentUser?.email || staff?.email), payTo: staff?.payAccount || null, at: Date.now() });
+  const sw = slim({ ...prev, ...patch, forDate: String(key).split('|')[0], by: staff?.name || 'Runner', byPhone: staff?.phone || '', byUid: auth.currentUser?.uid || '', byEmail: emailKey(auth.currentUser?.email || staff?.email), payTo: staff?.payAccount || null, at: Date.now() });
   insideSwitches = { ...insideSwitches, [key]: sw };
   fireBatches();
   await setDoc(doc(db, 'availability', 'inside'), { slots: { ...staleKeys(insideSwitches), [key]: sw } }, { merge: true });
@@ -1567,6 +1622,9 @@ export async function createOrder(orderPayload) {
     paymentStatus: paymentMethod === 'pay_on_delivery' ? 'pay_on_delivery' : 'unpaid',
     paymentDeadline: deadline.toISOString(),
     isFirstTimeCustomer: !isRepeatCustomer,
+    // Where this student first came from (?ref= link) and what they said at their first checkout
+    ref: getRef(),
+    heardFrom: getHeardFrom(),
     deliveryBatch: batchId,
     deliveryTime: isExpress
       ? 'Express: within 20 minutes of your payment'
@@ -3945,6 +4003,38 @@ export async function adminResolveObjection(id, orderId, newOwed, reply) {
   await adminResolveObjection__raw(id, orderId, newOwed, reply);
   logActivity('money', newOwed === null ? `dismissed the objection on order ${orderId}` : `corrected order ${orderId} to ${naira(newOwed)} owed`, orderId);
 }
+const REQUEST_SIDE_LABEL = { inside: 'inside runners', store: 'outside store', food: 'outside food' };
+/**
+ * Runner or operator: this request isn't for them. Send it to the side that sells it.
+ * Only an open request, and only by the side that has it now (or the admin).
+ */
+export async function moveProductRequest(reqId, toSide) {
+  if (!['inside', 'store', 'food'].includes(toSide)) throw new Error('Pick where it goes');
+  const staff = getCurrentStaff();
+  const ref = doc(db, 'productRequests', reqId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('Request not found');
+  const r = snap.data();
+  if (r.status !== 'open') throw new Error('This request has already been answered.');
+  if (r.side === toSide) return;
+  const by = staff?.role === 'admin' ? 'Roomly admin' : staff?.name || 'Staff';
+  await updateDoc(ref, { side: toSide, movedFrom: r.side, movedBy: by, movedAt: new Date().toISOString() });
+  logActivity('request', `moved a request (${(r.items || []).map((i) => i.name).join(', ')}) to the ${REQUEST_SIDE_LABEL[toSide]}`, reqId);
+}
+
+/** Runner or operator: the product is already in the store, so the request is closed and the student is told to search for it */
+export async function closeProductRequestListed(reqId) {
+  const staff = getCurrentStaff();
+  const ref = doc(db, 'productRequests', reqId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('Request not found');
+  const r = snap.data();
+  if (r.status !== 'open') throw new Error('This request has already been answered.');
+  const by = staff?.role === 'admin' ? 'Roomly admin' : staff?.name || 'Staff';
+  await updateDoc(ref, { status: 'closed', closedReason: 'listed', closedBy: by, closedAt: new Date().toISOString() });
+  logActivity('request', `closed a request (${(r.items || []).map((i) => i.name).join(', ')}): already in the store`, reqId);
+}
+
 export async function quoteProductRequest(reqId, costs, category) {
   await quoteProductRequest__raw(reqId, costs, category);
   let items = '';

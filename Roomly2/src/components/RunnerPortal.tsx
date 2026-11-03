@@ -47,6 +47,7 @@ import {
   updateOrderStatus,
   confirmPayment,
   markPaymentNotReceived,
+  markStaffSeen,
   startPackagingOrder,
   subscribeOrders,
   getCurrentStaff,
@@ -175,6 +176,24 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
   // Shared delivery: who helped on each order (picked per card), and crediting deliveries I helped with
   const [helperPick, setHelperPick] = useState<Record<string, string>>({});
   useEffect(() => syncMyHelpCredits(), []);
+  // Opening the portal on the day of a batch is how a runner shows they are active (the admin sees it)
+  const [tickMs, setTickMs] = useState(Date.now());
+  useEffect(() => {
+    if (!isRunner) return;
+    markStaffSeen(true);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') markStaffSeen();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    const id = window.setInterval(() => {
+      setTickMs(Date.now());
+      if (document.visibilityState === 'visible') markStaffSeen();
+    }, 60000);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.clearInterval(id);
+    };
+  }, [isRunner]);
   const recordHelper = async (ord: OrderRecord, email: string) => {
     const r = runners.find((x) => x.id === email);
     setUpdatingId(ord.id);
@@ -347,6 +366,15 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
   const openInside = insideOrders.filter((o) => o.status !== 'Delivered' && o.status !== 'Cancelled');
   const attConfirm = openInside.filter(
     (o) => o.paymentStatus === 'payment_sent' && !o.paymentNotReceived && (!o.runnerId || o.runnerId === activeRunner?.id) && o.express?.status !== 'requested'
+  ).length;
+  // Students who tapped paid over 30 minutes ago and are still waiting for an answer
+  const waitingLong = openInside.filter(
+    (o) =>
+      o.paymentStatus === 'payment_sent' &&
+      !o.paymentNotReceived &&
+      (!o.runnerId || o.runnerId === activeRunner?.id) &&
+      o.paymentSentAt &&
+      tickMs - Date.parse(o.paymentSentAt) >= 30 * 60000
   ).length;
   const attSend = openInside.filter(
     (o) => o.runnerId === activeRunner?.id && o.paymentStatus === 'payment_confirmed' && (!o.deliveryDate || o.deliveryDate <= todayR)
@@ -939,6 +967,22 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
 
         )}
 
+        {/* Students waiting over 30 minutes for their payment to be checked */}
+        {isRunner && waitingLong > 0 && (
+          <button
+            type="button"
+            onClick={goToRunnerOrders}
+            className="w-full text-left p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border-2 border-rose-300 dark:border-rose-800 text-xs text-rose-900 dark:text-rose-200 space-y-1 cursor-pointer"
+          >
+            <p className="font-extrabold text-sm">
+              {waitingLong} {waitingLong === 1 ? 'student has' : 'students have'} waited over 30 minutes
+            </p>
+            <p className="leading-snug">
+              They tapped "I've paid". Check your account now, then confirm the payment, or tap Payment not received if the money isn't there. Tap to see them.
+            </p>
+          </button>
+        )}
+
         {/* What needs doing right now: short, jumps to each section */}
         {isRunner && (
           <AttentionCard
@@ -976,6 +1020,9 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
             <ExpressPanel orders={insideOrders} />
           </div>
         )}
+
+        {/* Admin: inside requests, with the student's name and number */}
+        {!isRunner && <ProductRequestsPanel side="inside" />}
 
         {/* A request waiting for a price blocks the student's cart, so it comes up here */}
         {isRunner && openRequests > 0 && (

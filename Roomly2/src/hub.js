@@ -7,6 +7,7 @@
  *
  * Needs: Firebase console > Authentication > Sign-in method > Anonymous switched ON.
  */
+import { getRef, getHeardFrom } from './tracking.js';
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
 import {
@@ -490,7 +491,7 @@ export async function registerGamer(input) {
   const snap = await getDoc(ref);
   const batch = writeBatch(hubDb);
   if (!snap.exists()) {
-    batch.set(ref, { ...profile, ownerUid: uid, ready: {}, banned: false, createdAtMs: Date.now() });
+    batch.set(ref, { ...profile, ownerUid: uid, ready: {}, banned: false, createdAtMs: Date.now(), ref: getRef(), heardFrom: getHeardFrom() });
     batch.set(doc(hubDb, 'gamerSecret', gid), { pinHash: await pinHashOf(phone, pin) });
     batch.set(doc(hubDb, 'gamerContact', gid), { phone, readyUntil: 0, atMs: Date.now() });
   } else if (snap.data().ownerUid === uid) {

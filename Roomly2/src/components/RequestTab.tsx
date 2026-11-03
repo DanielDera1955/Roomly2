@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, Camera, Sparkles, Clock, Check } from 'lucide-react';
 import { uploadProductImage } from '../api.js';
 import { InstallPrompt } from './InstallPrompt';
+import { openDateText } from '../config';
 
 export type RequestSide = 'inside' | 'store' | 'food';
 
@@ -20,6 +21,8 @@ interface RequestTabProps {
   cartRequestIds: Set<string>;
   onSubmit: (side: RequestSide, items: RequestItemInput[], note: string, addToCart: boolean) => Promise<void>;
   onAddQuoteToCart: (req: any) => void;
+  /** While the outside store has not opened yet: when it opens (ms), else 0 */
+  storeOpensMs?: number;
 }
 
 const SIDE_LABEL: Record<RequestSide, string> = {
@@ -40,6 +43,7 @@ export const RequestTab: React.FC<RequestTabProps> = ({
   cartRequestIds,
   onSubmit,
   onAddQuoteToCart,
+  storeOpensMs = 0,
 }) => {
   const [side, setSide] = useState<RequestSide>(defaultSide);
   const [items, setItems] = useState<RequestItemInput[]>([{ ...blank(), name: initialName || '' }]);
@@ -97,17 +101,34 @@ export const RequestTab: React.FC<RequestTabProps> = ({
         </p>
 
         {outside && (
-          <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800">
-            {(['store', 'food'] as RequestSide[]).map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setSide(s)}
-                className={`py-1.5 rounded-lg text-[11px] font-bold cursor-pointer ${side === s ? 'bg-white dark:bg-slate-900 text-[#0e9f55]' : 'text-slate-500'}`}
-              >
-                {s === 'store' ? 'Store items' : 'Cooked food & drinks'}
-              </button>
-            ))}
+          <div className="space-y-1.5">
+            {/* Decides who prices it: cooked food goes to the food vendors, everything else to the stores */}
+            <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200">What is it?</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {(['food', 'store'] as RequestSide[]).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setSide(s)}
+                  aria-pressed={side === s}
+                  className={`p-2.5 rounded-xl text-left border-2 cursor-pointer ${
+                    side === s ? 'border-[#0e9f55] bg-emerald-50 dark:bg-emerald-950/30' : 'border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <span className={`block text-xs font-extrabold ${side === s ? 'text-[#0e9f55]' : 'text-slate-800 dark:text-slate-100'}`}>
+                    {s === 'food' ? 'Cooked food or drinks' : 'Store item'}
+                  </span>
+                  <span className="block text-[10px] text-slate-500 leading-snug mt-0.5">
+                    {s === 'food' ? 'e.g. jollof rice, soup and fufu, a plate of beans' : 'e.g. macaroni, rice, garri, soap, kerosene'}
+                  </span>
+                </button>
+              ))}
+            </div>
+            {side === 'store' && storeOpensMs > Date.now() && (
+              <p className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-[11px] text-amber-900 dark:text-amber-200 leading-snug">
+                Store items open on {openDateText(storeOpensMs)}. You can send your request now and we'll price it by then.
+              </p>
+            )}
           </div>
         )}
 
@@ -178,7 +199,11 @@ export const RequestTab: React.FC<RequestTabProps> = ({
                 <span className="text-[11px] text-slate-500">{SIDE_LABEL[r.side as RequestSide] || ''}</span>
                 {r.status === 'open' ? (
                   <span className="flex items-center gap-1 text-amber-700 dark:text-amber-300 font-bold text-[11px]">
-                    <Clock className="w-3 h-3" /> Waiting for a price
+                    <Clock className="w-3 h-3" /> {r.movedBy ? 'Moved here, waiting for a price' : 'Waiting for a price'}
+                  </span>
+                ) : r.status === 'closed' ? (
+                  <span className="flex items-center gap-1 text-[#0e9f55] font-bold text-[11px]">
+                    <Check className="w-3 h-3" /> Already in the store
                   </span>
                 ) : (
                   <span className="flex items-center gap-1 text-[#0e9f55] font-bold text-[11px]">
@@ -194,6 +219,7 @@ export const RequestTab: React.FC<RequestTabProps> = ({
                   </span>
                 </div>
               ))}
+              {r.status === 'closed' && <p className="text-[11px] text-slate-500">This is already in the store. Search for it to add it to your cart.</p>}
               {r.status === 'quoted' && r.quotes.some((q: any) => q.available) && !cartRequestIds.has(r.id) && (
                 <button
                   type="button"

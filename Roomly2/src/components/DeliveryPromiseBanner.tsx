@@ -125,6 +125,14 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
             <h2 className="text-lg font-extrabold tracking-tight">Today's batch: {next.batch.window}</h2>
             <p className="text-xs text-emerald-100/90">It's past the batch time, but orders are still being accepted. Order now.</p>
           </>
+        ) : next && next.unconfirmed && side === 'inside' ? (
+          <>
+            <h2 className="text-lg font-extrabold tracking-tight">Today's batch: {next.batch.window}</h2>
+            <p className="text-xs text-emerald-100/90">
+              No runner has confirmed they'll be active for this batch yet. You can still order, and you pay once a runner confirms.
+              {note ? ` ${note}` : ''}
+            </p>
+          </>
         ) : next && next.unconfirmed ? (
           <>
             <h2 className="text-lg font-extrabold tracking-tight">Today's batch: {next.batch.window}</h2>

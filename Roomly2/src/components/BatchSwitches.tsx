@@ -18,6 +18,10 @@ import {
   getMyHiddenReason,
 } from '../api.js';
 
+const ymdNow = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 const toHHMM = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
 const fromHHMM = (v: string) => {
   const [h, m] = v.split(':').map(Number);
@@ -84,9 +88,30 @@ const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?
       window.alert('This batch is over for today. Switch on the next batch instead.');
       return;
     }
+    // Runners: switching ON is a promise to students, who pay straight into the runner's account
+    if (
+      side === 'inside' &&
+      !window.confirm(
+        `Confirm you'll be active for the ${o.window} batch (${o.date === ymdNow() ? 'today' : 'tomorrow'})?\n\n` +
+          "Only confirm if you're sure. Make sure your phone is charged and you won't be in a lecture, asleep or busy at batch time.\n\n" +
+          'Students pay into your account once you confirm. If anything changes, switch this batch OFF right away so nobody pays you and waits.' +
+          (o.date !== ymdNow() ? '\n\nThis is for tomorrow: open your runner portal tomorrow, early in the day, to show you are active.' : '')
+      )
+    )
+      return;
     save({ on: true, start, note: note.trim().slice(0, 120) });
   };
-  const turnOff = () => save({ on: false, note: note.trim().slice(0, 120) });
+  const turnOff = () => {
+    // Switching OFF only stops new orders. Orders students already paid for are still the runner's
+    if (
+      side === 'inside' &&
+      !window.confirm(
+        `Switch OFF the ${o.window} batch?\n\nNew orders stop. Any order a student has already paid you for is still yours: deliver it, or if you really can't, hand it to another runner or refund the student.`
+      )
+    )
+      return;
+    save({ on: false, note: note.trim().slice(0, 120) });
+  };
 
   return (
     <div
@@ -107,13 +132,17 @@ const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?
               : readOnly
               ? live
                 ? `ON${sw?.by ? `: ${sw.by} is taking this batch` : ''}${pastTime ? ' (past the batch time, still taking late orders)' : ''}`
-                : 'OFF: no runner has opened this batch'
+                : 'OFF: no runner has confirmed this batch'
               : live && hiddenNote
               ? hiddenNote
               : live
               ? pastTime
                 ? 'ON: past the batch time, still taking late orders. Tap OFF when you stop.'
+                : side === 'inside'
+                ? 'ON: you confirmed this batch. Students can order and pay you'
                 : 'ON: you are taking orders for this batch'
+              : side === 'inside'
+              ? "OFF: students are told no runner has confirmed this batch yet"
               : 'OFF: students can still order, but they are told it is not opened yet'}
           </span>
         </div>
@@ -415,8 +444,9 @@ const InsideBatchSwitches: React.FC<BatchSwitchesProps> = ({ side = 'inside' }) 
             </p>
           ) : (
           <p className="text-[11px] text-slate-400 leading-snug">
-            Tap ON when you are ready to take a batch. After the batch time, leave it ON while you still take late orders, and tap OFF when you
-            stop. Students then see the next batch. Switches turn OFF by themselves after {cutoff}.
+            {side === 'inside'
+              ? `Tap ON to confirm you'll be active for a batch. Only runners who confirm are shown to students. Confirming at night for tomorrow? Open your portal tomorrow early in the day to show you're active. After the batch time, leave it ON while you still take late orders, and tap OFF when you stop. Switches turn OFF by themselves after ${cutoff}.`
+              : `Tap ON when you are ready to take a batch. After the batch time, leave it ON while you still take late orders, and tap OFF when you stop. Students then see the next batch. Switches turn OFF by themselves after ${cutoff}.`}
           </p>
           )}
           {side !== 'inside' && (

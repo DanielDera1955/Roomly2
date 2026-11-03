@@ -150,6 +150,14 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
 
   const handleStudentClickPaymentMade = async () => {
     if (!currentOrder) return;
+    // Two taps, not one: a curious tap would send a fake order to the runner or vendor
+    const who = currentOrder.operatorName || currentOrder.turnRunner || ((currentOrder as any).payTo)?.accountName || 'your runner';
+    if (
+      !window.confirm(
+        `Only tap this after your transfer of ₦${(currentOrder.totalAmount || 0).toLocaleString()} is complete.\n\n${who} will check their account before packing your order. Have you sent the money?`
+      )
+    )
+      return;
     setMarkingPayment(true);
     try {
       const updated = await markPaymentSent(currentOrder.id);

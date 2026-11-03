@@ -1,3 +1,5 @@
+import { AdminActionBoard } from './AdminActionBoard';
+import { AdminChannels } from './AdminChannels';
 import React, { useState, useEffect } from 'react';
 import { NoPhoto } from './NoPhoto';
 import { OrderChat } from './OrderChat';
@@ -712,10 +714,16 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
       {/* Main Container */}
       <div className="p-4 space-y-4 max-w-[540px] mx-auto">
+        {/* ================= ACTION NEEDED: always first, on every tab ================= */}
+        <AdminActionBoard />
+
         {/* ================= DASHBOARD: performance and decisions ================= */}
         {currentTab === 'dashboard' && (
           <>
             <AdminInsights />
+            <div className="mt-4">
+              <AdminChannels />
+            </div>
             <div className="mt-4">
               <AnnouncementsPanel />
             </div>

@@ -6,6 +6,7 @@ import {
   updatePartStatus,
   operatorConfirmPayment,
   markPaymentNotReceived,
+  markStaffSeen,
   getCurrentStaff,
   logoutStaff,
   ensureOperatorStatus,
@@ -249,6 +250,24 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
   useEffect(() => {
     if (!isAdmin) ensureOperatorStatus();
   }, [isAdmin]);
+  // Having the portal open is how Roomly knows the operator is around (the admin's Action needed board uses it)
+  const [tickMs, setTickMs] = useState(Date.now());
+  useEffect(() => {
+    if (isAdmin) return;
+    markStaffSeen(true);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') markStaffSeen();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    const id = window.setInterval(() => {
+      setTickMs(Date.now());
+      if (document.visibilityState === 'visible') markStaffSeen();
+    }, 60000);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.clearInterval(id);
+    };
+  }, [isAdmin]);
 
   useEffect(() => {
     setLoading(true);
@@ -279,6 +298,8 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
   const nowD = new Date();
   const todayYmd = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}-${String(nowD.getDate()).padStart(2, '0')}`;
   const toSend = orders.filter((o) => stageOf(o) === 'confirmed' && (!o.deliveryDate || o.deliveryDate <= todayYmd)).length;
+  // Students who tapped paid over 30 minutes ago and are still waiting for an answer
+  const waitingLong = orders.filter((o) => stageOf(o) === 'active' && o.paymentSentAt && tickMs - Date.parse(o.paymentSentAt) >= 30 * 60000).length;
   const goToOrders = (stage: 'active' | 'confirmed') => {
     setFilter(stage);
     window.setTimeout(() => jumpTo('op-orders'), 60);
@@ -339,7 +360,17 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
     setBusy('');
   };
   // Which day an order is for, e.g. "For today: at the gate before 6pm" / "For tomorrow, Thursday 29 Oct"
+  // Not sent by 6pm on its day: say so plainly, so it stands out as a problem
+  const missedOf = (o: OrderRecord) => {
+    if (!o.deliveryDate || statusOf(o) === 'sent' || o.status === 'Cancelled' || stageOf(o) === 'notpaid') return '';
+    const d = new Date(tickMs);
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    if (o.deliveryDate < today) return `Missed delivery: was due ${longDayLabel(o.deliveryDate)}`;
+    if (o.deliveryDate === today && d.getHours() >= 18) return "Missed today's delivery: was due at the gate before 6pm";
+    return '';
+  };
   const dayOf = (o: OrderRecord) => {
+    if (missedOf(o)) return missedOf(o);
     if (!o.deliveryDate) return o.deliveryTime;
     const w = dayWord(o.deliveryDate);
     return w === 'today' ? 'For today: at the gate before 6pm' : `For ${w.replace(/^on /, '')}, ${longDayLabel(o.deliveryDate)}`;
@@ -405,6 +436,22 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
           </div>
         )}
 
+        {/* Students waiting over 30 minutes for their payment to be checked */}
+        {waitingLong > 0 && (
+          <button
+            type="button"
+            onClick={() => goToOrders('active')}
+            className="w-full text-left p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border-2 border-rose-300 dark:border-rose-800 text-xs text-rose-900 dark:text-rose-200 space-y-1 cursor-pointer"
+          >
+            <p className="font-extrabold text-sm">
+              {waitingLong} {waitingLong === 1 ? 'student has' : 'students have'} waited over 30 minutes
+            </p>
+            <p className="leading-snug">
+              They tapped "I've paid". Check your account now, then tap Confirm payment, or Payment not received if the money isn't there. Tap to see them.
+            </p>
+          </button>
+        )}
+
         {/* What needs doing right now: short, jumps to each section */}
         {!isAdmin && (
           <AttentionCard needsAccount={!hasAccount} toConfirm={count('active')} toSend={toSend} requests={openRequests} onOrders={goToOrders} />
@@ -432,6 +479,9 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
 
         {/* Availability: operators set their own batches; the admin sees everyone and can switch them off */}
         {isAdmin ? <OperatorOverridePanel kind={kind} /> : <BatchSwitches side={kind} />}
+
+        {/* Admin: this side's open requests, with the student's name and number */}
+        {isAdmin && <ProductRequestsPanel side={kind} />}
 
         {/* A request waiting for a price blocks the student's cart, so it comes up here */}
         {!isAdmin && openRequests > 0 && (
@@ -493,7 +543,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                       </span>
                     )}
                   </div>
-                  <p className={`text-xs ${isFuture(o) ? 'font-bold text-blue-700 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400'}`}>
+                  <p className={`text-xs ${missedOf(o) ? 'font-bold text-rose-600 dark:text-rose-400' : isFuture(o) ? 'font-bold text-blue-700 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400'}`}>
                     {dayOf(o)}
                     {o.movedAt ? ' (moved)' : ''}
                   </p>
