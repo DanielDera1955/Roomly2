@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { OrderRecord, orderStageOf, isActiveOrder, GATE_COUNTDOWN_MS } from '../types';
-import { Announcement } from '../config';
+import { Announcement, arrivalDeadlineMs, arrivalText, countdownText } from '../config';
 import { paymentState } from '../api.js';
 
 type DayPart = 'Good morning' | 'Good afternoon' | 'Good evening';
@@ -84,7 +84,13 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
 
   // Ticks every second while an outside order is counting down to the gate (and every 30s otherwise)
   const [nowMs, setNowMs] = useState(Date.now());
-  const counting = orders.some((o) => isOutsideOrder(o) && orderStageOf(o, nowMs) === 'onway');
+  const counting =
+    orders.some((o) => isOutsideOrder(o) && orderStageOf(o, nowMs) === 'onway') ||
+    // The "arrives before" countdown shows seconds in its last hour
+    orders.some((o) => {
+      const a = arrivalDeadlineMs(o);
+      return a !== null && o.status !== 'Delivered' && a - nowMs < 3600000;
+    });
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), counting ? 1000 : 30000);
     return () => window.clearInterval(id);
@@ -123,6 +129,9 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
     ? 'Payment confirmed. Your order is being packaged'
     : 'Your order is received';
   const carrier = trackOrder ? firstWord(trackOrder.runnerName || trackOrder.operatorName) : '';
+  // "Arrives before" countdown (until delivered; outside switches to the gate countdown once sent)
+  const arrivalMs = trackOrder && trackOrder.status !== 'Delivered' ? arrivalDeadlineMs(trackOrder) : null;
+  const arrivalLate = arrivalMs !== null && arrivalMs - nowMs <= 0;
   // Stars sit inside the right-hand sky area (left, top within that area, delay)
   const stars: Array<[number, number, number]> = [
     [8, 18, 0],
@@ -206,14 +215,28 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="text-sm font-extrabold leading-tight">{headline}</p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                <p className={`text-[11px] mt-0.5 truncate ${arrivalLate ? 'font-bold text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
                   {gateLeft !== null
                     ? `At the school gate in under ${mmss(gateLeft)}`
+                    : arrivalLate
+                    ? `Running late. Tap to call your ${isOutsideOrder(trackOrder) ? 'vendor' : 'runner'}`
+                    : arrivalMs !== null
+                    ? `Arrives before ${arrivalText(arrivalMs, now)}${isOutsideOrder(trackOrder) ? ' at the gate' : ''}`
                     : [carrier ? `With ${carrier}` : '', trackOrder.deliveryTime ? `Arriving ${trackOrder.deliveryTime}` : ''].filter(Boolean).join(' · ') ||
                       'Tap to see the details'}
                 </p>
               </div>
-              <span className="text-[11px] font-bold text-[#0e9f55] shrink-0">{gateLeft !== null ? <span className="font-mono">{mmss(gateLeft)}</span> : 'Open ›'}</span>
+              <span className={`text-[11px] font-bold shrink-0 ${arrivalLate ? 'text-rose-600 dark:text-rose-400' : 'text-[#0e9f55]'}`}>
+                {gateLeft !== null ? (
+                  <span className="font-mono">{mmss(gateLeft)}</span>
+                ) : arrivalLate ? (
+                  'Late'
+                ) : arrivalMs !== null ? (
+                  <span className="font-mono">{countdownText(arrivalMs - nowMs)}</span>
+                ) : (
+                  'Open ›'
+                )}
+              </span>
             </div>
             <div className="relative mt-3 mb-1">
               <div className="absolute left-[16%] right-[16%] top-[9px] h-0.5 bg-slate-200 dark:bg-slate-700" />

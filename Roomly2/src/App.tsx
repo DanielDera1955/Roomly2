@@ -99,7 +99,8 @@ export default function App() {
   const [hubSettings, setHubSettings] = useState<any>({});
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   useEffect(() => subscribeHubSettings(setHubSettings), []);
-  const storeOpensMs = outsideStoreOpensAt(hubSettings);
+  // Demo mode (?demo=1) shows outside store items as already open
+  const storeOpensMs = DEMO ? 0 : outsideStoreOpensAt(hubSettings);
   const [clockMs, setClockMs] = useState(Date.now());
   useEffect(() => {
     const id = window.setInterval(() => setClockMs(Date.now()), 60000);

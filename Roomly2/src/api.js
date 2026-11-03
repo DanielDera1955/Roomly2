@@ -409,7 +409,7 @@ export async function setMyOffDays(days) {
   const mine = operatorDocs[uid] || {};
   operatorDocs = { ...operatorDocs, [uid]: { ...mine, id: uid, kind: staff.role, name: staff.name, offDays } };
   fireBatches();
-  await setDoc(doc(db, 'operatorStatus', uid), { kind: staff.role, name: staff.name || 'Operator', offDays, updatedAt: Date.now() }, { merge: true });
+  await setDoc(doc(db, 'operatorStatus', uid), { kind: staff.role, name: staff.name || 'Operator', phone: staff.phone || '', offDays, updatedAt: Date.now() }, { merge: true });
   logActivity('days', offDays.length ? `set days off: ${offDays.map((d) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')}` : 'cleared days off');
 }
 
@@ -579,6 +579,25 @@ export function getOutsideChoices(kind, now = new Date()) {
       }
     }
   }
+  // Demo: one demo vendor taking today's delivery (never a real vendor's account)
+  if (DEMO) {
+    const batch = current || slotsForDay(kind, now, 0)[0];
+    if (batch) {
+      const demoOp = {
+        uid: 'demo-vendor',
+        name: 'Roomly Demo Vendor',
+        load: 0,
+        payTo: DEMO_VENDOR_PAY_TO,
+        status: 'now',
+        batch,
+        start: new Date(now.getTime() + 15 * 60000),
+        startText: timeLabel(batch.startMin),
+        late: false,
+        reason: '',
+      };
+      return { batch, current: batch, operators: [demoOp], anyNow: true, note: '' };
+    }
+  }
   const ops = [];
   for (const op of activeOperators(kind)) {
     const load = op.load && op.load.date === today ? op.load.count || 0 : 0;
@@ -613,6 +632,15 @@ export function getOutsideChoices(kind, now = new Date()) {
   // Nobody works today because it is their day off (e.g. food on Sunday)
   const dayOff = !anyNow && ops.every((o) => o.reason === 'dayoff');
   return { batch: anyNow ? current : ops[0].batch, current, operators: ops, anyNow, note: '', dayOff };
+}
+
+/** The number a student calls about their order: the runner (inside) or the vendor (outside). '' when unknown. */
+export function contactPhoneFor(order) {
+  if (!order) return '';
+  if (order.cart === 'store' || order.cart === 'food') return (operatorDocs[order.operatorId] || {}).phone || '';
+  if (order.runnerPhone) return order.runnerPhone;
+  const sw = insideSwitches[`${order.deliveryDate}|${order.deliveryBatch}`];
+  return (sw && sw.phone) || '';
 }
 
 /**
@@ -856,9 +884,10 @@ export async function ensureOperatorStatus() {
   const staff = getCurrentStaff();
   const uid = auth.currentUser?.uid;
   if (!uid || !staff || (staff.role !== 'store' && staff.role !== 'food')) return;
-  if (operatorDocs[uid]) return;
+  // Also keeps the vendor's phone up to date, so students can call them if an order runs late
+  if (operatorDocs[uid] && operatorDocs[uid].phone === (staff.phone || '')) return;
   try {
-    await setDoc(doc(db, 'operatorStatus', uid), { kind: staff.role, name: staff.name || 'Operator', updatedAt: Date.now() }, { merge: true });
+    await setDoc(doc(db, 'operatorStatus', uid), { kind: staff.role, name: staff.name || 'Operator', phone: staff.phone || '', updatedAt: Date.now() }, { merge: true });
   } catch (e) {
     /* ignore */
   }
@@ -1267,6 +1296,9 @@ export const DEMO = (() => {
   }
 })();
 export const DEMO_PAY_TO = { bankName: 'Demo Bank', accountNumber: '0123456789', accountName: 'Roomly Demo Runner' };
+export const DEMO_VENDOR_PAY_TO = { bankName: 'Demo Bank', accountNumber: '0123456789', accountName: 'Roomly Demo Vendor' };
+/** Seconds between demo order steps (slow enough to read captions in a video) */
+const DEMO_STEP_MS = 6000;
 const demoOrders = new Map();
 const demoSubs = new Map();
 const isDemoId = (id) => DEMO && String(id || '').startsWith('DEMO-');
@@ -1290,10 +1322,10 @@ function demoCreateOrder(p) {
     status: 'Received',
     paymentStatus: 'unpaid',
     paymentMethod: 'pay_now',
-    payTo: DEMO_PAY_TO,
+    payTo: cart === 'inside' ? DEMO_PAY_TO : DEMO_VENDOR_PAY_TO,
     runnerId: '',
     runnerName: cart === 'inside' ? 'Demo Runner' : '',
-    operatorName: cart !== 'inside' ? 'Demo Vendor' : '',
+    operatorName: cart !== 'inside' ? 'Roomly Demo Vendor' : '',
     express: null,
     subtotal,
     deliveryFee,
@@ -1318,15 +1350,15 @@ function demoPaid(id) {
   demoPush(sent);
   const outside = o.cart === 'store' || o.cart === 'food';
   // The journey plays by itself, a few seconds per step
-  window.setTimeout(() => step({ paymentStatus: 'payment_confirmed', status: outside ? 'Received' : 'Packing' }, outside ? 'Received' : 'Packing'), 3000);
+  window.setTimeout(() => step({ paymentStatus: 'payment_confirmed', status: outside ? 'Received' : 'Packing' }, outside ? 'Received' : 'Packing'), DEMO_STEP_MS);
   if (outside) {
     window.setTimeout(
       () => step({ [o.cart === 'food' ? 'foodStatus' : 'storeStatus']: 'sent', status: 'Delivered', deliveredAt: new Date().toISOString() }, 'Delivered'),
-      7000
+      DEMO_STEP_MS * 2
     );
   } else {
-    window.setTimeout(() => step({ status: 'On the way', onTheWayAtMs: Date.now() }, 'On the way'), 7000);
-    window.setTimeout(() => step({ status: 'Delivered', deliveredAt: new Date().toISOString() }, 'Delivered'), 12000);
+    window.setTimeout(() => step({ status: 'On the way', onTheWayAtMs: Date.now() }, 'On the way'), DEMO_STEP_MS * 2);
+    window.setTimeout(() => step({ status: 'Delivered', deliveredAt: new Date().toISOString() }, 'Delivered'), DEMO_STEP_MS * 3);
   }
   return { ...sent };
 }

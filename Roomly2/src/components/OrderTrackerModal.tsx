@@ -34,8 +34,11 @@ import {
   GATE_ARRIVAL_MINUTES,
   INSIDE_ARRIVAL_MINUTES,
   insideArrivalLeftMs,
+  arrivalDeadlineMs,
+  arrivalText,
+  countdownText,
 } from '../config';
-import { markPaymentSent, paymentState, getPayProvider, cancelExpress, markExpressReceived, markExpressNotHere, markNotReceived, canFlagNotReceived } from '../api.js';
+import { markPaymentSent, paymentState, getPayProvider, cancelExpress, markExpressReceived, markExpressNotHere, markNotReceived, canFlagNotReceived, contactPhoneFor } from '../api.js';
 import { RateExperience } from './RateExperience';
 import { InstallBanner } from './InstallPrompt';
 
@@ -202,7 +205,11 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
   const [nowMs, setNowMs] = useState(Date.now());
   const ex = currentOrder?.express || null;
   const isOutside = currentOrder?.cart === 'store' || currentOrder?.cart === 'food';
+  // "Arrives before" countdown: from the student's payment tap to the end of their batch (inside) or 6pm at the gate (outside)
+  const arrivalMs = currentOrder ? arrivalDeadlineMs(currentOrder) : null;
+  const showArrival = arrivalMs !== null && currentOrder?.status !== 'Delivered';
   const clockRunning = Boolean(
+    showArrival ||
     (ex && ex.status !== 'cancelled' && !ex.receivedAt) ||
       (isOutside && currentOrder?.status === 'Delivered' && currentOrder?.deliveredAt && Date.now() - Date.parse(currentOrder.deliveredAt) < GATE_ARRIVAL_MINUTES * 60000) ||
       (currentOrder?.status === 'On the way' && (insideArrivalLeftMs(currentOrder, Date.now()) ?? 0) > 0)
@@ -534,6 +541,55 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                   </span>
                 </div>
               )}
+
+              {/* ARRIVES BEFORE: countdown from payment to the latest arrival time */}
+              {showArrival && arrivalMs !== null && (() => {
+                const left = arrivalMs - nowMs;
+                const late = left <= 0;
+                const phone = contactPhoneFor(currentOrder);
+                const who = isOutside ? 'vendor' : 'runner';
+                const where = isOutside ? 'at the school gate' : 'at your room';
+                return late ? (
+                  <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 space-y-2.5">
+                    <div className="flex items-start gap-2.5">
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-xs font-bold text-rose-800 dark:text-rose-200">Your order is running late</p>
+                        <p className="text-[11px] text-rose-700 dark:text-rose-300">
+                          It should have been {where} before {arrivalText(arrivalMs)}. Call your {who} to check where it is.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {phone ? (
+                        <a href={`tel:${phone}`} className="flex items-center justify-center gap-1 py-2 rounded-xl bg-[#0e9f55] text-white text-xs font-bold">
+                          <Phone className="w-3 h-3" />
+                          <span>Call {who}</span>
+                        </a>
+                      ) : null}
+                      <a
+                        href={`https://wa.me/${STORE_CONFIG.feedbackWhatsApp}?text=${encodeURIComponent(`Hi Roomly, my order ${currentOrder.id} is late and hasn't arrived yet.`)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`flex items-center justify-center py-2 rounded-xl border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-bold ${phone ? '' : 'col-span-2'}`}
+                      >
+                        Tell Roomly
+                      </a>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-900">
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-300">{isOutside ? 'At the school gate' : 'At your room'}</p>
+                      <p className="text-sm font-extrabold text-emerald-950 dark:text-emerald-100">Arrives before {arrivalText(arrivalMs)}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="font-mono text-lg font-extrabold text-[#0e9f55] leading-none">{countdownText(left)}</p>
+                      <p className="text-[10px] text-emerald-700 dark:text-emerald-400 mt-1">left</p>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* PACKAGING & RUNNER STATUS CARD (User requirement: no live location; shows packaging, then packaged & on the way) */}
               <div className="space-y-3">

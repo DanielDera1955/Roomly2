@@ -1517,3 +1517,52 @@ export function liveStatusFor(side: 'inside' | 'outside', now: Date = new Date()
 }
 /** Text only (kept for any older screen that uses it) */
 export const liveLineFor = (side: 'inside' | 'outside', now: Date = new Date()): string => liveStatusFor(side, now).text;
+
+
+// ---------- "Arrives before" countdown (from the student's payment tap) ----------
+/** Outside orders reach the school gate before this time on their delivery day */
+export const OUTSIDE_GATE_BY_MIN = T(18);
+/**
+ * The latest moment an order should arrive: the end of its inside batch (e.g. 3:00pm for the 2:30 batch),
+ * or 6:00pm at the school gate for outside orders. Null when there is no countdown:
+ * not paid yet, delivered, cancelled, express (it has its own 20 minutes), or the batch is unknown.
+ */
+export function arrivalDeadlineMs(o: any): number | null {
+  if (!o || o.paymentStatus === 'unpaid' || o.status === 'Cancelled') return null;
+  if (o.express && o.express.status !== 'cancelled') return null;
+  const outside = o.cart === 'store' || o.cart === 'food';
+  const date = String(o.deliveryDate || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const day = new Date(date + 'T00:00:00');
+  if (!Number.isFinite(day.getTime())) return null;
+  let endMin: number | null = null;
+  if (outside) endMin = OUTSIDE_GATE_BY_MIN;
+  else {
+    const slot = (WEEKLY_BATCHES[day.getDay()] || []).find((s) => s.id === o.deliveryBatch);
+    endMin = slot ? slot.endMin : null;
+  }
+  return endMin === null ? null : day.getTime() + endMin * 60000;
+}
+/** "3:00pm", "3:00pm tomorrow" or "3:00pm on Friday", relative to now */
+export function arrivalText(ms: number, now: Date = new Date()): string {
+  const d = new Date(ms);
+  const min = d.getHours() * 60 + d.getMinutes();
+  const h = Math.floor(min / 60);
+  const t = `${h % 12 || 12}:${String(min % 60).padStart(2, '0')}${h >= 12 ? 'pm' : 'am'}`;
+  const a = new Date(d);
+  a.setHours(0, 0, 0, 0);
+  const b = new Date(now);
+  b.setHours(0, 0, 0, 0);
+  const diff = Math.round((a.getTime() - b.getTime()) / 86400000);
+  if (diff === 0) return t;
+  if (diff === 1) return `${t} tomorrow`;
+  return `${t} on ${DAY_NAMES[d.getDay()]}`;
+}
+/** "1h 49m", "12:05" (under an hour, minutes and seconds) */
+export function countdownText(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
