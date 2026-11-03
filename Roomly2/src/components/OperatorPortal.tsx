@@ -298,9 +298,17 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
 
   // Checked the account and the money never came: the order moves to Not paid and the student is told
   const notReceived = async (o: OrderRecord) => {
-    if (!window.confirm(`No ₦${(o.totalAmount || 0).toLocaleString()} from ${o.name} in your account?\n\nThe order moves to Not paid and the student is told you haven't received it. If the money arrives later, you can still confirm it.`)) return;
+    if (isAdmin) {
+      // Admin can't see the operator's bank account: only after checking with the student or operator, and typed to avoid a slip
+      const typed = window.prompt(`ADMIN: mark ${o.name}'s ₦${(o.totalAmount || 0).toLocaleString()} order as payment not received?\n\nOnly do this after checking with the student or the operator. The student is told and the order moves to Not paid.\n\nType NOT PAID to continue.`);
+      if (typed === null) return;
+      if (typed.trim().toUpperCase() !== 'NOT PAID') {
+        window.alert('Nothing changed. Type NOT PAID exactly to mark it.');
+        return;
+      }
+    } else if (!window.confirm(`No ₦${(o.totalAmount || 0).toLocaleString()} from ${o.name} in your account?\n\nThe order moves to Not paid and the student is told you haven't received it. If the money arrives later, you can still confirm it.`)) return;
     setBusy(o.id);
-    const res = await markPaymentNotReceived(o.id, staff?.name || 'Operator');
+    const res = await markPaymentNotReceived(o.id, isAdmin ? 'Roomly admin' : staff?.name || 'Operator');
     if (!res) window.alert('Could not update. Check your connection and try again.');
     setBusy('');
   };
@@ -615,7 +623,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                       >
                         Confirm payment (₦{(o.totalAmount || 0).toLocaleString()} received)
                       </button>
-                      {!o.paymentNotReceived && !isAdmin && (
+                      {!o.paymentNotReceived && (
                         <button
                           type="button"
                           disabled={busy === o.id}

@@ -265,10 +265,18 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
   // Checked the account and the money never came: the order moves to Not paid and the student is told
   const handleNotReceived = async (ord: OrderRecord) => {
     if (!activeRunner) return;
-    if (!window.confirm(`No ₦${(ord.totalAmount || 0).toLocaleString()} from ${ord.name} in your account?\n\nThe order moves to Not paid and the student is told you haven't received it. If the money arrives later, you can still confirm it.`)) return;
+    if (!isRunner) {
+      // Admin can't see the runner's bank account: only after checking with the student or runner, and typed to avoid a slip
+      const typed = window.prompt(`ADMIN: mark ${ord.name}'s ₦${(ord.totalAmount || 0).toLocaleString()} order as payment not received?\n\nOnly do this after checking with the student or the runner. The student is told and the order moves to Not paid.\n\nType NOT PAID to continue.`);
+      if (typed === null) return;
+      if (typed.trim().toUpperCase() !== 'NOT PAID') {
+        window.alert('Nothing changed. Type NOT PAID exactly to mark it.');
+        return;
+      }
+    } else if (!window.confirm(`No ₦${(ord.totalAmount || 0).toLocaleString()} from ${ord.name} in your account?\n\nThe order moves to Not paid and the student is told you haven't received it. If the money arrives later, you can still confirm it.`)) return;
     setUpdatingId(ord.id);
     try {
-      const res = await markPaymentNotReceived(ord.id, activeRunner.name);
+      const res = await markPaymentNotReceived(ord.id, isRunner ? activeRunner.name : 'Roomly admin');
       if (!res) window.alert('Could not update. Check your connection and try again.');
       await fetchOrdersAndRunners();
       if (onOrderUpdated) onOrderUpdated();

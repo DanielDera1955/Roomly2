@@ -315,7 +315,9 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
             <div className="space-y-4">
               {/* The runner or operator checked their account and the money never arrived */}
               {currentOrder.paymentStatus === 'payment_sent' && currentOrder.paymentNotReceived && currentOrder.status !== 'Cancelled' && (() => {
-                const who = currentOrder.paymentNotReceived.by || currentOrder.operatorName || currentOrder.turnRunner || 'Your runner';
+                const markedBy = currentOrder.paymentNotReceived.by;
+                // Marked by the admin: the student should still see who they paid
+                const who = (markedBy && markedBy !== 'Roomly admin' ? markedBy : '') || currentOrder.operatorName || currentOrder.turnRunner || 'Your runner';
                 const phone = contactPhoneFor(currentOrder);
                 return (
                   <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 space-y-2.5">
