@@ -959,11 +959,30 @@ export default function App() {
       .slice(0, 6);
   }, [signedInCustomer, screenOrders, sideProducts]);
 
-  // Water add-on for the inside cart: an in-stock inside product named "water", a bag preferred
-  const waterProduct = useMemo(() => {
-    const list = products.filter((p) => p.isAvailable !== false && !isOutsideSource(p.source) && !p.isFood && /water/i.test(p.name));
-    return list.find((p) => /bag/i.test(p.name)) || list[0] || null;
-  }, [products]);
+  // Drink add-on: when the cart has bread, pastries, biscuits, Indomie/noodles or cooked food but no drink,
+  // the cart suggests up to 3 soft drinks from the same store (inside store, or the outside food vendor's menu).
+  // Water doesn't count as a drink here.
+  const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  const catText = (p?: Product) => (p ? `${p.category || ''} ${p.subcategory || ''}` : '');
+  const isSoftDrink = (p?: Product) => Boolean(p) && /soft drink|juice|malt|energy|drink/i.test(catText(p)) && !/water/i.test(`${p!.name} ${p!.subcategory || ''}`);
+  const wantsDrink = (p?: Product, isFoodItem?: boolean) =>
+    Boolean(isFoodItem) || /bread|pastr|bun|biscuit|snack|noodle|indomie/i.test(`${catText(p)} ${p?.name || ''}`);
+  const suggestedDrinks = useMemo(() => {
+    if (cartKind === 'store') return [];
+    const inCart = cartItems.filter((i) => cartOf(i) === cartKind);
+    const prods = inCart.map((i) => productById.get(i.productId));
+    const hasDrink = inCart.some((i, k) => isSoftDrink(prods[k]) || /coke|pepsi|fanta|sprite|malt|juice|7up|mirinda/i.test(i.name));
+    const wants = inCart.some((i, k) => !isSoftDrink(prods[k]) && wantsDrink(prods[k], i.isFood));
+    if (hasDrink || !wants) return [];
+    const src = cartKind === 'food' ? 'food' : 'school';
+    const soft = (p: Product) => /soft drink/i.test(catText(p));
+    const pool = products.filter((p) => p.isAvailable !== false && (p.source || 'school') === src && isSoftDrink(p));
+    // Soft drinks first, then featured, then cheapest
+    return pool
+      .sort((a, b) => Number(soft(b)) - Number(soft(a)) || Number(Boolean(b.featured)) - Number(Boolean(a.featured)) || a.price - b.price)
+      .slice(0, 3);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, cartItems, cartKind, productById]);
 
   // Tap a product: details and similar items
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
@@ -1412,8 +1431,8 @@ export default function App() {
           cartCounts={cartCounts}
           onSwitchCart={setCartKind}
           allItems={cartItems}
-          suggestWater={waterProduct}
-          onAddSuggested={() => waterProduct && handleAddSimpleProduct(waterProduct)}
+          suggestDrinks={suggestedDrinks}
+          onAddDrink={(p) => (p.isFood ? setCustomizingFood(p) : handleAddSimpleProduct(p))}
           items={cartItems.filter((i) => cartOf(i) === cartKind)}
           customRequest={cartKind === 'inside' ? customRequest : ''}
           onUpdateQuantity={handleUpdateCartQuantity}

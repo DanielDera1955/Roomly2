@@ -25,8 +25,9 @@ interface CartSheetProps {
   /** When this cart's section starts taking orders (ms). Before then the cart is kept but can't be paid. 0 = open now. */
   startsAtMs?: number;
   /** Inside cart: a bag of water to suggest when the cart has none */
-  suggestWater?: { id: string; name: string; price: number } | null;
-  onAddSuggested?: () => void;
+  /** Soft drinks to suggest (already filtered: the cart has food or snacks but no drink) */
+  suggestDrinks?: { id: string; name: string; price: number; imageUrl?: string; unit?: string }[];
+  onAddDrink?: (p: any) => void;
   isOpen: boolean;
   onClose: () => void;
   /** Which of the three carts is open; items are only that cart's items */
@@ -88,8 +89,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   cartCounts,
   onSwitchCart,
   allItems,
-  suggestWater = null,
-  onAddSuggested,
+  suggestDrinks = [],
+  onAddDrink,
   items,
   customRequest,
   onUpdateQuantity,
@@ -1116,28 +1117,35 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             </div>
           </div>
 
-          {/* Water add-on: inside cart without water */}
-          {cart === 'inside' &&
-            suggestWater &&
-            !items.some((i) => i.productId === suggestWater.id || /water/i.test(i.name)) && (
-              <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-900/60">
-                <span className="min-w-0 text-xs text-sky-900 dark:text-sky-100">
-                  <strong className="block">{suggestWater.name}? ₦{suggestWater.price.toLocaleString()}</strong>
-                  <span className="text-[11px] text-sky-700 dark:text-sky-300">
-                    {isBagOfWater(suggestWater.name) && DELIVERY_FEES.small !== DELIVERY_FEES.large && deliveryFee === DELIVERY_FEES.small
-                      ? `A bag is heavy: delivery goes from ₦${DELIVERY_FEES.small} to ₦${DELIVERY_FEES.large}.`
-                      : 'Goes with this delivery. No extra fee.'}
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  onClick={onAddSuggested}
-                  className="shrink-0 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold cursor-pointer"
-                >
-                  + Add
-                </button>
+          {/* Drink add-on: the cart has food or snacks but no drink yet */}
+          {(cart === 'inside' || cart === 'food') && suggestDrinks.length > 0 && (
+            <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-900 space-y-2">
+              <p className="text-xs font-bold text-emerald-900 dark:text-emerald-200">Add a drink?</p>
+              <div className="grid grid-cols-3 gap-2">
+                {suggestDrinks.map((d) => (
+                  <div key={d.id} className="flex flex-col rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-1.5">
+                    {d.imageUrl ? (
+                      <img src={d.imageUrl} alt="" className="w-full h-14 object-cover rounded-lg" />
+                    ) : (
+                      <div className="w-full h-14 rounded-lg bg-emerald-100/70 dark:bg-emerald-950 flex items-center justify-center text-lg font-black text-emerald-700 dark:text-emerald-300">
+                        {d.name.charAt(0)}
+                      </div>
+                    )}
+                    <p className="mt-1 text-[11px] font-bold leading-tight text-slate-900 dark:text-white line-clamp-2 min-h-[26px]">{d.name}</p>
+                    <span className="mt-0.5 text-[11px] font-bold text-slate-700 dark:text-slate-300">₦{d.price.toLocaleString()}</span>
+                    <button
+                      type="button"
+                      onClick={() => onAddDrink && onAddDrink(d)}
+                      aria-label={`Add ${d.name}`}
+                      className="mt-1 w-full py-1 rounded-lg bg-[#0e9f55] text-white text-[11px] font-bold whitespace-nowrap cursor-pointer"
+                    >
+                      + Add
+                    </button>
+                  </div>
+                ))}
               </div>
-            )}
+            </div>
+          )}
 
           {/* Why the inside delivery fee is what it is */}
           {cart === 'inside' && itemTotal > 0 && DELIVERY_FEES.small !== DELIVERY_FEES.large && deliveryFee === DELIVERY_FEES.large && (
