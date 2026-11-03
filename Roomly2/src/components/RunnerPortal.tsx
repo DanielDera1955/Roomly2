@@ -46,6 +46,7 @@ import {
   getRunners,
   updateOrderStatus,
   confirmPayment,
+  markPaymentNotReceived,
   startPackagingOrder,
   subscribeOrders,
   getCurrentStaff,
@@ -164,7 +165,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
   const [runnerTab, setRunnerTab] = useState<'active' | 'history'>('active');
 
   // Filter Sub-tabs for Active Orders
-  const [activeFilter, setActiveFilter] = useState<'all' | 'packing' | 'on_the_way' | 'delivered'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'packing' | 'on_the_way' | 'notpaid' | 'delivered'>('all');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const toggleOpen = (id: string) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
   const seenOrderIds = React.useRef<Set<string> | null>(null);
@@ -261,6 +262,28 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
     }
   };
 
+  // Checked the account and the money never came: the order moves to Not paid and the student is told
+  const handleNotReceived = async (ord: OrderRecord) => {
+    if (!activeRunner) return;
+    if (!window.confirm(`No ₦${(ord.totalAmount || 0).toLocaleString()} from ${ord.name} in your account?\n\nThe order moves to Not paid and the student is told you haven't received it. If the money arrives later, you can still confirm it.`)) return;
+    setUpdatingId(ord.id);
+    try {
+      const res = await markPaymentNotReceived(ord.id, activeRunner.name);
+      if (!res) window.alert('Could not update. Check your connection and try again.');
+      await fetchOrdersAndRunners();
+      if (onOrderUpdated) onOrderUpdated();
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+  // "4:12pm" today, or "Mon 2 Nov, 4:12pm" on another day
+  const timeOf = (iso?: string) => {
+    const d = new Date(iso || '');
+    if (!iso || isNaN(d.getTime())) return '';
+    const t = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).replace(/\s/g, '').toLowerCase();
+    return d.toDateString() === new Date().toDateString() ? t : `${d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}, ${t}`;
+  };
+
   // Status transitions: Packaging -> On the way -> Delivered
   const handleUpdateStatus = async (orderId: string, nextStatus: any) => {
     if (!activeRunner) return;
@@ -285,6 +308,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
       o.status !== 'Delivered' &&
       o.status !== 'Cancelled' &&
       o.paymentStatus !== 'unpaid' && // only orders the student says they have paid (or pay on delivery)
+      !(o.paymentStatus === 'payment_sent' && o.paymentNotReceived) && // checked and not received: under Not paid
       (!o.runnerId || o.status === 'Received') &&
       // An express order belongs to the runner who accepted it
       !(o.express?.status === 'accepted' && o.express.runnerId !== activeRunner?.id) &&
@@ -296,7 +320,17 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
     (o) =>
       o.runnerId === activeRunner?.id &&
       o.status !== 'Delivered' &&
-      o.status !== 'Cancelled'
+      o.status !== 'Cancelled' &&
+      !(o.paymentStatus === 'payment_sent' && o.paymentNotReceived)
+  );
+  // Student tapped paid but the money never came (mine, or not yet taken by any runner)
+  const notPaidOrders = insideOrders.filter(
+    (o) =>
+      o.status !== 'Delivered' &&
+      o.status !== 'Cancelled' &&
+      o.paymentStatus === 'payment_sent' &&
+      Boolean(o.paymentNotReceived) &&
+      (!o.runnerId || o.runnerId === activeRunner?.id)
   );
 
   // For the attention card: payments to confirm, orders to deliver today, express and gate pickups waiting
@@ -304,7 +338,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
   const todayR = `${nowR.getFullYear()}-${String(nowR.getMonth() + 1).padStart(2, '0')}-${String(nowR.getDate()).padStart(2, '0')}`;
   const openInside = insideOrders.filter((o) => o.status !== 'Delivered' && o.status !== 'Cancelled');
   const attConfirm = openInside.filter(
-    (o) => o.paymentStatus === 'payment_sent' && (!o.runnerId || o.runnerId === activeRunner?.id) && o.express?.status !== 'requested'
+    (o) => o.paymentStatus === 'payment_sent' && !o.paymentNotReceived && (!o.runnerId || o.runnerId === activeRunner?.id) && o.express?.status !== 'requested'
   ).length;
   const attSend = openInside.filter(
     (o) => o.runnerId === activeRunner?.id && o.paymentStatus === 'payment_confirmed' && (!o.deliveryDate || o.deliveryDate <= todayR)
@@ -409,8 +443,11 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
               >
                 {ord.status === 'Received' ? 'New' : ord.status}
               </span>
-              {isPaymentSent && (
+              {isPaymentSent && !ord.paymentNotReceived && (
                 <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-amber-500 text-white">Payment sent</span>
+              )}
+              {isPaymentSent && ord.paymentNotReceived && (
+                <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Not paid</span>
               )}
               {ord.express?.status === 'accepted' && (
                 <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-[#0e9f55] text-white flex items-center gap-1">
@@ -433,6 +470,15 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
               <span>{shortLocation(ord)}</span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">{ord.deliveryTime}</p>
+            <p className="text-[11px] text-slate-400">
+              {[
+                timeOf(ord.createdAt) && `Ordered ${timeOf(ord.createdAt)}`,
+                timeOf(ord.paymentSentAt) && `Tapped paid ${timeOf(ord.paymentSentAt)}`,
+                ord.paymentNotReceived && timeOf(ord.paymentNotReceived.at) && `Marked not paid ${timeOf(ord.paymentNotReceived.at)}`,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
             {(ord.turnRunner || ord.outOfStock) && (
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 {ord.turnRunner ? `Turn: ${ord.turnRunner}` : ''}
@@ -520,20 +566,34 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
 
         {/* When student clicked payment sent */}
         {isPaymentSent && (
-          <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/50 border-2 border-amber-400 dark:border-amber-700 space-y-2.5 animate-pulse">
+          <div className={`p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/50 border-2 border-amber-400 dark:border-amber-700 space-y-2.5 ${ord.paymentNotReceived ? '' : 'animate-pulse'}`}>
             <div className="flex items-center justify-between">
               <span className="text-xs font-black uppercase tracking-wider text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
                 <AlertTriangle className="w-4 h-4 text-amber-500" />
-                <span>Student Marked Payment Sent!</span>
+                <span>{ord.paymentNotReceived ? 'Payment not received' : 'Student Marked Payment Sent!'}</span>
               </span>
               <span className="text-xs font-mono font-extrabold text-[#0e9f55]">
                 ₦{ord.totalAmount.toLocaleString()}
               </span>
             </div>
             <p className="text-xs text-amber-900 dark:text-amber-200 leading-snug">
-              Student tapped "Payment Made". Verify <strong>₦{ord.totalAmount.toLocaleString()}</strong> has landed in the Kuda Bank account before packaging.
+              {ord.paymentNotReceived ? (
+                <>Marked not paid by {ord.paymentNotReceived.by}. If the <strong>₦{ord.totalAmount.toLocaleString()}</strong> arrives later, confirm it here.</>
+              ) : (
+                <>Student tapped "Payment Made". Check that <strong>₦{ord.totalAmount.toLocaleString()}</strong> is in your account before packaging. Never pack before you see the money.</>
+              )}
             </p>
-            <div className="flex justify-end pt-1">
+            <div className="flex flex-wrap justify-end gap-2 pt-1">
+              {!ord.paymentNotReceived && (
+                <button
+                  type="button"
+                  onClick={() => handleNotReceived(ord)}
+                  disabled={updatingId === ord.id}
+                  className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer disabled:opacity-40"
+                >
+                  Payment not received
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => handleConfirmPayment(ord.id, true)}
@@ -923,6 +983,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
             ['all', `All orders (${allActiveOrders.length})`],
             ['packing', `Packing (${packingOrders.length})`],
             ['on_the_way', `On the way (${onTheWayOrders.length})`],
+            ['notpaid', `Not paid (${notPaidOrders.length})`],
             ['delivered', `Delivered (${myCompletedOrders.length})`],
           ] as const).map(([key, label]) => (
             <button
@@ -967,13 +1028,13 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
 
         {activeFilter !== 'all' && (
           <div className="space-y-3">
-            {(activeFilter === 'packing' ? packingOrders : activeFilter === 'on_the_way' ? onTheWayOrders : myCompletedOrders).length === 0 ? (
+            {(activeFilter === 'packing' ? packingOrders : activeFilter === 'on_the_way' ? onTheWayOrders : activeFilter === 'notpaid' ? notPaidOrders : myCompletedOrders).length === 0 ? (
               <div className="text-center py-8 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs text-slate-400">
                 Nothing here yet.
               </div>
             ) : (
-              (activeFilter === 'packing' ? packingOrders : activeFilter === 'on_the_way' ? onTheWayOrders : myCompletedOrders).map((ord) =>
-                renderOrderCard(ord, true)
+              (activeFilter === 'packing' ? packingOrders : activeFilter === 'on_the_way' ? onTheWayOrders : activeFilter === 'notpaid' ? notPaidOrders : myCompletedOrders).map((ord) =>
+                renderOrderCard(ord, activeFilter !== 'notpaid' || ord.runnerId === activeRunner?.id)
               )
             )}
           </div>

@@ -73,6 +73,8 @@ export interface OrderRecord {
   paymentSentAt?: string;
   paymentConfirmedAt?: string;
   paymentConfirmedBy?: string;
+  /** The runner or operator checked their account and the money never arrived (the order stays visible as Not paid) */
+  paymentNotReceived?: { at: string; by: string } | null;
   isFirstTimeCustomer?: boolean;
 
   deliveryBatch: DeliveryBatchId;

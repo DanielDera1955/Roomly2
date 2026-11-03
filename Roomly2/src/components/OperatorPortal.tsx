@@ -5,6 +5,7 @@ import {
   subscribeOperatorOrders,
   updatePartStatus,
   operatorConfirmPayment,
+  markPaymentNotReceived,
   getCurrentStaff,
   logoutStaff,
   ensureOperatorStatus,
@@ -228,7 +229,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [loading, setLoading] = useState(true);
   // Stages: All (student says paid, check your account) -> Packaging (payment confirmed) -> Delivered (sent to the gate)
-  const [filter, setFilter] = useState<'active' | 'confirmed' | 'completed'>('active');
+  const [filter, setFilter] = useState<'active' | 'confirmed' | 'notpaid' | 'completed'>('active');
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState('');
   const seen = useRef<Set<string> | null>(null);
@@ -266,7 +267,13 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
   const mine = (o: OrderRecord) => (o.items || []).filter((i) => (kind === 'food' ? i.source === 'food' : i.source === 'outside'));
   const statusOf = (o: OrderRecord) => (kind === 'food' ? o.foodStatus : o.storeStatus) || 'pending';
   const stageOf = (o: OrderRecord) =>
-    statusOf(o) === 'sent' ? 'completed' : o.paymentStatus === 'payment_confirmed' ? 'confirmed' : 'active';
+    statusOf(o) === 'sent'
+      ? 'completed'
+      : o.paymentStatus === 'payment_confirmed'
+      ? 'confirmed'
+      : o.paymentNotReceived
+      ? 'notpaid'
+      : 'active';
   const count = (s: string) => orders.filter((o) => stageOf(o) === s).length;
   // For the attention card: payments to confirm, and confirmed orders due today (or overdue) still to send
   const nowD = new Date();
@@ -287,6 +294,22 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
     const res = await operatorConfirmPayment(o.id);
     if (!res) window.alert('Could not confirm. Check your connection and try again.');
     setBusy('');
+  };
+
+  // Checked the account and the money never came: the order moves to Not paid and the student is told
+  const notReceived = async (o: OrderRecord) => {
+    if (!window.confirm(`No ₦${(o.totalAmount || 0).toLocaleString()} from ${o.name} in your account?\n\nThe order moves to Not paid and the student is told you haven't received it. If the money arrives later, you can still confirm it.`)) return;
+    setBusy(o.id);
+    const res = await markPaymentNotReceived(o.id, staff?.name || 'Operator');
+    if (!res) window.alert('Could not update. Check your connection and try again.');
+    setBusy('');
+  };
+  // "4:12pm" today, or "Mon 2 Nov, 4:12pm" on another day
+  const timeOf = (iso?: string) => {
+    const d = new Date(iso || '');
+    if (!iso || isNaN(d.getTime())) return '';
+    const t = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).replace(/\s/g, '').toLowerCase();
+    return d.toDateString() === new Date().toDateString() ? t : `${d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}, ${t}`;
   };
 
   const setStatus = async (o: OrderRecord, status: 'packed' | 'sent') => {
@@ -325,6 +348,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
   const tabs: [typeof filter, string][] = [
     ['active', `All (${count('active')})`],
     ['confirmed', `Packaging (${count('confirmed')})`],
+    ['notpaid', `Not paid (${count('notpaid')})`],
     ['completed', `Delivered (${count('completed')})`],
   ];
 
@@ -451,9 +475,15 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="font-extrabold text-base">{o.name}</span>
-                    <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-full ${pill(st)}`}>
-                      {st === 'sent' ? 'Delivered' : o.paymentStatus !== 'payment_confirmed' ? 'Check payment' : 'Packaging'}
-                    </span>
+                    {stageOf(o) === 'notpaid' ? (
+                      <span className="text-[11px] font-black px-2.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                        Not paid
+                      </span>
+                    ) : (
+                      <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-full ${pill(st)}`}>
+                        {st === 'sent' ? 'Delivered' : o.paymentStatus !== 'payment_confirmed' ? 'Check payment' : 'Packaging'}
+                      </span>
+                    )}
                   </div>
                   <p className={`text-xs ${isFuture(o) ? 'font-bold text-blue-700 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400'}`}>
                     {dayOf(o)}
@@ -461,6 +491,15 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                   </p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     {items.reduce((n, i) => n + i.quantity, 0)} item(s)
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    {[
+                      timeOf(o.createdAt) && `Ordered ${timeOf(o.createdAt)}`,
+                      timeOf(o.paymentSentAt) && `Tapped paid ${timeOf(o.paymentSentAt)}`,
+                      o.paymentNotReceived && timeOf(o.paymentNotReceived.at) && `Marked not paid ${timeOf(o.paymentNotReceived.at)}`,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </p>
                 </div>
                 <div className="shrink-0 flex flex-col items-end gap-1.5">
@@ -564,7 +603,9 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                   {o.paymentStatus !== 'payment_confirmed' && st !== 'sent' ? (
                     <div className="space-y-1.5">
                       <p className="text-[11px] text-slate-500">
-                        The student says they paid ₦{(o.totalAmount || 0).toLocaleString()} (items + delivery) into your account. Check it, then confirm. The student sees "Confirmed & Packaging".
+                        {o.paymentNotReceived
+                          ? `Marked not paid by ${o.paymentNotReceived.by}. If the ₦${(o.totalAmount || 0).toLocaleString()} arrives later, confirm it below and the order moves to Packaging.`
+                          : `The student says they paid ₦${(o.totalAmount || 0).toLocaleString()} (items + delivery) into your account. Check it, then confirm. The student sees "Confirmed & Packaging". Never pack before you see the money.`}
                       </p>
                       <button
                         type="button"
@@ -574,6 +615,16 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                       >
                         Confirm payment (₦{(o.totalAmount || 0).toLocaleString()} received)
                       </button>
+                      {!o.paymentNotReceived && !isAdmin && (
+                        <button
+                          type="button"
+                          disabled={busy === o.id}
+                          onClick={() => notReceived(o)}
+                          className="w-full py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 disabled:opacity-40 cursor-pointer"
+                        >
+                          Payment not received
+                        </button>
+                      )}
                     </div>
                   ) : (
                   <>

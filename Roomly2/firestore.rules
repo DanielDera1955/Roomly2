@@ -576,9 +576,19 @@ service cloud.firestore {
         (((isOperator('store') && resource.data.hasStore == true) || (isOperator('food') && resource.data.hasFood == true))
          && resource.data.payReady == true
          && resource.data.get('operatorId', '') in ['', request.auth.uid]
-         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'paymentConfirmedAt', 'paymentConfirmedBy', 'history'])
+         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'paymentConfirmedAt', 'paymentConfirmedBy', 'history', 'paymentNotReceived'])
          && resource.data.paymentStatus == 'payment_sent'
-         && request.resource.data.paymentStatus == 'payment_confirmed') ||
+         && request.resource.data.paymentStatus == 'payment_confirmed'
+         && request.resource.data.get('paymentNotReceived', null) == null) ||
+        // Operators mark that the student's payment never reached their account (their own orders only)
+        (((isOperator('store') && resource.data.hasStore == true) || (isOperator('food') && resource.data.hasFood == true))
+         && resource.data.payReady == true
+         && resource.data.get('operatorId', '') in ['', request.auth.uid]
+         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentNotReceived', 'history'])
+         && resource.data.paymentStatus == 'payment_sent'
+         && resource.data.status != 'Cancelled'
+         && resource.data.get('paymentNotReceived', null) == null
+         && request.resource.data.paymentNotReceived.keys().hasOnly(['at', 'by'])) ||
         (isOperator('store') && resource.data.hasStore == true && resource.data.payReady == true
          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['storeStatus', 'history', 'status', 'deliveredAt'])
          && (request.resource.data.status == resource.data.status

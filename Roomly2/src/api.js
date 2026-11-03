@@ -1708,6 +1708,7 @@ async function confirmPayment__raw(orderId, confirmedBy = 'Runner / Admin', txAt
       o.paymentStatus = 'payment_confirmed';
       o.paymentConfirmedAt = now;
       o.paymentConfirmedBy = confirmedBy;
+      delete o.paymentNotReceived;
       let moved = '';
       if (o.express && o.express.status === 'accepted' && txAt && Number.isFinite(Date.parse(txAt))) {
         o.express = { ...o.express, txAt };
@@ -3034,7 +3035,27 @@ async function operatorConfirmPayment__raw(orderId) {
       o.paymentStatus = 'payment_confirmed';
       o.paymentConfirmedAt = now;
       o.paymentConfirmedBy = who;
+      delete o.paymentNotReceived;
       o.history.push({ status: o.status, timestamp: now, note: `Payment confirmed by ${who}`, updatedBy: who });
+    });
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
+}
+
+/** Runner or operator: they checked their account and the student's money never arrived.
+ * The order keeps its payment status (so "Confirm payment" still works if the money lands late) and is shown as Not paid. */
+/** @returns {Promise<any>} */
+async function markPaymentNotReceived__raw(orderId, who = '') {
+  const staff = getCurrentStaff();
+  const by = who || staff?.name || 'Operator';
+  try {
+    return await patchOrder(orderId, (o) => {
+      if (o.paymentStatus !== 'payment_sent' || o.status === 'Cancelled' || o.paymentNotReceived) return;
+      const now = new Date().toISOString();
+      o.paymentNotReceived = { at: now, by };
+      o.history.push({ status: o.status, timestamp: now, note: `${by} checked and did not receive this payment`, updatedBy: by });
     });
   } catch (e) {
     console.error(e);
@@ -3872,6 +3893,11 @@ export async function setupStoreCategories() {
 export async function operatorConfirmPayment(orderId) {
   const o = await operatorConfirmPayment__raw(orderId);
   if (o) logActivity('order', `confirmed payment on ${orderLabel(o)} (${naira(o.totalAmount)})`, orderId);
+  return o;
+}
+export async function markPaymentNotReceived(orderId, who = '') {
+  const o = await markPaymentNotReceived__raw(orderId, who);
+  if (o) logActivity('order', `marked payment not received on ${orderLabel(o)} (${naira(o.totalAmount)})`, orderId);
   return o;
 }
 export async function updatePartStatus(orderId, kind, status, who = 'Operator') {
