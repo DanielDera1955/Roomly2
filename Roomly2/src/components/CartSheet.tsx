@@ -255,6 +255,19 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   // Any of these need the student to tick that the order comes in a later batch
   const needTick = isLate || unconfirmed || nextBatch;
   const pastBatchTime = Boolean((chosen as any)?.late);
+  void pastBatchTime;
+  // "6:00pm": a time of day from ms
+  const clockOf = (ms: number) => {
+    const d = new Date(ms);
+    const h = d.getHours();
+    return `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')}${h >= 12 ? 'pm' : 'am'}`;
+  };
+  // The latest the inside order reaches the room: the end of its batch
+  const byMaxText =
+    cart === 'inside' && selectedBatch && Number.isFinite((selectedBatch as any).endMin)
+      ? clockOf(new Date(selectedBatch.date + 'T00:00:00').getTime() + (selectedBatch as any).endMin * 60000) +
+        (selectedBatch.dayLabel === 'Today' ? '' : ` ${selectedBatch.dayLabel.toLowerCase()}`)
+      : '';
   void dayStart;
   const [lateAccepted, setLateAccepted] = useState(false);
   useEffect(() => setLateAccepted(false), [selectedBatch?.key]);
@@ -1050,12 +1063,12 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                       <span className="text-xs font-extrabold text-slate-900 dark:text-white">
                         {selectedBatch.dayLabel}, {selectedBatch.window}
                       </span>
-                      <span className="block text-[11px] text-slate-500 dark:text-slate-400">
-                        {pastBatchTime
-                          ? "It's past the batch time, but orders are still being accepted."
-                          : unconfirmed
-                          ? `No runner has confirmed yet. Usually starts around ${chosen.startText}.`
-                          : `Taking orders now. Starts sending around ${chosen.startText}.`}
+                      <span className="block text-[11px] text-slate-600 dark:text-slate-300 leading-snug">
+                        {unconfirmed
+                          ? `No runner has confirmed this batch yet. Once one does, your order reaches your room by ${byMaxText} max.`
+                          : (chosen as any).early
+                          ? `The ${(chosen as any).early.window} batch has started. If your runner can still make it, you'll get it before ${clockOf((chosen as any).early.endMs)}. If not, it comes in the ${chosen.startText} batch, by ${byMaxText} max.`
+                          : `Your order is in the ${chosen.startText} batch${selectedBatch.dayLabel === 'Today' ? '' : ` (${selectedBatch.dayLabel.toLowerCase()})`} and reaches your room by ${byMaxText} max. Your runner may bring it earlier.`}
                       </span>
                     </div>
                   ) : (
@@ -1073,8 +1086,6 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                 <p className="mt-2 text-[11px] font-bold text-amber-700 dark:text-amber-300">
                   {cart !== 'inside'
                     ? `Pay before ${payByText} to keep this order.`
-                    : pastBatchTime
-                    ? `Pay within 15 minutes (before ${payByText}) to join this batch.`
                     : `Pay before ${payByText} to join the ${selectedBatch.window} batch.`}
                 </p>
                 <p className="text-[10px] text-slate-400 mt-0.5">

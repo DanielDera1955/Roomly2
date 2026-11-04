@@ -4,6 +4,7 @@ import { OrderChat } from './OrderChat';
 import { ThemeToggle } from './ThemeToggle';
 import { SoundToggle } from './SoundToggle';
 import { BatchSwitches } from './BatchSwitches';
+import { WeeklyAvailability } from './WeeklyAvailability';
 import { ExpressPanel } from './ExpressPanel';
 import { MyRatingsPanel } from './FeedbackPanels';
 import { ProviderSettlement, PayAccountForm } from './SettlementPanel';
@@ -1012,6 +1013,8 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
             <PayAccountForm />
           </div>
         )}
+
+        {isRunner && <WeeklyAvailability />}
 
         <BatchSwitches />
 

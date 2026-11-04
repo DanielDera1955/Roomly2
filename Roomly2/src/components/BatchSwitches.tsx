@@ -5,6 +5,7 @@ import {
   opDaySwitch,
   setMyOffDays,
   getInsideSwitches,
+  getMyInsideSwitches,
   getMyOperatorStatus,
   getCurrentStaff,
   getAllOperatorStatus,
@@ -54,7 +55,8 @@ const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?
   const startMin = sw && Number.isFinite(sw.start) ? sw.start : o.startMin;
   // Only a live batch can be "sending"; an Off batch can still be given a later time and switched on
   // Past the batch time but still ON: late orders keep joining this batch until it is switched OFF
-  const started = false;
+  // Inside: a batch closes to new orders at its start time (they join the next batch)
+  const started = side === 'inside' && switchStartDate(o, sw).getTime() <= now.getTime();
   const pastTime = live && switchStartDate(o, sw).getTime() <= now.getTime();
   const [time, setTime] = useState(toHHMM(startMin));
   const [note, setNote] = useState(sw?.note || '');
@@ -84,8 +86,13 @@ const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?
       return;
     }
     const start = Number.isFinite(startNum) ? startNum : o.startMin;
-    if (Date.now() >= batchCloseDate(o, side).getTime()) {
-      window.alert('This batch is over for today. Switch on the next batch instead.');
+    if (side === 'inside' ? Date.now() >= switchStartDate(o, { ...(sw || {}), start }).getTime() : Date.now() >= batchCloseDate(o, side).getTime()) {
+      window.alert(side === 'inside' ? 'This batch has already started. New orders go to the next batch.' : 'This batch is over for today. Switch on the next batch instead.');
+      return;
+    }
+    // A batch in the runner's week was only skipped: switching it back on needs no promise screen
+    if (side === 'inside' && sw?.skipped) {
+      save({ on: true });
       return;
     }
     // Runners: switching ON is a promise to students, who pay straight into the runner's account
@@ -106,7 +113,7 @@ const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?
     if (
       side === 'inside' &&
       !window.confirm(
-        `Switch OFF the ${o.window} batch?\n\nNew orders stop. Any order a student has already paid you for is still yours: deliver it, or if you really can't, hand it to another runner or refund the student.`
+        `Switch OFF the ${o.window} batch${sw?.auto ? ` (${o.date === ymdNow() ? 'today' : 'tomorrow'} only; it stays in your week)` : ''}?\n\nNew orders stop. Any order a student has already paid you for is still yours: deliver it, or if you really can't, hand it to another runner or refund the student.`
       )
     )
       return;
@@ -128,7 +135,7 @@ const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?
           <span className="font-bold text-slate-900 dark:text-white">{side === 'food' ? 'Food batch' : o.window}</span>
           <span className={`block text-[11px] font-bold ${started ? 'text-slate-500' : live && hiddenNote ? 'text-rose-600 dark:text-rose-400' : live ? 'text-[#0e9f55]' : 'text-rose-600 dark:text-rose-400'}`}>
             {started
-              ? 'Sending now. New orders go to the next batch.'
+              ? 'Closed: this batch has started. New orders go to the next batch.'
               : readOnly
               ? live
                 ? `ON${sw?.by ? `: ${sw.by} is taking this batch` : ''}${pastTime ? ' (past the batch time, still taking late orders)' : ''}`
@@ -138,9 +145,13 @@ const SwitchRow: React.FC<{ side: SwitchSide; o: BatchOption; sw: any; adminOff?
               : live
               ? pastTime
                 ? 'ON: past the batch time, still taking late orders. Tap OFF when you stop.'
+                : side === 'inside' && sw?.auto
+                ? "ON: this batch is in your week. Tap OFF if you can't make it"
                 : side === 'inside'
                 ? 'ON: you confirmed this batch. Students can order and pay you'
                 : 'ON: you are taking orders for this batch'
+              : side === 'inside' && sw?.skipped
+              ? "OFF for this day only. It's still in your week"
               : side === 'inside'
               ? "OFF: students are told no runner has confirmed this batch yet"
               : 'OFF: students can still order, but they are told it is not opened yet'}
@@ -393,7 +404,8 @@ const InsideBatchSwitches: React.FC<BatchSwitchesProps> = ({ side = 'inside' }) 
   const [open, setOpen] = useState(true);
   const now = new Date();
   const mine = side === 'inside' ? null : getMyOperatorStatus();
-  const switches: Record<string, any> = side === 'inside' ? getInsideSwitches() : mine?.slots || {};
+  // The admin sees who takes each batch; a runner sees their own batches (their week, skips, anything switched on)
+  const switches: Record<string, any> = side === 'inside' ? (getCurrentStaff()?.role === 'admin' ? getInsideSwitches() : getMyInsideSwitches()) : mine?.slots || {};
   const days = [slotsForDay(side, now, 0), slotsForDay(side, now, 1)];
   const cutoff = side === 'inside' ? '10pm' : '6pm';
   // The admin only watches: runners and operators switch their own batches
@@ -432,7 +444,11 @@ const InsideBatchSwitches: React.FC<BatchSwitchesProps> = ({ side = 'inside' }) 
             <div key={i} className="space-y-1.5">
               <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{i === 0 ? 'Today' : 'Tomorrow'}</p>
               {slots
-                .filter((o) => i > 0 || now.getTime() < batchCloseDate(o, side).getTime() || switchIsLive(switches[o.key], side === 'inside' ? 'inside' : 'outside', now))
+                .filter((o) =>
+                  side === 'inside'
+                    ? i > 0 || now.getTime() < new Date(o.date + 'T00:00:00').getTime() + o.endMin * 60000
+                    : i > 0 || now.getTime() < batchCloseDate(o, side).getTime() || switchIsLive(switches[o.key], 'outside', now)
+                )
                 .map((o) => (
                   <SwitchRow key={o.key} side={side} o={o} sw={switches[o.key]} adminOff={locked} hiddenNote={hidden ? 'ON, but students cannot see you (see the red note above)' : ''} readOnly={readOnly} />
                 ))}
@@ -445,7 +461,7 @@ const InsideBatchSwitches: React.FC<BatchSwitchesProps> = ({ side = 'inside' }) 
           ) : (
           <p className="text-[11px] text-slate-400 leading-snug">
             {side === 'inside'
-              ? `Tap ON to confirm you'll be active for a batch. Only runners who confirm are shown to students. Confirming at night for tomorrow? Open your portal tomorrow early in the day to show you're active. After the batch time, leave it ON while you still take late orders, and tap OFF when you stop. Switches turn OFF by themselves after ${cutoff}.`
+              ? `Batches in "My week" are ON by themselves every week. Tap OFF for a day you can't make it. A batch closes to new orders at its start time, and those orders join your next batch, so you can bring them early if you're free.`
               : `Tap ON when you are ready to take a batch. After the batch time, leave it ON while you still take late orders, and tap OFF when you stop. Students then see the next batch. Switches turn OFF by themselves after ${cutoff}.`}
           </p>
           )}

@@ -292,6 +292,7 @@ export interface BatchOption {
   label: string; // "Today, Afternoon Batch (2 to 3pm)"
   orderBy: Date;
   startMin: number; // scheduled start, minutes after midnight
+  endMin: number; // latest arrival, minutes after midnight
 }
 
 export const timeLabel = (min: number): string => {
@@ -329,6 +330,7 @@ function buildOption(day: Date, dayOffset: number, s: BatchSlotDef): BatchOption
     label: `${dayLabel}, ${s.name} (${window})`,
     orderBy: new Date(day.getTime() + s.orderByMin * 60000),
     startMin: s.startMin,
+    endMin: s.endMin,
   };
 }
 

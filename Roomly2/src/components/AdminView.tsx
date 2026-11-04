@@ -1,6 +1,7 @@
 import { AdminActionBoard } from './AdminActionBoard';
 import { AdminChannels } from './AdminChannels';
 import { PostsDue, PostSchedule } from './AdminPosts';
+import { AdminWeeklyPanel } from './WeeklyAvailability';
 import React, { useState, useEffect } from 'react';
 import { NoPhoto } from './NoPhoto';
 import { OrderChat } from './OrderChat';
@@ -756,7 +757,12 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
         {currentTab === 'hub' && <AdminHub />}
 
         {/* ================= TEAM: runners, operators, accounts, switches ================= */}
-        {currentTab === 'team' && <AdminTeam />}
+        {currentTab === 'team' && (
+          <>
+            <AdminTeam />
+            <AdminWeeklyPanel />
+          </>
+        )}
 
         {/* ================= APPLICATIONS: students who applied to be runners (#join page) ================= */}
         {currentTab === 'applications' && <AdminRunnerApplications />}

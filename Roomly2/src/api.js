@@ -313,6 +313,10 @@ const myHostelSide = () => {
   return st && st.hostelSide === 'girls' ? 'girls' : 'boys';
 };
 let runnerUnsettled = {}; // runner uid -> dates not yet settled
+// Weekly availability, keyed by runner login email:
+// { uid, name, phone, payTo, hs, days: { "1": ["afternoon", "late"], ... }, skip: { "2026-11-05|late": true } }
+// A runner's ticked batches are ON every week by themselves; "skip" switches one date's batch OFF.
+let weeklyRoster = {};
 let runnerPay = {}; // runner uid -> payment account students pay into
 let expressRunners = {}; // runner uid -> { on, name, phone, email, payTo, at }: runners taking express runs now
 let operatorDocs = {};
@@ -333,6 +337,7 @@ try {
       runnerPay = s.exists() ? s.data().runnerPay || {} : {};
       expressRunners = s.exists() ? s.data().express || {} : {};
       staffSeen = s.exists() ? s.data().seen || {} : {};
+      weeklyRoster = s.exists() ? s.data().weekly || {} : {};
       fireBatches();
     },
     () => {}
@@ -434,6 +439,101 @@ export async function setMyOffDays(days) {
 }
 
 /** Switched ON and not past the batch's last moment. side: 'inside' | 'store' | 'food' */
+/* ---------------- weekly availability ---------------- */
+const plainKey = (key) => (isGirlsKey(key) ? String(key).slice(0, -GIRLS_SUFFIX.length) : String(key));
+const keyParts = (key) => {
+  const [date, id] = plainKey(key).split('|');
+  return { date, id, wd: new Date(String(date) + 'T00:00:00').getDay() };
+};
+/** Runners whose week includes this batch (not skipped that day, not switched off by the admin, settled up) */
+function rosterRunners(key, hs = 'boys', now = new Date()) {
+  const { id, wd } = keyParts(key);
+  const pk = plainKey(key);
+  return Object.entries(weeklyRoster)
+    .map(([email, r]) => ({ email, ...(r || {}) }))
+    .filter(
+      (r) =>
+        (r.hs === 'girls' ? 'girls' : 'boys') === hs &&
+        ((r.days || {})[wd] || []).includes(id) &&
+        !(r.skip || {})[pk] &&
+        !isRunnerOff(r.email) &&
+        !(r.uid && isOverdue(runnerUnsettled[r.uid], now))
+    )
+    .sort((a, b) => String(a.email).localeCompare(String(b.email)));
+}
+const hashOf = (t) => [...String(t)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+const autoSwitch = (r, key) => ({
+  on: true,
+  auto: true,
+  forDate: keyParts(key).date,
+  at: 0,
+  by: r.name || 'Runner',
+  byPhone: r.phone || '',
+  byUid: r.uid || '',
+  byEmail: r.email,
+  payTo: (r.uid && runnerPay[r.uid]) || r.payTo || null,
+});
+/**
+ * The switch that decides an inside batch: a runner who switched it ON by hand, else one of the runners
+ * whose week includes it (they take turns batch by batch), else whatever was saved (OFF or nothing).
+ */
+function insideSw(key, hs = 'boys', now = new Date()) {
+  const k = switchKey(plainKey(key), hs);
+  const explicit = insideSwitches[k];
+  if (explicit && explicit.on) return explicit;
+  const list = rosterRunners(k, hs, now).filter((r) => !(explicit && explicit.on === false && explicit.byEmail === r.email));
+  if (!list.length) return explicit;
+  return autoSwitch(list[hashOf(plainKey(key)) % list.length], plainKey(key));
+}
+/** The signed-in runner's own view of one batch: ON when it is in their week (and not skipped) or they switched it on */
+function myInsideSw(key, now = new Date()) {
+  const staff = getCurrentStaff();
+  const email = emailKey(auth.currentUser?.email || staff?.email);
+  const hs = myHostelSide();
+  const k = switchKey(plainKey(key), hs);
+  const explicit = insideSwitches[k];
+  if (explicit && explicit.byEmail === email) return explicit;
+  const mine = rosterRunners(k, hs, now).find((r) => r.email === email);
+  if (mine) return autoSwitch(mine, plainKey(key));
+  const r = weeklyRoster[email];
+  const { id, wd } = keyParts(k);
+  if (r && ((r.days || {})[wd] || []).includes(id)) return { on: false, skipped: true, at: 1 };
+  return undefined;
+}
+/** Every runner's weekly availability (admin), keyed by login email */
+export function getWeeklyRoster() {
+  return JSON.parse(JSON.stringify(weeklyRoster));
+}
+/** The signed-in runner's weekly availability */
+export function getMyWeekly() {
+  const email = emailKey(auth.currentUser?.email || getCurrentStaff()?.email);
+  return (email && weeklyRoster[email]) || { days: {} };
+}
+/**
+ * Save the batches a runner works each week. days = { "0": ["midday"], "1": ["afternoon", "evening"], ... }
+ * The runner saves their own; the admin can save anyone's (by login email).
+ */
+export async function saveWeekly(days, runner) {
+  const staff = getCurrentStaff();
+  const self = !runner;
+  const email = emailKey(self ? auth.currentUser?.email || staff?.email : runner.email);
+  if (!email) throw new Error('No runner email.');
+  const clean = {};
+  Object.entries(days || {}).forEach(([wd, ids]) => {
+    if (Array.isArray(ids) && ids.length) clean[wd] = [...new Set(ids.map(String))];
+  });
+  const prev = weeklyRoster[email] || {};
+  const who = self
+    ? { uid: auth.currentUser?.uid || prev.uid || '', name: staff?.name || prev.name || 'Runner', phone: staff?.phone || prev.phone || '', payTo: staff?.payAccount || prev.payTo || null, hs: staff?.hostelSide === 'girls' ? 'girls' : 'boys' }
+    : { uid: prev.uid || runner.uid || '', name: runner.name || prev.name || 'Runner', phone: runner.phone || prev.phone || '', payTo: prev.payTo || runner.payAccount || null, hs: runner.hostelSide === 'girls' ? 'girls' : prev.hs || 'boys' };
+  const entry = slim({ ...who, days: clean });
+  weeklyRoster = { ...weeklyRoster, [email]: { ...prev, ...entry, days: clean } };
+  fireBatches();
+  // days is replaced whole; skip is kept
+  await setDoc(doc(db, 'availability', 'inside'), { weekly: { [email]: { ...entry, days: deleteField() } } }, { merge: true });
+  await setDoc(doc(db, 'availability', 'inside'), { weekly: { [email]: { days: clean } } }, { merge: true });
+}
+
 export function batchOpen(opt, sw, side, now = new Date()) {
   if (side !== 'inside') return outsideDayOn(sw) && now.getTime() < batchCloseDate(opt, side).getTime();
   return switchIsLive(sw, 'inside', now) && now.getTime() < batchCloseDate(opt, side).getTime();
@@ -444,10 +544,27 @@ const accepting = (opt, sw, side, now) => batchOpen(opt, sw, side, now);
 const LATE_PAY_MS = 15 * 60000;
 const payDeadline = (start, now) => (start.getTime() > now.getTime() ? start : new Date(now.getTime() + LATE_PAY_MS));
 
+/**
+ * A batch running right now (started, not past its end) whose runner is also the runner of the order's batch:
+ * that runner may bring the order early. Returns { endMs, window } or null.
+ */
+function runningEarly(now, hs, nextSw) {
+  if (!nextSw || !nextSw.byEmail) return null;
+  for (const opt of slotsForDay('inside', now, 0)) {
+    const sw = insideSw(opt.key, hs, now);
+    const start = switchStartDate(opt, sw).getTime();
+    const day = new Date(opt.date + 'T00:00:00').getTime();
+    const end = day + (opt.endMin || opt.startMin + 30) * 60000;
+    if (now.getTime() >= start && now.getTime() < end && sw && switchIsLive(sw, 'inside', now) && sw.byEmail === nextSw.byEmail)
+      return { endMs: end, window: opt.window };
+  }
+  return null;
+}
+
 /** Someone opened this batch and has since switched it OFF: it is done for the day */
 function closedByStaff(opt, side, hs = 'boys') {
   if (side === 'inside') {
-    const sw = insideSwitches[switchKey(opt.key, hs)];
+    const sw = insideSw(opt.key, hs);
     return Boolean(sw && sw.on === false && sw.at);
   }
   return activeOperators(side).some((op) => {
@@ -490,12 +607,14 @@ export function getNextBatch(side, now = new Date(), hs = 'boys') {
   for (let d = 0; d < 3; d++) {
     for (const opt of slotsForDay(side, now, d)) {
       if (side === 'inside') {
-        const sw = insideSwitches[switchKey(opt.key, hs)];
+        const sw = insideSw(opt.key, hs, now);
+        const start = switchStartDate(opt, sw);
+        // A batch takes no new orders once its start time comes: they join the next batch
+        if (now.getTime() >= start.getTime()) continue;
         const blocked = sw && ((sw.byUid && isOverdue(runnerUnsettled[sw.byUid], now)) || isRunnerOff(sw.byEmail));
-        if (!blocked && accepting(opt, sw, 'inside', now)) {
-          const start = switchStartDate(opt, sw);
+        if (!blocked && switchIsLive(sw, 'inside', now)) {
           return {
-            next: { batch: opt, start: payDeadline(start, now), startText: startTextOf(start), late: start <= now, by: sw.by || '', payTo: runnerPay[sw.byUid] || sw.payTo || null },
+            next: { batch: opt, start, startText: startTextOf(start), late: false, by: sw.by || '', payTo: runnerPay[sw.byUid] || sw.payTo || null, early: runningEarly(now, hs, sw) },
             note: '',
           };
         }
@@ -547,7 +666,8 @@ export function getNextBatch(side, now = new Date(), hs = 'boys') {
 function scheduledNext(side, now = new Date(), hs = 'boys') {
   for (let d = 0; d < 3; d++) {
     for (const opt of slotsForDay(side, now, d)) {
-      if (now.getTime() >= batchCloseDate(opt, side).getTime()) continue;
+      // Inside: closed once its start time comes. Outside: open until its cut-off.
+      if (side === 'inside' ? now.getTime() >= switchStartDate(opt, insideSw(opt.key, hs, now)).getTime() : now.getTime() >= batchCloseDate(opt, side).getTime()) continue;
       if (closedByStaff(opt, side, hs)) continue;
       return { opt, start: switchStartDate(opt, null) };
     }
@@ -663,7 +783,7 @@ export function contactPhoneFor(order) {
   if (!order) return '';
   if (order.cart === 'store' || order.cart === 'food') return (operatorDocs[order.operatorId] || {}).phone || '';
   if (order.runnerPhone) return order.runnerPhone;
-  const sw = insideSwitches[switchKey(`${order.deliveryDate}|${order.deliveryBatch}`, order.hostelSide)];
+  const sw = insideSw(`${order.deliveryDate}|${order.deliveryBatch}`, order.hostelSide || 'boys');
   return (sw && (sw.byPhone || sw.phone)) || '';
 }
 
@@ -709,6 +829,27 @@ export function getInsideSwitches(hs) {
     if (isGirlsKey(k) !== (side === 'girls')) return;
     out[side === 'girls' ? k.slice(0, -GIRLS_SUFFIX.length) : k] = sw;
   });
+  // Batches today and tomorrow that runners have in their week count as ON
+  const now = new Date();
+  [0, 1].forEach((d) =>
+    slotsForDay('inside', now, d).forEach((o) => {
+      const sw = insideSw(o.key, side, now);
+      if (sw) out[o.key] = sw;
+    })
+  );
+  return out;
+}
+
+/** The signed-in runner's own batches today and tomorrow (their week, skips and anything they switched on) */
+export function getMyInsideSwitches() {
+  const now = new Date();
+  const out = {};
+  [0, 1].forEach((d) =>
+    slotsForDay('inside', now, d).forEach((o) => {
+      const sw = myInsideSw(o.key, now);
+      if (sw) out[o.key] = sw;
+    })
+  );
   return out;
 }
 
@@ -731,7 +872,12 @@ export async function markStaffSeen(force = false) {
   try {
     if (staff.role === 'runner') {
       staffSeen = { ...staffSeen, [uid]: Date.now() };
-      await setDoc(doc(db, 'availability', 'inside'), { seen: { [uid]: Date.now() } }, { merge: true });
+      const email = emailKey(auth.currentUser?.email || staff.email);
+      const patch = { seen: { [uid]: Date.now() } };
+      // Keep the weekly entry's account, phone and side up to date (students pay this account)
+      if (email && weeklyRoster[email])
+        patch.weekly = { [email]: slim({ uid, name: staff.name || 'Runner', phone: staff.phone || '', payTo: staff.payAccount || null, hs: staff.hostelSide === 'girls' ? 'girls' : 'boys' }) };
+      await setDoc(doc(db, 'availability', 'inside'), patch, { merge: true });
     } else if (staff.role === 'store' || staff.role === 'food') {
       await setDoc(doc(db, 'operatorStatus', uid), { kind: staff.role, name: staff.name || 'Operator', seenAt: Date.now() }, { merge: true });
     }
@@ -747,7 +893,7 @@ export async function markStaffSeen(force = false) {
 export function getAdminNextInside(hs = 'boys', now = new Date()) {
   const fb = scheduledNext('inside', now, hs);
   if (!fb) return null;
-  const sw = insideSwitches[switchKey(fb.opt.key, hs)] || null;
+  const sw = insideSw(fb.opt.key, hs, now) || null;
   const live = switchIsLive(sw, 'inside', now);
   return { opt: fb.opt, sw, start: switchStartDate(fb.opt, sw), live };
 }
@@ -853,6 +999,34 @@ async function setInsideSwitch__raw(key, patch) {
   // Only runners switch inside batches, so students always pay the runner taking the batch
   if (!staff || staff.role !== 'runner') throw new Error('Only runners can switch inside batches.');
   if (patch.on && isRunnerOff(auth.currentUser?.email)) throw new Error('The admin has switched you off. You cannot open a batch until the admin switches you back on.');
+  const pk = plainKey(key);
+  const { date, id } = keyParts(pk);
+  const opt = slotsForDay('inside', new Date(date + 'T00:00:00'), 0).find((o) => o.id === id);
+  // A batch that has started can't be switched on: new orders already go to the next batch
+  if (patch.on && opt && Date.now() >= switchStartDate(opt, { ...(insideSwitches[key] || {}), ...patch }).getTime())
+    throw new Error('This batch has already started. New orders go to the next batch.');
+  // A batch in this runner's week: OFF skips that date only, ON brings it back (no hand-made switch needed)
+  const myEmail = emailKey(auth.currentUser?.email || staff?.email);
+  const week = weeklyRoster[myEmail];
+  const inWeek = week && opt && ((week.days || {})[new Date(date + 'T00:00:00').getDay()] || []).includes(id);
+  if (inWeek && typeof patch.on === 'boolean' && Object.keys(patch).every((k) => k === 'on' || k === 'note')) {
+    const skip = { ...(week.skip || {}) };
+    if (patch.on) delete skip[pk];
+    else skip[pk] = true;
+    weeklyRoster = { ...weeklyRoster, [myEmail]: { ...week, skip } };
+    fireBatches();
+    const today = ymdOf(new Date());
+    const stale = {};
+    Object.keys(week.skip || {}).forEach((k) => {
+      if (String(k).split('|')[0] < today) stale[k] = deleteField();
+    });
+    await setDoc(
+      doc(db, 'availability', 'inside'),
+      { weekly: { [myEmail]: { skip: { ...stale, [pk]: patch.on ? deleteField() : true } } } },
+      { merge: true }
+    );
+    return;
+  }
   // Girls' hostel runners open the girls' side of the batch
   key = switchKey(key, staff.hostelSide === 'girls' ? 'girls' : 'boys');
   const prev = insideSwitches[key] || {};

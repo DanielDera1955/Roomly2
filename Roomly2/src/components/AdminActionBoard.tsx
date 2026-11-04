@@ -164,10 +164,10 @@ export const AdminActionBoard: React.FC = () => {
     if (!nb.live) {
       items.push({
         id: `nobody-${hs}`,
-        level: left <= 90 * MIN ? 'red' : left <= 120 * MIN ? 'amber' : 'grey',
-        title: `${sideName}No runner has confirmed the ${label} batch`,
-        detail: 'Students can order but cannot pay until a runner confirms.',
-        todo: 'Reach a runner and ask them to switch the batch on.',
+        level: left <= 120 * MIN ? 'red' : 'amber',
+        title: `${sideName}No runner is scheduled for the ${label} batch`,
+        detail: 'Students can order but cannot pay until a runner takes it.',
+        todo: 'Ask a runner to add this batch to their week or switch it on for today.',
         contacts: runnerContacts(hs),
       });
       return;
@@ -179,15 +179,15 @@ export const AdminActionBoard: React.FC = () => {
     if (!activeToday && left <= 120 * MIN) {
       items.push({
         id: `quiet-${hs}`,
-        level: left <= 90 * MIN ? 'red' : 'amber',
-        title: `${sideName}${who} confirmed the ${label} batch but hasn't opened Roomly today`,
+        level: left <= 60 * MIN ? 'red' : 'amber',
+        title: `${sideName}${who} ${sw.auto ? 'is scheduled for' : 'confirmed'} the ${label} batch but hasn't opened Roomly today`,
         detail: 'Students are paying into their account.',
-        todo: `Make sure ${who} is coming, or ask them to switch the batch off.`,
+        todo: `Make sure ${who} is coming, or ask them to switch the batch off for today.`,
         contacts: sw.byPhone ? [{ name: who, phone: sw.byPhone }] : [],
       });
       return;
     }
-    items.push({ id: `ok-${hs}`, level: 'green', title: `${sideName}Next batch ${label}: ${who} confirmed, ${ago(lastSeen, nowMs)}` });
+    items.push({ id: `ok-${hs}`, level: 'green', title: `${sideName}Next batch ${label}: ${who} is taking it, ${ago(lastSeen, nowMs)}` });
   });
 
   // ---------- 2. Outside operators: orders today and the portal hasn't been open recently ----------
@@ -236,21 +236,21 @@ export const AdminActionBoard: React.FC = () => {
   // ---------- 3. Payments: a student tapped paid and nobody answered ----------
   const waiting = orders.filter(
     (o: any) =>
-      o.paymentStatus === 'payment_sent' && !o.paymentNotReceived && o.status !== 'Cancelled' && o.paymentSentAt && nowMs - ms(o.paymentSentAt) >= 30 * MIN
+      o.paymentStatus === 'payment_sent' && !o.paymentNotReceived && o.status !== 'Cancelled' && o.paymentSentAt && nowMs - ms(o.paymentSentAt) >= 15 * MIN
   );
   waiting.forEach((o: any) => {
     const sentAt = ms(o.paymentSentAt);
     const who = o.operatorName || o.runnerName || o.turnRunner || 'the runner';
     items.push({
       id: `pay-${o.id}`,
-      level: nowMs - sentAt >= 60 * MIN ? 'red' : 'amber',
+      level: 'red',
       title: `${o.name} tapped paid ${mins(nowMs - sentAt)} ago and is still waiting`,
       detail: `${naira(o.totalAmount)} to ${who}, tapped at ${clock(sentAt)}.`,
       todo: `Ask ${who} to check their account and tap Confirm payment, or mark Payment not received.`,
-      contacts: providerContact(o),
+      contacts: [...providerContact(o), ...studentContact(o)],
     });
   });
-  if (!waiting.length) items.push({ id: 'pay-ok', level: 'green', title: 'Payments: every student who tapped paid was answered within 30 minutes' });
+  if (!waiting.length) items.push({ id: 'pay-ok', level: 'green', title: 'Payments: every student who tapped paid was answered within 15 minutes' });
 
   // ---------- 4. Orders: stuck, reported not received, or countdown ended with no word from the student ----------
   let orderProblems = 0;
