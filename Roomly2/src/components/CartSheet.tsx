@@ -1151,6 +1151,14 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             )}
           </div>
 
+          {/* Small order: nudge the student to fill the cart with their roommates' items before paying delivery */}
+          {!isExpress && itemTotal > 0 && itemTotal < 1500 && (
+            <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 text-xs text-emerald-900 dark:text-emerald-200 leading-snug">
+              <strong>Ordering just {items.length === 1 ? 'one item' : 'a few items'}?</strong> Ask your {cart === 'inside' ? 'roommates' : 'friends'} what they need.
+              One cart, one ₦{deliveryFee.toLocaleString()} delivery for everyone.
+            </div>
+          )}
+
           {/* Price Breakdown */}
           <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
             <div className="flex justify-between text-slate-600 dark:text-slate-400">
@@ -1163,6 +1171,13 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               </span>
               <span className="font-mono tabular-nums">₦{deliveryFee.toLocaleString()}</span>
             </div>
+            {/* Delivery is per order, not per item: show what it comes to when roommates share one cart */}
+            {!isExpress && deliveryFee > 0 && (
+              <p className="text-[11px] text-[#0b8044] dark:text-emerald-400 leading-snug -mt-1">
+                ₦{deliveryFee.toLocaleString()} for the whole order. With {cart === 'inside' ? 'roommates' : 'friends'}: 2 of you ₦
+                {Math.ceil(deliveryFee / 2).toLocaleString()} each · 4 of you ₦{Math.ceil(deliveryFee / 4).toLocaleString()} each
+              </p>
+            )}
             <div className="flex justify-between text-sm font-extrabold text-slate-900 dark:text-white pt-2 border-t border-slate-200 dark:border-slate-800">
               <span>Total to Pay</span>
               <span className="font-mono text-[#0e9f55] text-base tabular-nums">
