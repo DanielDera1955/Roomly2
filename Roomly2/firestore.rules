@@ -644,5 +644,21 @@ service cloud.firestore {
         allow delete: if isAdmin();
       }
     }
+
+    // ---------- visits from tagged promotion links (one per phone, per tag, per day) ----------
+    match /visits/{id} {
+      allow create: if request.resource.data.keys().hasOnly(['ref', 'section', 'day', 'atMs'])
+        && request.resource.data.ref is string && request.resource.data.ref.size() > 0 && request.resource.data.ref.size() <= 40
+        && request.resource.data.section is string && request.resource.data.section.size() <= 20
+        && request.resource.data.day is string && request.resource.data.day.size() <= 10
+        && request.resource.data.atMs is number;
+      allow read: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // ---------- admin post schedule: groups, posts and what was posted ----------
+    match /marketing/{doc} {
+      allow read, write: if isAdmin();
+    }
   }
 }

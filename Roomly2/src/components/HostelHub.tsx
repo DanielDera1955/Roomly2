@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { takeHubSection } from '../links.js';
 import { Phone, Flag, Plus, X, ShoppingBag, MessageCircle, Camera, Loader2, BatteryCharging, CircleCheck, ChevronDown, ChevronRight, Gamepad2, Wrench, ShieldCheck, Users } from 'lucide-react';
 import { NoPhoto } from './NoPhoto';
 import { HOSTELS } from '../config';
@@ -125,8 +126,8 @@ const Guide: React.FC<{ section: Section }> = ({ section }) => {
 
 /** Hostel Hub: Games, Buy & Sell, Services */
 export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore }) => {
-  // Hostel Hub always opens on Games
-  const [section, setSection] = useState<Section>('games');
+  // Hostel Hub opens on Games, unless a post link asked for Services or Buy & Sell
+  const [section, setSection] = useState<Section>(() => (takeHubSection() as Section) || 'games');
   const [kind, setKind] = useState<Kind>('all');
   const [listings, setListings] = useState<any[]>([]);
   const [settings, setSettings] = useState<any>({});

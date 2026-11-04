@@ -41,6 +41,7 @@ import { BecomeRunner } from './components/BecomeRunner';
 import { GuestHero } from './components/GuestHero';
 import { FeedbackBox } from './components/FeedbackBox';
 import { subscribeHubSettings, outsideStoreOpensAt } from './hub.js';
+import { getLinkTarget } from './links.js';
 import { ProductCard } from './components/ProductCard';
 import { FoodCustomizerSheet } from './components/FoodCustomizerSheet';
 import { ProductSheet, OrderAgainRow, FeaturedRow, PairingsBar } from './components/ShopExtras';
@@ -117,6 +118,9 @@ export default function App() {
   // Nothing saved, or unreadable storage: Inside school > Store Items
   // (Outside > Cooked Food before inside delivery launches, so first visitors land where they can order).
   const lastShop = useMemo(() => {
+    // A post link (e.g. #outside-food or #hub-buysell) opens that section
+    const link = getLinkTarget();
+    if (link) return { side: link.side, tab: link.tab } as { side: 'inside' | 'outside'; tab: 'store' | 'food' | 'hub' };
     // A WhatsApp link from Games (?game= or ?match=) opens Hostel Hub > Games
     try {
       const q = new URLSearchParams(window.location.search);

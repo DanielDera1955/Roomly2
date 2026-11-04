@@ -1,5 +1,6 @@
 import { AdminActionBoard } from './AdminActionBoard';
 import { AdminChannels } from './AdminChannels';
+import { PostsDue, PostSchedule } from './AdminPosts';
 import React, { useState, useEffect } from 'react';
 import { NoPhoto } from './NoPhoto';
 import { OrderChat } from './OrderChat';
@@ -149,7 +150,7 @@ const FoodOptionsEditor: React.FC<{ value: FoodOptions; source: Product['source'
   );
 };
 
-type AdminTab = 'dashboard' | 'orders' | 'team' | 'applications' | 'money' | 'feedback' | 'products' | 'categories' | 'customers' | 'activity' | 'hub';
+type AdminTab = 'posts' | 'dashboard' | 'orders' | 'team' | 'applications' | 'money' | 'feedback' | 'products' | 'categories' | 'customers' | 'activity' | 'hub';
 
 export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpdated }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -709,6 +710,18 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
           >
             <span>Hub & Games</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setCurrentTab('posts')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+              currentTab === 'posts'
+                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <span>Posts</span>
+          </button>
         </div>
       </header>
 
@@ -716,6 +729,12 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
       <div className="p-4 space-y-4 max-w-[540px] mx-auto">
         {/* ================= ACTION NEEDED: always first, on every tab ================= */}
         <AdminActionBoard />
+
+        {/* Promotion posts whose time has come: copy or share, then tap Posted */}
+        <PostsDue />
+
+        {/* ================= POSTS: WhatsApp groups and the post schedule ================= */}
+        {currentTab === 'posts' && <PostSchedule />}
 
         {/* ================= DASHBOARD: performance and decisions ================= */}
         {currentTab === 'dashboard' && (
