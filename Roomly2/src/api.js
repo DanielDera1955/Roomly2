@@ -395,8 +395,14 @@ export function paystackFor(phone) {
   const p = normalizePhone(phone || '');
   return Boolean(p) && (paySettings.testPhones || []).map(normalizePhone).includes(p);
 }
-/** Roomly collects the money and the admin assigns orders: 'paystack' (normal) or 'manual' (Paystack down: Roomly's bank account) */
-export function collectsAsRoomly() {
+/** Carts students always pay the operator for directly, even in manual mode (food goes straight to the food vendor) */
+const DIRECT_PAY_CARTS = ['food'];
+/**
+ * Roomly collects the money and the admin assigns orders: 'paystack' (normal) or 'manual' (Paystack down: Roomly's bank account).
+ * Pass the cart ('inside' | 'store' | 'food') to check one cart: in manual mode, food is paid to the food vendor directly.
+ */
+export function collectsAsRoomly(cart) {
+  if (paySettings.mode === 'manual' && cart && DIRECT_PAY_CARTS.includes(cart)) return false;
   return paySettings.mode === 'paystack' || paySettings.mode === 'manual';
 }
 /** Roomly's own account, shown to students only in manual mode */
@@ -989,7 +995,7 @@ export function contactPhoneFor(order) {
  */
 export function getPayProvider(order, now = new Date()) {
   const side = order && (order.cart === 'store' || order.cart === 'food') ? order.cart : 'inside';
-  if (collectsAsRoomly() || (order && order.collectedBy === 'roomly')) {
+  if (collectsAsRoomly(side) || (order && order.collectedBy === 'roomly')) {
     // The student pays Roomly; an outside order still names the store it goes to
     const op = side === 'inside' ? null : (getOutsideChoices(side, now).operators || []).find((o) => o.status !== 'off');
     const payTo = roomlyPayTo() || (paySettings.mode === 'paystack' ? null : paySettings.roomlyAccount || null);
@@ -1990,12 +1996,12 @@ export async function createOrder(orderPayload) {
     cart,
     operatorId: orderPayload.operatorId || '',
     operatorName: orderPayload.operatorName || '',
-    turnRunner: isExpress || collectsAsRoomly() ? '' : orderPayload.turnRunner || '',
+    turnRunner: isExpress || collectsAsRoomly(cart) ? '' : orderPayload.turnRunner || '',
     lateBatch: isExpress ? false : Boolean(orderPayload.lateBatch),
     // Express: the account shows once a runner accepts
-    payTo: isExpress ? null : collectsAsRoomly() ? roomlyPayTo() : orderPayload.payTo || null,
+    payTo: isExpress ? null : collectsAsRoomly(cart) ? roomlyPayTo() : orderPayload.payTo || null,
     // Roomly collects the money: the admin assigns it and pays the runner / store out
-    collectedBy: collectsAsRoomly() ? 'roomly' : '',
+    collectedBy: collectsAsRoomly(cart) ? 'roomly' : '',
     express: isExpress ? { status: 'requested', requestedAt: createdAtIso } : null,
     outOfStock: orderPayload.outOfStock || 'refund',
     gateReq: Boolean(orderPayload.gatePickup && (cart === 'store' || cart === 'food')),

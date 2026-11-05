@@ -660,7 +660,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
               )}
 
               {/* ROOMLY SUPPORT: orders Roomly handles get one number for questions */}
-              {(isRoomlyOrder(currentOrder) || collectsAsRoomly()) && currentOrder.status !== 'Cancelled' && (
+              {(isRoomlyOrder(currentOrder) || collectsAsRoomly(currentOrder.cart)) && currentOrder.status !== 'Cancelled' && (
                 <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-xs font-bold text-slate-900 dark:text-white">Roomly support</p>
