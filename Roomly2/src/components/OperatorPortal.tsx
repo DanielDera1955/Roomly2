@@ -19,6 +19,7 @@ import {
   gateCanAskAgain,
   moveOrderToNextDay,
   addPackagePhoto,
+  isRoomlyOrder,
 } from '../api.js';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { ProviderSettlement, PayAccountForm } from './SettlementPanel';
@@ -635,7 +636,17 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                         <span className="text-slate-500">Customer paid (items ₦{total.toLocaleString()} + delivery ₦{(o.deliveryFee || 0).toLocaleString()})</span>
                         <span className="font-bold">₦{(o.totalAmount || 0).toLocaleString()}</span>
                       </div>
-                      {maths[o.id] ? (
+                      {maths[o.id] && isRoomlyOrder(o) ? (
+                        <>
+                          <div className="flex justify-between pt-1.5 border-t border-slate-200 dark:border-slate-700 text-sm">
+                            <span className="font-extrabold">Roomly pays you</span>
+                            <span className="font-extrabold text-[#0e9f55]">₦{Math.round(maths[o.id].keep).toLocaleString()}</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400">
+                            Your cost ₦{Math.round(maths[o.id].itemsCost).toLocaleString()} + ₦{maths[o.id].deliveryKeep.toLocaleString()} transport. The student paid Roomly, so you owe nothing: Roomly sends you this after delivery.
+                          </p>
+                        </>
+                      ) : maths[o.id] ? (
                         <>
                           <div className="flex justify-between">
                             <span className="text-slate-500">

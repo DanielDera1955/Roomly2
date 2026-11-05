@@ -425,7 +425,7 @@ export function payeeOf(o) {
     const op = operatorDocs[o.operatorId] || {};
     return { key: `${o.cart}:${o.operatorId}`, name: op.name || o.operatorName || 'Store', phone: op.phone || '', kind: o.cart, uid: o.operatorId, payTo: op.payTo || null };
   }
-  if (!o.runnerId) return null;
+  if (!o.runnerId) return { key: 'runner:none', name: 'No runner recorded', phone: '', kind: 'runner', uid: '' };
   return { key: `runner:${o.runnerId}`, name: o.runnerName || 'Runner', phone: o.runnerPhone || '', kind: 'runner', uid: o.runnerId };
 }
 /** Delivered Roomly orders the runner / store hasn't been paid for yet */
@@ -1746,6 +1746,8 @@ export async function getOrders() {
 export function subscribeOrders(cb) {
   ensureOrdersListener();
   ordersListeners.add(cb);
+  // A screen opened after the orders loaded gets them straight away (not only on the next change)
+  if (ordersCache) Promise.resolve().then(() => ordersListeners.has(cb) && cb(ordersCache));
   return () => {
     ordersListeners.delete(cb);
   };
