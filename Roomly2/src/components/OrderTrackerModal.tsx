@@ -38,6 +38,7 @@ import {
   arrivalText,
   countdownText,
 } from '../config';
+import { payWithPaystack, paystackFor } from '../api.js';
 import { markPaymentSent, paymentState, getPayProvider, cancelExpress, markExpressReceived, markExpressNotHere, markNotReceived, canFlagNotReceived, contactPhoneFor } from '../api.js';
 import { RateExperience } from './RateExperience';
 import { InstallBanner } from './InstallPrompt';
@@ -172,6 +173,27 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
     }
   };
 
+  // Paystack: one Pay button, confirmed automatically (no "I have made payment" tap)
+  const [payUi, setPayUi] = useState<'' | 'opening' | 'checking'>('');
+  const handlePaystack = async () => {
+    if (!currentOrder) return;
+    setPayUi('opening');
+    let next: '' | 'checking' = '';
+    try {
+      const r: any = await payWithPaystack(currentOrder);
+      if (r.status === 'paid' && r.order) {
+        setCurrentOrder(r.order);
+        if (onPaymentSent) onPaymentSent(r.order);
+      } else if (r.status === 'checking') {
+        next = 'checking';
+      }
+    } catch (e: any) {
+      window.alert(e?.message || 'Could not start the payment. Please try again.');
+    } finally {
+      setPayUi(next);
+    }
+  };
+
   const handleAdvance = async () => {
     if (!currentOrder) return;
     setAdvancing(true);
@@ -199,9 +221,11 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
   useEffect(() => {
     const h = () => setProvTick((n) => n + 1);
     window.addEventListener('roomly-batches', h);
+    window.addEventListener('roomly-payments', h);
     const id = window.setInterval(h, 30000);
     return () => {
       window.removeEventListener('roomly-batches', h);
+      window.removeEventListener('roomly-payments', h);
       window.clearInterval(id);
     };
   }, []);
@@ -209,6 +233,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
   // Express orders are paid to the runner who accepted, never to the batch runner
   const liveProvider = currentOrder && !(currentOrder as any).payTo && !currentOrder.express ? getPayProvider(currentOrder) : null;
   const payAcct = (currentOrder as any)?.payTo || liveProvider?.payTo || null;
+  const usePaystack = Boolean(currentOrder && !currentOrder.express && paystackFor(currentOrder.phone));
   // Live clock for express orders and the outside "at the gate in under 15 minutes" countdown
   const [nowMs, setNowMs] = useState(Date.now());
   const ex = currentOrder?.express || null;
@@ -503,6 +528,51 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                     <span>
                       Payment sent. Once your payment is confirmed, your order will be attended to and start being packaged.
                     </span>
+                  </div>
+                ) : usePaystack ? (
+                  <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-extrabold text-emerald-900 dark:text-emerald-200">
+                        <CreditCard className="w-4 h-4 text-[#0e9f55]" />
+                        <span>Pay for your order</span>
+                      </div>
+                      {timeRemaining && (
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-emerald-200/70 dark:bg-emerald-900/60 text-emerald-950 dark:text-emerald-100">
+                          {timeRemaining}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-emerald-900 dark:text-emerald-200 leading-snug">
+                      {paymentState(currentOrder) === 'missed' && (
+                        <strong className="block mb-1 text-rose-700 dark:text-rose-300">
+                          You missed this batch. If you pay now, your order joins the next batch. Unpaid orders expire at the end of the day.
+                        </strong>
+                      )}
+                      {paymentState(currentOrder) === 'open' && currentOrder.paymentDeadline && (
+                        <strong className="block mb-1">
+                          Pay before{' '}
+                          {new Date(currentOrder.paymentDeadline).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} to
+                          join your batch.
+                        </strong>
+                      )}
+                      Pay with bank transfer, card or USSD. Your payment is confirmed automatically, so there's nothing else to tap.
+                    </p>
+                    {payUi === 'checking' ? (
+                      <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900/40 text-xs text-emerald-900 dark:text-emerald-200">
+                        Paystack has your payment. Your order will show as confirmed in a moment. You don't need to pay again.
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handlePaystack}
+                        disabled={payUi !== ''}
+                        className="w-full py-3 disabled:opacity-60 disabled:cursor-not-allowed bg-[#0e9f55] hover:bg-[#0b8044] text-white rounded-xl text-sm font-bold shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <CreditCard className="w-4 h-4" />
+                        <span>{payUi === 'opening' ? 'Opening payment...' : `Pay ₦${(currentOrder.totalAmount || 0).toLocaleString()}`}</span>
+                      </button>
+                    )}
+                    <p className="text-[11px] text-emerald-800/80 dark:text-emerald-300/80 text-center">Secured by Paystack. Payments go to Roomly.</p>
                   </div>
                 ) : (
                   <div className="p-4 rounded-2xl bg-amber-500/10 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 space-y-3">

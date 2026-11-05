@@ -57,6 +57,7 @@ import {
   syncMyHelpCredits,
   getMyUid,
   autoDeliverOverdue,
+  EXPRESS_ENABLED,
 } from '../api.js';
 import { insideArrivalLeftMs, INSIDE_ARRIVAL_MINUTES } from '../config';
 import { AttentionCard, jumpTo } from './AttentionCard';
@@ -1018,7 +1019,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
 
         <BatchSwitches />
 
-        {isRunner && (
+        {isRunner && EXPRESS_ENABLED && (
           <div id="op-express" className="scroll-mt-20">
             <ExpressPanel orders={insideOrders} />
           </div>

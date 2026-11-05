@@ -8,6 +8,7 @@ import { OrderChat } from './OrderChat';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { AdminSettlementsPanel } from './SettlementPanel';
 import { AnnouncementsPanel } from './AnnouncementsPanel';
+import { PaymentModePanel } from './PaymentModePanel';
 import { playChime } from '../sound';
 import { Phone as PhoneIcon, ChevronDown as ChevronDownIcon, History, UserPlus } from 'lucide-react';
 import { AdminRunnerApplications, useNewApplicationCount } from './AdminRunnerApplications';
@@ -740,6 +741,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
         {/* ================= DASHBOARD: performance and decisions ================= */}
         {currentTab === 'dashboard' && (
           <>
+            <PaymentModePanel />
             <AdminInsights />
             <div className="mt-4">
               <AdminChannels />

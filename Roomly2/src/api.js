@@ -363,8 +363,109 @@ try {
     },
     () => {}
   );
+  // How students pay: 'direct' (the runner's / operator's own account) or 'paystack' (Roomly, confirmed automatically)
+  onSnapshot(
+    doc(db, 'adminControl', 'payments'),
+    (s) => {
+      paySettings = { ...PAY_DEFAULTS, ...(s.exists() ? s.data() : {}) };
+      window.dispatchEvent(new Event('roomly-payments'));
+    },
+    () => {}
+  );
 } catch (e) {
   /* ignore */
+}
+
+/* ===================== PAYSTACK PAYMENTS ===================== */
+// Express delivery is hidden while the admin assigns orders by hand (a 20-minute promise can't be kept)
+export const EXPRESS_ENABLED = false;
+
+const PAY_DEFAULTS = { mode: 'direct', testPhones: [] };
+let paySettings = { ...PAY_DEFAULTS };
+export function getPaymentSettings() {
+  return paySettings;
+}
+/** Does this student pay through Paystack? Everyone once the mode is 'paystack'; before that only the admin's test numbers. */
+export function paystackFor(phone) {
+  if (paySettings.mode === 'paystack') return true;
+  const p = normalizePhone(phone || '');
+  return Boolean(p) && (paySettings.testPhones || []).map(normalizePhone).includes(p);
+}
+export async function savePaymentSettings(patch) {
+  await setDoc(doc(db, 'adminControl', 'payments'), { ...patch, updatedAt: Date.now() }, { merge: true });
+}
+
+let paystackScript = null;
+function loadPaystack() {
+  if (window.PaystackPop) return Promise.resolve();
+  if (!paystackScript) {
+    paystackScript = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://js.paystack.co/v2/inline.js';
+      s.async = true;
+      s.onload = () => resolve();
+      s.onerror = () => {
+        paystackScript = null;
+        reject(new Error('Could not load Paystack. Check your internet and try again.'));
+      };
+      document.head.appendChild(s);
+    });
+  }
+  return paystackScript;
+}
+
+async function postJson(url, body) {
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok && data.error) throw new Error(data.error);
+  return data;
+}
+
+/**
+ * Pay for an order in the Paystack popup.
+ * Resolves { status: 'paid', order } | { status: 'cancelled' } | { status: 'checking' } (paid, but the check is still running:
+ * the order screen updates by itself once Paystack's message arrives).
+ */
+export async function payWithPaystack(order) {
+  if (!order) throw new Error('No order to pay for.');
+  if (paymentState(order) === 'expired') throw new Error('This order expired at the end of the day it was placed. Please place a new order.');
+  const side = order.cart === 'store' || order.cart === 'food' ? order.cart : 'inside';
+  // Missed its batch: the order joins the next batch once paid (same as paying by transfer)
+  let batch = null;
+  if (paymentState(order) === 'missed') {
+    const { next } = getNextBatch(side, new Date(), order.hostelSide || 'boys');
+    if (next) batch = { deliveryBatch: next.batch.id, deliveryTime: next.batch.label, deliveryDate: next.batch.date, paymentDeadline: next.start.toISOString() };
+  }
+  // Placed while nobody was available: pass on whoever has taken the batch since, so they still see the order
+  let provider = null;
+  if (!order.operatorId && !order.turnRunner) {
+    const p = getPayProvider(order);
+    if (p) provider = { operatorId: p.operatorId || '', operatorName: p.operatorName || '', turnRunner: p.turnRunner || '' };
+  }
+  const [{ accessCode, reference, error }] = await Promise.all([postJson('/api/pay-init', { orderId: order.id, batch, provider }), loadPaystack()]);
+  if (!accessCode) throw new Error(error || 'Could not start the payment.');
+
+  const result = await new Promise((resolve) => {
+    const popup = new window.PaystackPop();
+    popup.resumeTransaction(accessCode, {
+      onSuccess: () => resolve('success'),
+      onCancel: () => resolve('cancelled'),
+      onError: () => resolve('cancelled'),
+    });
+  });
+  if (result !== 'success') return { status: 'cancelled' };
+
+  // Ask the server to confirm with Paystack (a few tries: a bank transfer can take a moment to land)
+  for (let i = 0; i < 4; i++) {
+    try {
+      const r = await postJson('/api/pay-verify', { reference });
+      if (r.paid && r.order) return { status: 'paid', order: r.order };
+    } catch (e) {
+      /* try again */
+    }
+    await new Promise((r) => setTimeout(r, 2500));
+  }
+  return { status: 'checking' };
 }
 
 const ymdOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -1044,6 +1145,7 @@ async function setInsideSwitch__raw(key, patch) {
 
 /** Runners taking express runs right now: [{ uid, name, phone, email, payTo }] */
 export function getExpressRunners(now = new Date(), hs) {
+  if (!EXPRESS_ENABLED) return [];
   return Object.entries(expressRunners)
     .filter(([uid, sw]) => sw && sw.on && sw.payTo && switchIsLive(sw, 'inside', now) && !isOverdue(runnerUnsettled[uid], now) && !isRunnerOff(sw.email))
     // A girls' hostel order only sees girls' runners, and the other way round

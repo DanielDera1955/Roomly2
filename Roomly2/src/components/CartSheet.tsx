@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
 import { HOSTELS, BOYS_HOSTELS, GIRLS_HOSTELS, HOSTEL_FLOORS, hostelSideOf, splitFloorRoom, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, outsideBannerFor } from '../config';
-import { getNextBatch, getOutsideChoices, getExpressRunners } from '../api.js';
+import { getNextBatch, getOutsideChoices, getExpressRunners, paystackFor } from '../api.js';
 import { isValidNigerianPhone, isValidPin, normalizePhone } from '../api.js';
 
 interface CartSheetProps {
@@ -1142,6 +1142,11 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             {isExpress ? (
               <p className="text-xs text-slate-600 dark:text-slate-300">
                 An express runner accepts your order first. Then you'll see their account: transfer and tap <strong>"I have made payment"</strong>.
+              </p>
+            ) : paystackFor(phone) ? (
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                Pay first. After you place the order, tap <strong>Pay</strong> and pay with bank transfer, card or USSD
+                {payByText ? ` before ${payByText}` : ''}. Your payment is confirmed automatically.
               </p>
             ) : (
               <p className="text-xs text-slate-600 dark:text-slate-300">
