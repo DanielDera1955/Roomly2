@@ -46,6 +46,8 @@ export async function POST(request) {
       amount,
       currency: 'NGN',
       reference,
+      // Most students pay by transfer, so it is listed first
+      channels: ['bank_transfer', 'card', 'ussd', 'bank'],
       metadata: {
         orderId,
         cart: o.cart || 'inside',
