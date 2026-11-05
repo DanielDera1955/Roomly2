@@ -6,6 +6,7 @@ import { SoundToggle } from './SoundToggle';
 import { BatchSwitches } from './BatchSwitches';
 import { WeeklyAvailability } from './WeeklyAvailability';
 import { ExpressPanel } from './ExpressPanel';
+import { RoomlyPayoutLine } from './AdminOrderActions';
 import { MyRatingsPanel } from './FeedbackPanels';
 import { ProviderSettlement, PayAccountForm } from './SettlementPanel';
 import { ProductRequestsPanel } from './ProductRequestsPanel';
@@ -58,6 +59,7 @@ import {
   getMyUid,
   autoDeliverOverdue,
   EXPRESS_ENABLED,
+  isRoomlyOrder,
 } from '../api.js';
 import { insideArrivalLeftMs, INSIDE_ARRIVAL_MINUTES } from '../config';
 import { AttentionCard, jumpTo } from './AttentionCard';
@@ -339,6 +341,8 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
       o.paymentStatus !== 'unpaid' && // only orders the student says they have paid (or pay on delivery)
       !(o.paymentStatus === 'payment_sent' && o.paymentNotReceived) && // checked and not received: under Not paid
       (!o.runnerId || o.status === 'Received') &&
+      // Roomly's orders are assigned by the admin, never picked by a runner
+      !isRoomlyOrder(o) &&
       // An express order belongs to the runner who accepted it
       !(o.express?.status === 'accepted' && o.express.runnerId !== activeRunner?.id) &&
       o.express?.status !== 'requested'
@@ -367,7 +371,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
   const todayR = `${nowR.getFullYear()}-${String(nowR.getMonth() + 1).padStart(2, '0')}-${String(nowR.getDate()).padStart(2, '0')}`;
   const openInside = insideOrders.filter((o) => o.status !== 'Delivered' && o.status !== 'Cancelled');
   const attConfirm = openInside.filter(
-    (o) => o.paymentStatus === 'payment_sent' && !o.paymentNotReceived && (!o.runnerId || o.runnerId === activeRunner?.id) && o.express?.status !== 'requested'
+    (o) => o.paymentStatus === 'payment_sent' && !o.paymentNotReceived && !isRoomlyOrder(o) && (!o.runnerId || o.runnerId === activeRunner?.id) && o.express?.status !== 'requested'
   ).length;
   // Students who tapped paid over 30 minutes ago and are still waiting for an answer
   const waitingLong = openInside.filter(
@@ -524,6 +528,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
                 {ord.outOfStock ? `Out of stock: ${ord.outOfStock === 'swap' ? 'same-category swap' : 'refund'}` : ''}
               </p>
             )}
+            {isRoomlyOrder(ord) && isAssignedToMe && <RoomlyPayoutLine order={ord} who="runner" />}
           </div>
           <div className="shrink-0 flex flex-col items-end gap-1.5">
             <span className="font-extrabold text-base text-[#0e9f55] whitespace-nowrap">₦{ord.totalAmount.toLocaleString()}</span>

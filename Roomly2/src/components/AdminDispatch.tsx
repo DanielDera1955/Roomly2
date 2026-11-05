@@ -20,6 +20,7 @@ import {
 } from '../api.js';
 import { OrderRecord, locationText } from '../types';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
+import { AdminOrderActions } from './AdminOrderActions';
 
 type Section = 'inside' | 'store' | 'food';
 type View = 'all' | Section;
@@ -116,6 +117,7 @@ const OrderRow: React.FC<{ o: OrderRecord; showSection?: boolean }> = ({ o, show
             </p>
           )}
           {(o as any).helperName && <p className="text-[11px] text-violet-600">Shared with {(o as any).helperName}</p>}
+          <AdminOrderActions o={o} />
           <button
             type="button"
             onClick={async () => {

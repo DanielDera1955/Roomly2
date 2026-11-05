@@ -38,7 +38,7 @@ import {
   arrivalText,
   countdownText,
 } from '../config';
-import { payWithPaystack, paystackFor } from '../api.js';
+import { payWithPaystack, paystackFor, isRoomlyOrder, collectsAsRoomly, ROOMLY_SUPPORT_PHONE, waNumber } from '../api.js';
 import { markPaymentSent, paymentState, getPayProvider, cancelExpress, markExpressReceived, markExpressNotHere, markNotReceived, canFlagNotReceived, contactPhoneFor } from '../api.js';
 import { RateExperience } from './RateExperience';
 import { InstallBanner } from './InstallPrompt';
@@ -152,7 +152,9 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
   const handleStudentClickPaymentMade = async () => {
     if (!currentOrder) return;
     // Two taps, not one: a curious tap would send a fake order to the runner or vendor
-    const who = currentOrder.operatorName || currentOrder.turnRunner || ((currentOrder as any).payTo)?.accountName || 'your runner';
+    const who = isRoomlyOrder(currentOrder)
+      ? 'Roomly'
+      : currentOrder.operatorName || currentOrder.turnRunner || ((currentOrder as any).payTo)?.accountName || 'your runner';
     if (
       !window.confirm(
         `Only tap this after your transfer of ₦${(currentOrder.totalAmount || 0).toLocaleString()} is complete.\n\n${who} will check their account before packing your order. Have you sent the money?`
@@ -650,6 +652,34 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                   <span className="font-bold text-blue-900 dark:text-blue-200">
                     ₦{currentOrder.totalAmount.toLocaleString()}
                   </span>
+                </div>
+              )}
+
+              {/* ROOMLY SUPPORT: orders Roomly handles get one number for questions */}
+              {(isRoomlyOrder(currentOrder) || collectsAsRoomly()) && currentOrder.status !== 'Cancelled' && (
+                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-slate-900 dark:text-white">Roomly support</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Questions about this order? Message or call us.</p>
+                  </div>
+                  <div className="flex gap-1.5 shrink-0">
+                    <a
+                      href={`https://wa.me/${waNumber(ROOMLY_SUPPORT_PHONE)}?text=${encodeURIComponent(`Hi Roomly, about my order ${currentOrder.id}: `)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-2 rounded-xl bg-[#0e9f55] text-white text-xs font-bold flex items-center gap-1"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      WhatsApp
+                    </a>
+                    <a
+                      href={`tel:${ROOMLY_SUPPORT_PHONE}`}
+                      className="px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs font-bold flex items-center gap-1"
+                    >
+                      <Phone className="w-3.5 h-3.5" />
+                      Call
+                    </a>
+                  </div>
                 </div>
               )}
 

@@ -380,7 +380,9 @@ try {
 // Express delivery is hidden while the admin assigns orders by hand (a 20-minute promise can't be kept)
 export const EXPRESS_ENABLED = false;
 
-const PAY_DEFAULTS = { mode: 'direct', testPhones: [] };
+const PAY_DEFAULTS = { mode: 'direct', testPhones: [], roomlyAccount: null };
+/** Roomly's support line on every order the admin handles (WhatsApp and calls) */
+export const ROOMLY_SUPPORT_PHONE = '08141850484';
 let paySettings = { ...PAY_DEFAULTS };
 export function getPaymentSettings() {
   return paySettings;
@@ -390,6 +392,35 @@ export function paystackFor(phone) {
   if (paySettings.mode === 'paystack') return true;
   const p = normalizePhone(phone || '');
   return Boolean(p) && (paySettings.testPhones || []).map(normalizePhone).includes(p);
+}
+/** Roomly collects the money and the admin assigns orders: 'paystack' (normal) or 'manual' (Paystack down: Roomly's bank account) */
+export function collectsAsRoomly() {
+  return paySettings.mode === 'paystack' || paySettings.mode === 'manual';
+}
+/** Roomly's own account, shown to students only in manual mode */
+function roomlyPayTo() {
+  const a = paySettings.roomlyAccount;
+  return paySettings.mode === 'manual' && a && a.accountNumber ? a : null;
+}
+/** An order whose money went to Roomly (not a runner / operator): no settlement, the admin pays the provider out */
+export function isRoomlyOrder(o) {
+  return Boolean(o && (o.paidVia === 'paystack' || o.collectedBy === 'roomly'));
+}
+/** What Roomly pays the runner / store for one order: item cost + ₦500 (runner delivery fee / store transport) */
+export async function roomlyPayoutOf(order) {
+  if (!order) return { amount: 0, items: 0, delivery: 0, estimated: false };
+  if (order.cart === 'store' || order.cart === 'food') {
+    const products = (await readCatalog()).products || [];
+    const m = operatorCartMaths(order, order.cart, products, order.operatorId || '');
+    return { amount: m.keep, items: m.itemsCost, delivery: m.deliveryKeep, estimated: m.estimated };
+  }
+  const { spent, fee, estimated } = await insideProfitOf(order);
+  return { amount: spent + fee, items: spent, delivery: fee, estimated };
+}
+/** "08012345678" -> "2348012345678" for WhatsApp links */
+export function waNumber(phone) {
+  const d = String(phone || '').replace(/\D/g, '');
+  return d.startsWith('234') ? d : d.startsWith('0') ? '234' + d.slice(1) : d;
 }
 export async function savePaymentSettings(patch) {
   await setDoc(doc(db, 'adminControl', 'payments'), { ...patch, updatedAt: Date.now() }, { merge: true });
@@ -704,6 +735,12 @@ export function getNextBatch(side, now = new Date(), hs = 'boys') {
       };
     }
   }
+  // Roomly collects and assigns: the next scheduled batch is always open, whoever is on it
+  if (side === 'inside' && collectsAsRoomly()) {
+    const fb = scheduledNext(side, now, hs);
+    if (!fb) return { next: null, note: '' };
+    return { next: { batch: fb.opt, start: payDeadline(fb.start, now), startText: startTextOf(fb.start), late: fb.start <= now, by: '', payTo: roomlyPayTo() }, note: '' };
+  }
   const notes = [];
   for (let d = 0; d < 3; d++) {
     for (const opt of slotsForDay(side, now, d)) {
@@ -894,6 +931,12 @@ export function contactPhoneFor(order) {
  */
 export function getPayProvider(order, now = new Date()) {
   const side = order && (order.cart === 'store' || order.cart === 'food') ? order.cart : 'inside';
+  if (collectsAsRoomly() || (order && order.collectedBy === 'roomly')) {
+    // The student pays Roomly; an outside order still names the store it goes to
+    const op = side === 'inside' ? null : (getOutsideChoices(side, now).operators || []).find((o) => o.status !== 'off');
+    const payTo = roomlyPayTo() || (paySettings.mode === 'paystack' ? null : paySettings.roomlyAccount || null);
+    return { payTo, operatorId: op ? op.uid : '', operatorName: op ? op.name : '', turnRunner: '' };
+  }
   if (side === 'inside') {
     const n = getNextBatch('inside', now, order?.hostelSide || 'boys').next;
     return n && n.payTo ? { payTo: n.payTo, operatorId: '', operatorName: '', turnRunner: n.by || '' } : null;
@@ -1201,10 +1244,14 @@ async function setOperatorSwitch__raw(key, patch) {
 async function moveOrderToNextDay__raw(orderId) {
   const staff = getCurrentStaff();
   const uid = auth.currentUser?.uid;
-  if (!uid || !staff || (staff.role !== 'store' && staff.role !== 'food')) throw new Error('Operators only');
-  const kind = staff.role;
+  const isAdm = Boolean(staff && staff.role === 'admin');
+  if (!uid || !staff || (!isAdm && staff.role !== 'store' && staff.role !== 'food')) throw new Error('Operators only');
+  let kind = staff.role;
   let target = '';
   const updated = await patchOrder(orderId, (o) => {
+    // The admin runs Roomly's outside orders: the order's own cart decides store or food
+    if (isAdm) kind = o.cart === 'food' ? 'food' : 'store';
+    const opUid = isAdm ? o.operatorId || '' : uid;
     const part = kind === 'food' ? o.foodStatus : o.storeStatus;
     if (o.status === 'Delivered' || o.status === 'Cancelled' || part === 'sent') return;
     // Count from the later of today and the order's current day, so it always moves forward
@@ -1215,7 +1262,7 @@ async function moveOrderToNextDay__raw(orderId) {
     let opt = null;
     for (let d = 1; d <= 7 && !opt; d++) {
       const day = slotsForDay(kind, base, d)[0];
-      if (day && outsideDayOn(opDaySwitch(operatorDocs[uid], day))) opt = day;
+      if (day && outsideDayOn(opDaySwitch(operatorDocs[opUid], day))) opt = day;
     }
     if (!opt) opt = slotsForDay(kind, base, 1)[0];
     if (!opt) return;
@@ -1225,12 +1272,15 @@ async function moveOrderToNextDay__raw(orderId) {
     o.deliveryBatch = opt.id;
     o.deliveryTime = outsideDeliveryText(opt.date);
     o.movedAt = at;
-    o.movedBy = staff.name || 'Operator';
+    const byName = isAdm ? 'Roomly' : staff.name || 'Operator';
+    o.movedBy = byName;
     o.history.push({
       status: o.status,
       timestamp: at,
-      note: `${staff.name || 'The operator'} is fully booked, so your order now comes on ${longDayLabel(opt.date)}. Same price, no extra fee.`,
-      updatedBy: staff.name || 'Operator',
+      note: isAdm
+        ? `The store is fully booked today, so your order now comes on ${longDayLabel(opt.date)}. Same price, no extra fee.`
+        : `${staff.name || 'The operator'} is fully booked, so your order now comes on ${longDayLabel(opt.date)}. Same price, no extra fee.`,
+      updatedBy: byName,
     });
   });
   return updated && target ? target : '';
@@ -1880,10 +1930,12 @@ export async function createOrder(orderPayload) {
     cart,
     operatorId: orderPayload.operatorId || '',
     operatorName: orderPayload.operatorName || '',
-    turnRunner: isExpress ? '' : orderPayload.turnRunner || '',
+    turnRunner: isExpress || collectsAsRoomly() ? '' : orderPayload.turnRunner || '',
     lateBatch: isExpress ? false : Boolean(orderPayload.lateBatch),
     // Express: the account shows once a runner accepts
-    payTo: isExpress ? null : orderPayload.payTo || null,
+    payTo: isExpress ? null : collectsAsRoomly() ? roomlyPayTo() : orderPayload.payTo || null,
+    // Roomly collects the money: the admin assigns it and pays the runner / store out
+    collectedBy: collectsAsRoomly() ? 'roomly' : '',
     express: isExpress ? { status: 'requested', requestedAt: createdAtIso } : null,
     outOfStock: orderPayload.outOfStock || 'refund',
     gateReq: Boolean(orderPayload.gatePickup && (cart === 'store' || cart === 'food')),
@@ -2580,6 +2632,7 @@ export async function getOperatorOrderMaths(order, kind) {
 async function recordOperatorDelivery(order, kind) {
   const staff = getCurrentStaff();
   if (!staff || staff.role !== kind) return;
+  if (isRoomlyOrder(order)) return; // Roomly holds the money and pays the store out
   const products = (await readCatalog()).products || [];
   const m = operatorCartMaths(order, kind, products, order.operatorId || auth.currentUser?.uid || '');
   await addToMyDay(
@@ -2633,6 +2686,7 @@ async function recordRunnerDelivery(order) {
   const staff = getCurrentStaff();
   if (!staff || staff.role !== 'runner') return; // admin taps are not a runner's delivery
   if (order.cart && order.cart !== 'inside') return;
+  if (isRoomlyOrder(order)) return; // Roomly holds the money and pays the runner out
   const { paid, spent, fee, profit, estimated } = await insideProfitOf(order);
   const express = Boolean(order.express && order.express.status === 'accepted');
   const itemProfit = Math.max(0, paid - spent);

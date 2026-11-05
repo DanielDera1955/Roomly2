@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
 import { HOSTELS, BOYS_HOSTELS, GIRLS_HOSTELS, HOSTEL_FLOORS, hostelSideOf, splitFloorRoom, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, outsideBannerFor } from '../config';
-import { getNextBatch, getOutsideChoices, getExpressRunners, paystackFor } from '../api.js';
+import { getNextBatch, getOutsideChoices, getExpressRunners, paystackFor, collectsAsRoomly } from '../api.js';
 import { isValidNigerianPhone, isValidPin, normalizePhone } from '../api.js';
 
 interface CartSheetProps {
@@ -1150,7 +1150,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               </p>
             ) : (
               <p className="text-xs text-slate-600 dark:text-slate-300">
-                Pay first by bank transfer. After you place the order you'll see the {cart === 'inside' ? "runner's" : "operator's"} account. Transfer
+                Pay first by bank transfer. After you place the order you'll see {collectsAsRoomly() ? "Roomly's" : cart === 'inside' ? "the runner's" : "the operator's"} account. Transfer
                 {payByText ? ` before ${payByText}` : ''}, then tap <strong>"I have made payment"</strong>.
               </p>
             )}
