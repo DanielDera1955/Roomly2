@@ -500,6 +500,9 @@ export function calculateDeliveryFee(batchId: string = 'morning'): number {
 export const BOYS_HOSTELS = ['JV', 'TA', 'New Hostel'];
 export const GIRLS_HOSTELS = ['Emmanuel', 'London', 'St Mary'];
 export const HOSTELS = [...BOYS_HOSTELS, ...GIRLS_HOSTELS];
+/** Girls' hostel room delivery: false until there are female runners. Change to true to open it. */
+export const GIRLS_SIDE_OPEN = false;
+export const GIRLS_SOON_MSG = "Room delivery to girls' hostels is coming soon. You can still use Hostel Hub and Games now.";
 export type HostelSide = 'boys' | 'girls';
 /** Which runners serve this hostel. Anything that isn't a girls' hostel (including custom spots) is the boys' side. */
 export const hostelSideOf = (building?: string): HostelSide => (GIRLS_HOSTELS.includes(String(building || '')) ? 'girls' : 'boys');
