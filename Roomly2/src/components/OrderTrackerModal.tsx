@@ -38,7 +38,7 @@ import {
   arrivalText,
   countdownText,
 } from '../config';
-import { payWithPaystack, paystackFor, isRoomlyOrder, collectsAsRoomly, ROOMLY_SUPPORT_PHONE, waNumber } from '../api.js';
+import { payWithPaystack, preloadPaystack, paystackFor, isRoomlyOrder, collectsAsRoomly, ROOMLY_SUPPORT_PHONE, waNumber } from '../api.js';
 import { markPaymentSent, paymentState, getPayProvider, cancelExpress, markExpressReceived, markExpressNotHere, markNotReceived, canFlagNotReceived, contactPhoneFor } from '../api.js';
 import { RateExperience } from './RateExperience';
 import { InstallBanner } from './InstallPrompt';
@@ -236,6 +236,10 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
   const liveProvider = currentOrder && !(currentOrder as any).payTo && !currentOrder.express ? getPayProvider(currentOrder) : null;
   const payAcct = (currentOrder as any)?.payTo || liveProvider?.payTo || null;
   const usePaystack = Boolean(currentOrder && !currentOrder.express && paystackFor(currentOrder.phone));
+  const showPayButton = usePaystack && currentOrder?.paymentStatus === 'unpaid';
+  useEffect(() => {
+    if (showPayButton) preloadPaystack();
+  }, [showPayButton]);
   // Live clock for express orders and the outside "at the gate in under 15 minutes" countdown
   const [nowMs, setNowMs] = useState(Date.now());
   const ex = currentOrder?.express || null;

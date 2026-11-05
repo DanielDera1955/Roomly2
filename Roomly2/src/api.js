@@ -390,6 +390,8 @@ export function getPaymentSettings() {
 /** Does this student pay through Paystack? Everyone once the mode is 'paystack'; before that only the admin's test numbers. */
 export function paystackFor(phone) {
   if (paySettings.mode === 'paystack') return true;
+  // Manual means Paystack is off for everyone, test numbers included
+  if (paySettings.mode === 'manual') return false;
   const p = normalizePhone(phone || '');
   return Boolean(p) && (paySettings.testPhones || []).map(normalizePhone).includes(p);
 }
@@ -479,6 +481,10 @@ export async function savePaymentSettings(patch) {
 }
 
 let paystackScript = null;
+/** Start loading Paystack as soon as a Pay button shows, so the popup opens quickly when tapped */
+export function preloadPaystack() {
+  loadPaystack().catch(() => {});
+}
 function loadPaystack() {
   if (window.PaystackPop) return Promise.resolve();
   if (!paystackScript) {

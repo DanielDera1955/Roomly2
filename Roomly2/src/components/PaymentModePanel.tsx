@@ -77,7 +77,7 @@ export const PaymentModePanel: React.FC = () => {
         <span>Payment mode</span>
       </div>
       <div className="flex gap-2">
-        <button type="button" disabled={busy} className={btn(s.mode !== 'paystack')} onClick={() => setMode('direct')}>
+        <button type="button" disabled={busy} className={btn(s.mode !== 'paystack' && s.mode !== 'manual')} onClick={() => setMode('direct')}>
           Current way
         </button>
         <button type="button" disabled={busy} className={btn(s.mode === 'paystack')} onClick={() => setMode('paystack')}>
@@ -95,7 +95,7 @@ export const PaymentModePanel: React.FC = () => {
           : 'Students pay the runner or operator, as before. Only the test numbers below see the Paystack button.'}
       </p>
       <div className="space-y-1.5">
-        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Test phone numbers (see Paystack before everyone)</label>
+        <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Test phone numbers (see Paystack while on Current way)</label>
         <div className="flex gap-2">
           <input
             value={phones}
