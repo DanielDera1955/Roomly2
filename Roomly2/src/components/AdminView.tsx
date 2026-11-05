@@ -9,6 +9,7 @@ import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { AdminSettlementsPanel } from './SettlementPanel';
 import { AnnouncementsPanel } from './AnnouncementsPanel';
 import { PaymentModePanel } from './PaymentModePanel';
+import { PayoutsPanel } from './PayoutsPanel';
 import { playChime } from '../sound';
 import { Phone as PhoneIcon, ChevronDown as ChevronDownIcon, History, UserPlus } from 'lucide-react';
 import { AdminRunnerApplications, useNewApplicationCount } from './AdminRunnerApplications';
@@ -770,7 +771,12 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
         {currentTab === 'applications' && <AdminRunnerApplications />}
 
         {/* ================= MONEY: real totals from settlement records ================= */}
-        {currentTab === 'money' && <AdminMoney />}
+        {currentTab === 'money' && (
+          <>
+            <PayoutsPanel />
+            <AdminMoney />
+          </>
+        )}
 
         {/* ================= FEEDBACK: students' ratings of each runner and operator ================= */}
         {currentTab === 'feedback' && <AdminFeedbackPanel />}

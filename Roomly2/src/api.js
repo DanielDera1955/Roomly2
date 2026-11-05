@@ -417,6 +417,58 @@ export async function roomlyPayoutOf(order) {
   const { spent, fee, estimated } = await insideProfitOf(order);
   return { amount: spent + fee, items: spent, delivery: fee, estimated };
 }
+/** Who Roomly pays for an order: { key, name, phone, kind } (runner for inside, store / food vendor for outside) */
+export function payeeOf(o) {
+  if (!o) return null;
+  if (o.cart === 'store' || o.cart === 'food') {
+    if (!o.operatorId) return { key: `${o.cart}:none`, name: o.operatorName || 'No store set', phone: '', kind: o.cart, uid: '' };
+    const op = operatorDocs[o.operatorId] || {};
+    return { key: `${o.cart}:${o.operatorId}`, name: op.name || o.operatorName || 'Store', phone: op.phone || '', kind: o.cart, uid: o.operatorId, payTo: op.payTo || null };
+  }
+  if (!o.runnerId) return null;
+  return { key: `runner:${o.runnerId}`, name: o.runnerName || 'Runner', phone: o.runnerPhone || '', kind: 'runner', uid: o.runnerId };
+}
+/** Delivered Roomly orders the runner / store hasn't been paid for yet */
+export function payoutPending(o) {
+  return Boolean(isRoomlyOrder(o) && o.paymentStatus === 'payment_confirmed' && o.status === 'Delivered' && !(o.payout && o.payout.paidAt));
+}
+/** Admin: record that Roomly paid these orders out. entries: [{ orderId, amount }] */
+export async function markPayoutPaid(entries, note = '') {
+  const at = new Date().toISOString();
+  let done = 0;
+  for (const e of entries || []) {
+    const updated = await patchOrder(e.orderId, (o) => {
+      o.payout = { amount: Math.max(0, Math.round(Number(e.amount) || 0)), paidAt: at, by: 'Roomly admin', note: String(note || '').slice(0, 200) };
+    });
+    if (updated) done++;
+  }
+  if (done) logActivity('money', `paid out ${done} ${done === 1 ? 'order' : 'orders'} (${naira((entries || []).reduce((t, e) => t + (Number(e.amount) || 0), 0))})`);
+  return done;
+}
+/**
+ * Admin: record a refund on a Roomly order (the money itself is sent back from the Paystack dashboard or a bank app).
+ * cancel = the whole order is off: it is cancelled and leaves the payouts.
+ */
+export async function recordRefund(orderId, amount, reason, cancel = false) {
+  const amt = Math.max(0, Math.round(Number(amount) || 0));
+  if (!amt) throw new Error('Enter the amount refunded.');
+  const at = new Date().toISOString();
+  const updated = await patchOrder(orderId, (o) => {
+    o.refunds = [...(o.refunds || []), { amount: amt, reason: String(reason || '').slice(0, 200), at, by: 'Roomly admin' }];
+    o.history.push({
+      status: cancel ? 'Cancelled' : o.status,
+      timestamp: at,
+      note: `Roomly refunded ${naira(amt)}${reason ? `: ${reason}` : ''}.${cancel ? ' The order was cancelled.' : ''}`,
+      updatedBy: 'Roomly',
+    });
+    if (cancel) {
+      o.status = 'Cancelled';
+      o.cancelledAt = at;
+    }
+  });
+  if (updated) logActivity('money', `refunded ${naira(amt)} on ${orderLabel(updated)}${cancel ? ' and cancelled it' : ''}`, orderId);
+  return updated;
+}
 /** "08012345678" -> "2348012345678" for WhatsApp links */
 export function waNumber(phone) {
   const d = String(phone || '').replace(/\D/g, '');

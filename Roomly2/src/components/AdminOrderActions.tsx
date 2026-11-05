@@ -11,6 +11,7 @@ import {
   isRoomlyOrder,
   roomlyPayoutOf,
   waNumber,
+  recordRefund,
 } from '../api.js';
 import { OrderRecord, locationText } from '../types';
 
@@ -42,6 +43,35 @@ export const RoomlyPayoutLine: React.FC<{ order: OrderRecord; who: 'runner' | 'a
         {who === 'runner' ? '. The student paid Roomly, so collect nothing from them.' : ''}
       </span>
     </p>
+  );
+};
+
+/** Refunds Roomly has recorded on this order, and a button to add one */
+const RefundRow: React.FC<{ o: OrderRecord }> = ({ o }) => {
+  const [busy, setBusy] = useState(false);
+  const refunds: any[] = (o as any).refunds || [];
+  const total = refunds.reduce((t, r) => t + (r.amount || 0), 0);
+  const add = async () => {
+    const amt = window.prompt(`Amount refunded to ${o.name} (₦)?\n\nSend the money first: Paystack dashboard > Transactions > this payment > Refund.`, '');
+    if (amt === null) return;
+    const reason = window.prompt('Reason (shown to the student), e.g. "Out of stock: 1x Peak milk"', '') || '';
+    const cancel = Number(amt) >= (o.totalAmount || 0) && window.confirm('That is the whole order. Cancel the order too?');
+    setBusy(true);
+    try {
+      await recordRefund(o.id, amt, reason, cancel);
+    } catch (e: any) {
+      window.alert(e?.message || 'Could not save the refund.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex items-center justify-between gap-2 text-[11px]">
+      <span className="text-rose-600">{total > 0 ? `Refunded ${naira(total)} (${refunds.map((r) => r.reason).filter(Boolean).join('; ') || 'no reason'})` : ''}</span>
+      <button type="button" disabled={busy} onClick={add} className="text-slate-500 underline cursor-pointer shrink-0">
+        {busy ? 'Saving...' : 'Record refund'}
+      </button>
+    </div>
   );
 };
 
@@ -155,6 +185,7 @@ export const AdminOrderActions: React.FC<{ o: OrderRecord }> = ({ o }) => {
           </div>
         )}
         {!assigned && !done && <p className="text-[11px] text-slate-500">Call the runner first, then assign. They'll see it in their portal.</p>}
+        <RefundRow o={o} />
       </div>
     );
   }
@@ -222,6 +253,7 @@ export const AdminOrderActions: React.FC<{ o: OrderRecord }> = ({ o }) => {
         </div>
       )}
       {!storePhone && !done && <p className="text-[11px] text-slate-500">No store on this order yet: WhatsApp opens without a contact, so pick the store yourself.</p>}
+      <RefundRow o={o} />
     </div>
   );
 };

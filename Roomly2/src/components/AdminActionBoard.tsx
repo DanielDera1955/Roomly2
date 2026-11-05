@@ -14,6 +14,9 @@ import {
   subscribeAllRatings,
   subscribeFeedbackMessages,
   setFeedbackStatus,
+  collectsAsRoomly,
+  isRoomlyOrder,
+  payoutPending,
 } from '../api.js';
 import { slotsForDay, RATING_GOOD, INSIDE_ARRIVAL_MINUTES } from '../config';
 import { playChime } from '../sound';
@@ -155,7 +158,54 @@ export const AdminActionBoard: React.FC = () => {
 
   // ---------- 1. Batches: is the next inside batch covered by a runner who is really around? ----------
   const sides = ['boys', ...(girlsSideInUse() ? ['girls'] : [])];
-  sides.forEach((hs) => {
+  const roomlyMode = collectsAsRoomly();
+  // Roomly collects and assigns: what matters is paid orders waiting on you, not runner switches
+  const roomlyOpen = orders.filter(
+    (o: any) => isRoomlyOrder(o) && o.paymentStatus === 'payment_confirmed' && o.status !== 'Cancelled' && o.status !== 'Delivered'
+  );
+  const unassigned = roomlyOpen.filter((o: any) => !isOutside(o) && !o.runnerId);
+  if (unassigned.length) {
+    const soonest = Math.min(...unassigned.map((o: any) => insideBatchStart(o) || nowMs));
+    const n = unassigned.length;
+    items.push({
+      id: 'r-unassigned',
+      level: soonest - nowMs <= 30 * MIN ? 'red' : 'amber',
+      title: `${n} paid inside ${n === 1 ? 'order is' : 'orders are'} not assigned to a runner`,
+      detail: `The first one is for the ${clock(soonest)} batch.`,
+      todo: 'Call a runner, then open the order in Orders and tap Assign.',
+      contacts: runnerContacts('boys'),
+    });
+  } else if (roomlyMode) {
+    items.push({ id: 'r-unassigned-ok', level: 'green', title: 'Inside: every paid order is assigned to a runner' });
+  }
+  const outsideToday = roomlyOpen.filter((o: any) => isOutside(o) && (o.deliveryDate || today) <= today);
+  if (outsideToday.length) {
+    const n = outsideToday.length;
+    items.push({
+      id: 'r-outside',
+      level: nowMs >= atMin(now, 17, 45) ? 'red' : nowMs >= atMin(now, 16) ? 'amber' : 'grey',
+      title: `${n} paid outside ${n === 1 ? 'order' : 'orders'} not sent to the gate yet`,
+      detail: 'Outside parcels must reach the gate before 6pm.',
+      todo: 'Send each to the store on WhatsApp, add the packed photo, then tap Sent to gate.',
+      contacts: [...opContacts('food'), ...opContacts('store')],
+    });
+  } else if (roomlyMode) {
+    items.push({ id: 'r-outside-ok', level: 'green', title: 'Outside: no paid orders waiting to go to the gate' });
+  }
+  const payoutsDue = orders.filter((o: any) => payoutPending(o));
+  if (payoutsDue.length) {
+    const people = new Set(payoutsDue.map((o: any) => (isOutside(o) ? o.operatorId || o.cart : o.runnerId)));
+    items.push({
+      id: 'r-payouts',
+      level: 'amber',
+      title: `Payouts due on ${payoutsDue.length} delivered ${payoutsDue.length === 1 ? 'order' : 'orders'} (${people.size} ${people.size === 1 ? 'person' : 'people'})`,
+      todo: 'Open the Money tab, send each payout, then tap Mark paid.',
+    });
+  } else if (roomlyMode) {
+    items.push({ id: 'r-payouts-ok', level: 'green', title: 'Payouts: everyone is paid for delivered orders' });
+  }
+
+  if (!roomlyMode) sides.forEach((hs) => {
     const nb = getAdminNextInside(hs, now);
     if (!nb) return;
     const label = `${nb.opt.window}${nb.opt.date === today ? '' : ' tomorrow'}`;
@@ -196,6 +246,7 @@ export const AdminActionBoard: React.FC = () => {
       (o: any) =>
         o.cart === kind &&
         o.payReady &&
+        !isRoomlyOrder(o) &&
         (o.deliveryDate || today) === today &&
         o.status !== 'Cancelled' &&
         o.status !== 'Delivered' &&
@@ -240,6 +291,17 @@ export const AdminActionBoard: React.FC = () => {
   );
   waiting.forEach((o: any) => {
     const sentAt = ms(o.paymentSentAt);
+    if (isRoomlyOrder(o)) {
+      items.push({
+        id: `pay-${o.id}`,
+        level: 'red',
+        title: `${o.name} sent ${naira(o.totalAmount)} to Roomly ${mins(nowMs - sentAt)} ago and is still waiting`,
+        detail: `Tapped paid at ${clock(sentAt)}.`,
+        todo: "Check Roomly's account, then open the order in Orders and tap Money received or Not received.",
+        contacts: studentContact(o),
+      });
+      return;
+    }
     const who = o.operatorName || o.runnerName || o.turnRunner || 'the runner';
     items.push({
       id: `pay-${o.id}`,
