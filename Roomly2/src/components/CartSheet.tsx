@@ -18,7 +18,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
-import { HOSTELS, BOYS_HOSTELS, GIRLS_HOSTELS, HOSTEL_FLOORS, hostelSideOf, splitFloorRoom, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, outsideBannerFor } from '../config';
+import { HOSTELS, BOYS_HOSTELS, GIRLS_HOSTELS, GIRLS_SIDE_OPEN, GIRLS_SOON_MSG, HOSTEL_FLOORS, hostelSideOf, splitFloorRoom, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, outsideBannerFor } from '../config';
 import { getNextBatch, getOutsideChoices, getExpressRunners, paystackFor, collectsAsRoomly } from '../api.js';
 import { isValidNigerianPhone, isValidPin, normalizePhone } from '../api.js';
 
@@ -138,6 +138,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const [acknowledgedNoCancel, setAcknowledgedNoCancel] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [girlsNote, setGirlsNote] = useState(false);
   const [outOfStock, setOutOfStock] = useState<OutOfStockChoice | ''>('');
   // With items in more than one cart, start on the overview of all carts
   const filledCarts = (['inside', 'store', 'food'] as CartKind[]).filter((k) => cartCounts[k] > 0);
@@ -181,6 +182,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const [speed, setSpeed] = useState<'normal' | 'express'>('normal');
   // Boys' or girls' side, from the hostel picked: only that side's runners can take the order
   const hostelSide = customMode ? 'boys' : hostelSideOf(building);
+  // Girls' side not open yet: no inside room delivery to a girls' hostel (outside orders go to the gate, so they still work)
+  const girlsClosed = !GIRLS_SIDE_OPEN && cart === 'inside' && !customMode && hostelSide === 'girls';
   const expressRunners = cart === 'inside' ? getExpressRunners(new Date(), hostelSide) : [];
   const expressOn = expressRunners.length > 0;
   const isExpress = speed === 'express' && expressOn;
@@ -285,6 +288,10 @@ export const CartSheet: React.FC<CartSheetProps> = ({
     setErrorMessage('');
     if (notStarted) {
       setErrorMessage(`${sectionName} starts ${startsText}. Your cart is saved, come back then to order.`);
+      return;
+    }
+    if (girlsClosed) {
+      setErrorMessage(GIRLS_SOON_MSG);
       return;
     }
 
@@ -770,23 +777,36 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                 {([
                   ["Boys' hostels", BOYS_HOSTELS],
                   ["Girls' hostels", GIRLS_HOSTELS],
-                ] as [string, string[]][]).map(([label, list]) => (
+                ] as [string, string[]][]).map(([label, list]) => {
+                  const soon = !GIRLS_SIDE_OPEN && cart === 'inside' && list === GIRLS_HOSTELS;
+                  return (
                   <div key={label} className="mb-2">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">{label}</p>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                      {label}
+                      {soon && <span className="ml-1.5 normal-case tracking-normal font-semibold text-amber-600 dark:text-amber-400">Coming soon</span>}
+                    </p>
                     <div className="grid grid-cols-3 gap-1.5">
                       {list.map((b) => (
                         <button
                           key={b}
                           type="button"
                           onClick={() => {
+                            if (soon) {
+                              setGirlsNote(true);
+                              return;
+                            }
+                            setGirlsNote(false);
                             if (b !== building) setFloor('');
                             setBuilding(b);
                           }}
                           aria-pressed={building === b}
-                          className={`py-2 px-1 rounded-xl text-xs font-bold border cursor-pointer truncate ${
-                            building === b
-                              ? 'bg-[#0e9f55] border-[#0e9f55] text-white'
-                              : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                          aria-disabled={soon}
+                          className={`py-2 px-1 rounded-xl text-xs font-bold border truncate ${
+                            soon
+                              ? 'bg-slate-100 dark:bg-slate-800/40 border-dashed border-slate-300 dark:border-slate-700 text-slate-400 dark:text-slate-500 cursor-not-allowed'
+                              : building === b
+                              ? 'bg-[#0e9f55] border-[#0e9f55] text-white cursor-pointer'
+                              : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 cursor-pointer'
                           }`}
                         >
                           {b}
@@ -794,7 +814,13 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                       ))}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
+                {(girlsNote || girlsClosed) && (
+                  <p className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 text-[11px] text-amber-900 dark:text-amber-200">
+                    {GIRLS_SOON_MSG}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -1280,14 +1306,16 @@ export const CartSheet: React.FC<CartSheetProps> = ({
           <div className="pt-1">
             <button
               type="submit"
-              disabled={submitting || !outOfStock || !acknowledgedNoCancel || (!isExpress && !selectedBatch) || waitingCount > 0 || (!isExpress && needTick && !lateAccepted)}
+              disabled={submitting || girlsClosed || !outOfStock || !acknowledgedNoCancel || (!isExpress && !selectedBatch) || waitingCount > 0 || (!isExpress && needTick && !lateAccepted)}
               className="w-full h-12 bg-[#0e9f55] hover:bg-[#0b8044] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold flex items-center justify-between px-5 shadow-lg shadow-[#0e9f55]/20 active:scale-[0.98] transition-all cursor-pointer"
             >
               <span>{submitting ? 'Placing Order...' : 'Confirm & Place Order'}</span>
               <span className="font-mono text-base">₦{grandTotal.toLocaleString()}</span>
             </button>
             <p className="text-[10px] text-center text-slate-400 mt-2">
-              {!outOfStock
+              {girlsClosed
+                ? "Girls' hostel room delivery is coming soon. Pick a boys' hostel to order."
+                : !outOfStock
                 ? 'Choose what we should do if an item is out of stock, above.'
                 : waitingCount > 0
                 ? `You can't check out until your requested items are priced (${waitingCount} waiting). We'll update your cart total as soon as the price arrives.`
