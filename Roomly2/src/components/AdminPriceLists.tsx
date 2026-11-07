@@ -31,8 +31,11 @@ export const AdminPriceLists: React.FC<{ categories: any[] }> = ({ categories })
   const [all, setAll] = useState<Record<string, Record<string, any>>>({});
   const [name, setName] = useState('');
   const [cats, setCats] = useState<string[]>([]);
+  const [side, setSide] = useState<'inside' | 'outside'>('inside');
   const [copied, setCopied] = useState('');
   const insideCats = useMemo(() => categoriesForStore(categories || [], 'inside').map((c: any) => c.name).filter((n: string) => n.toLowerCase() !== 'food'), [categories]);
+  const outsideCats = useMemo(() => categoriesForStore(categories || [], 'store').map((c: any) => c.name).filter((n: string) => n.toLowerCase() !== 'food'), [categories]);
+  const sideCats = side === 'outside' ? outsideCats : insideCats;
 
   useEffect(() => subscribePriceLinks(setLinks), []);
   const reload = () => getProductsFresh().then((p: any[]) => setProducts(p || [])).catch(() => {});
@@ -47,7 +50,7 @@ export const AdminPriceLists: React.FC<{ categories: any[] }> = ({ categories })
 
   const create = async () => {
     if (!name.trim()) return window.alert("Type the supplier's name.");
-    await createPriceLink(name, cats);
+    await createPriceLink(name, cats, side);
     setName('');
     setCats([]);
   };
@@ -77,10 +80,32 @@ export const AdminPriceLists: React.FC<{ categories: any[] }> = ({ categories })
           {/* New link */}
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-2">
             <p className="text-xs font-bold text-slate-900 dark:text-white">New price list</p>
-            <input value={name} onChange={(e) => setName(e.target.value)} className={input} placeholder="Supplier name, e.g. Jennifer" />
-            <p className="text-[11px] text-slate-500">Categories they see (none ticked = all inside store items)</p>
+            <input value={name} onChange={(e) => setName(e.target.value)} className={input} placeholder="Supplier name, e.g. Jennifer or an Oye store" />
+            <div className="grid grid-cols-2 gap-1.5">
+              {(
+                [
+                  ['inside', 'Inside school store'],
+                  ['outside', 'Outside store (Oye)'],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    setSide(id);
+                    setCats([]);
+                  }}
+                  className={`${btn} border ${side === id ? 'border-[#0e9f55] text-white bg-[#0e9f55]' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Categories they see (none ticked = all {side === 'outside' ? 'outside store' : 'inside store'} items)
+            </p>
             <div className="flex flex-wrap gap-1.5">
-              {insideCats.map((c: string) => (
+              {sideCats.map((c: string) => (
                 <button
                   key={c}
                   type="button"
@@ -103,7 +128,7 @@ export const AdminPriceLists: React.FC<{ categories: any[] }> = ({ categories })
               products={products}
               all={all}
               links={links}
-              categories={insideCats}
+              categories={l.side === 'outside' ? outsideCats : insideCats}
               copied={copied === l.id}
               onCopy={() => copy(l.id)}
               onApplied={reload}
@@ -131,7 +156,9 @@ const SupplierList: React.FC<{
   const [catFor, setCatFor] = useState<Record<string, string>>({});
   useEffect(() => subscribeLinkNewItems(link.id, setNewItems), [link.id]);
   const mine = all[link.id] || {};
-  const others = links.filter((x) => x.id !== link.id);
+  const linkSide = link.side === 'outside' ? 'outside' : 'inside';
+  const source = linkSide === 'outside' ? 'outside' : 'school';
+  const others = links.filter((x) => x.id !== link.id && (x.side === 'outside' ? 'outside' : 'inside') === linkSide);
   const byId = useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
 
   const rows = Object.entries(mine)
@@ -163,7 +190,7 @@ const SupplierList: React.FC<{
     if (!cat) return window.alert('Pick a category first.');
     setBusy(true);
     try {
-      await addSupplierItem(link.id, it, cat);
+      await addSupplierItem(link.id, it, cat, source);
       onApplied();
     } catch (e: any) {
       window.alert(e?.message || 'Could not add.');
@@ -176,7 +203,8 @@ const SupplierList: React.FC<{
       <button type="button" onClick={() => setOpen(!open)} className="w-full flex items-start justify-between gap-2 text-left cursor-pointer">
         <div className="min-w-0">
           <p className="text-sm font-black text-slate-900 dark:text-white">
-            {link.name} {!link.active && <span className="text-[10px] font-bold text-rose-600">· closed</span>}
+            {link.name} <span className="text-[10px] font-bold text-slate-500">· {linkSide === 'outside' ? 'Outside store' : 'Inside store'}</span>{' '}
+            {!link.active && <span className="text-[10px] font-bold text-rose-600">· closed</span>}
           </p>
           <p className="text-[11px] text-slate-500">
             {rows.length} priced · {waitingNew.length} new item{waitingNew.length === 1 ? '' : 's'} · {changed.length} to apply
@@ -229,7 +257,7 @@ const SupplierList: React.FC<{
                   <div key={r.p.id} className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 space-y-1">
                     <p className="font-bold text-slate-900 dark:text-white">{r.p.name}</p>
                     <p className="text-slate-600 dark:text-slate-300">
-                      {link.name} {naira(r.price)} → sells at <strong>{naira(sellingPrice(r.price, 'school'))}</strong>
+                      {link.name} {naira(r.price)} → sells at <strong>{naira(sellingPrice(r.price, source))}</strong>
                       <span className="text-slate-400"> · now {now ? naira(now) : 'not priced'}</span>
                     </p>
                     {r.theirs.length > 0 && (
@@ -268,7 +296,7 @@ const SupplierList: React.FC<{
                       {it.name} {it.size ? <span className="font-normal text-slate-500">({it.size})</span> : null}
                     </p>
                     <p className="text-slate-600 dark:text-slate-300">
-                      {naira(it.price)} → sells at <strong>{naira(sellingPrice(Number(it.price), 'school'))}</strong>
+                      {naira(it.price)} → sells at <strong>{naira(sellingPrice(Number(it.price), source))}</strong>
                     </p>
                     <div className="flex gap-1.5">
                       <select value={catFor[it.id] || ''} onChange={(e) => setCatFor({ ...catFor, [it.id]: e.target.value })} className={`${input} py-1 text-xs`}>

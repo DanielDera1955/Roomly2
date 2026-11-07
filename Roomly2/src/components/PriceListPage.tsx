@@ -33,11 +33,12 @@ export const PriceListPage: React.FC<{ token: string }> = ({ token }) => {
   useEffect(() => subscribeLinkPrices(token, setPrices), [token]);
   useEffect(() => subscribeLinkNewItems(token, setNewItems), [token]);
 
-  // Inside-school store items, limited to the categories chosen for this supplier
+  // Store items for this link's side (inside school or outside store), limited to the categories chosen for this supplier
   const items = useMemo(() => {
     const cats: string[] = link?.categories || [];
+    const outside = link?.side === 'outside';
     return products
-      .filter((p) => (!p.source || p.source === 'school') && !p.isFood)
+      .filter((p) => (outside ? p.source === 'outside' : !p.source || p.source === 'school') && !p.isFood)
       .filter((p) => !cats.length || cats.includes(p.category))
       .sort((a, b) => String(a.category).localeCompare(String(b.category)) || String(a.name).localeCompare(String(b.name)));
   }, [products, link]);

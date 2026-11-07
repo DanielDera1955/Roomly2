@@ -4649,11 +4649,12 @@ export async function setRunnerApplicationStatus(id, status, note) {
 const PRICE_LINK_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
 const newPriceToken = () => Array.from(crypto.getRandomValues(new Uint8Array(22)), (b) => PRICE_LINK_CHARS[b % PRICE_LINK_CHARS.length]).join('');
 
-/** Admin: make a link for a supplier. categories: [] = every inside-school store category */
-export async function createPriceLink(name, categories = []) {
+/** Admin: make a link for a supplier. side: 'inside' (school store) or 'outside' (outside store). categories: [] = every category on that side */
+export async function createPriceLink(name, categories = [], side = 'inside') {
   const token = newPriceToken();
   await setDoc(doc(db, 'priceLinks', token), {
     name: String(name || '').trim().slice(0, 40) || 'Supplier',
+    side: side === 'outside' ? 'outside' : 'inside',
     categories: (categories || []).slice(0, 40),
     active: true,
     note: '',
@@ -4750,8 +4751,9 @@ export async function applySupplierCosts(list) {
   logActivity('price', `applied supplier prices to ${n} item${n === 1 ? '' : 's'}`);
   return n;
 }
-/** Admin: add a supplier's new item to the store (inside school) */
-export async function addSupplierItem(token, item, category) {
+/** Admin: add a supplier's new item to the store (inside school or outside store, by the link's side) */
+export async function addSupplierItem(token, item, category, source = 'school') {
+  const src = source === 'outside' ? 'outside' : 'school';
   const cost = Math.round(Number(item.price) || 0);
   await saveProduct({
     id: `prod-${Date.now()}`,
@@ -4760,12 +4762,12 @@ export async function addSupplierItem(token, item, category) {
     category,
     subcategory: 'All',
     costPrice: cost,
-    price: sellingPrice(cost, 'school'),
+    price: sellingPrice(cost, src),
     imageUrl: item.photo || '',
     emoji: '',
     gradient: 'from-slate-400/20 to-zinc-500/20',
     isAvailable: true,
-    source: 'school',
+    source: src,
   });
   await updateDoc(doc(db, 'priceLinks', token, 'newItems', item.id), { added: true });
 }
