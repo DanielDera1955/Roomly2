@@ -70,7 +70,7 @@ export const AttentionCard: React.FC<Props> = ({ needsAccount, toConfirm, toSend
       tone: 'amber',
       badge: String(toSend),
       title: runner ? `Order${toSend > 1 ? 's' : ''} to pack and deliver` : `Order${toSend > 1 ? 's' : ''} to pack and send`,
-      note: runner ? 'Deliver to their rooms in your batch' : 'Must reach the gate before 6pm',
+      note: runner ? 'Deliver to their rooms before 9:30pm' : 'Send by your cut-off so it reaches the gate in time',
       go: 'View',
       act: () => onOrders('confirmed'),
     });

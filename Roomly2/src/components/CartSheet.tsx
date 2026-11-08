@@ -18,13 +18,17 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
-import { HOSTELS, BOYS_HOSTELS, GIRLS_HOSTELS, GIRLS_SIDE_OPEN, GIRLS_SOON_MSG, HOSTEL_FLOORS, hostelSideOf, splitFloorRoom, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, outsideBannerFor } from '../config';
+import { HOSTELS, BOYS_HOSTELS, GIRLS_HOSTELS, GIRLS_SIDE_OPEN, GIRLS_SOON_MSG, HOSTEL_FLOORS, hostelSideOf, splitFloorRoom, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, outsideBannerFor, outsideArriveByFor, timeLabel, timeLabelFull } from '../config';
 import { getNextBatch, getOutsideChoices, getExpressRunners, paystackFor, collectsAsRoomly } from '../api.js';
 import { isValidNigerianPhone, isValidPin, normalizePhone } from '../api.js';
 
 interface CartSheetProps {
   /** When this cart's section starts taking orders (ms). Before then the cart is kept but can't be paid. 0 = open now. */
   startsAtMs?: number;
+  /** Food cart items whose dish is not on the batch now taking orders (lunch or dinner) */
+  offMenuIds?: string[];
+  /** "Lunch batch" / "Dinner batch": the food batch now taking orders */
+  foodBatchName?: string;
   /** Inside cart: a bag of water to suggest when the cart has none */
   /** Soft drinks to suggest (already filtered: the cart has food or snacks but no drink) */
   suggestDrinks?: { id: string; name: string; price: number; imageUrl?: string; unit?: string }[];
@@ -109,6 +113,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   signedIn = false,
   onPlaceOrder,
   startsAtMs = 0,
+  offMenuIds = [],
+  foodBatchName = '',
 }) => {
   if (!isOpen) return null;
   const notStarted = startsAtMs > Date.now();
@@ -240,13 +246,17 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   // Outside: which day this order is for ("today" / "tomorrow" / "on Friday"), and the fixed date
   const outsideDay = cart !== 'inside' && selectedBatch ? dayWord(selectedBatch.date) : '';
   const outsideDate = cart !== 'inside' && selectedBatch ? longDayLabel(selectedBatch.date) : '';
-  // Today's outside orders closed (5:10pm store, 5:30pm food): "this batch" is already another day
+  // Gate time for an outside batch: 1:30pm lunch, 7:00pm store and dinner
+  const gateTimeOf = (id?: string) => timeLabelFull(outsideArriveByFor(id));
+  // Today's outside orders closed (5:00pm store, 6:00pm food): "this batch" is already another day
   const outsideClosedToday = cart !== 'inside' && Boolean(currentBatch) && dayWord(currentBatch.date) !== 'today';
   const otherCarts = (['inside', 'store', 'food'] as CartKind[]).filter((k) => k !== cart && cartCounts[k] > 0);
   const atGate = cart !== 'inside' && !gatePickup;
 
   // Requested products still waiting for a price: the cart cannot be checked out yet
   const waitingCount = items.filter((i) => i.pendingQuote).length;
+  // Food: dishes from a batch that has closed (e.g. a lunch dish after 12:30pm when dinner doesn't cook it)
+  const offMenu = cart === 'food' ? items.filter((i) => offMenuIds.includes(i.id)) : [];
 
   // Late order: a batch earlier today has already gone, or the next batch is another day.
   // The student must accept that the order joins the next batch.
@@ -348,6 +358,11 @@ export const CartSheet: React.FC<CartSheetProps> = ({
       return;
     }
 
+    if (offMenu.length > 0) {
+      setErrorMessage(`Remove the dishes that aren't on the ${foodBatchName.toLowerCase() || 'current'} menu to check out.`);
+      return;
+    }
+
     if (!isExpress && needTick && !lateAccepted) {
       setErrorMessage('Please tick that you accept your order coming in the next batch.');
       return;
@@ -379,7 +394,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
         customRequest: customRequest.trim(),
         deliveryBatch: (selectedBatch?.id || 'afternoon') as DeliveryBatchId,
         // Outside: a fixed date ("Thursday 29 Oct: at the school gate before 6pm") so it never reads "Tomorrow" a day later
-        deliveryTime: cart !== 'inside' && selectedBatch ? outsideDeliveryText(selectedBatch.date) : selectedBatch?.label || '',
+        deliveryTime: cart !== 'inside' && selectedBatch ? outsideDeliveryText(selectedBatch.date, selectedBatch.id) : selectedBatch?.label || '',
         deliveryDate: selectedBatch?.date,
         paymentDeadline: isExpress ? undefined : payBy?.toISOString(),
         paymentMethod: 'pay_now',
@@ -651,6 +666,29 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                 <strong className="block">You can't check out until your requested items are priced.</strong>
                 As soon as the price arrives, it's saved into this cart and the total updates. Then you can pay as normal.
               </span>
+            </div>
+          )}
+
+          {/* Food: dishes from a batch that has closed and the batch now cooking doesn't make */}
+          {offMenu.length > 0 && (
+            <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 space-y-2">
+              <span className="flex items-start gap-2">
+                <Lock className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                <span>
+                  <strong className="block">
+                    {offMenu.map((i) => i.name).join(', ')} {offMenu.length === 1 ? "isn't" : "aren't"} on the {foodBatchName.toLowerCase() || 'current'} menu.
+                  </strong>
+                  {offMenu.length === 1 ? 'It was' : 'They were'} in a batch that has closed. Order {offMenu.length === 1 ? 'it' : 'them'} next time
+                  that batch opens, or pick from the {foodBatchName.toLowerCase() || 'current'} menu.
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() => offMenu.forEach((i) => onRemoveItem(i.id))}
+                className="w-full py-2 rounded-xl bg-amber-600 text-white text-xs font-bold cursor-pointer"
+              >
+                Remove {offMenu.length === 1 ? 'it' : 'them'} and continue
+              </button>
             </div>
           )}
 
@@ -956,7 +994,11 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                   {cart === 'food' ? 'Every food vendor' : 'Every store'} is fully booked today. Orders placed now will be delivered {outsideDay || 'on the next day'}.
                 </div>
               ) : (
-                <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">{outsideBannerFor(cart)}</p>
+                <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                  {cart === 'food' && selectedBatch
+                    ? `${selectedBatch.name}: order before ${timeLabelFull(selectedBatch.startMin)}, at the school gate before ${gateTimeOf(selectedBatch.id)}.`
+                    : outsideBannerFor(cart)}
+                </p>
               )}
               {operators.map((op) => {
                 const on = (chosenOp?.uid || '') === op.uid;
@@ -985,7 +1027,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                     </span>
                     <span className="block text-[11px] text-slate-500 mt-0.5">
                       {op.status === 'now'
-                        ? `Delivering ${dayWord(op.batch.date)}, to the school gate before 6pm`
+                        ? `Delivering ${dayWord(op.batch.date)}, to the school gate before ${gateTimeOf(op.batch.id)}`
                         : op.status === 'next'
                         ? `${op.name} ${op.reason === 'dayoff' ? 'is closed' : 'is fully booked'} ${currentBatch ? dayWord(currentBatch.date) : 'today'}. Orders placed now will be delivered ${dayWord(op.batch.date)}.`
                         : 'Not available yet'}
@@ -1094,14 +1136,14 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                           ? `No runner has confirmed this batch yet. Once one does, your order reaches your room by ${byMaxText} max.`
                           : (chosen as any).early
                           ? `The ${(chosen as any).early.window} batch has started. If your runner can still make it, you'll get it before ${clockOf((chosen as any).early.endMs)}. If not, it comes in the ${chosen.startText} batch, by ${byMaxText} max.`
-                          : `Your order is in the ${chosen.startText} batch${selectedBatch.dayLabel === 'Today' ? '' : ` (${selectedBatch.dayLabel.toLowerCase()})`} and reaches your room by ${byMaxText} max. Your runner may bring it earlier.`}
+                          : `Your order is in the ${timeLabel(selectedBatch.startMin)} evening batch${selectedBatch.dayLabel === 'Today' ? '' : ` (${selectedBatch.dayLabel.toLowerCase()})`} and reaches your room before ${byMaxText}. Orders close at 8:50pm.`}
                       </span>
                     </div>
                   ) : (
                     <div>
                       <span className="text-xs font-extrabold text-slate-900 dark:text-white">This order is for {outsideDate}</span>
                       <span className="block text-[11px] text-slate-500 dark:text-slate-400">
-                        At the school gate {outsideDay}, before 6pm.
+                        At the school gate {outsideDay}, before {gateTimeOf(selectedBatch.id)}.
                       </span>
                     </div>
                   )}
@@ -1306,7 +1348,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
           <div className="pt-1">
             <button
               type="submit"
-              disabled={submitting || girlsClosed || !outOfStock || !acknowledgedNoCancel || (!isExpress && !selectedBatch) || waitingCount > 0 || (!isExpress && needTick && !lateAccepted)}
+              disabled={submitting || girlsClosed || !outOfStock || !acknowledgedNoCancel || (!isExpress && !selectedBatch) || waitingCount > 0 || offMenu.length > 0 || (!isExpress && needTick && !lateAccepted)}
               className="w-full h-12 bg-[#0e9f55] hover:bg-[#0b8044] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold flex items-center justify-between px-5 shadow-lg shadow-[#0e9f55]/20 active:scale-[0.98] transition-all cursor-pointer"
             >
               <span>{submitting ? 'Placing Order...' : 'Confirm & Place Order'}</span>
@@ -1319,11 +1361,13 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                 ? 'Choose what we should do if an item is out of stock, above.'
                 : waitingCount > 0
                 ? `You can't check out until your requested items are priced (${waitingCount} waiting). We'll update your cart total as soon as the price arrives.`
+                : offMenu.length > 0
+                ? `Remove the dishes that aren't on the ${foodBatchName.toLowerCase() || 'current'} menu, above.`
                 : isExpress
                 ? 'Goes to the express runners. One accepts, then you pay them.'
                 : cart === 'inside'
                 ? 'Goes to the runner on this batch'
-                : `Goes to ${chosenOp?.name || 'the operator'}, delivered to the school gate`}
+                : `Goes to ${chosenOp?.name || 'the operator'}, delivered to the school gate before ${gateTimeOf(selectedBatch?.id)}`}
             </p>
           </div>
           )}

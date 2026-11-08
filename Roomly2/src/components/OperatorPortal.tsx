@@ -29,7 +29,7 @@ import { MyRatingsPanel } from './FeedbackPanels';
 import { OperatorGuide } from './OperatorGuide';
 import { AttentionCard, jumpTo } from './AttentionCard';
 import { OrderRecord, partLabel, shortLocation } from '../types';
-import { OUT_OF_STOCK_LABEL, dayWord, longDayLabel } from '../config';
+import { OUT_OF_STOCK_LABEL, dayWord, longDayLabel, outsideArriveByFor, timeLabelFull } from '../config';
 import { playChime } from '../sound';
 import { SoundToggle } from './SoundToggle';
 import { ThemeToggle } from './ThemeToggle';
@@ -360,21 +360,24 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
     }
     setBusy('');
   };
-  // Which day an order is for, e.g. "For today: at the gate before 6pm" / "For tomorrow, Thursday 29 Oct"
-  // Not sent by 6pm on its day: say so plainly, so it stands out as a problem
+  // Which day an order is for, e.g. "For today: at the gate before 7:00pm" / "For tomorrow, Thursday 29 Oct"
+  // Not sent by its gate time (7:00pm, or 1:30pm for lunch) on its day: say so plainly, so it stands out as a problem
   const missedOf = (o: OrderRecord) => {
     if (!o.deliveryDate || statusOf(o) === 'sent' || o.status === 'Cancelled' || stageOf(o) === 'notpaid') return '';
     const d = new Date(tickMs);
     const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     if (o.deliveryDate < today) return `Missed delivery: was due ${longDayLabel(o.deliveryDate)}`;
-    if (o.deliveryDate === today && d.getHours() >= 18) return "Missed today's delivery: was due at the gate before 6pm";
+    const gateMin = outsideArriveByFor(o.deliveryBatch);
+    if (o.deliveryDate === today && d.getHours() * 60 + d.getMinutes() >= gateMin) return `Missed today's delivery: was due at the gate before ${timeLabelFull(gateMin)}`;
     return '';
   };
   const dayOf = (o: OrderRecord) => {
     if (missedOf(o)) return missedOf(o);
     if (!o.deliveryDate) return o.deliveryTime;
     const w = dayWord(o.deliveryDate);
-    return w === 'today' ? 'For today: at the gate before 6pm' : `For ${w.replace(/^on /, '')}, ${longDayLabel(o.deliveryDate)}`;
+    return w === 'today'
+      ? `For today: at the gate before ${timeLabelFull(outsideArriveByFor(o.deliveryBatch))}`
+      : `For ${w.replace(/^on /, '')}, ${longDayLabel(o.deliveryDate)}`;
   };
   const isFuture = (o: OrderRecord) => Boolean(o.deliveryDate) && Date.parse(o.deliveryDate + 'T00:00:00') > Date.now();
 

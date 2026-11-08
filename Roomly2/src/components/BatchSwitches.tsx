@@ -12,6 +12,8 @@ import {
   setInsideSwitch,
   setOperatorSwitch,
   setOperatorAdminOff,
+  setOperatorFoodBatch,
+  foodBatchOf,
   switchIsLive,
   switchStartDate,
   batchOpen,
@@ -241,7 +243,13 @@ const OutsideDaySwitches: React.FC<{ side: 'store' | 'food' }> = ({ side }) => {
   const now = new Date();
   const staff = getCurrentStaff();
   const mine = getMyOperatorStatus();
-  const days = Array.from({ length: OUTSIDE_DAYS_AHEAD }, (_, d) => slotsForDay(side, now, d)[0]).filter(Boolean) as BatchOption[];
+  // A food vendor switches the days of her own batch (lunch or dinner)
+  const myBatch = side === 'food' ? foodBatchOf(mine) : '';
+  const days = Array.from({ length: OUTSIDE_DAYS_AHEAD }, (_, d) =>
+    slotsForDay(side, now, d).find((x) => side !== 'food' || x.id === myBatch)
+  ).filter(Boolean) as BatchOption[];
+  const cutText = side === 'store' ? '5:00pm' : myBatch === 'midday' ? '12:30pm' : '6:00pm';
+  const gateText = myBatch === 'midday' ? '1:30pm' : '7:00pm';
   const todayClosed = days[0] ? now.getTime() >= batchCloseDate(days[0], side).getTime() : false;
   const hidden = getMyHiddenReason(now);
   const locked = Boolean(mine?.adminOff) || hidden?.reason === 'admin';
@@ -320,7 +328,7 @@ const OutsideDaySwitches: React.FC<{ side: 'store' | 'food' }> = ({ side }) => {
                   </span>
                   <span className={`block text-[11px] font-bold ${closed ? 'text-slate-500' : on ? 'text-[#0e9f55]' : 'text-rose-600 dark:text-rose-400'}`}>
                     {closed
-                      ? `Today's orders closed at ${side === 'food' ? '5:30pm' : '5:10pm'}. New orders are for your next day that is ON.`
+                      ? `Today's orders closed at ${cutText}. New orders are for your next day that is ON.`
                       : on
                       ? 'ON: students can order for this day'
                       : isDayOff
@@ -389,7 +397,7 @@ const OutsideDaySwitches: React.FC<{ side: 'store' | 'food' }> = ({ side }) => {
             still order: their order goes to your next day that is ON.
           </p>
           <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-snug">
-            Students order before {side === 'food' ? '5:30pm' : '5:10pm'} to get it the same day. Send so it reaches the school gate before 6pm. If you can't make it,
+            {side === 'food' ? `You cook for the ${myBatch === 'midday' ? 'lunch' : 'dinner'} batch. ` : ''}Students order before {cutText} to get it the same day. Send by {cutText} so it reaches the school gate before {gateText}. If you can't make it,
             open the order and tap "Move to next available day".
           </p>
         </div>
@@ -461,7 +469,7 @@ const InsideBatchSwitches: React.FC<BatchSwitchesProps> = ({ side = 'inside' }) 
           ) : (
           <p className="text-[11px] text-slate-400 leading-snug">
             {side === 'inside'
-              ? `Batches in "My week" are ON by themselves every week. Tap OFF for a day you can't make it. A batch closes to new orders at its start time, and those orders join your next batch, so you can bring them early if you're free.`
+              ? `Batches in "My week" are ON by themselves every week. Tap OFF for a day you can't make it. The batch starts at 8:30pm and takes orders until 8:50pm. Every order must be in the student's room before 9:30pm.`
               : `Tap ON when you are ready to take a batch. After the batch time, leave it ON while you still take late orders, and tap OFF when you stop. Students then see the next batch. Switches turn OFF by themselves after ${cutoff}.`}
           </p>
           )}
@@ -494,9 +502,21 @@ export const OperatorOverridePanel: React.FC<{ kind?: 'store' | 'food' }> = ({ k
 
   // Days ON out of the next three (a day never touched counts as ON)
   const liveCount = (op: any) =>
-    Array.from({ length: OUTSIDE_DAYS_AHEAD }, (_, d) => slotsForDay(op.kind, now, d)[0])
+    Array.from({ length: OUTSIDE_DAYS_AHEAD }, (_, d) =>
+      slotsForDay(op.kind, now, d).find((o) => op.kind !== 'food' || o.id === foodBatchOf(op))
+    )
       .filter(Boolean)
-      .filter((o) => batchOpen(o, (op.slots || {})[o.key], op.kind, now)).length;
+      .filter((o: any) => batchOpen(o, opDaySwitch(op, o), op.kind, now)).length;
+  const setBatch = async (op: any, batch: 'midday' | 'evening') => {
+    if (foodBatchOf(op) === batch) return;
+    setBusy(op.id);
+    try {
+      await setOperatorFoodBatch(op.id, batch);
+    } catch (e) {
+      window.alert('Could not update this vendor.');
+    }
+    setBusy('');
+  };
 
   const set = async (op: any, off: boolean) => {
     if (Boolean(op.adminOff) === off) return;
@@ -539,6 +559,29 @@ export const OperatorOverridePanel: React.FC<{ kind?: 'store' | 'food' }> = ({ k
                   ? `ON: taking orders (${n} of the next ${OUTSIDE_DAYS_AHEAD} days on)`
                   : 'ON, but they switched all their days OFF'}
               </span>
+              {op.kind === 'food' && (
+                <span className="mt-1.5 inline-grid grid-cols-2 rounded-lg overflow-hidden border border-slate-300 dark:border-slate-600">
+                  {(
+                    [
+                      ['midday', 'Lunch batch'],
+                      ['evening', 'Dinner batch'],
+                    ] as const
+                  ).map(([b, label]) => (
+                    <button
+                      key={b}
+                      type="button"
+                      disabled={busy === op.id}
+                      onClick={() => setBatch(op, b)}
+                      aria-pressed={foodBatchOf(op) === b}
+                      className={`px-2 py-1 text-[10px] font-bold cursor-pointer ${
+                        foodBatchOf(op) === b ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-white dark:bg-slate-900 text-slate-500'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </span>
+              )}
             </div>
             <div className="shrink-0 grid grid-cols-2 rounded-xl overflow-hidden border border-slate-300 dark:border-slate-600">
               <button

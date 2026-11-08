@@ -9,6 +9,10 @@ export interface CartItem {
   emoji: string;
   source?: 'school' | 'outside' | 'food';
   isFood?: boolean;
+  /** Outside food: the batches this dish is cooked for ('midday' lunch, 'evening' dinner). Not set = dinner. */
+  foodBatches?: string[];
+  /** Outside food: switched off by that batch's vendor for today */
+  batchOff?: Record<string, boolean>;
   plates?: number;
   extras?: {
     id: string;

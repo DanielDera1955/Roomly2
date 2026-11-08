@@ -46,7 +46,7 @@ const runnerSteps: Step[] = [
   { title: 'Add your payment account', text: 'Students pay you directly. Until your account is added, you cannot take orders.' },
   {
     title: 'Your batches',
-    text: 'Switch ON the batches you can deliver and be at the canteen by the start time: Sunday 11:30am, 2:30pm, 6:30pm, 8:30pm; Monday to Friday 2:30pm, 5:30pm, 8:30pm; Saturday 9:30am, 1:30pm, 4:30pm, 8:30pm. Each batch is 30 minutes. Switch a batch OFF if you cannot make it, and once you finish buying for it. All switches turn off by themselves at 10pm.',
+    text: 'Roomly runs one batch a day, every day, at 8:30pm. Orders close at 8:50pm and every order must be in the student\'s room before 9:30pm. Switch a batch OFF if you cannot make it, and once you finish buying for it. All switches turn off by themselves at 10pm.',
   },
   {
     title: 'When an order comes',

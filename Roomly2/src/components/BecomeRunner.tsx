@@ -9,15 +9,9 @@ import { submitRunnerApplication, RUNNER_APP_LEVELS } from '../api.js';
  * Never show Roomly's margin percentage here: any student can open this page.
  */
 
-const BATCH_DAYS: { day: string; times: string[] }[] = [
-  { day: 'Sunday', times: ['11:30am', '2:30pm', '6:30pm', '8:30pm'] },
-  { day: 'Monday to Friday', times: ['2:30pm', '5:30pm', '8:30pm'] },
-  { day: 'Saturday', times: ['9:30am', '1:30pm', '4:30pm', '8:30pm'] },
-];
+const BATCH_DAYS: { day: string; times: string[] }[] = [{ day: 'Every day', times: ['8:30pm'] }];
 const SCHEDULE: { day: string; slots: string }[] = [
-  { day: 'Sunday', slots: '11:30am to 12:00pm, 2:30 to 3:00pm, 6:30 to 7:00pm, 8:30 to 9:00pm' },
-  { day: 'Monday to Friday', slots: '2:30 to 3:00pm, 5:30 to 6:00pm, 8:30 to 9:00pm' },
-  { day: 'Saturday', slots: '9:30 to 10:00am, 1:30 to 2:00pm, 4:30 to 5:00pm, 8:30 to 9:00pm' },
+  { day: 'Every day', slots: '8:30pm batch: orders close at 8:50pm, every order in the room before 9:30pm' },
 ];
 
 /** A tap-to-pick button (green when chosen) */

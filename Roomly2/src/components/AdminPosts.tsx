@@ -49,10 +49,11 @@ function useLive(): Record<string, boolean> {
   }, []);
   const now = new Date(nowMs);
   const ops = (getAllOperatorStatus() as any[]) || [];
-  const opOn = (kind: string, offset: number) => {
-    const opt = slotsForDay(kind as any, now, offset)[0];
-    return ops.some((o) => o.kind === kind && !o.adminOff && opt && outsideDayOn(opDaySwitch(o, opt)));
-  };
+  // Any batch of that day (food has lunch and dinner) with a vendor on it
+  const opOn = (kind: string, offset: number) =>
+    slotsForDay(kind as any, now, offset).some((opt) =>
+      ops.some((o) => o.kind === kind && !o.adminOff && outsideDayOn(opDaySwitch(o, opt)))
+    );
   const next = getAdminNextInside('boys', now) as any;
   return {
     inside: Boolean(next && next.live),

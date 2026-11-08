@@ -48,14 +48,14 @@ export const DEFAULT_POSTS = [
 Open Roomly, see the food and prices, pick the ones you want in a few taps, and check out.
 Order alone or with friends. One order, one ₦800 delivery fee for everyone.
 Once you pay, a timer starts, and your food reaches the school gate before it hits 0.00.
-Order before 5:30pm. Foodstuff, kerosene, and store items open Monday, 9 Nov.
+Order dinner before 6pm, at the gate before 7pm.
 
 ${SIGN}`,
       `Craving food from Oye today? Let Oye come to you.
 Open Roomly, see the menu and prices, pick what you want in a few taps, and check out.
 Order alone or with friends. One order, one ₦800 delivery fee for everyone.
 Once you pay, a timer starts, and your food reaches the school gate before it hits 0.00.
-Order before 5:30pm. Foodstuff, kerosene, and store items open Monday, 9 Nov.
+Order dinner before 6pm, at the gate before 7pm.
 
 ${SIGN}`,
     ],
@@ -74,66 +74,79 @@ ${SIGN}`,
 Open Roomly, see foodstuff, kerosene, provisions and their prices, pick what you want in a few taps, and check out.
 Order alone or with your roommates. One order, one ₦800 delivery fee for everyone.
 Once you pay, a timer starts, and your items reach the school gate before it hits 0.00.
-Order before 5:10pm to get it today.
+Order before 5pm to get it at the gate before 7pm today.
 
 ${SIGN}`,
       `Rice, garri, kerosene, groundnut oil or soap finished? Restock without leaving school.
 See the items and prices on Roomly and check out in a few taps.
 Share one order with your roommates and pay the ₦800 delivery once for everything.
 Once you pay, a timer starts, and your items reach the school gate before it hits 0.00.
-Order before 5:10pm.
+Order before 5pm.
 
 ${SIGN}`,
     ],
   }),
   p({
-    id: 'gate-midday',
-    title: 'Midday: skip the canteen queue (2:30pm batch)',
-    days: [1, 2, 3, 4, 5],
-    start: '12:30',
-    end: '13:30',
+    id: 'lunch-weekday',
+    title: 'Morning: lunch at the gate (order before 12:30pm)',
+    days: [2, 3, 4, 5],
+    start: '10:30',
+    end: '12:15',
     groups: ['rg', 'code'],
-    section: 'inside',
-    needs: 'inside',
+    section: 'outside-food',
+    needs: 'food',
     variants: [
-      `Waiting at the gate? Skip the canteen queue.
-Open Roomly, see the items in the school canteen, pick what you want, and check out in a few taps.
-Order alone or with your roommates. One cart, one ₦500 delivery fee for the whole room.
-Once you pay, a timer starts, and your order reaches your room before it hits 0.00.
-You can order before the next batch, which starts delivering by 2:30pm, and everyone gets their order before a max time of 3:00pm.
-
-${SIGN}`,
-      `Lectures done? Don't stand in the canteen queue.
-Open Roomly, see the canteen items and prices, pick what you want, and check out in a few taps.
-Order alone or with your roommates. One cart, one ₦500 delivery fee for the whole room.
-Once you pay, a timer starts, and your order reaches your room before it hits 0.00.
-The next batch starts delivering by 2:30pm, and everyone gets their order by 3:00pm max.
+      `Lectures end, the gate opens at 1, and you still have to walk to the canteen.
+Order lunch on Roomly before 12:30pm and pick it up at the school gate before 1:30pm, on your way in.
+How to order:
+1. Open the link and pick your food. Add protein and a drink if you want.
+2. Tap Checkout. First time? Enter your name, phone number and a 4-digit PIN.
+3. Pay to the vendor's account shown, then tap "I have made payment".
+4. A countdown starts. Your food is at the gate before it ends.
+Order with your roommates and share one delivery fee.
 
 ${SIGN}`,
     ],
   }),
   p({
     id: 'food-afternoon',
-    title: 'Afternoon: Oye food before 5:30pm',
+    title: 'Afternoon: dinner at the gate (order before 6pm)',
     days: [1, 2, 3, 4, 5, 6],
-    start: '16:00',
-    end: '17:15',
+    start: '15:30',
+    end: '17:45',
     groups: ['rg', 'cs'],
     section: 'outside-food',
     needs: 'food',
     variants: [
-      `It's past 4 already. You can order jollof rice, fried rice, and chicken from Oye and get it at the school gate before 6pm.
-See the full menu and prices on Roomly and check out in a few taps.
-Order alone or with friends and pay the ₦800 delivery once for everything.
-Once you pay, a timer starts, and your food arrives before it hits 0.00.
-Order before 5:30pm.
+      `Ball first, food after. Order dinner from Oye on Roomly before 6:00pm and pick it up at the school gate before 7:00pm.
+How to order:
+1. Open the link and pick your food. Add protein and a drink if you want.
+2. Tap Checkout. First time? Enter your name, phone number and a 4-digit PIN.
+3. Pay to the vendor's account shown, then tap "I have made payment".
+4. A countdown starts. Your food is at the gate before it ends.
+Order with your roommates or friends and pay the ₦800 delivery once for everything.
 
 ${SIGN}`,
-      `Get your dinner sorted before 6pm. Order jollof rice, fried rice, and chicken from Oye on Roomly.
-See the full menu and prices and check out in a few taps.
-Order with your roommates or friends and pay the ₦800 delivery once for everything.
-Once you pay, a timer starts, and your food reaches the school gate before it hits 0.00.
-Order before 5:30pm.
+    ],
+  }),
+  p({
+    id: 'wed-adoration',
+    title: 'Wednesday: food waiting after adoration',
+    days: [3],
+    start: '12:00',
+    end: '15:30',
+    groups: ['rg', 'cs', 'code'],
+    section: 'outside-food',
+    needs: 'food',
+    variants: [
+      `Adoration today. Don't come back hungry to a crowded canteen.
+Order your food on Roomly before you leave the hostel, and pick it up at the gate on your way back from adoration.
+How to order:
+1. Open the link and pick your food. Add protein and a drink if you want.
+2. Tap Checkout. First time? Enter your name, phone number and a 4-digit PIN.
+3. Pay to the vendor's account shown, then tap "I have made payment".
+4. A countdown starts, and your food is sent to the gate.
+Order with your roommates and share one delivery fee.
 
 ${SIGN}`,
     ],
@@ -165,25 +178,16 @@ ${SIGN}`,
     title: 'Night: canteen to your room (8:30pm batch)',
     days: [0, 1, 2, 3, 4, 5, 6],
     start: '19:50',
-    end: '20:20',
+    end: '20:45',
     groups: ['rg', 'code'],
     section: 'inside',
     needs: 'inside',
     variants: [
-      `The canteen will be closing in less than 1 hour.
-If you want to get anything, you can easily order it now from Roomly and get it in your room by 9:00pm max.
-Open Roomly, see the items and prices, and check out in a few taps.
+      `Tonight's room delivery starts at 8:30pm. Order before 8:50pm and get it in your room before 9:30pm.
+Open Roomly, see the canteen items and prices, and check out in a few taps.
 Order alone or with your roommates. One cart, one ₦500 delivery fee for everyone.
 Once you pay, a timer starts, and your order arrives before it hits 0.00.
-If an item is finished, you choose a refund or to buy a similar item at the same price.
-
-${SIGN}`,
-      `The last batch of the day starts at 8:30pm.
-If you need anything from the canteen tonight, order it on Roomly and get it in your room by 9:00pm max.
-See the items and prices and check out in a few taps.
-Order alone or with your roommates. One cart, one ₦500 delivery fee for everyone.
-Once you pay, a timer starts, and your order arrives before it hits 0.00.
-If an item is finished, you choose a refund or to buy a similar item at the same price.
+If an item is finished, you choose a refund or a similar item at the same price.
 
 ${SIGN}`,
     ],
@@ -199,91 +203,53 @@ ${SIGN}`,
     needs: 'foodTomorrow',
     variants: [
       `Planning to go to Oye tomorrow? You don't need to.
-Order food from Oye on Roomly and pick it up at the school gate before 6pm.
+Order food from Oye on Roomly and pick it up at the school gate before 7pm.
 Order alone or with friends. One order, one ₦800 delivery fee for everyone.
 Once you pay, a timer starts, and your food reaches the school gate before it hits 0.00.
-Order before 5:30pm tomorrow.
+Order before 6pm tomorrow.
 
 ${SIGN}`,
       `Thursday is Oye day, but you don't have to leave school for it.
 See the food and prices on Roomly and check out in a few taps.
 Order with your roommates or friends and pay the ₦800 delivery once for everything.
 Once you pay, a timer starts, and your food reaches the school gate before it hits 0.00.
-Order before 5:30pm tomorrow.
+Order before 6pm tomorrow.
 
 ${SIGN}`,
     ],
   }),
   p({
     id: 'sunday-morning',
-    title: 'Sunday after mass: 11:30am batch',
+    title: 'Sunday after mass: lunch at the gate',
     days: [0],
-    start: '10:30',
-    end: '11:20',
+    start: '10:15',
+    end: '12:15',
     groups: ['rg', 'code'],
-    section: 'inside',
-    needs: 'inside',
+    section: 'outside-food',
+    needs: 'food',
     variants: [
-      `Mass is over and the canteen closes by 12.
-Order on Roomly now and get it in your room in the 11:30am batch, by 12:00pm max.
-See the items and prices and check out in a few taps.
-Order alone or with your roommates. One cart, one ₦500 delivery fee for everyone.
-Once you pay, a timer starts, and your order arrives before it hits 0.00.
-
-${SIGN}`,
-      `Don't rush to the canteen before it closes at 12.
-Open Roomly, see the canteen items and prices, and check out in a few taps. Your order reaches your room by 12:00pm max.
-Order alone or with your roommates. One cart, one ₦500 delivery fee for the whole room.
-Once you pay, a timer starts, and your order arrives before it hits 0.00.
-
-${SIGN}`,
-    ],
-  }),
-  p({
-    id: 'sunday-evening',
-    title: 'Sunday evening: 6:30pm batch',
-    days: [0],
-    start: '17:45',
-    end: '18:20',
-    groups: ['rg'],
-    section: 'inside',
-    needs: 'inside',
-    variants: [
-      `Stores open again at 6pm. Order on Roomly and get it in your room in the 6:30pm batch, by 7:00pm max.
-See the items and prices and check out in a few taps.
-Order alone or with your roommates. One cart, one ₦500 delivery fee for everyone.
-Once you pay, a timer starts, and your order arrives before it hits 0.00.
-
-${SIGN}`,
-      `Sunday evening and nothing to eat? The canteen reopens at 6pm.
-Order on Roomly and a runner brings it to your room by 7:00pm max.
-Order alone or with your roommates. One cart, one ₦500 delivery fee for the whole room.
-Once you pay, a timer starts, and your order arrives before it hits 0.00.
+      `Mass is over and you're hungry. Order lunch on Roomly before 12:30pm and pick it up at the school gate before 1:30pm.
+See the food and prices and check out in a few taps.
+Order with your roommates and share one delivery fee.
+Once you pay, a timer starts, and your food is at the gate before it hits 0.00.
 
 ${SIGN}`,
     ],
   }),
   p({
     id: 'saturday-cleanup',
-    title: 'Saturday after cleanup: 1:30pm batch',
+    title: 'Saturday after cleanup: lunch at the gate',
     days: [6],
-    start: '10:15',
-    end: '11:15',
+    start: '10:00',
+    end: '12:15',
     groups: ['rg', 'cs'],
-    section: 'inside',
-    needs: 'inside',
+    section: 'outside-food',
+    needs: 'food',
     variants: [
-      `Done with cleanup? Rest, and let Roomly bring the canteen to you.
-Order before the 1:30pm batch and get it in your room by 2:00pm max.
-See the items and prices and check out in a few taps.
-Order alone or with your roommates. One cart, one ₦500 delivery fee for everyone.
-Once you pay, a timer starts, and your order arrives before it hits 0.00.
-
-${SIGN}`,
-      `Saturday cleanup is over. No need to walk to the canteen.
-Open Roomly, see the items and prices, and check out in a few taps. The 1:30pm batch reaches your room by 2:00pm max.
-Order alone or with your roommates. One cart, one ₦500 delivery fee for the whole room.
-Once you pay, a timer starts, and your order arrives before it hits 0.00.
+      `Done with cleanup? Rest, and let Roomly bring lunch to the gate.
+Order before 12:30pm and pick it up at the school gate before 1:30pm.
+See the food and prices and check out in a few taps.
+Order with your roommates and share one delivery fee.
 
 ${SIGN}`,
     ],

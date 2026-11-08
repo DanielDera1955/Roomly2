@@ -13,6 +13,10 @@ export interface Product {
   price: number;
   unit?: string;
   isFood?: boolean;
+  /** Outside food: the batches this dish is cooked for ('midday' lunch, 'evening' dinner). Not set = dinner. */
+  foodBatches?: string[];
+  /** Outside food: switched off by that batch's vendor for today */
+  batchOff?: Record<string, boolean>;
   imageUrl?: string;
   emoji: string;
   gradient: string;
@@ -257,29 +261,24 @@ const slot = (id: DeliveryBatchId, start: number, end: number, orderBy: number):
  */
 const ORDER_GAP = 30;
 const run = (id: DeliveryBatchId, start: number, end: number) => slot(id, start, end, start - ORDER_GAP);
-const SCHOOL_DAY = [run('afternoon', T(14, 30), T(15)), run('late', T(17, 30), T(18)), run('evening', T(20, 30), T(21))];
+void run;
+/**
+ * Inside school: one batch a day, every day. Runners start at 8:30pm, orders are taken until 8:50pm,
+ * and every order must be in the student's room before 9:30pm.
+ */
+export const INSIDE_EVENING_START_MIN = T(20, 30);
+export const INSIDE_ORDER_BY_MIN = T(20, 50);
+export const INSIDE_ARRIVE_BY_MIN = T(21, 30);
+const EVENING_ONLY = [slot('evening', INSIDE_EVENING_START_MIN, INSIDE_ARRIVE_BY_MIN, INSIDE_ORDER_BY_MIN)];
 /** 0 = Sunday ... 6 = Saturday. Runners and admin can switch any batch off for a day. */
 export const WEEKLY_BATCHES: Record<number, BatchSlotDef[]> = {
-  // Sunday: 11:30am to 12pm, 2:30 to 3pm, 6:30 to 7pm, 8:30 to 9pm
-  0: [
-    run('midday', T(11, 30), T(12)),
-    run('afternoon', T(14, 30), T(15)),
-    run('late', T(18, 30), T(19)),
-    run('evening', T(20, 30), T(21)),
-  ],
-  // Monday to Friday: 2:30 to 3pm, 5:30 to 6pm, 8:30 to 9pm
-  1: SCHOOL_DAY,
-  2: SCHOOL_DAY,
-  3: SCHOOL_DAY,
-  4: SCHOOL_DAY,
-  5: SCHOOL_DAY,
-  // Saturday: 9:30 to 10am, 1:30 to 2pm, 4:30 to 5pm, 8:30 to 9pm
-  6: [
-    run('morning', T(9, 30), T(10)),
-    run('midday', T(13, 30), T(14)),
-    run('late', T(16, 30), T(17)),
-    run('evening', T(20, 30), T(21)),
-  ],
+  0: EVENING_ONLY,
+  1: EVENING_ONLY,
+  2: EVENING_ONLY,
+  3: EVENING_ONLY,
+  4: EVENING_ONLY,
+  5: EVENING_ONLY,
+  6: EVENING_ONLY,
 };
 
 export interface BatchOption {
@@ -303,7 +302,7 @@ export const timeLabel = (min: number): string => {
   return m ? `${h12}:${String(m).padStart(2, '0')}${suffix}` : `${h12}${suffix}`;
 };
 /** "2:30 to 3:00pm", "11:30am to 12:00pm": the end always shows its minutes */
-const timeLabelFull = (min: number): string => {
+export const timeLabelFull = (min: number): string => {
   const h = Math.floor(min / 60);
   const m = min % 60;
   return `${h % 12 || 12}:${String(m).padStart(2, '0')}${h >= 12 ? 'pm' : 'am'}`;
@@ -372,15 +371,24 @@ export function formatRemaining(ms: number): string {
 
 // ---------- Outside school schedule ----------
 /**
- * Outside orders: one delivery a day, reaching the school gate before 6pm.
- * Store items: order before 5:10pm. Cooked food packs faster: order before 5:30pm.
- * After the cut-off, or when the operator has switched today off, the order is for their next day that is on.
+ * Outside orders reach the school gate.
+ * Store items: one delivery a day, order before 5:00pm, at the gate before 7:00pm.
+ * Cooked food: a lunch batch (day vendor, Tuesday to Sunday: order before 12:30pm, at the gate before 1:30pm)
+ * and a dinner batch (evening vendor: order before 6:00pm, at the gate before 7:00pm).
+ * After the cut-off, or when the operator has switched the day off, the order is for their next day that is on.
  * Operators switch whole days on or off: today, tomorrow and the day after. Every day starts on.
  */
-/** Outside store items: same-day orders close at 5:10pm */
-export const OUTSIDE_ORDER_BY_MIN = T(17, 10);
-/** Outside cooked food: same-day orders close at 5:30pm (food packs faster) */
-export const OUTSIDE_FOOD_ORDER_BY_MIN = T(17, 30);
+/** Outside store items: same-day orders close at 5:00pm */
+export const OUTSIDE_ORDER_BY_MIN = T(17);
+/** Outside cooked food, dinner batch: same-day orders close at 6:00pm */
+export const OUTSIDE_FOOD_ORDER_BY_MIN = T(18);
+/** Outside cooked food, lunch batch (day vendor): orders close at 12:30pm */
+export const DAY_FOOD_ORDER_BY_MIN = T(12, 30);
+/** Promised gate arrival: before 7:00pm for store and dinner, before 1:30pm for lunch */
+export const OUTSIDE_ARRIVE_BY_MIN = T(19);
+export const DAY_FOOD_ARRIVE_BY_MIN = T(13, 30);
+/** The lunch batch does not run on Monday (the day vendor's day off) */
+export const DAY_FOOD_OFF_DAYS = [1];
 /** Same-day cut-off for an outside kind */
 export const outsideOrderByFor = (kind: string) => (kind === 'food' ? OUTSIDE_FOOD_ORDER_BY_MIN : OUTSIDE_ORDER_BY_MIN);
 export const OUTSIDE_DAYS_AHEAD = 3;
@@ -402,22 +410,49 @@ export const weekdayName = (d: number) => WEEKDAYS[d] || '';
 /** "Monday 9 November" */
 export const openDateText = (ms: number) =>
   new Date(ms).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
-export const OUTSIDE_BANNER = 'Order before 5:10pm. Sec men are strict with late deliveries.';
-export const OUTSIDE_FOOD_BANNER = 'Order before 5:30pm. Sec men are strict with late deliveries.';
+export const OUTSIDE_BANNER = 'Order before 5:00pm to get it at the school gate before 7:00pm.';
+export const OUTSIDE_FOOD_BANNER = 'Lunch: order before 12:30pm. Dinner: order before 6:00pm.';
 /** The order-before banner for the store or food side */
 export const outsideBannerFor = (kind: string) => (kind === 'food' ? OUTSIDE_FOOD_BANNER : OUTSIDE_BANNER);
 /** Outside store items: one delivery a day */
 export const OUTSIDE_STORE_BATCHES: BatchSlotDef[] = [
-  { id: 'late', name: 'Store delivery', startMin: OUTSIDE_ORDER_BY_MIN, endMin: T(18), orderByMin: OUTSIDE_ORDER_BY_MIN },
+  { id: 'late', name: 'Store delivery', startMin: OUTSIDE_ORDER_BY_MIN, endMin: OUTSIDE_ARRIVE_BY_MIN, orderByMin: OUTSIDE_ORDER_BY_MIN },
 ];
-/** Outside food: one delivery a day */
+/** Outside food, dinner batch (evening vendor) */
 export const OUTSIDE_FOOD_BATCH: BatchSlotDef = {
   id: 'evening',
-  name: 'Food delivery',
+  name: 'Dinner batch',
   startMin: OUTSIDE_FOOD_ORDER_BY_MIN,
-  endMin: T(18),
+  endMin: OUTSIDE_ARRIVE_BY_MIN,
   orderByMin: OUTSIDE_FOOD_ORDER_BY_MIN,
 };
+/** Outside food, lunch batch (day vendor) */
+export const OUTSIDE_FOOD_DAY_BATCH: BatchSlotDef = {
+  id: 'midday',
+  name: 'Lunch batch',
+  startMin: DAY_FOOD_ORDER_BY_MIN,
+  endMin: DAY_FOOD_ARRIVE_BY_MIN,
+  orderByMin: DAY_FOOD_ORDER_BY_MIN,
+};
+/** The food batches on one weekday, earliest first */
+export const foodBatchesFor = (weekday: number): BatchSlotDef[] =>
+  DAY_FOOD_OFF_DAYS.includes(weekday) ? [OUTSIDE_FOOD_BATCH] : [OUTSIDE_FOOD_DAY_BATCH, OUTSIDE_FOOD_BATCH];
+/**
+ * Food batch ids a dish belongs to ('midday' lunch, 'evening' dinner).
+ * Dishes not marked are dinner dishes (the dinner vendor's menu); drinks and other non-dish items sell in both.
+ */
+export type FoodBatchId = 'midday' | 'evening';
+export const dishBatches = (p: { foodBatches?: string[]; isFood?: boolean } | null | undefined): FoodBatchId[] => {
+  const list = ((p && p.foodBatches) || []).filter((b) => b === 'midday' || b === 'evening') as FoodBatchId[];
+  if (list.length) return list;
+  return p && p.isFood === false ? ['midday', 'evening'] : ['evening'];
+};
+/** On this batch's menu right now: belongs to the batch and the vendor of that batch has not switched it off */
+export const onFoodMenu = (p: { foodBatches?: string[]; isFood?: boolean; batchOff?: Record<string, boolean> } | null | undefined, batch: string): boolean =>
+  Boolean(p) && dishBatches(p).includes(batch as FoodBatchId) && !(p!.batchOff && p!.batchOff[batch]);
+export const FOOD_BATCH_LABEL: Record<FoodBatchId, string> = { midday: 'Lunch batch', evening: 'Dinner batch' };
+/** The latest gate arrival for an outside batch id */
+export const outsideArriveByFor = (batchId?: string): number => (batchId === 'midday' ? DAY_FOOD_ARRIVE_BY_MIN : OUTSIDE_ARRIVE_BY_MIN);
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "2026-10-29" -> "Thursday 29 Oct" (a fixed date, so it never goes stale like "Tomorrow") */
 export const longDayLabel = (date: string): string => {
@@ -434,16 +469,17 @@ export const dayWord = (date: string, now: Date = new Date()): string => {
   if (diff === 1) return 'tomorrow';
   return Number.isFinite(a.getTime()) ? `on ${DAY_NAMES[a.getDay()]}` : '';
 };
-/** What an outside order's delivery line says, e.g. "Thursday 29 Oct: at the school gate before 6pm" */
-export const outsideDeliveryText = (date: string): string => `${longDayLabel(date)}: at the school gate before 6pm`;
+/** What an outside order's delivery line says, e.g. "Thursday 29 Oct: at the school gate before 7:00pm" */
+export const outsideDeliveryText = (date: string, batchId?: string): string =>
+  `${longDayLabel(date)}: at the school gate before ${timeLabelFull(outsideArriveByFor(batchId))}`;
 
 /** Next outside batch still taking orders. kind 'store' or 'food'. */
 export function getNextOutsideSlot(kind: 'store' | 'food', now: Date = new Date()): BatchOption | null {
-  const slots = kind === 'food' ? [OUTSIDE_FOOD_BATCH] : OUTSIDE_STORE_BATCHES;
   for (let d = 0; d < 3; d++) {
     const day = new Date(now);
     day.setHours(0, 0, 0, 0);
     day.setDate(day.getDate() + d);
+    const slots = kind === 'food' ? foodBatchesFor(day.getDay()) : OUTSIDE_STORE_BATCHES;
     for (const s of slots) {
       const opt = buildOption(day, d, s);
       if (opt.orderBy.getTime() > now.getTime()) return opt;
@@ -459,10 +495,10 @@ export function slotsForDay(side: SwitchSide, base: Date, dayOffset: number): Ba
   const day = new Date(base);
   day.setHours(0, 0, 0, 0);
   day.setDate(day.getDate() + dayOffset);
-  const defs = side === 'food' ? [OUTSIDE_FOOD_BATCH] : OUTSIDE_STORE_BATCHES;
+  const defs = side === 'food' ? foodBatchesFor(day.getDay()) : OUTSIDE_STORE_BATCHES;
   return defs.map((s) => buildOption(day, dayOffset, s));
 }
-/** Switches turn themselves off at night: 10pm inside. Outside, today's orders close at 5:10pm for store and 5:30pm for food (parcels must reach the gate before 6pm) */
+/** Switches turn themselves off at night: 10pm inside. Outside, today's orders close at 5:00pm for store and 6:00pm for food */
 export const SWITCH_CUTOFF_MIN = { inside: T(22), outside: OUTSIDE_ORDER_BY_MIN, food: OUTSIDE_FOOD_ORDER_BY_MIN };
 
 /** "will start sending by 2pm" style label for a batch */
@@ -1470,21 +1506,18 @@ export function announcementKey(a: Announcement, now: Date = new Date()): string
 export interface CaritasLine { days: number[]; from: number; to: number; text: string }
 const MON_FRI = [1, 2, 3, 4, 5];
 export const CARITAS_LINES: CaritasLine[] = [
-  { days: [5], from: T(5), to: T(9), text: "Good morning. Even the CSO knows you don't like Ayi. You deserve a proper breakfast afterwards." },
-  { days: [1, 2, 3, 4], from: T(5), to: T(9), text: 'Good morning. Beat the rush out. Lunch will be waiting at your room after class.' },
-  { days: MON_FRI, from: T(9), to: T(12, 30), text: 'In class and already thinking of lunch? Same. Order before {cutoff}.' },
-  { days: MON_FRI, from: T(12, 30), to: T(14), text: 'Waiting for the gate to open? Order now and eat in your room by {delivery end}.' },
-  { days: MON_FRI, from: T(14), to: T(16), text: 'Too tired to step out? Stay in, the {next delivery} delivery is coming.' },
-  { days: MON_FRI, from: T(16), to: T(18), text: "Ball first, food after. Order now and it's waiting when you're back." },
-  { days: [3], from: T(18), to: T(21), text: "Adoration tonight. Order before you go, eat when you're back." },
-  { days: [5], from: T(17), to: T(23), text: 'Washing and cleanup tomorrow. Get your detergent ready.' },
-  { days: MON_FRI, from: T(18), to: T(20, 30), text: 'Field done, bath done. Now food. Last delivery tonight is {last delivery}.' },
-  { days: [6], from: T(7), to: T(10), text: 'Cleanup time. Need anything? We deliver from {next delivery}.' },
-  { days: [6], from: T(10), to: T(22), text: "Free Saturday. Stay in, we'll bring it to you." },
-  { days: [0], from: T(5), to: T(10, 30), text: "Good morning. After mass, we've got breakfast covered." },
-  // Only until the 11:30am batch closes: after that the next delivery is 2:30pm, when the store is shut
-  { days: [0], from: T(10, 30), to: T(11), text: 'Canteen closes at 12. Order before {cutoff} to catch the {next delivery} delivery.' },
-  { days: [0], from: T(12), to: T(18), text: 'Quiet Sunday. Store items are back by 6pm, but you can still order food.' },
+  // Room delivery runs once a day (8:30pm). Daytime lines point to lunch at the gate (Outside school > Cooked Food).
+  { days: [5], from: T(5), to: T(9), text: "Good morning. Even the CSO knows you don't like Ayi. Lunch can be at the gate before 1:30pm." },
+  { days: [2, 3, 4], from: T(5), to: T(12, 30), text: 'Thinking of lunch already? Order cooked food before 12:30pm and pick it up at the gate before 1:30pm.' },
+  { days: [1], from: T(5), to: T(18), text: 'Dinner from Oye: order before 6pm and pick it up at the gate before 7pm.' },
+  { days: [2, 3, 4, 5], from: T(12, 30), to: T(18), text: 'Ball first, food after. Order dinner before 6pm and grab it at the gate on your way in.' },
+  { days: [3], from: T(18), to: T(20, 50), text: 'Adoration tonight. Order before {cutoff} and it reaches your room before {delivery end}.' },
+  { days: [5], from: T(17), to: T(20, 50), text: 'Washing and cleanup tomorrow. Get your detergent tonight, in your room before {delivery end}.' },
+  { days: MON_FRI, from: T(18), to: T(20, 50), text: 'Field done, bath done. Order before {cutoff} and eat in your room before {delivery end}.' },
+  { days: [6], from: T(7), to: T(12, 30), text: 'Cleanup done soon. Order lunch before 12:30pm, at the gate before 1:30pm.' },
+  { days: [6], from: T(12, 30), to: T(20, 50), text: "Free Saturday. Tonight's room delivery: order before {cutoff}." },
+  { days: [0], from: T(5), to: T(12, 30), text: 'After mass, lunch is sorted. Order before 12:30pm and pick it up at the gate before 1:30pm.' },
+  { days: [0], from: T(12, 30), to: T(20, 50), text: "Quiet Sunday. Tonight's room delivery: order before {cutoff}." },
   { days: [0, 1, 2, 3, 4, 5, 6], from: T(22), to: T(1), text: "You're supposed to be reading, not scrolling socials or playing games. Your next delivery is {next delivery}." },
 ];
 
@@ -1529,23 +1562,23 @@ export function liveStatusFor(side: 'inside' | 'outside', now: Date = new Date()
     const when = next.dayLabel === 'Tomorrow' ? 'tomorrow' : next.dayLabel;
     return { text: `Next: ${timeLabel(next.startMin)} ${when}`, open: true };
   }
-  // Outside food runs Monday to Saturday; same-day orders close at 5:30pm
-  const day = now.getDay();
-  const min = now.getHours() * 60 + now.getMinutes();
-  if (day === 0) return { text: 'Food back Monday', open: false };
-  if (min < OUTSIDE_FOOD_ORDER_BY_MIN) return { text: `Food open till ${timeLabel(OUTSIDE_FOOD_ORDER_BY_MIN)}`, open: true };
-  return { text: day === 6 ? 'Food: next is Monday' : 'Food: next is tomorrow', open: false };
+  // Outside food: the next food batch still taking orders (lunch or dinner)
+  const next = getNextOutsideSlot('food', now);
+  if (!next) return { text: '', open: false };
+  if (next.dayLabel === 'Today') return { text: `Food: order till ${timeLabelFull(next.startMin)}`, open: true };
+  const when = next.dayLabel === 'Tomorrow' ? 'tomorrow' : next.dayLabel;
+  return { text: `Food: next ${when}`, open: false };
 }
 /** Text only (kept for any older screen that uses it) */
 export const liveLineFor = (side: 'inside' | 'outside', now: Date = new Date()): string => liveStatusFor(side, now).text;
 
 
 // ---------- "Arrives before" countdown (from the student's payment tap) ----------
-/** Outside orders reach the school gate before this time on their delivery day */
-export const OUTSIDE_GATE_BY_MIN = T(18);
+/** Outside orders reach the school gate before this time on their delivery day (lunch food: 1:30pm) */
+export const OUTSIDE_GATE_BY_MIN = OUTSIDE_ARRIVE_BY_MIN;
 /**
- * The latest moment an order should arrive: the end of its inside batch (e.g. 3:00pm for the 2:30 batch),
- * or 6:00pm at the school gate for outside orders. Null when there is no countdown:
+ * The latest moment an order should arrive: the end of its inside batch (9:30pm for the 8:30pm batch),
+ * or the gate time for outside orders (7:00pm, or 1:30pm for lunch food). Null when there is no countdown:
  * not paid yet, delivered, cancelled, express (it has its own 20 minutes), or the batch is unknown.
  */
 export function arrivalDeadlineMs(o: any): number | null {
@@ -1557,7 +1590,7 @@ export function arrivalDeadlineMs(o: any): number | null {
   const day = new Date(date + 'T00:00:00');
   if (!Number.isFinite(day.getTime())) return null;
   let endMin: number | null = null;
-  if (outside) endMin = OUTSIDE_GATE_BY_MIN;
+  if (outside) endMin = outsideArriveByFor(o.deliveryBatch);
   else {
     const slot = (WEEKLY_BATCHES[day.getDay()] || []).find((s) => s.id === o.deliveryBatch);
     endMin = slot ? slot.endMin : null;

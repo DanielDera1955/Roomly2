@@ -12,9 +12,10 @@ import {
   setOptionStock,
   operatorSaveFoodOptions,
   uploadProductImage,
+  myFoodBatch,
 } from '../api.js';
 import { auth } from '../firebase';
-import { sellingPrice, categoriesForStore, STORE_SOURCE, StoreKey } from '../config';
+import { sellingPrice, categoriesForStore, STORE_SOURCE, StoreKey, dishBatches } from '../config';
 
 const naira = (n: number) => `₦${Math.round(n || 0).toLocaleString()}`;
 const card = 'bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-4 space-y-3';
@@ -47,7 +48,8 @@ export const OperatorProductsPanel: React.FC = () => {
 
   const load = async () => {
     const [list, c] = await Promise.all([getProductsFresh(), getCategories()]);
-    setProducts(list.filter((p: any) => p.source === source));
+    // A food vendor sees only her own batch's dishes (lunch or dinner) and drinks
+    setProducts(list.filter((p: any) => p.source === source && (source !== 'food' || dishBatches(p).includes(myFoodBatch()))));
     setCats(categoriesForStore(c, store).map((x: any) => x.name));
   };
   useEffect(() => {
@@ -412,8 +414,13 @@ export const TodaysMenuPanel: React.FC<{ side: 'inside' | 'store' | 'food' }> = 
 
   const load = async () => {
     const list = await getProductsFresh();
+    // A food vendor's menu is her own batch's dishes; "off" means off for her batch only
+    const mine = side === 'food' ? myFoodBatch() : '';
     setProducts(
-      list.filter((p: any) => (side === 'inside' ? p.source !== 'outside' && p.source !== 'food' : p.source === STORE_SOURCE[side]))
+      list
+        .filter((p: any) => (side === 'inside' ? p.source !== 'outside' && p.source !== 'food' : p.source === STORE_SOURCE[side]))
+        .filter((p: any) => side !== 'food' || dishBatches(p).includes(mine as any))
+        .map((p: any) => (side === 'food' && p.batchOff && p.batchOff[mine] ? { ...p, isAvailable: false } : p))
     );
   };
   useEffect(() => {

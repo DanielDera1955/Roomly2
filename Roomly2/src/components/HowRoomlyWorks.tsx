@@ -38,7 +38,7 @@ export const HowRoomlyWorks: React.FC<{ storeOpensMs: number; onStart: () => voi
     {
       title: 'Order from outside school',
       lines: [
-        'Cooked food, foodstuffs and everyday items from outside school, delivered to the school gate. Order cooked food before 5:30pm and store items before 5:10pm to get them the same day.',
+        'Cooked food, foodstuffs and everyday items from outside school, delivered to the school gate. Cooked food comes in two batches: lunch (order before 12:30pm, at the gate before 1:30pm, not on Mondays) and dinner (order before 6:00pm, at the gate before 7:00pm). Store items: order before 5:00pm, at the gate before 7:00pm.',
         'You can track your order and see when your payment is confirmed, being packed, on its way, and a countdown until it reaches the gate.',
         storeOpen ? 'Outside food and store items are both open.' : `Outside food is open now. Everyday store items start ${opens}.`,
       ],

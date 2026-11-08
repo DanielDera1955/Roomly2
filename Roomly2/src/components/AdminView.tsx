@@ -203,6 +203,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
   const [newProdEmoji, setNewProdEmoji] = useState('');
   const [newProdImageUrl, setNewProdImageUrl] = useState('');
   const [newProdIsFood, setNewProdIsFood] = useState(false);
+  const [newProdBatches, setNewProdBatches] = useState<string[]>(['evening']);
   const [newProdFood, setNewProdFood] = useState<FoodOptions>({});
 
   // Full Edit Product Modal State
@@ -368,6 +369,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
       gradient: 'from-emerald-500/20 to-teal-500/20',
       isFood: newProdIsFood,
       ...(newProdIsFood ? newProdFood : {}),
+      ...(newProdIsFood && STORE_SOURCE[adminStore] === 'food' ? { foodBatches: newProdBatches } : {}),
       isAvailable: true,
     });
 
@@ -1045,6 +1047,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                 {newProdIsFood && (
                   <FoodOptionsEditor value={newProdFood} source={STORE_SOURCE[adminStore]} onChange={setNewProdFood} />
                 )}
+                {newProdIsFood && STORE_SOURCE[adminStore] === 'food' && (
+                  <FoodBatchPicker value={newProdBatches} onChange={setNewProdBatches} />
+                )}
 
                 <button
                   type="submit"
@@ -1484,6 +1489,12 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                         onChange={(v) => setEditingProduct((cur) => (cur ? { ...cur, ...v } : cur))}
                       />
                     )}
+                    {editingProduct.isFood && editingProduct.source === 'food' && (
+                      <FoodBatchPicker
+                        value={(editingProduct as any).foodBatches && (editingProduct as any).foodBatches.length ? (editingProduct as any).foodBatches : ['evening']}
+                        onChange={(v) => setEditingProduct((cur) => (cur ? ({ ...cur, foodBatches: v } as any) : cur))}
+                      />
+                    )}
 
                     <div className="sticky bottom-0 z-10 -mx-5 px-5 pt-3 pb-5 bg-white dark:bg-slate-900 flex gap-2 border-t border-slate-100 dark:border-slate-800">
                       <button
@@ -1715,6 +1726,34 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
           </div>
         )}
       </div>
+    </div>
+  );
+};
+
+/** Admin: which food batch cooks this dish. Lunch = the day vendor, Dinner = the evening vendor. */
+const FoodBatchPicker: React.FC<{ value: string[]; onChange: (v: string[]) => void }> = ({ value, onChange }) => {
+  const opts: [string, string, string[]][] = [
+    ['lunch', 'Lunch batch', ['midday']],
+    ['dinner', 'Dinner batch', ['evening']],
+    ['both', 'Both', ['midday', 'evening']],
+  ];
+  const cur = value.includes('midday') && value.includes('evening') ? 'both' : value.includes('midday') ? 'lunch' : 'dinner';
+  return (
+    <div className="space-y-1">
+      <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Which batch cooks this dish?</p>
+      <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800">
+        {opts.map(([id, label, list]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onChange(list)}
+            className={`py-1.5 rounded-lg text-[11px] font-bold cursor-pointer ${cur === id ? 'bg-white dark:bg-slate-900 text-[#0e9f55] shadow-xs' : 'text-slate-500'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="text-[10px] text-slate-500">Students see a dish only while its batch is taking orders: lunch until 12:30pm, then dinner.</p>
     </div>
   );
 };

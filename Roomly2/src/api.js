@@ -585,7 +585,10 @@ export function switchIsLive(sw, side, now = new Date()) {
 export function switchStartDate(opt, sw) {
   const day = new Date(opt.date + 'T00:00:00');
   const min = sw && Number.isFinite(sw.start) ? sw.start : opt.startMin;
-  return new Date(day.getTime() + min * 60000);
+  const start = new Date(day.getTime() + min * 60000);
+  // Orders may close after the batch starts (inside: runners start 8:30pm, orders taken until 8:50pm)
+  const by = opt.orderBy instanceof Date ? opt.orderBy : null;
+  return by && by.getTime() > start.getTime() ? by : start;
 }
 
 /**
@@ -594,6 +597,8 @@ export function switchStartDate(opt, sw) {
  */
 export function batchCloseDate(opt, side) {
   const day = new Date(opt.date + 'T00:00:00');
+  // Outside: each batch closes exactly at its order-by time (store 5:00pm, lunch 12:30pm, dinner 6:00pm)
+  if (side !== 'inside') return opt.orderBy instanceof Date ? new Date(opt.orderBy.getTime()) : new Date(day.getTime() + opt.startMin * 60000);
   const cut = side === 'inside' ? SWITCH_CUTOFF_MIN.inside : side === 'food' ? SWITCH_CUTOFF_MIN.food : SWITCH_CUTOFF_MIN.outside;
   const later = slotsForDay(side, day, 0)
     .map((o) => o.startMin)
@@ -615,10 +620,30 @@ export function outsideDayOn(sw) {
  * unless they switched that exact day ON themselves.
  */
 export function opDaySwitch(op, opt) {
+  // A food vendor only cooks for her own batch (lunch or dinner); the other batch is never hers
+  if (op && op.kind === 'food' && opt && opt.id !== foodBatchOf(op)) return { on: false, notMine: true };
   const sw = ((op && op.slots) || {})[opt.key];
   if (sw) return sw;
   const wd = new Date(opt.date + 'T00:00:00').getDay();
   return ((op && op.offDays) || []).includes(wd) ? { on: false, dayOff: true } : undefined;
+}
+
+/** A food vendor's batch: 'midday' (lunch, day vendor) or 'evening' (dinner). Vendors not set are dinner vendors. */
+export function foodBatchOf(op) {
+  return op && op.foodBatch === 'midday' ? 'midday' : 'evening';
+}
+
+/** The signed-in food vendor's batch ('midday' lunch or 'evening' dinner) */
+export function myFoodBatch() {
+  return foodBatchOf(operatorDocs[auth.currentUser?.uid || '']);
+}
+
+/** Admin: which food batch a vendor cooks for */
+export async function setOperatorFoodBatch(uid, batch) {
+  const foodBatch = batch === 'midday' ? 'midday' : 'evening';
+  operatorDocs = { ...operatorDocs, [uid]: { ...(operatorDocs[uid] || {}), foodBatch } };
+  fireBatches();
+  await setDoc(doc(db, 'operatorStatus', uid), { foodBatch }, { merge: true });
 }
 
 /** Operator: the weekdays they never work (0 = Sunday ... 6 = Saturday) */
@@ -825,7 +850,7 @@ export function getNextBatch(side, now = new Date(), hs = 'boys') {
         // Any one operator accepting makes the batch open. The earliest start is the safe deadline.
         let best = null;
         for (const op of activeOperators(side)) {
-          const sw = (op.slots || {})[opt.key];
+          const sw = opDaySwitch(op, opt);
           if (accepting(opt, sw, side, now)) {
             const start = switchStartDate(opt, sw);
             if (!best || start < best.start) best = { start, by: op.name || '' };
@@ -906,7 +931,7 @@ function fallbackOperators(kind) {
 
 /**
  * Outside checkout: every store (or food vendor) of this kind and the day their order would come.
- * "This batch" = today's delivery, or tomorrow's once today's orders closed (5:10pm store, 5:30pm food).
+ * "This batch" = today's delivery, or the next one once today's orders closed (5:00pm store; food: 12:30pm lunch, 6:00pm dinner).
  * Each operator: { uid, name, status, batch, start, startText, late, load, payTo }
  *   status 'now'  = delivering on "this batch" day
  *          'next' = fully booked that day; the order goes to their next day that is ON (batch = that day)
@@ -915,7 +940,7 @@ function fallbackOperators(kind) {
  */
 export function getOutsideChoices(kind, now = new Date()) {
   const today = ymdOf(now);
-  // "This batch": the first day's delivery that has not closed yet (today before the cut-off: 5:10pm store, 5:30pm food; else tomorrow)
+  // "This batch": the first day's delivery that has not closed yet (store before 5:00pm; food: lunch before 12:30pm, dinner before 6:00pm; else the next day)
   let current = null;
   for (let d = 0; d < OUTSIDE_DAYS_AHEAD && !current; d++) {
     for (const opt of slotsForDay(kind, now, d)) {
@@ -944,7 +969,7 @@ export function getOutsideChoices(kind, now = new Date()) {
       return { batch, current: batch, operators: [demoOp], anyNow: true, note: '' };
     }
   }
-  const ops = [];
+  let ops = [];
   for (const op of activeOperators(kind)) {
     const load = op.load && op.load.date === today ? op.load.count || 0 : 0;
     const base = { uid: op.id, name: op.name || 'Operator', load, payTo: op.payTo || null };
@@ -970,6 +995,13 @@ export function getOutsideChoices(kind, now = new Date()) {
     }
     // All three days OFF: hidden at checkout until one of their days comes back on
     if (found) ops.push(found);
+  }
+  // Food: one menu at a time. The soonest batch any vendor delivers is "this batch" (lunch until 12:30pm,
+  // then dinner), and only the vendors cooking for it are shown, so nobody pays a vendor who isn't cooking.
+  if (kind === 'food' && ops.length) {
+    const first = ops.reduce((a, b) => (b.batch.orderBy.getTime() < a.batch.orderBy.getTime() ? b : a));
+    current = first.batch;
+    ops = ops.filter((o) => o.batch.key === current.key).map((o) => ({ ...o, status: 'now', reason: '' }));
   }
   const rank = { now: 0, next: 1 };
   ops.sort((a, b) => rank[a.status] - rank[b.status] || a.start - b.start || a.load - b.load);
@@ -1324,17 +1356,19 @@ async function moveOrderToNextDay__raw(orderId) {
     const cur = new Date((o.deliveryDate || '') + 'T00:00:00');
     if (Number.isFinite(cur.getTime()) && cur.getTime() > base.getTime()) base.setTime(cur.getTime());
     let opt = null;
+    // The same batch on a later day (a food order stays in its vendor's lunch or dinner batch)
+    const sameBatch = (d) => slotsForDay(kind, base, d).find((x) => kind !== 'food' || x.id === (o.deliveryBatch || 'evening'));
     for (let d = 1; d <= 7 && !opt; d++) {
-      const day = slotsForDay(kind, base, d)[0];
+      const day = sameBatch(d);
       if (day && outsideDayOn(opDaySwitch(operatorDocs[opUid], day))) opt = day;
     }
-    if (!opt) opt = slotsForDay(kind, base, 1)[0];
+    if (!opt) opt = sameBatch(1) || slotsForDay(kind, base, 1)[0];
     if (!opt) return;
     target = opt.date;
     const at = new Date().toISOString();
     o.deliveryDate = opt.date;
     o.deliveryBatch = opt.id;
-    o.deliveryTime = outsideDeliveryText(opt.date);
+    o.deliveryTime = outsideDeliveryText(opt.date, opt.id);
     o.movedAt = at;
     const byName = isAdm ? 'Roomly' : staff.name || 'Operator';
     o.movedBy = byName;
@@ -1408,6 +1442,12 @@ async function readCatalog(force = false) {
         }
       }
       if (typeof stock[p.id] === 'boolean') q = { ...q, isAvailable: stock[p.id] };
+      // Food: each batch's vendor switches her own dishes off ("<id>@midday" / "<id>@evening"), never the other vendor's
+      if (p.source === 'food') {
+        const off = {};
+        for (const b of ['midday', 'evening']) if (stock[`${p.id}@${b}`] === false) off[b] = true;
+        if (Object.keys(off).length) q = { ...q, batchOff: off };
+      }
       // Food: extras and swallow set by operators (each keeps their own cost; students pay from the highest)
       const f = food[p.id];
       if (f && typeof f === 'object') {
@@ -1434,7 +1474,8 @@ async function readCatalog(force = false) {
 }
 
 async function writeCatalog(cat) {
-  const data = slim({ categories: cat.categories, products: cat.products });
+  // batchOff is today's per-batch stock from the overrides, never saved into the catalog itself
+  const data = slim({ categories: cat.categories, products: (cat.products || []).map(({ batchOff, ...p }) => p) });
   if (JSON.stringify(data).length > 900000) {
     const msg = 'The catalog is too big to save. Use photo links or connect Cloudinary for photos (see src/cloudinary.ts).';
     window.alert(msg);
@@ -3722,6 +3763,8 @@ async function operatorAddProduct__raw({ name, category, cost, unit, imageUrl, g
     gradient: 'from-slate-400/20 to-zinc-500/20',
     isAvailable: true,
     isFood: store === 'food' && String(category).toLowerCase() !== 'drinks',
+    // A dish a food vendor adds belongs to her own batch (lunch or dinner)
+    ...(store === 'food' && String(category).toLowerCase() !== 'drinks' ? { foodBatches: [foodBatchOf(operatorDocs[auth.currentUser?.uid || ''])] } : {}),
     addedBy: getCurrentStaff()?.name || '',
     addedByUid: auth.currentUser?.uid || '',
   });
@@ -3770,7 +3813,9 @@ async function operatorSetStock__raw(productId, inStock) {
   if (store !== 'store' && store !== 'food') throw new Error('Operators only');
   const p = (await readCatalog(true)).products.find((x) => x.id === productId);
   if (!p || p.source !== STORE_SOURCE[store]) throw new Error("You can only change your own store's products");
-  await setDoc(doc(db, 'catalog', 'overrides'), { stock: { [productId]: Boolean(inStock) } }, { merge: true });
+  // A food vendor's switch only covers her own batch, so the lunch vendor never hides a dinner dish (and back)
+  const key = store === 'food' ? `${productId}@${foodBatchOf(operatorDocs[auth.currentUser?.uid || ''])}` : productId;
+  await setDoc(doc(db, 'catalog', 'overrides'), { stock: { [key]: Boolean(inStock) } }, { merge: true });
   catalogAt = 0;
 }
 

@@ -21,8 +21,9 @@ import {
   isValidPin,
   createProductRequest,
   subscribeProductRequest,
+  getOutsideChoices,
 } from './api.js';
-import { openDateText, INSIDE_LAUNCH_MS, caritasLineFor, liveStatusFor, SCHOOL_NAME, ShopGroup, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
+import { onFoodMenu, FOOD_BATCH_LABEL, openDateText, INSIDE_LAUNCH_MS, caritasLineFor, liveStatusFor, SCHOOL_NAME, ShopGroup, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
 import { MessageCircle, Info } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
@@ -108,6 +109,18 @@ export default function App() {
     return () => window.clearInterval(id);
   }, []);
   const storeLocked = storeOpensMs > clockMs;
+  // Food shows one menu at a time: the batch now taking orders (lunch until 12:30pm, then dinner)
+  const [batchTick, setBatchTick] = useState(0);
+  useEffect(() => {
+    const h = () => setBatchTick((n) => n + 1);
+    window.addEventListener('roomly-batches', h);
+    return () => window.removeEventListener('roomly-batches', h);
+  }, []);
+  const foodBatchNow = useMemo(() => {
+    const c = getOutsideChoices('food', new Date(clockMs));
+    return ((c.batch || c.current) && (c.batch || c.current).id) || 'evening';
+  }, [clockMs, batchTick]);
+
   // Opening the app on Outside school before the store opens: show Food first
   useEffect(() => {
     if (sourceMode === 'outside' && storeLocked && selectedTab === 'store') setSelectedTab('food');
@@ -799,15 +812,28 @@ export default function App() {
     return map;
   }, [cartItems]);
 
+  // Food dishes in the cart that the batch now cooking doesn't make (added before the lunch batch closed)
+  const offMenuFoodIds = useMemo(
+    () =>
+      cartItems
+        .filter((i) => cartOf(i) === 'food' && !i.pendingQuote)
+        .filter((i) => {
+          const p = products.find((x) => x.id === i.productId);
+          return p && p.source === 'food' && !onFoodMenu(p, foodBatchNow);
+        })
+        .map((i) => i.id),
+    [cartItems, products, foodBatchNow]
+  );
   // Products on the chosen side (inside or outside school)
   const sideProducts = useMemo(
     () =>
       products.filter(
         (p) =>
           p.isAvailable !== false && // out-of-stock items are hidden from students
-          (sourceMode === 'outside' ? isOutsideSource(p.source) : !isOutsideSource(p.source))
+          (sourceMode === 'outside' ? isOutsideSource(p.source) : !isOutsideSource(p.source)) &&
+          (p.source !== 'food' || onFoodMenu(p, foodBatchNow))
       ),
-    [products, sourceMode]
+    [products, sourceMode, foodBatchNow]
   );
 
   // Quick filters inside a category, taken from the products' own categories (Drinks, Toiletries...)
@@ -1480,6 +1506,8 @@ export default function App() {
           onPinChange={setPin}
           signedIn={signedInCustomer}
           onPlaceOrder={handlePlaceOrder}
+          offMenuIds={offMenuFoodIds}
+          foodBatchName={FOOD_BATCH_LABEL[foodBatchNow as 'midday' | 'evening'] || ''}
         />
 
         {/* Order Status & Live Runner Tracker Modal */}

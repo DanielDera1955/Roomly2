@@ -1,7 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { Clock, Store, UtensilsCrossed } from 'lucide-react';
 import { getNextBatch, getOutsideChoices } from '../api.js';
-import { slotsForDay, SwitchSide, dayWord, outsideBannerFor, outsideOrderByFor, openDateText, INSIDE_LAUNCH_MS } from '../config';
+import {
+  SwitchSide,
+  dayWord,
+  openDateText,
+  INSIDE_LAUNCH_MS,
+  timeLabelFull,
+  outsideArriveByFor,
+  INSIDE_ORDER_BY_MIN,
+  INSIDE_ARRIVE_BY_MIN,
+} from '../config';
 
 interface DeliveryPromiseBannerProps {
   mode: 'inside' | 'outside';
@@ -11,7 +20,10 @@ interface DeliveryPromiseBannerProps {
   storeOpensAtMs?: number;
 }
 
-/** Sits under the Inside / Outside toggle: how many batches run today and the next one. No fees (shown at checkout). */
+/**
+ * "Today's batch" card under the Inside / Outside toggle: the batch now taking orders, when it closes,
+ * and when it arrives. It sets the promise Roomly keeps. No fees (shown at checkout).
+ */
 export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mode, tab, storeOpensAtMs = 0 }) => {
   const [, setTick] = useState(0);
 
@@ -26,69 +38,69 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
   }, []);
 
   const side: SwitchSide = mode === 'inside' ? 'inside' : tab === 'food' ? 'food' : 'store';
-  const todayCount = slotsForDay(side, new Date(), 0).length;
-  const { next, note } = getNextBatch(side);
+  const now = new Date();
   const Icon = side === 'inside' ? Clock : side === 'food' ? UtensilsCrossed : Store;
-  const title = side === 'inside' ? 'Delivery to your room' : side === 'food' ? 'Cooked food' : 'Outside store items';
-  const where = side === 'inside' ? 'to your room' : 'to the school gate';
+  const label = side === 'inside' ? 'Room delivery' : side === 'food' ? 'Cooked Food' : 'Outside Store Items';
 
-  // Outside: one delivery a day, ordered before 5:10pm (store) or 5:30pm (food)
-  if (side !== 'inside') {
-    const now = new Date();
-    const todayOpt = slotsForDay(side, now, 0)[0];
-    const closedToday = !todayOpt || now.getTime() >= new Date(todayOpt.date + 'T00:00:00').getTime() + outsideOrderByFor(side) * 60000;
-    const forToday = Boolean(next && dayWord(next.batch.date, now) === 'today');
+  let badge = '';
+  let headline = '';
+  let lines: string[] = [];
+
+  if (side === 'inside') {
+    const { next, note } = getNextBatch('inside', now);
+    const orderBy = timeLabelFull(INSIDE_ORDER_BY_MIN);
+    const arrive = timeLabelFull(INSIDE_ARRIVE_BY_MIN);
+    badge = 'To your room';
+    if (now.getTime() < INSIDE_LAUNCH_MS) {
+      headline = `Starting ${openDateText(INSIDE_LAUNCH_MS)}`;
+      lines = ['Delivery to your room starts then. You can add items to your cart now.'];
+    } else if (!next) {
+      headline = 'Currently closed';
+      lines = [note || 'Check back soon for the next batch.'];
+    } else {
+      const today = next.batch.dayLabel === 'Today';
+      const when = today ? '' : ` ${next.batch.dayLabel.toLowerCase()}`;
+      headline = today ? 'Order now and get it in your room before ' + arrive : `Currently closed. Next batch${when}`;
+      lines = today
+        ? [`Tonight's batch starts at 8:30pm. Orders close at ${orderBy}.`]
+        : [`You can still order now and get it in your room${when} before ${arrive}.`];
+      if (next.unconfirmed) lines.push("No runner has confirmed this batch yet. You pay once a runner confirms.");
+      if (note) lines.push(note);
+    }
+  } else {
+    badge = 'To the school gate';
+    const c = getOutsideChoices(side, now);
+    const b = c.batch;
     const notOpenYet = side === 'store' && storeOpensAtMs > now.getTime();
-    const dayOff = !notOpenYet && Boolean(getOutsideChoices(side, now).dayOff);
-    return (
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 via-teal-700 to-emerald-800 text-white p-4 shadow-md shadow-emerald-950/10">
-        <div className="absolute -right-4 -bottom-4 w-28 h-28 bg-white/10 rounded-full blur-xl pointer-events-none" />
-        <div className="relative z-10 space-y-1">
-          <div className="flex items-center justify-between gap-2">
-            <p className="min-w-0 text-[11px] font-bold uppercase tracking-wider text-emerald-200 flex items-center gap-1.5">
-              <Icon className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">{title}</span>
-            </p>
-            <span className="shrink-0 px-2 py-0.5 rounded-full bg-white/15 text-[10px] font-bold text-white whitespace-nowrap">To the school gate</span>
-          </div>
-          {notOpenYet ? (
-            <>
-              <h2 className="text-lg font-extrabold tracking-tight">Opening {openDateText(storeOpensAtMs)}</h2>
-              <p className="text-xs text-emerald-100/90">Browse what's coming. Outside store orders open on launch day, delivered to the school gate.</p>
-            </>
-          ) : dayOff && next ? (
-            <>
-              <h2 className="text-lg font-extrabold tracking-tight">Closed today</h2>
-              <p className="text-xs text-emerald-100/90">
-                {side === 'food' ? 'Outside food' : 'Outside store'} is off today. Orders placed now will be delivered {dayWord(next.batch.date, now)}.
-              </p>
-            </>
-          ) : !next ? (
-            <>
-              <h2 className="text-lg font-extrabold tracking-tight">Back soon</h2>
-              <p className="text-xs text-emerald-100/90">
-                Every {side === 'food' ? 'food vendor' : 'store'} is fully booked for the next few days. Check back soon.
-              </p>
-            </>
-          ) : forToday ? (
-            <>
-              <h2 className="text-lg font-extrabold tracking-tight">Order today, get it today</h2>
-              <p className="text-xs font-semibold text-amber-200">{outsideBannerFor(side)}</p>
-            </>
-          ) : closedToday ? (
-            <>
-              <h2 className="text-lg font-extrabold tracking-tight">Today's orders have closed</h2>
-              <p className="text-xs text-emerald-100/90">Anything you order now will be delivered {dayWord(next.batch.date, now)}.</p>
-            </>
-          ) : (
-            <>
-              <h2 className="text-lg font-extrabold tracking-tight">Fully booked today</h2>
-              <p className="text-xs text-emerald-100/90">Orders placed now will be delivered {dayWord(next.batch.date, now)}.</p>
-            </>
-          )}
-        </div>
-      </div>
-    );
+    const gateOf = (id?: string) => timeLabelFull(outsideArriveByFor(id));
+    if (notOpenYet) {
+      headline = `Store items will open on ${openDateText(storeOpensAtMs)}`;
+      lines = ["Browse what's coming. Orders open on launch day, delivered to the school gate."];
+    } else if (!b) {
+      headline = 'Back soon';
+      lines = [`Every ${side === 'food' ? 'food vendor' : 'store'} is fully booked for the next few days. Check back soon.`];
+    } else {
+      const today = dayWord(b.date, now) === 'today';
+      const closesAt = timeLabelFull(b.startMin);
+      if (!today) {
+        headline = 'Currently closed';
+        lines = [`You can still order now and get it ${dayWord(b.date, now)} before ${gateOf(b.id)}.`];
+      } else if (side === 'store') {
+        headline = `Order anytime before ${closesAt} and get it at the gate before ${gateOf(b.id)}`;
+      } else if (b.id === 'midday') {
+        headline = `Order now and get it at the gate before ${gateOf('midday')}`;
+        lines = [`Current batch stops taking orders at ${closesAt}.`];
+        // A dinner batch later today: is any dinner vendor cooking once lunch closes?
+        const afterLunch = new Date(new Date(b.date + 'T00:00:00').getTime() + (b.startMin + 1) * 60000);
+        const later = getOutsideChoices('food', afterLunch).batch;
+        if (later && later.date === b.date && later.id === 'evening') {
+          lines.push(`Next batch: order from ${closesAt} to ${timeLabelFull(later.startMin)}, arrives before ${gateOf('evening')}.`);
+        }
+      } else {
+        headline = `Order now and get it at the gate before ${gateOf(b.id)}`;
+        lines = [`Orders close at ${closesAt}. This is the last batch today.`];
+      }
+    }
   }
 
   return (
@@ -98,61 +110,16 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
         <div className="flex items-center justify-between gap-2">
           <p className="min-w-0 text-[11px] font-bold uppercase tracking-wider text-emerald-200 flex items-center gap-1.5">
             <Icon className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">{title}</span>
+            <span className="truncate">Today's Batch: {label}</span>
           </p>
-          <span className="shrink-0 px-2 py-0.5 rounded-full bg-white/15 text-[10px] font-bold text-white whitespace-nowrap">
-            {/* Before room delivery starts: how it will run ("3 batches a day"); after: today's count */}
-            {side === 'inside' && Date.now() < INSIDE_LAUNCH_MS
-              ? `${todayCount} ${todayCount === 1 ? 'batch' : 'batches'} a day`
-              : `${todayCount} ${todayCount === 1 ? 'batch' : 'batches'} today`}
-          </span>
+          <span className="shrink-0 px-2 py-0.5 rounded-full bg-white/15 text-[10px] font-bold text-white whitespace-nowrap">{badge}</span>
         </div>
-        {side === 'inside' && Date.now() < INSIDE_LAUNCH_MS ? (
-          <>
-            <h2 className="text-lg font-extrabold tracking-tight">Starting {openDateText(INSIDE_LAUNCH_MS)}</h2>
-            <p className="text-xs text-emerald-100/90">Delivery to your room starts then. You can add items to your cart now.</p>
-          </>
-        ) : next && next.batch.dayLabel !== 'Today' ? (
-          <>
-            <h2 className="text-lg font-extrabold tracking-tight">{todayCount > 0 ? 'Done for today' : 'No batch today'}</h2>
-            <p className="text-xs text-emerald-100/90">
-              Next batch: {next.batch.dayLabel.toLowerCase()}, {next.batch.window}. You can still order now.
-              {note ? ` ${note}` : ''}
-            </p>
-          </>
-        ) : next && next.late ? (
-          <>
-            <h2 className="text-lg font-extrabold tracking-tight">Today's batch: {next.batch.window}</h2>
-            <p className="text-xs text-emerald-100/90">It's past the batch time, but orders are still being accepted. Order now.</p>
-          </>
-        ) : next && next.unconfirmed && side === 'inside' ? (
-          <>
-            <h2 className="text-lg font-extrabold tracking-tight">Today's batch: {next.batch.window}</h2>
-            <p className="text-xs text-emerald-100/90">
-              No runner has confirmed they'll be active for this batch yet. You can still order, and you pay once a runner confirms.
-              {note ? ` ${note}` : ''}
-            </p>
-          </>
-        ) : next && next.unconfirmed ? (
-          <>
-            <h2 className="text-lg font-extrabold tracking-tight">Today's batch: {next.batch.window}</h2>
-            <p className="text-xs text-emerald-100/90">
-              Orders are open. Order now to make today's batch ({where}).{note ? ` ${note}` : ''}
-            </p>
-          </>
-        ) : next ? (
-          <>
-            <h2 className="text-lg font-extrabold tracking-tight">Taking orders now</h2>
-            <p className="text-xs text-emerald-100/90">
-              Today's batch runs from {next.batch.window} ({where}). Order now to make it.
-            </p>
-          </>
-        ) : (
-          <>
-            <h2 className="text-base font-extrabold">No delivery scheduled right now</h2>
-            <p className="text-xs text-emerald-100/90">{note || 'Check back soon for the next batch.'}</p>
-          </>
-        )}
+        <h2 className="text-lg font-extrabold tracking-tight leading-snug">{headline}</h2>
+        {lines.map((l) => (
+          <p key={l} className="text-xs text-emerald-100/90">
+            {l}
+          </p>
+        ))}
       </div>
     </div>
   );
