@@ -46,14 +46,14 @@ export const DEFAULT_POSTS = [
     variants: [
       `You don't need to leave school to buy food. Let Oye come to you.
 Open Roomly, see the food and prices, pick the ones you want in a few taps, and check out.
-Order alone or with friends. One order, one ₦800 delivery fee for everyone.
+Order alone or with friends. One order, one delivery fee for everyone (₦500 launch price until 30 Nov).
 Once you pay, a timer starts, and your food reaches the school gate before it hits 0.00.
 Order dinner before 6pm, at the gate before 7pm.
 
 ${SIGN}`,
       `Craving food from Oye today? Let Oye come to you.
 Open Roomly, see the menu and prices, pick what you want in a few taps, and check out.
-Order alone or with friends. One order, one ₦800 delivery fee for everyone.
+Order alone or with friends. One order, one delivery fee for everyone (₦500 launch price until 30 Nov).
 Once you pay, a timer starts, and your food reaches the school gate before it hits 0.00.
 Order dinner before 6pm, at the gate before 7pm.
 
@@ -72,14 +72,14 @@ ${SIGN}`,
     variants: [
       `You don't need to leave school to restock. Let Oye come to you.
 Open Roomly, see foodstuff, kerosene, provisions and their prices, pick what you want in a few taps, and check out.
-Order alone or with your roommates. One order, one ₦800 delivery fee for everyone.
+Order alone or with your roommates. One order, one delivery fee for everyone (₦500 launch price until 30 Nov).
 Once you pay, a timer starts, and your items reach the school gate before it hits 0.00.
 Order before 5pm to get it at the gate before 7pm today.
 
 ${SIGN}`,
       `Rice, garri, kerosene, groundnut oil or soap finished? Restock without leaving school.
 See the items and prices on Roomly and check out in a few taps.
-Share one order with your roommates and pay the ₦800 delivery once for everything.
+Share one order with your roommates and pay one delivery fee for everything (₦500 launch price until 30 Nov).
 Once you pay, a timer starts, and your items reach the school gate before it hits 0.00.
 Order before 5pm.
 
@@ -124,7 +124,7 @@ How to order:
 2. Tap Checkout. First time? Enter your name, phone number and a 4-digit PIN.
 3. Pay to the vendor's account shown, then tap "I have made payment".
 4. A countdown starts. Your food is at the gate before it ends.
-Order with your roommates or friends and pay the ₦800 delivery once for everything.
+Order with your roommates or friends and pay one delivery fee for everything (₦500 launch price until 30 Nov).
 
 ${SIGN}`,
     ],
@@ -204,14 +204,14 @@ ${SIGN}`,
     variants: [
       `Planning to go to Oye tomorrow? You don't need to.
 Order food from Oye on Roomly and pick it up at the school gate before 7pm.
-Order alone or with friends. One order, one ₦800 delivery fee for everyone.
+Order alone or with friends. One order, one delivery fee for everyone (₦500 launch price until 30 Nov).
 Once you pay, a timer starts, and your food reaches the school gate before it hits 0.00.
 Order before 6pm tomorrow.
 
 ${SIGN}`,
       `Thursday is Oye day, but you don't have to leave school for it.
 See the food and prices on Roomly and check out in a few taps.
-Order with your roommates or friends and pay the ₦800 delivery once for everything.
+Order with your roommates or friends and pay one delivery fee for everything (₦500 launch price until 30 Nov).
 Once you pay, a timer starts, and your food reaches the school gate before it hits 0.00.
 Order before 6pm tomorrow.
 

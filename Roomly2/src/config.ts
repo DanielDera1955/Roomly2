@@ -128,8 +128,14 @@ export const PRICING = {
   outsideBigFrom: 10000,
 };
 
-/** Outside delivery to the school gate: ₦800 (₦500 to the operator, ₦300 to you) */
+/** Outside delivery to the school gate: ₦800 normal price */
 export const OUTSIDE_DELIVERY_FEE = 800;
+/** Launch price for outside delivery, until the end of 30 November 2026. After that it goes back to ₦800 by itself. */
+export const OUTSIDE_LAUNCH_FEE = 500;
+export const OUTSIDE_LAUNCH_UNTIL_MS = Date.parse('2026-12-01T00:00:00+01:00');
+export const outsideLaunchOn = (nowMs: number = Date.now()) => nowMs < OUTSIDE_LAUNCH_UNTIL_MS;
+/** What an outside order pays for delivery right now */
+export const outsideDeliveryFee = (nowMs: number = Date.now()) => (outsideLaunchOn(nowMs) ? OUTSIDE_LAUNCH_FEE : OUTSIDE_DELIVERY_FEE);
 
 // ---------- Three carts (Phase 4) ----------
 /** inside = one cart for inside store items and cooked food (runner); store / food = the two outside carts */
@@ -516,7 +522,7 @@ export const DELIVERY_FEES = { small: 500, large: 500, threshold: 4000 };
 /** A bag of water, by name: it has "bag" and "water" in it (for example "Sachet Water (Full Bag of 20)") */
 export const isBagOfWater = (name?: string): boolean => /bag/i.test(name || '') && /water/i.test(name || '');
 export function deliveryFeeFor(itemTotal: number, hasOutside: boolean = false, hasBagOfWater: boolean = false): number {
-  if (hasOutside) return OUTSIDE_DELIVERY_FEE;
+  if (hasOutside) return outsideDeliveryFee();
   return DELIVERY_FEES.large;
 }
 

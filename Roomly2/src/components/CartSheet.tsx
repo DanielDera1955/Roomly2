@@ -18,7 +18,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
-import { HOSTELS, BOYS_HOSTELS, GIRLS_HOSTELS, GIRLS_SIDE_OPEN, GIRLS_SOON_MSG, HOSTEL_FLOORS, hostelSideOf, splitFloorRoom, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, outsideBannerFor, outsideArriveByFor, timeLabel, timeLabelFull } from '../config';
+import { HOSTELS, BOYS_HOSTELS, GIRLS_HOSTELS, GIRLS_SIDE_OPEN, GIRLS_SOON_MSG, HOSTEL_FLOORS, hostelSideOf, splitFloorRoom, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, outsideBannerFor, outsideArriveByFor, timeLabel, timeLabelFull, OUTSIDE_DELIVERY_FEE, outsideLaunchOn } from '../config';
 import { getNextBatch, getOutsideChoices, getExpressRunners, paystackFor, collectsAsRoomly } from '../api.js';
 import { isValidNigerianPhone, isValidPin, normalizePhone } from '../api.js';
 
@@ -1148,7 +1148,10 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                       </span>
                     </div>
                   )}
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300 text-right">
+                    {cart !== 'inside' && outsideLaunchOn() && (
+                      <span className="block text-[10px] font-medium line-through text-slate-400">₦{OUTSIDE_DELIVERY_FEE.toLocaleString()}</span>
+                    )}
                     ₦{deliveryFee.toLocaleString()}
                   </span>
                 </div>
@@ -1227,8 +1230,16 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               <span>
                 {isExpress ? 'Express delivery' : 'Delivery'}
               </span>
-              <span className="font-mono tabular-nums">₦{deliveryFee.toLocaleString()}</span>
+              <span className="font-mono tabular-nums">
+                {cart !== 'inside' && !isExpress && outsideLaunchOn() && (
+                  <span className="mr-1.5 line-through text-slate-400">₦{OUTSIDE_DELIVERY_FEE.toLocaleString()}</span>
+                )}
+                ₦{deliveryFee.toLocaleString()}
+              </span>
             </div>
+            {cart !== 'inside' && !isExpress && outsideLaunchOn() && (
+              <p className="-mt-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">Launch price until 30 Nov</p>
+            )}
             {/* Delivery is per order, not per item: show what it comes to when roommates share one cart */}
             {!isExpress && deliveryFee > 0 && (
               <div className="-mt-1 text-[11px] leading-snug text-[#0b8044] dark:text-emerald-400">
