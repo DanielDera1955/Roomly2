@@ -61,6 +61,26 @@ let hubPending = '';
   }
 })();
 
+// Installs: the first time Roomly is opened from the home screen on a phone, count it once (Android and iPhone)
+(() => {
+  if (typeof window === 'undefined') return;
+  try {
+    const standalone =
+      (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+    if (!standalone) return;
+    const key = 'roomly_installed_counted';
+    if (localStorage.getItem(key)) return;
+    localStorage.setItem(key, '1');
+    const d = new Date();
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    addDoc(collection(db, 'visits'), { ref: '_installed', section: 'app', day, atMs: Date.now() }).catch(() => {
+      localStorage.removeItem(key);
+    });
+  } catch (e) {
+    /* private mode: not counted */
+  }
+})();
+
 /** The section this visit's link asked for (null for a plain link) */
 export function getLinkTarget() {
   return target;

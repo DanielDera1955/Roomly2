@@ -59,8 +59,10 @@ export const AdminChannels: React.FC = () => {
     if (isPaid(o)) r.paidOrders += 1;
     if (o.phone && firstOrder.get(o.phone) === t) r.newCustomers += 1;
   });
+  // Installs are counted on their own, not as a channel
+  const installs = visits.filter((v) => v && v.ref === '_installed').length;
   visits.forEach((v) => {
-    if (v && v.ref) row(channelOf({ ref: v.ref })).visits += 1;
+    if (v && v.ref && v.ref !== '_installed') row(channelOf({ ref: v.ref })).visits += 1;
   });
   gamers.forEach((g) => {
     if (Number(g.createdAtMs || 0) < from) return;
@@ -89,6 +91,15 @@ export const AdminChannels: React.FC = () => {
                 {r.label}
               </button>
             ))}
+          </div>
+          <div className="flex items-center justify-between gap-2 p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900">
+            <span className="text-xs font-bold text-emerald-900 dark:text-emerald-200">
+              Installed on a phone
+              <span className="block text-[10px] font-medium text-emerald-800/80 dark:text-emerald-300/80">
+                First opens from the home screen, one per phone, from 9 Nov
+              </span>
+            </span>
+            <span className="text-xl font-black text-[#0e9f55] tabular-nums">{installs}</span>
           </div>
           {list.length === 0 ? (
             <p className="text-xs text-slate-400">No visits, orders or Games sign-ups in this period yet.</p>
