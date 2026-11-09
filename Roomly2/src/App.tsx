@@ -869,6 +869,17 @@ export default function App() {
     if (selectedTab === 'Request' || selectedTab === 'hub') return [];
     let list = sideProducts.filter((p) => shopGroupOf(p) === selectedTab);
     if (selectedFilter !== 'All') list = list.filter((p) => p.category.toLowerCase() === selectedFilter.toLowerCase());
+    // Cooked food: Rice Meals, then Swallow & Soup, then the other dishes (menu order), drinks last.
+    // Within a category the order stays as it is.
+    if (selectedTab === 'food') {
+      const order = ['rice meals', 'swallow & soup', 'beans, yam & plantain', 'pasta & noodles', 'local specials', 'small chops & snacks'];
+      const rank = (p: Product) => {
+        if (!p.isFood) return 100; // drinks and other add-ons
+        const i = order.indexOf(String(p.category || '').toLowerCase());
+        return i < 0 ? 50 : i; // a dish in another category comes after the known ones
+      };
+      list = list.map((p, i) => ({ p, i })).sort((a, b) => rank(a.p) - rank(b.p) || a.i - b.i).map((x) => x.p);
+    }
     return list;
   }, [sideProducts, selectedTab, selectedFilter, searchQuery]);
 
