@@ -1231,13 +1231,12 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             </div>
             {/* Delivery is per order, not per item: show what it comes to when roommates share one cart */}
             {!isExpress && deliveryFee > 0 && (
-              <div className="-mt-1 space-y-0.5 text-[11px] leading-snug">
-                <p className="text-[#0b8044] dark:text-emerald-400">
-                  Share it: 2 of you ₦{Math.ceil(deliveryFee / 2).toLocaleString()} each · 4 of you ₦{Math.ceil(deliveryFee / 4).toLocaleString()} each
-                </p>
-                <p className="text-slate-500 dark:text-slate-400">
-                  Ordering alone? Add your {cart === 'inside' ? "roommates'" : "friends'"} items, one delivery covers everyone.
-                </p>
+              <div className="-mt-1 text-[11px] leading-snug text-[#0b8044] dark:text-emerald-400">
+                <p className="font-semibold">Order with friends and roommates:</p>
+                <ul className="list-disc pl-4">
+                  <li>2 of you: ₦{Math.ceil(deliveryFee / 2).toLocaleString()} each</li>
+                  <li>4 of you: ₦{Math.ceil(deliveryFee / 4).toLocaleString()} each</li>
+                </ul>
               </div>
             )}
             <div className="flex justify-between text-sm font-extrabold text-slate-900 dark:text-white pt-2 border-t border-slate-200 dark:border-slate-800">
