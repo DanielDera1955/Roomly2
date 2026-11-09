@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Star } from 'lucide-react';
-import { subscribeMyRatings, subscribeAllRatings, subscribeFeedbackMessages, setFeedbackStatus } from '../api.js';
+import { subscribeMyRatings, subscribeAllRatings, subscribeFeedbackMessages, setFeedbackStatus, subscribeOrders } from '../api.js';
+import { arrivalDeadlineMs, GATE_ARRIVAL_MINUTES } from '../config';
 
 const card = 'bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-4 space-y-3';
 const avg = (list: any[]) => (list.length ? list.reduce((t, r) => t + (r.score || 0), 0) / list.length : 0);
@@ -140,6 +141,57 @@ const FeedbackMessages: React.FC = () => {
   );
 };
 
+/**
+ * On time, per vendor (outside orders):
+ *  - Sent on time: the vendor's "Order delivered" tap left enough of the 15-minute gate run before the promised time.
+ *  - Students said yes: answers to "Did it arrive before ...?" after delivery.
+ * On-time send + "No" points to transport or an early tap; a late send is the vendor's.
+ */
+const OnTimePanel: React.FC<{ ratings: any[] }> = ({ ratings }) => {
+  const [orders, setOrders] = useState<any[]>([]);
+  useEffect(() => subscribeOrders((list: any[]) => setOrders(list || [])), []);
+  const rows = useMemo(() => {
+    const m: Record<string, { name: string; sent: number; onTime: number; yes: number; asked: number }> = {};
+    orders
+      .filter((o) => (o.cart === 'store' || o.cart === 'food') && o.deliveredAt && o.status !== 'Cancelled')
+      .forEach((o) => {
+        const promised = arrivalDeadlineMs(o);
+        if (promised === null) return;
+        const key = o.operatorName || 'Roomly';
+        if (!m[key]) m[key] = { name: key, sent: 0, onTime: 0, yes: 0, asked: 0 };
+        m[key].sent++;
+        if (Date.parse(o.deliveredAt) + GATE_ARRIVAL_MINUTES * 60000 <= promised) m[key].onTime++;
+      });
+    ratings
+      .filter((r) => r.onTime === 'yes' || r.onTime === 'no')
+      .forEach((r) => {
+        const key = r.providerName || 'Roomly';
+        if (!m[key]) m[key] = { name: key, sent: 0, onTime: 0, yes: 0, asked: 0 };
+        m[key].asked++;
+        if (r.onTime === 'yes') m[key].yes++;
+      });
+    return Object.values(m).sort((a, b) => b.sent - a.sent);
+  }, [orders, ratings]);
+  const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%` : '–');
+  return (
+    <div className={card}>
+      <p className="text-xs font-black uppercase tracking-wider text-slate-500">On time, per vendor</p>
+      {rows.length === 0 && <p className="text-xs text-slate-400">No outside orders sent yet.</p>}
+      {rows.map((r) => (
+        <div key={r.name} className="flex items-center justify-between gap-2 text-xs py-1.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
+          <span className="font-bold text-slate-900 dark:text-white truncate">{r.name}</span>
+          <span className="shrink-0 text-slate-600 dark:text-slate-300">
+            Sent on time <strong>{pct(r.onTime, r.sent)}</strong> ({r.onTime}/{r.sent}) · Students said yes <strong>{pct(r.yes, r.asked)}</strong> ({r.yes}/{r.asked})
+          </span>
+        </div>
+      ))}
+      <p className="text-[10px] text-slate-400">
+        Sent on time = tapped "Order delivered" at least {GATE_ARRIVAL_MINUTES} minutes before the promised time. A late send is the vendor's; on time but "No" is transport or an early tap.
+      </p>
+    </div>
+  );
+};
+
 export const AdminFeedbackPanel: React.FC = () => {
   const [list, setList] = useState<any[]>([]);
   const [who, setWho] = useState('');
@@ -160,6 +212,7 @@ export const AdminFeedbackPanel: React.FC = () => {
 
   return (
     <div className="space-y-4">
+      <OnTimePanel ratings={list} />
       <FeedbackMessages />
       <div className={card}>
         <div className="flex items-center justify-between">

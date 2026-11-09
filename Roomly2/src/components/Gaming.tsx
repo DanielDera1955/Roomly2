@@ -27,6 +27,7 @@ import {
   winnerOf,
   shareWinLink,
   inviteLink,
+  gameInviteLink,
   subscribeTournaments,
   subscribeEntries,
   subscribeHubSettings,
@@ -138,7 +139,17 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
           onRegister={openRegister}
         />
       ) : (
-        <GamesHome me={me} gamers={gamers} boards={boards} isOpen={isOpen} opensAt={opensAt} nowMs={nowMs} onPick={setGame} onRegister={openRegister} />
+        <GamesHome
+          me={me}
+          isCustomer={Boolean(session.phone && session.pin)}
+          gamers={gamers}
+          boards={boards}
+          isOpen={isOpen}
+          opensAt={opensAt}
+          nowMs={nowMs}
+          onPick={setGame}
+          onRegister={openRegister}
+        />
       )}
       {registering && (
         <RegisterSheet
@@ -162,6 +173,8 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
 
 const GamesHome: React.FC<{
   me: any;
+  /** Signed in as a Roomly customer on this phone (not yet a player) */
+  isCustomer?: boolean;
   gamers: any[];
   boards: Record<string, any[]>;
   isOpen: boolean;
@@ -169,7 +182,7 @@ const GamesHome: React.FC<{
   nowMs: number;
   onPick: (g: string) => void;
   onRegister: () => void;
-}> = ({ me, gamers, boards, isOpen, opensAt, nowMs, onPick, onRegister }) => {
+}> = ({ me, isCustomer = false, gamers, boards, isOpen, opensAt, nowMs, onPick, onRegister }) => {
   const registered = gamers.filter((g) => !g.banned).length;
   const myBest = me
     ? GAMES.filter((g) => playsGame(me, g.id))
@@ -208,7 +221,7 @@ const GamesHome: React.FC<{
         </p>
         <div className="mt-4 grid grid-cols-2 gap-2">
           <button type="button" onClick={onRegister} className="h-11 rounded-xl bg-white text-[#0e9f55] text-sm font-bold flex items-center justify-center gap-1.5 cursor-pointer">
-            {me ? 'Edit profile' : <><Plus className="w-4 h-4" /> Register</>}
+            {me ? 'Edit profile' : <><Plus className="w-4 h-4" /> {isCustomer ? 'Register as a player' : 'Register'}</>}
           </button>
           <button
             type="button"
@@ -304,21 +317,6 @@ const GamePage: React.FC<{
         </div>
       </div>
 
-      {/* My profile */}
-      {plays ? (
-        <MyProfileCard me={me} row={myRow} game={game} isOpen={isOpen} opensAt={opensAt} nowMs={nowMs} onEdit={onRegister} />
-      ) : (
-        <div className={`${card} p-4 flex items-center justify-between gap-3`}>
-          <div>
-            <p className="text-sm font-bold text-slate-900 dark:text-white">{me ? `Add ${gameLabel(game)} to your games` : 'Join the league'}</p>
-            <p className="text-[11px] text-slate-500">{me ? 'Then you show on this table.' : 'Free. Your WhatsApp number stays private.'}</p>
-          </div>
-          <button type="button" onClick={onRegister} className="shrink-0 h-10 px-4 rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer">
-            {me ? 'Edit' : 'Register'}
-          </button>
-        </div>
-      )}
-
       {/* Registration week */}
       {!isOpen && (
         <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 flex items-start gap-2.5">
@@ -372,7 +370,35 @@ const GamePage: React.FC<{
             <p className="text-xs text-emerald-50/90 mt-1">{isOpen ? 'Win the first matches and the crown is yours.' : `The race starts ${openDay(opensAt)}.`}</p>
           </>
         )}
+
+        {/* You: your place under the crown, then your two buttons */}
+        <div className="mt-4 pt-3 border-t border-white/20">
+          {plays && myRow ? (
+            <p className="text-sm font-bold">
+              {champ && champ.id === me?.id
+                ? 'You wear the crown.'
+                : `You: #${myRow.rank}, ${myRow.pts} pts${champ ? `, ${Math.max(0, champ.pts - myRow.pts)} pts behind the crown` : ''}`}
+            </p>
+          ) : (
+            <p className="text-xs text-emerald-50/90">Free to join. Your WhatsApp number stays private.</p>
+          )}
+          <div className="mt-2.5 grid grid-cols-2 gap-2">
+            <button type="button" onClick={onRegister} className="h-10 rounded-xl bg-white text-[#0e9f55] text-xs font-bold flex items-center justify-center gap-1 cursor-pointer">
+              {plays ? 'Edit profile' : <><Plus className="w-3.5 h-3.5" /> Register for {gameLabel(game)}</>}
+            </button>
+            <button
+              type="button"
+              onClick={() => go(gameInviteLink(game, plays && myRow ? myRow.rank : 0))}
+              className="h-10 rounded-xl bg-white/15 border border-white/30 text-white text-xs font-bold flex items-center justify-center gap-1 cursor-pointer"
+            >
+              <MessageCircle className="w-3.5 h-3.5" /> {plays ? `Invite friends to ${gameLabel(game)}` : `Invite a friend to ${gameLabel(game)}`}
+            </button>
+          </div>
+        </div>
       </div>
+
+      {/* My profile: ready to play and my stats */}
+      {plays && <MyProfileCard me={me} row={myRow} game={game} isOpen={isOpen} opensAt={opensAt} nowMs={nowMs} onEdit={onRegister} />}
 
       {/* Ready to play now */}
       {isOpen && (

@@ -1597,6 +1597,12 @@ export function arrivalDeadlineMs(o: any): number | null {
   }
   return endMin === null ? null : day.getTime() + endMin * 60000;
 }
+/** When an order's batch stops taking orders (minutes after midnight): all its payments are confirmed by then */
+export function orderCloseMinFor(cart?: string, batchId?: string): number {
+  if (cart === 'store') return OUTSIDE_ORDER_BY_MIN;
+  if (cart === 'food') return batchId === 'midday' ? DAY_FOOD_ORDER_BY_MIN : OUTSIDE_FOOD_ORDER_BY_MIN;
+  return INSIDE_ORDER_BY_MIN;
+}
 /** "3:00pm", "3:00pm tomorrow" or "3:00pm on Friday", relative to now */
 export function arrivalText(ms: number, now: Date = new Date()): string {
   const d = new Date(ms);

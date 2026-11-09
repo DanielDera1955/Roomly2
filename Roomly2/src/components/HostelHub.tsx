@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { takeHubSection } from '../links.js';
-import { Phone, Flag, Plus, X, ShoppingBag, MessageCircle, Camera, Loader2, BatteryCharging, CircleCheck, ChevronDown, ChevronRight, Gamepad2, Wrench, ShieldCheck, Users } from 'lucide-react';
+import { Phone, Flag, Plus, X, ShoppingBag, MessageCircle, Camera, Loader2, BatteryCharging, CircleCheck, ChevronDown, ChevronRight, Gamepad2, Wrench, ShieldCheck, Users, Search } from 'lucide-react';
 import { NoPhoto } from './NoPhoto';
 import { HOSTELS } from '../config';
 import {
@@ -25,8 +25,8 @@ import {
 } from '../hub.js';
 import { Gaming } from './Gaming';
 
-type Section = 'games' | 'buysell' | 'services';
-type Kind = 'all' | 'service' | 'charging' | 'water' | 'item' | 'rent' | 'wanted';
+type Section = 'games' | 'buysell' | 'services' | 'lostfound';
+type Kind = 'all' | 'service' | 'charging' | 'water' | 'item' | 'rent' | 'wanted' | 'lost' | 'found';
 
 interface Props {
   /** Inside-school product names: things the school doesn't allow reselling in the hostel */
@@ -47,10 +47,11 @@ const chip = (on: boolean) =>
       ? 'bg-emerald-50 dark:bg-emerald-950/50 border-[#0e9f55] text-[#0e9f55]'
       : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
   }`;
-const SECTION_ICON: Record<Section, React.FC<{ className?: string }>> = { games: Gamepad2, buysell: ShoppingBag, services: Wrench };
-const SECTION_HEAD: Record<'buysell' | 'services', { title: string; sub: string }> = {
+const SECTION_ICON: Record<Section, React.FC<{ className?: string }>> = { games: Gamepad2, buysell: ShoppingBag, services: Wrench, lostfound: Search };
+const SECTION_HEAD: Record<'buysell' | 'services' | 'lostfound', { title: string; sub: string }> = {
   buysell: { title: 'Buy & Sell', sub: 'Good finds, shared around your hostel.' },
   services: { title: 'Services', sub: 'Helpful skills, right around the hostel.' },
+  lostfound: { title: 'Lost & Found', sub: 'Lost something, or found something? Post it here.' },
 };
 
 /* ------------------------------------------------------------------ */
@@ -81,6 +82,13 @@ const GUIDES: Record<Section, string[]> = {
     'To offer a service, tap Post and add a real photo, your price range and your hostel. It stays up; tap "Still available" every 30 days.',
     'Phone charging: switch "Charging now" on in My listings whenever you can charge, so students see you first.',
     'Payment is between you. Roomly takes nothing during launch. See something fake? Tap the flag.',
+  ],
+  lostfound: [
+    'Lost something? Post what it is, where you last had it, and your hostel. Add a reward if you want to.',
+    'Found something? Post what it is and where the owner can collect it, for example your hostel and room.',
+    "Never post a photo of the details on an ID card, exam card or document. Write only enough for the owner to recognise it, for example \"WAEC card, surname starts with N\".",
+    'The owner proves it is theirs when collecting, for example by describing it or showing another ID.',
+    'Posts stay up for 1 to 14 days. Tap "Back with owner" in My listings once the item is returned.',
   ],
 };
 
@@ -163,7 +171,7 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
   return (
     <div className="space-y-4">
       {/* Hub sections: one level down from the main bar, so plain tabs with a green underline */}
-      <div role="tablist" className="grid grid-cols-3 border-b border-slate-200 dark:border-slate-800">
+      <div role="tablist" className="grid grid-cols-4 border-b border-slate-200 dark:border-slate-800">
         {HUB_SECTIONS.map((x) => {
           const Icon = SECTION_ICON[x.id as Section];
           const on = section === x.id;
@@ -174,13 +182,13 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
               role="tab"
               aria-selected={on}
               onClick={() => setSection(x.id as Section)}
-              className={`relative h-11 flex items-center justify-center gap-1.5 text-[13px] font-bold cursor-pointer transition-colors ${
+              className={`relative h-11 flex items-center justify-center gap-1 px-0.5 text-[12px] font-bold cursor-pointer transition-colors ${
                 on ? 'text-[#0e9f55]' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
-              <Icon className="w-4 h-4 shrink-0" />
+              <Icon className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">{x.label}</span>
-              <span className={`absolute left-3 right-3 -bottom-px h-[3px] rounded-full ${on ? 'bg-[#0e9f55]' : 'bg-transparent'}`} />
+              <span className={`absolute left-2 right-2 -bottom-px h-[3px] rounded-full ${on ? 'bg-[#0e9f55]' : 'bg-transparent'}`} />
             </button>
           );
         })}
@@ -452,6 +460,8 @@ const PostForm: React.FC<{
     rent: ['Price per day (₦)'],
     charging: ['Charge to 50% (₦)', 'Charge to 100% (₦)'],
     water: ['Price per bucket (₦)'],
+    lost: ['Reward (₦, optional)'],
+    found: ['Collection fee (₦, optional)'],
   };
   const [label1, label2] = priceFields[type] || ['Price (₦)'];
 
@@ -529,6 +539,10 @@ const PostForm: React.FC<{
               ? 'e.g. Power bank charging, TA B12'
               : type === 'water'
               ? 'e.g. I fetch water to your room'
+              : type === 'lost'
+              ? 'e.g. Lost black power bank near the canteen'
+              : type === 'found'
+              ? 'e.g. Found WAEC card, surname starts with N'
               : 'e.g. Used kerosene stove'
           }
         />
@@ -569,7 +583,15 @@ const PostForm: React.FC<{
 
       <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
         <Camera className="w-4 h-4 text-[#0e9f55]" />
-        <span>{photo ? photo.name : type === 'wanted' ? 'Add a photo (optional)' : 'Add a real photo (required)'}</span>
+        <span>
+          {photo
+            ? photo.name
+            : type === 'wanted' || type === 'lost'
+            ? 'Add a photo (optional)'
+            : type === 'found'
+            ? 'Add a photo (optional, never of the details on an ID or document)'
+            : 'Add a real photo (required)'}
+        </span>
         <input type="file" accept="image/*" className="hidden" onChange={(e) => setPhoto(e.target.files?.[0] || null)} />
       </label>
 
@@ -652,7 +674,9 @@ const MyListings: React.FC = () => {
         const state = l.hidden
           ? 'Hidden: Roomly is checking a report'
           : l.status === 'sold'
-          ? 'Sold'
+          ? l.type === 'lost' || l.type === 'found'
+            ? 'Back with owner'
+            : 'Sold'
           : live
           ? 'Showing'
           : LONG_LIVED.includes(l.type)
@@ -693,7 +717,7 @@ const MyListings: React.FC = () => {
                 )}
                 {l.status === 'active' && l.type !== 'service' && l.type !== 'charging' && l.type !== 'water' && (
                   <button type="button" disabled={busyId === l.id} onClick={() => act(l.id, 'sold')} className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-bold cursor-pointer">
-                    {l.type === 'wanted' ? 'Found it' : 'Mark sold'}
+                    {l.type === 'wanted' ? 'Found it' : l.type === 'lost' || l.type === 'found' ? 'Back with owner' : 'Mark sold'}
                   </button>
                 )}
                 <button

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { getRating, submitRating, providerOf, sendMessage } from '../api.js';
-import { RATING_REASONS, RATING_GOOD, ratingScore } from '../config';
+import { RATING_REASONS, RATING_GOOD, ratingScore, arrivalDeadlineMs, arrivalText } from '../config';
 import { OrderRecord } from '../types';
 
 /**
@@ -13,6 +13,9 @@ export const RateExperience: React.FC<{ order: OrderRecord }> = ({ order }) => {
   const [reasons, setReasons] = useState<string[]>([]);
   const [comment, setComment] = useState('');
   const [busy, setBusy] = useState(false);
+  // One tap: did it arrive before the time we promised? (feeds each vendor's on-time rate)
+  const [onTime, setOnTime] = useState<'' | 'yes' | 'no'>('');
+  const promisedMs = arrivalDeadlineMs(order);
   const who = providerOf(order).name;
   const outside = order.cart === 'store' || order.cart === 'food';
 
@@ -50,7 +53,7 @@ export const RateExperience: React.FC<{ order: OrderRecord }> = ({ order }) => {
     if (needsNote) return window.alert('Tell us what happened in a few words.');
     setBusy(true);
     try {
-      await submitRating(order, ratingScore(reasons), reasons, comment);
+      await submitRating(order, ratingScore(reasons), reasons, comment, onTime);
       // Problems and notes also go into the order chat, so the runner or operator and Roomly see them in one place
       const note = comment.trim();
       const problems = reasons.filter((r) => r !== RATING_GOOD);
@@ -71,6 +74,28 @@ export const RateExperience: React.FC<{ order: OrderRecord }> = ({ order }) => {
         <p className="font-extrabold text-slate-900 dark:text-white">How was this order?</p>
         <p className="text-[11px] text-slate-500">Tick everything that applies for {who}.</p>
       </div>
+
+      {promisedMs !== null && (
+        <div className="space-y-1.5">
+          <p className="font-bold text-slate-900 dark:text-white">
+            Did your order arrive {outside ? 'at the gate' : 'at your room'} before {arrivalText(promisedMs)}?
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {(['yes', 'no'] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setOnTime(onTime === v ? '' : v)}
+                className={`py-2 rounded-xl border font-bold cursor-pointer ${
+                  onTime === v ? 'border-[#0e9f55] bg-emerald-50 dark:bg-emerald-950/40 text-[#0e9f55]' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                {v === 'yes' ? 'Yes' : 'No'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="space-y-1.5">
         {RATING_REASONS.map((r) => {

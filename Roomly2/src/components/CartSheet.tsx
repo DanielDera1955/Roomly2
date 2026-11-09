@@ -1,4 +1,4 @@
-import { HEARD_OPTIONS, getHeardFrom, setHeardFrom } from '../tracking.js';
+import { HEARD_OPTIONS, HEARD_ASK_NAME, getHeardFrom, setHeardFrom, getHeardName, setHeardName } from '../tracking.js';
 import React, { useState, useEffect, useRef } from 'react';
 import { NoPhoto } from './NoPhoto';
 import {
@@ -155,6 +155,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
 
   // Is repeat customer?
   const [heard, setHeard] = useState<string>(() => getHeardFrom());
+  const [heardName, setHeardNameState] = useState<string>(() => getHeardName());
   const isRepeatCustomer = Boolean(customer && (customer.isReturning || (customer.ordersCount && customer.ordersCount > 0)));
 
   // Auto-fill when customer profile is available
@@ -770,6 +771,19 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                       </button>
                     ))}
                   </div>
+                  {HEARD_ASK_NAME.includes(heard) && (
+                    <input
+                      type="text"
+                      value={heardName}
+                      maxLength={40}
+                      onChange={(e) => {
+                        setHeardNameState(e.target.value);
+                        setHeardName(e.target.value);
+                      }}
+                      placeholder={heard === 'courserep' ? "Course rep's name (optional)" : heard === 'runner' ? "Runner's name (optional)" : "Friend's name (optional)"}
+                      className="mt-2 w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55]"
+                    />
+                  )}
                 </div>
               )}
 
@@ -789,23 +803,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                 />
               </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  What should we call you? <span className="font-normal text-slate-400">(optional)</span>
-                </label>
-                <input
-                  type="text"
-                  value={callName}
-                  maxLength={30}
-                  onChange={(e) => {
-                    setCallName(e.target.value);
-                    setCallNameEdited(true);
-                  }}
-                  placeholder="e.g. Dera"
-                  className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55]"
-                />
-                <p className="mt-1 text-[10px] text-slate-400">Only used to greet you in the app. Runners still see your full name.</p>
-              </div>
+              {/* "What should we call you?" lives in Settings now: the first name is used automatically */}
 
               {(cart === 'inside' || gatePickup) && !customMode && (
               <>

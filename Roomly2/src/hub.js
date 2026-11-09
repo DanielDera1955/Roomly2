@@ -40,12 +40,15 @@ export const HUB_TYPES = [
   { id: 'item', label: 'For sale', hint: 'Your own used items: stove, bucket, power bank, phone, books' },
   { id: 'rent', label: 'For rent', hint: 'Lend your stove or other items per day' },
   { id: 'wanted', label: 'Wanted', hint: 'Tell everyone what you need' },
+  { id: 'lost', label: 'Lost', hint: 'You lost something: phone, power bank, ID card, bag' },
+  { id: 'found', label: 'Found', hint: 'You found something: say where to collect it' },
 ];
-/** Hostel Hub has three sections. Each listing type lives in one of them. */
+/** Hostel Hub has four sections. Each listing type lives in one of them. */
 export const HUB_SECTIONS = [
   { id: 'games', label: 'Games', types: [] },
   { id: 'buysell', label: 'Buy & Sell', types: ['item', 'rent', 'wanted'] },
   { id: 'services', label: 'Services', types: ['service', 'charging', 'water'] },
+  { id: 'lostfound', label: 'Lost & Found', types: ['lost', 'found'] },
 ];
 /** These never expire; the poster confirms every 30 days that they are still available */
 export const LONG_LIVED = ['service', 'charging', 'water'];
@@ -142,6 +145,10 @@ export function priceLabel(l) {
       return [p ? `to 50%: ${naira(p)}` : '', p2 ? `to 100%: ${naira(p2)}` : ''].filter(Boolean).join(' · ') || 'Ask for price';
     case 'water':
       return p ? `${naira(p)} per bucket` : 'Ask for price';
+    case 'lost':
+      return p ? `Reward ${naira(p)}` : 'Lost';
+    case 'found':
+      return p ? `Collection fee ${naira(p)}` : 'Found: free to collect';
     default:
       return p ? naira(p) : 'Ask for price';
   }
@@ -172,7 +179,7 @@ export function needsConfirm(l, nowMs = Date.now()) {
 
 /** Why a listing can't be posted because Roomly already delivers it ('' when fine) */
 export function blockedReason(type, title, productNames = []) {
-  if (type === 'charging' || type === 'water' || type === 'rent') return '';
+  if (type === 'charging' || type === 'water' || type === 'rent' || type === 'lost' || type === 'found') return '';
   const t = norm(title);
   const word = CORE_WORDS.find((w) => t.includes(` ${w} `));
   const prod = productNames.find((n) => {
@@ -271,7 +278,8 @@ export async function createListing(input) {
   const name = String(input.name || '').trim().slice(0, 40);
   if (!name) throw new Error('Add your name.');
   if (!input.hostel) throw new Error('Choose your hostel.');
-  if (type !== 'wanted' && !input.photoFile) throw new Error('Add a real photo.');
+  // Lost & Found: a photo is optional (never photograph the details on an ID card or document)
+  if (type !== 'wanted' && type !== 'lost' && type !== 'found' && !input.photoFile) throw new Error('Add a real photo.');
   const phone = await checkPoster(input.phone, input.pin);
   const uid = await hubUid();
 
@@ -665,6 +673,14 @@ export function inviteLink(me, opensAtMs) {
   return waShare(
     `See who's the best in Caritas at eFootball, Free Fire, DLS, CODM, FIFA and more, then challenge them. ` +
       `${soon ? `Challenges start ${when}. ` : ''}Register free on Roomly Caritas: ${appLink({ game: me?.games?.[0] || 'efootball' })}`
+  );
+}
+
+/** WhatsApp: invite a friend to one game; the link opens straight on that game's table */
+export function gameInviteLink(game, myRank) {
+  return waShare(
+    `${myRank ? `I'm #${myRank} in ${gameLabel(game)} on Roomly Caritas.` : `Who's the best in Caritas at ${gameLabel(game)}?`} ` +
+      `Register free, get on the table and challenge me: ${appLink({ game })}`
   );
 }
 

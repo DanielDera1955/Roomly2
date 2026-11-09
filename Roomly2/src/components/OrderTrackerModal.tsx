@@ -21,6 +21,7 @@ import {
   Send,
   AlertTriangle,
   Zap,
+  Loader2,
 } from 'lucide-react';
 import { OrderRecord, locationText, shortLocation, roomText, partLabel, expressTiming, orderStageOf } from '../types';
 import {
@@ -37,6 +38,7 @@ import {
   arrivalDeadlineMs,
   arrivalText,
   countdownText,
+  orderCloseMinFor,
 } from '../config';
 import { payWithPaystack, preloadPaystack, paystackFor, isRoomlyOrder, collectsAsRoomly, ROOMLY_SUPPORT_PHONE, waNumber } from '../api.js';
 import { markPaymentSent, paymentState, getPayProvider, cancelExpress, markExpressReceived, markExpressNotHere, markNotReceived, canFlagNotReceived, contactPhoneFor } from '../api.js';
@@ -550,13 +552,46 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                   This order was not paid for and expired at the end of the day. Please place a new order.
                 </div>
               ) : currentOrder.paymentMethod === 'pay_now' ? (
-                currentOrder.paymentStatus === 'payment_confirmed' ? null : currentOrder.paymentStatus === 'payment_sent' ? (
-                  <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 text-xs text-emerald-900 dark:text-emerald-200 font-medium flex items-start gap-2">
-                    <Check className="w-4 h-4 text-[#0e9f55] stroke-[3] shrink-0 mt-0.5" />
-                    <span>
-                      Payment sent. Once your payment is confirmed, your order will be attended to and start being packaged.
-                    </span>
+                currentOrder.paymentStatus === 'payment_confirmed' ? (
+                  currentOrder.status === 'Delivered' || currentOrder.status === 'On the way' || currentOrder.status === 'Cancelled' ? null : (
+                  <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 text-xs text-emerald-900 dark:text-emerald-200 font-bold flex items-center gap-2">
+                    <Check className="w-4 h-4 text-[#0e9f55] stroke-[3] shrink-0" />
+                    <span>Payment confirmed. Your order is being packed.</span>
                   </div>
+                  )
+                ) : currentOrder.paymentStatus === 'payment_sent' ? (
+                  (() => {
+                    // Checking by hand: say when every payment for this batch is confirmed, and when the order arrives
+                    const day = new Date(String(currentOrder.deliveryDate || '') + 'T00:00:00');
+                    const closeMin = orderCloseMinFor(currentOrder.cart, currentOrder.deliveryBatch);
+                    const confirmBy = Number.isFinite(day.getTime()) ? arrivalText(day.getTime() + closeMin * 60000) : '';
+                    const batchName =
+                      currentOrder.cart === 'food'
+                        ? currentOrder.deliveryBatch === 'midday'
+                          ? 'lunch batch'
+                          : 'dinner batch'
+                        : currentOrder.cart === 'store'
+                        ? 'store batch'
+                        : 'evening batch';
+                    return (
+                      <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 text-xs text-emerald-900 dark:text-emerald-200 flex items-start gap-2">
+                        <Loader2 className="w-4 h-4 text-[#0e9f55] shrink-0 mt-0.5 animate-spin" />
+                        <span className="space-y-1">
+                          <strong className="block text-sm">Checking your payment</strong>
+                          <span className="block">
+                            {confirmBy ? `All payments for this batch are confirmed before ${confirmBy}. ` : ''}
+                            Your order is in the {batchName}
+                            {arrivalMs !== null
+                              ? ` and reaches ${isOutside ? 'the school gate' : 'your room'} before ${arrivalText(arrivalMs)}. Your countdown has already started.`
+                              : '.'}
+                          </span>
+                          <span className="block text-emerald-800/80 dark:text-emerald-300/80">
+                            If we can't find your payment, your order won't be packed and we'll contact you.
+                          </span>
+                        </span>
+                      </div>
+                    );
+                  })()
                 ) : usePaystack ? (
                   <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 space-y-3">
                     <div className="flex items-center justify-between">
@@ -629,6 +664,12 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                       Orders are attended to once payment is confirmed. Please transfer{' '}
                       <strong>₦{currentOrder.totalAmount.toLocaleString()}</strong> to:
                     </p>
+                    {collectsAsRoomly(currentOrder.cart) && payAcct && (
+                      <p className="text-[11px] text-amber-900 dark:text-amber-200 leading-snug">
+                        <strong>Pay Roomly.</strong> Pay into Roomly's {payAcct.bankName || 'business'} account (account name: {payAcct.accountName}). Roomly
+                        confirms your payment and sends your order to the {isOutside ? 'vendor' : 'runner'}, who follows this batch's countdown.
+                      </p>
+                    )}
                     {payAcct ? (
                       <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/40 text-xs space-y-1.5">
                         <div className="flex justify-between">

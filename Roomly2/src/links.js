@@ -15,6 +15,7 @@ export const SECTION_LINKS = {
   'hub-services': { side: 'inside', tab: 'hub', hub: 'services', label: 'Hostel Hub: Services' },
   'hub-buysell': { side: 'inside', tab: 'hub', hub: 'buysell', label: 'Hostel Hub: Buy & Sell' },
   games: { side: 'inside', tab: 'hub', hub: 'games', label: 'Hostel Hub: Games' },
+  'hub-lostfound': { side: 'inside', tab: 'hub', hub: 'lostfound', label: 'Hostel Hub: Lost & Found' },
 };
 
 export const SITE_URL = 'https://roomly2-inky.vercel.app';

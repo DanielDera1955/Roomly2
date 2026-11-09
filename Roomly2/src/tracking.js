@@ -7,14 +7,20 @@
  */
 const REF_KEY = 'roomly_ref';
 const HEARD_KEY = 'roomly_heard';
+const HEARD_NAME_KEY = 'roomly_heard_name';
 
 export const HEARD_OPTIONS = [
   { id: 'whatsapp', label: 'WhatsApp group' },
   { id: 'friend', label: 'A friend' },
+  { id: 'courserep', label: 'Course rep' },
+  { id: 'runner', label: 'A Roomly runner' },
+  { id: 'games', label: 'Roomly Games' },
   { id: 'hallrep', label: 'Hall rep' },
   { id: 'poster', label: 'Poster' },
   { id: 'other', label: 'Other' },
 ];
+/** Options where we ask who it was (so friends, course reps and runners can be credited later) */
+export const HEARD_ASK_NAME = ['friend', 'courserep', 'runner'];
 
 const clean = (v) =>
   String(v || '')
@@ -60,10 +66,29 @@ export function setHeardFrom(id) {
   }
 }
 
+/** Who told them (friend, course rep or runner name), '' if not given */
+export function getHeardName() {
+  try {
+    return String(localStorage.getItem(HEARD_NAME_KEY) || '').trim().slice(0, 40);
+  } catch (e) {
+    return '';
+  }
+}
+export function setHeardName(name) {
+  try {
+    const v = String(name || '').trim().slice(0, 40);
+    if (v) localStorage.setItem(HEARD_NAME_KEY, v);
+    else localStorage.removeItem(HEARD_NAME_KEY);
+  } catch (e) {
+    /* ignore */
+  }
+}
+
 /** A readable name for a channel: the link tag, else the answer, else "No tag" */
 export function channelOf(rec) {
   const r = clean(rec && rec.ref);
   if (r) return `Link: ${r}`;
   const h = HEARD_OPTIONS.find((o) => o.id === (rec && rec.heardFrom));
-  return h ? `Said: ${h.label}` : 'No tag';
+  const who = rec && rec.heardName ? ` (${String(rec.heardName).slice(0, 40)})` : '';
+  return h ? `Said: ${h.label}${who}` : 'No tag';
 }

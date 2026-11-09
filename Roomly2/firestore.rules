@@ -314,7 +314,7 @@ service cloud.firestore {
         && request.resource.data.contacts == 0
         && request.resource.data.hidden == false
         && request.resource.data.stolenFlag == false
-        && request.resource.data.type in ['service', 'item', 'wanted', 'rent', 'charging', 'water']
+        && request.resource.data.type in ['service', 'item', 'wanted', 'rent', 'charging', 'water', 'lost', 'found']
         && request.resource.data.title is string
         && request.resource.data.title.size() >= 2 && request.resource.data.title.size() <= 60
         && request.resource.data.note is string && request.resource.data.note.size() <= 300

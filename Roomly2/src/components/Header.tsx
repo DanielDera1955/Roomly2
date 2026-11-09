@@ -24,6 +24,7 @@ interface HeaderProps {
   /** Signed-in student: shows the Orders and Account buttons instead of the sign-in box */
   signedIn?: boolean;
   onSignOut?: () => void;
+  onOpenSettings?: () => void;
   /** Guests: opens the sign-in popup (returning students on a new phone) */
   onSignIn?: () => void;
 }
@@ -40,6 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
   activeOrderCount = 0,
   signedIn = false,
   onSignOut,
+  onOpenSettings,
   onSignIn,
 }) => {
   const [accountOpen, setAccountOpen] = useState(false);
@@ -95,6 +97,18 @@ export const Header: React.FC<HeaderProps> = ({
                     Signed in as <strong className="text-slate-900 dark:text-white">{customer?.name || 'you'}</strong>
                     <span className="block font-mono text-[11px]">{customer?.phone}</span>
                   </p>
+                  {onOpenSettings && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAccountOpen(false);
+                        onOpenSettings();
+                      }}
+                      className="w-full py-2 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
+                    >
+                      Settings: name, phone, PIN
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {

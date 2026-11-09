@@ -9,7 +9,7 @@
  * - Orders: customers create and track them; staff see the full list in real time.
  */
 
-import { getRef, getHeardFrom } from './tracking.js';
+import { getRef, getHeardFrom, getHeardName } from './tracking.js';
 import {
   INITIAL_PRODUCTS,
   INITIAL_CATEGORIES,
@@ -396,7 +396,8 @@ export function paystackFor(phone) {
   return Boolean(p) && (paySettings.testPhones || []).map(normalizePhone).includes(p);
 }
 /** Carts students always pay the operator for directly, even in manual mode (food goes straight to the food vendor) */
-const DIRECT_PAY_CARTS = ['food'];
+// Manual mode: every cart, food included, is paid to Roomly's account (Roomly forwards the order)
+const DIRECT_PAY_CARTS = [];
 /**
  * Roomly collects the money and the admin assigns orders: 'paystack' (normal) or 'manual' (Paystack down: Roomly's bank account).
  * Pass the cart ('inside' | 'store' | 'food') to check one cart: in manual mode, food is paid to the food vendor directly.
@@ -1635,7 +1636,8 @@ export async function getCustomerByPhone(phone, pin) {
     let profile = null;
     if (isValidPin(pin)) {
       const cs = await getDoc(doc(db, 'customers', await profileKey(p, pin)));
-      if (cs.exists()) profile = cs.data();
+      // A profile moved to a new PIN or phone in Settings no longer opens with the old one
+      if (cs.exists() && !cs.data().moved) profile = cs.data();
     }
 
     if (profile) {
@@ -1667,6 +1669,50 @@ export async function getCustomerByPhone(phone, pin) {
     console.error('Error fetching customer:', err);
     return null;
   }
+}
+
+/**
+ * Settings: change the name Roomly calls the student, their PIN, or their phone number.
+ * The PIN is always checked first. A new PIN or phone moves the whole profile (with its order history)
+ * to the new phone + PIN, and the old profile is emptied so the old PIN no longer opens it.
+ * Returns { phone, pin } now in use.
+ */
+export async function updateMyProfile(phone, pin, changes = {}) {
+  const p = normalizePhone(phone);
+  if (!isValidNigerianPhone(p) || !isValidPin(pin)) throw new Error('Sign in again to change your settings.');
+  const oldRef = doc(db, 'customers', await profileKey(p, pin));
+  const snap = await getDoc(oldRef);
+  if (!snap.exists() || snap.data().moved) throw new Error('Your PIN did not match. Sign in again and try once more.');
+  const cur = snap.data();
+  const newPhone = changes.newPhone ? normalizePhone(changes.newPhone) : p;
+  const newPin = changes.newPin ? String(changes.newPin) : pin;
+  if (!isValidNigerianPhone(newPhone)) throw new Error('Enter a valid phone number, e.g. 08012345678.');
+  if (!isValidPin(newPin)) throw new Error('Your new PIN must be 4 digits.');
+  const next = { ...cur, phone: newPhone, updatedAt: new Date().toISOString() };
+  if (typeof changes.callName === 'string') next.callName = changes.callName.trim().slice(0, 30);
+  if (newPhone === p && newPin === pin) {
+    await setDoc(oldRef, next, { merge: true });
+    return { phone: p, pin };
+  }
+  if (newPhone !== p) {
+    const taken = await getDoc(doc(db, 'phones', await phoneKey(newPhone)));
+    if (taken.exists()) throw new Error('That number already has a Roomly account. Use a different number.');
+  }
+  const newRef = doc(db, 'customers', await profileKey(newPhone, newPin));
+  const exists = await getDoc(newRef);
+  if (exists.exists() && !exists.data().moved) throw new Error('Choose a different PIN.');
+  await setDoc(newRef, { ...next, moved: false });
+  // Mark the new number as a returning customer so it asks for the PIN next time
+  if (newPhone !== p) {
+    try {
+      await setDoc(doc(db, 'phones', await phoneKey(newPhone)), { ordersCount: 1, deliveredCount: 0 });
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  // The old phone + PIN no longer opens the profile
+  await setDoc(oldRef, { phone: p, name: '', building: '', room: '', orderIds: [], lastOrder: null, moved: true, updatedAt: new Date().toISOString() });
+  return { phone: newPhone, pin: newPin };
 }
 
 /**
@@ -2060,6 +2106,7 @@ export async function createOrder(orderPayload) {
     // Where this student first came from (?ref= link) and what they said at their first checkout
     ref: getRef(),
     heardFrom: getHeardFrom(),
+    heardName: getHeardName(),
     deliveryBatch: batchId,
     deliveryTime: isExpress
       ? 'Express: within 20 minutes of your payment'
@@ -2375,7 +2422,7 @@ export async function getMyOrders(phone, pin) {
   if (!isValidNigerianPhone(p) || !isValidPin(pin)) return [];
   try {
     const cs = await getDoc(doc(db, 'customers', await profileKey(p, pin)));
-    if (!cs.exists()) return [];
+    if (!cs.exists() || cs.data().moved) return [];
     const d = cs.data();
     let ids = (d.orderIds || []).slice(0, 20);
     if (!ids.length && d.lastOrder && d.lastOrder.id) ids = [d.lastOrder.id];
@@ -4218,7 +4265,7 @@ export async function getRating(orderId) {
 
 /** Student: send the rating for one delivered cart */
 /** @returns {Promise<void>} */
-export async function submitRating(order, score, reasons, comment) {
+export async function submitRating(order, score, reasons, comment, onTime = '') {
   if (isDemoId(order?.id)) return true;
   const s = Math.round(Number(score) || 0);
   if (s < 1 || s > 5) throw new Error('Tap a score from 1 to 5');
@@ -4237,6 +4284,8 @@ export async function submitRating(order, score, reasons, comment) {
       providerKey: p.key,
       providerName: p.name,
       customer: order.name || '',
+      // "Did it arrive before the promised time?" ('' when skipped)
+      ...(onTime === 'yes' || onTime === 'no' ? { onTime } : {}),
       createdAt: new Date().toISOString(),
     })
   );

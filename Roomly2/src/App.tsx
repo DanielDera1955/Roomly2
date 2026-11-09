@@ -41,6 +41,8 @@ import { HowRoomlyWorks } from './components/HowRoomlyWorks';
 import { BecomeRunner } from './components/BecomeRunner';
 import { GuestHero } from './components/GuestHero';
 import { FeedbackBox } from './components/FeedbackBox';
+import { ProfileSettings } from './components/ProfileSettings';
+import { HomeQuickCards, QuickTarget } from './components/HomeQuickCards';
 import { subscribeHubSettings, outsideStoreOpensAt } from './hub.js';
 import { getLinkTarget } from './links.js';
 import { ProductCard } from './components/ProductCard';
@@ -100,6 +102,7 @@ export default function App() {
   // Outside store items open on launch day (Admin > Hub & Games can change the date or open it now)
   const [hubSettings, setHubSettings] = useState<any>({});
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   useEffect(() => subscribeHubSettings(setHubSettings), []);
   // Demo mode (?demo=1) shows outside store items as already open
   const storeOpensMs = DEMO ? 0 : outsideStoreOpensAt(hubSettings);
@@ -922,6 +925,36 @@ export default function App() {
   const hasCompletedOrder =
     signedInCustomer &&
     ((customer?.deliveredOrdersCount || 0) > 0 || screenOrders.some((o) => o.status === 'Delivered' && o.paymentStatus !== 'unpaid'));
+  // The last paid order, for the "order again" strip
+  const lastPaidOrder = useMemo(
+    () => screenOrders.find((o) => o.paymentStatus !== 'unpaid' && o.status !== 'Cancelled' && (o.items || []).length > 0) || null,
+    [screenOrders]
+  );
+  // Order again: the last order's items go back into their own cart at today's prices (other carts are kept)
+  const handleReorderOrder = (o: OrderRecord) => {
+    const kind: CartKind = o.cart === 'food' ? 'food' : o.cart === 'store' ? 'store' : 'inside';
+    const fresh = (o.items || [])
+      .map((item: any) => {
+        const p = products.find((x) => x.id === item.productId);
+        if (!p || p.isAvailable === false) return null;
+        const unit = item.isFood ? item.unitPrice : p.price;
+        return { ...item, unitPrice: unit, totalPrice: unit * item.quantity, id: `${item.productId}-${Date.now()}-${Math.random()}` };
+      })
+      .filter(Boolean) as CartItem[];
+    if (!fresh.length) {
+      window.alert('The items from your last order are not available right now.');
+      return;
+    }
+    setCartItems((cur) => [...cur.filter((i) => cartOf(i) !== kind), ...fresh]);
+    setCartKind(kind);
+    setIsCartOpen(true);
+  };
+  // "How Roomly works" shows until a student has completed 3 orders
+  const completedCount = Math.max(
+    customer?.deliveredOrdersCount || 0,
+    screenOrders.filter((o) => o.status === 'Delivered' && o.paymentStatus !== 'unpaid').length
+  );
+  const showHowItWorks = !(signedInCustomer && completedCount >= 3);
   // Midnight to noon is morning (the banner keeps a night sky until 5am)
   const hour = new Date(clockMs).getHours();
   const dayPart = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -1130,7 +1163,22 @@ export default function App() {
           signedIn={signedInCustomer}
           onSignOut={handleSignOut}
           onSignIn={() => setSignInOpen(true)}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
+        {settingsOpen && signedInCustomer && (
+          <ProfileSettings
+            phone={phone}
+            callName={(customer as any)?.callName || ''}
+            fullName={customer?.name || localName || ''}
+            onClose={() => setSettingsOpen(false)}
+            onSaved={(next) => {
+              setPhone(next.phone);
+              setPin(next.pin);
+              // Reload the profile so the greeting and history follow the change
+              getCustomerByPhone(next.phone, next.pin).then((c: any) => c && setCustomer(c));
+            }}
+          />
+        )}
 
         {/* A requested price just came back */}
         {priceReady && (
@@ -1190,8 +1238,30 @@ export default function App() {
             )}
           </div>
 
-          {/* How Roomly works: folded guide for first-time visitors */}
-          <HowRoomlyWorks
+          {/* Four quick cards for everyone, with an "order again" strip for returning students */}
+          <HomeQuickCards
+            storeOpensAtMs={storeLocked ? storeOpensMs : 0}
+            lastOrder={signedInCustomer ? lastPaidOrder : null}
+            onReorder={handleReorderOrder}
+            onOpen={(t: QuickTarget) => {
+              setSearchQuery('');
+              setSelectedFilter('All');
+              if (t === 'room') {
+                setSourceMode('inside');
+                setSelectedTab('store');
+              } else if (t === 'hub') {
+                setSourceMode('inside');
+                setSelectedTab('hub');
+              } else {
+                setSourceMode('outside');
+                setSelectedTab(t === 'store' && storeLocked ? 'food' : t);
+              }
+              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+            }}
+          />
+
+          {/* How Roomly works: folded guide, until the student's 3rd completed order */}
+          {showHowItWorks && <HowRoomlyWorks
             storeOpensMs={storeOpensMs}
             onStart={() => {
               setSourceMode('inside');
@@ -1203,7 +1273,7 @@ export default function App() {
               setSelectedTab('hub');
               window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
             }}
-          />
+          />}
 
           {/* No sign-in box on the home screen: new students give their details once, at checkout.
               Returning students on a new phone use "Sign in" in the header, which opens this popup. */}

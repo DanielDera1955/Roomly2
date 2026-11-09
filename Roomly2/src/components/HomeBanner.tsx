@@ -75,12 +75,20 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
     : afternoon
     ? 'linear-gradient(180deg,#0ea5e9 0%,#38bdf8 55%,#7dd3fc 100%)'
     : 'linear-gradient(180deg,#1e1b4b 0%,#312e81 55%,#0e7490 100%)';
-  const ink = morning ? 'text-orange-950' : 'text-white';
+  // Remembered students get a plain card: a greeting, no time-of-day sky (the sky stays for new visitors)
+  const plain = !isGuest;
+  const ink = plain ? 'text-slate-900 dark:text-white' : morning ? 'text-orange-950' : 'text-white';
   // Colour touches that follow the sky: the name, the faded welcome line, the delivery chip and the button
-  const nameColor = morning ? 'text-orange-700' : afternoon ? 'text-yellow-200' : 'text-amber-200';
-  const softText = morning ? 'text-orange-950/70' : afternoon ? 'text-white/85' : 'text-white/70';
-  const chipBg = morning ? 'bg-orange-900/15' : afternoon ? 'bg-sky-900/35' : 'bg-indigo-950/45';
-  const buttonInk = morning ? 'text-orange-800' : afternoon ? 'text-sky-700' : 'text-indigo-900';
+  const nameColor = plain ? 'text-[#0e9f55]' : morning ? 'text-orange-700' : afternoon ? 'text-yellow-200' : 'text-amber-200';
+  const softText = plain ? 'text-slate-500 dark:text-slate-400' : morning ? 'text-orange-950/70' : afternoon ? 'text-white/85' : 'text-white/70';
+  const chipBg = plain
+    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200'
+    : morning
+    ? 'bg-orange-900/15'
+    : afternoon
+    ? 'bg-sky-900/35'
+    : 'bg-indigo-950/45';
+  const buttonInk = plain ? 'text-[#0e9f55] border border-emerald-200 dark:border-emerald-900' : morning ? 'text-orange-800' : afternoon ? 'text-sky-700' : 'text-indigo-900';
 
   // Ticks every second while an outside order is counting down to the gate (and every 30s otherwise)
   const [nowMs, setNowMs] = useState(Date.now());
@@ -142,7 +150,10 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
   ];
 
   return (
-    <div className={`relative overflow-hidden rounded-3xl p-4 min-h-[176px] shadow-md ${ink}`} style={{ background: sky }}>
+    <div
+      className={`relative overflow-hidden rounded-3xl p-4 ${plain ? 'bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm' : 'min-h-[176px] shadow-md'} ${ink}`}
+      style={plain ? undefined : { background: sky }}
+    >
       <style>{`
         @keyframes rb-drift { 0% { transform: translateX(-8px); } 50% { transform: translateX(8px); } 100% { transform: translateX(-8px); } }
         @keyframes rb-glow { 0%, 100% { opacity: .85; transform: scale(1); } 50% { opacity: 1; transform: scale(1.07); } }
@@ -158,7 +169,8 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
         }
       `}</style>
 
-      {/* scenery: kept in the top-right corner so it never moves behind the text */}
+      {/* scenery: kept in the top-right corner so it never moves behind the text (new visitors only) */}
+      {!plain && (
       <div className="absolute right-0 top-0 w-[112px] h-[128px] overflow-hidden pointer-events-none">
         {morning && (
           <div
@@ -194,8 +206,9 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
           </>
         )}
       </div>
-      <div className="absolute -left-8 -right-8 -bottom-12 h-20 rounded-[50%] bg-[#0e9f55]/55" />
-      <div className="absolute left-[120px] -right-16 -bottom-14 h-20 rounded-[50%] bg-[#0b8044]/50" />
+      )}
+      {!plain && <div className="absolute -left-8 -right-8 -bottom-12 h-20 rounded-[50%] bg-[#0e9f55]/55" />}
+      {!plain && <div className="absolute left-[120px] -right-16 -bottom-14 h-20 rounded-[50%] bg-[#0b8044]/50" />}
 
       <div className="relative z-10">
         {/* No date strip: the greeting is the first thing they read */}
@@ -311,14 +324,13 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
         ) : (
           /* 4. greeting: two lines at the top (clear of the sky), then the live line and My orders in one row */
           <div className="mt-1">
-            <div className="pr-[96px]">
+            <div className={plain ? '' : 'pr-[96px]'}>
               <h1 className={`${isGuest ? 'text-[24px]' : 'text-[26px]'} font-extrabold tracking-tight leading-tight`}>
                 {isGuest ? (
                   'Welcome to Roomly Caritas'
                 ) : (
                   <>
-                    {dayPart}
-                    {name ? ', ' : ''}
+                    Hi{name ? ', ' : ''}
                     {name && <span className={nameColor}>{name}</span>}
                   </>
                 )}
@@ -332,7 +344,7 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
                 </p>
               )}
             </div>
-            <div className="mt-5 mb-2 flex items-center justify-between gap-3">
+            <div className={`${plain ? 'mt-3' : 'mt-5 mb-2'} flex items-center justify-between gap-3`}>
               {live.text ? (
                 <span className={`min-w-0 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-[12px] font-bold leading-snug backdrop-blur-sm ${chipBg}`}>
                   <span className={`w-[7px] h-[7px] shrink-0 rounded-full ${live.open ? 'bg-emerald-400 rb-twinkle' : 'bg-amber-300'}`} />
