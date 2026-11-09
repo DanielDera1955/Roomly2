@@ -120,35 +120,69 @@ export const HomeQuickCards: React.FC<{
 };
 
 /**
- * "My last order: Order again", folded by default (near the Featured row): the last paid order,
- * its price and the promise of the batch it would join now. One tap puts it back in its own cart.
+ * "My last order: Order again", folded by default (near the Featured row). Open: the last paid order's items
+ * with photos in a sideways-scrolling row, each with + Add, plus Add all (puts the whole order back in its cart).
  */
-export const LastOrderStrip: React.FC<{ order: OrderRecord; onReorder: (o: OrderRecord) => void; storeOpensAtMs?: number }> = ({
-  order,
-  onReorder,
-  storeOpensAtMs = 0,
-}) => {
+export const LastOrderStrip: React.FC<{
+  order: OrderRecord;
+  products: any[];
+  onReorder: (o: OrderRecord) => void;
+  onAddOne: (p: any) => void;
+  storeOpensAtMs?: number;
+}> = ({ order, products, onReorder, onAddOne, storeOpensAtMs = 0 }) => {
   const [open, setOpen] = useState(false);
   const target: QuickTarget = order.cart === 'food' ? 'food' : order.cart === 'store' ? 'store' : 'room';
-  const names = (order.items || []).map((i: any) => i.name).filter(Boolean);
-  if (!names.length) return null;
+  // One card per product (the same item twice in the order shows once), only items still on sale
+  const seen = new Set<string>();
+  const items = (order.items || [])
+    .map((i: any) => ({ i, p: products.find((x) => x.id === i.productId) }))
+    .filter(({ i, p }) => p && p.isAvailable !== false && !seen.has(i.productId) && seen.add(i.productId));
+  if (!(order.items || []).length) return null;
   return (
     <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 overflow-hidden">
-      <button type="button" onClick={() => setOpen(!open)} className="w-full flex items-center justify-between gap-2 px-3.5 py-3 text-left cursor-pointer">
-        <span className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-          <RotateCcw className="w-4 h-4 text-[#0e9f55]" /> My last order: Order again
-        </span>
-        <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
+      <div className="flex items-center justify-between gap-2 px-3.5 py-3">
+        <button type="button" onClick={() => setOpen(!open)} className="min-w-0 flex-1 flex items-center gap-2 text-left cursor-pointer">
+          <RotateCcw className="w-4 h-4 text-[#0e9f55] shrink-0" />
+          <span className="text-sm font-bold text-slate-900 dark:text-white truncate">My last order: Order again</span>
+          <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+        {open && items.length > 0 && (
+          <button type="button" onClick={() => onReorder(order)} className="shrink-0 text-xs font-bold text-[#0e9f55] cursor-pointer">
+            Add all
+          </button>
+        )}
+      </div>
       {open && (
-        <div className="px-3.5 pb-3.5 space-y-2 border-t border-slate-100 dark:border-slate-800 pt-2.5">
-          <p className="text-sm font-semibold text-slate-900 dark:text-white">{names.join(', ')}</p>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+        <div className="pb-3.5 border-t border-slate-100 dark:border-slate-800 pt-2.5 space-y-2">
+          <p className="px-3.5 text-[11px] text-slate-500 dark:text-slate-400">
             ₦{Number(order.subtotal || 0).toLocaleString()} items · {promiseLine(target, new Date(), storeOpensAtMs)}
           </p>
-          <button type="button" onClick={() => onReorder(order)} className="w-full py-2.5 rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer">
-            Add to cart
-          </button>
+          {items.length === 0 ? (
+            <p className="px-3.5 text-xs text-slate-400">The items from your last order are not available right now.</p>
+          ) : (
+            <div className="flex gap-2.5 overflow-x-auto no-scrollbar px-3.5 pb-0.5 snap-x">
+              {items.map(({ p }) => (
+                <div key={p.id} className="snap-start shrink-0 w-[112px] p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 flex flex-col">
+                  {p.imageUrl ? (
+                    <img src={p.imageUrl} alt="" referrerPolicy="no-referrer" className="w-full h-16 rounded-lg object-cover bg-white" />
+                  ) : (
+                    <div className="w-full h-16 rounded-lg bg-white dark:bg-slate-900 flex items-center justify-center text-lg font-black text-slate-300">
+                      {String(p.name).charAt(0)}
+                    </div>
+                  )}
+                  <p className="mt-1.5 text-[11px] font-bold text-slate-900 dark:text-white leading-tight line-clamp-2">{p.name}</p>
+                  <p className="text-[10px] text-slate-500">₦{Number(p.price || 0).toLocaleString()}</p>
+                  <button
+                    type="button"
+                    onClick={() => onAddOne(p)}
+                    className="mt-auto pt-1.5 w-full py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-[#0e9f55] text-[11px] font-bold cursor-pointer"
+                  >
+                    + Add
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

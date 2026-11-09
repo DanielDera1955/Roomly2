@@ -1364,18 +1364,16 @@ export default function App() {
           )}
 
           {!searchQuery && signedInCustomer && lastPaidOrder && (
-            <LastOrderStrip order={lastPaidOrder} onReorder={handleReorderOrder} storeOpensAtMs={storeLocked ? storeOpensMs : 0} />
-          )}
-
-          {!searchQuery && (
-            <OrderAgainRow
-              items={orderAgain}
-              qtyOf={(id) => productQuantityMap[id] || 0}
-              onAdd={handleAddSimpleProduct}
-              onOpen={setDetailProduct}
-              ownerKey={phone}
+            <LastOrderStrip
+              order={lastPaidOrder}
+              products={products}
+              onReorder={handleReorderOrder}
+              onAddOne={(p: Product) => (p.isFood ? setCustomizingFood(p) : handleAddSimpleProduct(p))}
+              storeOpensAtMs={storeLocked ? storeOpensMs : 0}
             />
           )}
+
+          {/* "My usuals" row removed: the last order strip above covers it */}
 
           {/* Store Items / Food toggle, then search, then category chips and request */}
           <div id="shop-sections" className="scroll-mt-20" />
