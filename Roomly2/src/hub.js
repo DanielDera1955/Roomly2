@@ -319,6 +319,8 @@ export async function createListing(input) {
   const batch = writeBatch(hubDb);
   batch.set(ref, listing);
   await batch.commit();
+  // A new student's first post also creates their Roomly account (same number and PIN), so Sign in works next time
+  ensureCustomerProfile(phone, input.pin, name, String(input.hostel || '')).catch(() => {});
   return { id: ref.id, ...listing };
 }
 

@@ -8,6 +8,7 @@ import {
   getProducts,
   getCategories,
   getCustomerByPhone,
+  ensureCustomerProfile,
   subscribeAnnouncement,
   createOrder,
   DEMO,
@@ -1320,6 +1321,14 @@ export default function App() {
                   onSignOut={handleSignOut}
                   isNewNumber={customerLoaded && !customer}
                   signInOnly
+                  onCreateAccount={async (newName: string) => {
+                    await ensureCustomerProfile(phone, pin, newName, '');
+                    const created = await getCustomerByPhone(phone, pin);
+                    if (!created || created.wrongPin || !created.name) throw new Error('Could not create your account. Check your connection and try again.');
+                    setLocalName(newName);
+                    setCustomer(created);
+                    setCustomerLoaded(true);
+                  }}
                 />
               </div>
             </div>

@@ -17,8 +17,10 @@ interface PhoneLookupBarProps {
   name?: string;
   onNameChange?: (name: string) => void;
   onContinue?: () => void;
-  /** Header popup: sign in only. New numbers are told to just order (no sign-up) */
+  /** Header popup: sign in, or create an account for a new number */
   signInOnly?: boolean;
+  /** Header popup: a new number creates its account (name + the PIN typed above) */
+  onCreateAccount?: (name: string) => Promise<void>;
 }
 
 export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
@@ -35,8 +37,25 @@ export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
   onNameChange,
   onContinue,
   signInOnly = false,
+  onCreateAccount,
 }) => {
   const [inputValue, setInputValue] = useState(phone || '');
+  // Creating an account from the Sign in popup
+  const [newName, setNewName] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const canCreate = /^\d{4}$/.test(pin) && newName.trim().length >= 2 && !creating;
+  const create = async () => {
+    if (!onCreateAccount || !canCreate) return;
+    setCreating(true);
+    setCreateError('');
+    try {
+      await onCreateAccount(newName.trim());
+    } catch (e: any) {
+      setCreateError(e?.message || 'Could not create your account. Check your connection and try again.');
+    }
+    setCreating(false);
+  };
   const isValid = isValidNigerianPhone(inputValue);
 
   useEffect(() => {
@@ -90,7 +109,7 @@ export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
         {!customer && (
           <p className={`mt-1.5 text-[11px] leading-snug font-medium ${cartCount > 0 ? 'text-[#0e9f55]' : 'text-slate-500 dark:text-slate-400'}`}>
             {signInOnly
-              ? 'Ordered before? Enter your phone number and PIN to see your orders and saved details.'
+              ? 'Enter your phone number. Ordered or posted before? Use your PIN. New here? Create your account in seconds.'
               : cartCount > 0
                 ? `You have ${cartCount} item${cartCount === 1 ? '' : 's'} in your cart. Enter your phone number and PIN to order them and keep them saved to your number.`
                 : 'Enter your phone number and PIN to order and track your deliveries.'}
@@ -100,7 +119,7 @@ export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
         {isValid && (
           <div className="mt-2">
             <label htmlFor="pin-input" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              {signInOnly ? 'Your PIN' : '4-digit PIN (new here? choose one)'}
+              {signInOnly ? (isNewNumber && !customer ? 'Choose a 4-digit PIN' : 'Your PIN') : '4-digit PIN (new here? choose one)'}
             </label>
             <input
               id="pin-input"
@@ -117,9 +136,28 @@ export const PhoneLookupBar: React.FC<PhoneLookupBarProps> = ({
         )}
 
         {signInOnly && isValid && !customer && isNewNumber && (
-          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
-            This number hasn't ordered yet. No sign-up needed: pick what you need and check out.
-          </p>
+          <div className="mt-2 space-y-2">
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-semibold">New to Roomly? Choose a 4-digit PIN above and add your name.</p>
+            <input
+              type="text"
+              autoComplete="given-name"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value.slice(0, 30))}
+              placeholder="Your name"
+              maxLength={30}
+              className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30 focus:border-[#0e9f55]"
+            />
+            <button
+              type="button"
+              onClick={create}
+              disabled={!canCreate || !onCreateAccount}
+              className="w-full py-2.5 rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+            >
+              {creating ? 'Creating your account...' : 'Create my account'}
+            </button>
+            {createError && <p className="text-[11px] font-semibold text-rose-600">{createError}</p>}
+            <p className="text-[10px] text-slate-400">Use the same number and PIN at checkout and on Hostel Hub.</p>
+          </div>
         )}
 
         {!signInOnly && isValid && !customer && isNewNumber && /^\d{4}$/.test(pin) && onContinue && (
