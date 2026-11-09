@@ -219,6 +219,7 @@ export const RequestTab: React.FC<RequestTabProps> = ({
                   </span>
                 </div>
               ))}
+              {r.status === 'quoted' && r.reply && <p className="text-[11px] text-slate-600 dark:text-slate-300">Roomly: {r.reply}</p>}
               {r.status === 'closed' && <p className="text-[11px] text-slate-500">This is already in the store. Search for it to add it to your cart.</p>}
               {r.status === 'quoted' && r.quotes.some((q: any) => q.available) && !cartRequestIds.has(r.id) && (
                 <button

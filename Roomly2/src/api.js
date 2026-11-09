@@ -3471,7 +3471,7 @@ export function mySide() {
  * First reply wins. Each priced item becomes a live product with the margin added.
  */
 /** @returns {Promise<void>} */
-async function quoteProductRequest__raw(reqId, costs, category) {
+async function quoteProductRequest__raw(reqId, costs, category, reply = '') {
   const staff = getCurrentStaff();
   const uid = auth.currentUser?.uid;
   if (!staff || !uid) throw new Error('Sign in first');
@@ -3488,13 +3488,13 @@ async function quoteProductRequest__raw(reqId, costs, category) {
       if (!cost) return { name: it.name, available: false, price: 0, productId: '' };
       return { name: it.name, available: true, price: sellingPrice(cost, source), productId: `prod-req-${reqId}-${i}`, cost };
     });
-    if (!quotes.some((q) => q.available)) throw new Error('Enter a cost price for at least one product');
     quoted = { r, quotes, source };
     tx.update(ref, {
       status: 'quoted',
       quotes: quotes.map(({ cost, ...q }) => q), // the student never sees cost or margin
       quotedBy: { uid, name: staff.name || '' },
       quotedAt: new Date().toISOString(),
+      ...(String(reply || '').trim() ? { reply: String(reply).trim().slice(0, 140) } : {}),
     });
   });
   // The priced products go live for everyone, in the section and category requested
@@ -3520,6 +3520,7 @@ async function quoteProductRequest__raw(reqId, costs, category) {
         : null
     )
     .filter(Boolean);
+  if (!fresh.length) return; // nothing available: nothing joins the store
   await setDoc(doc(db, 'catalog', 'extra'), { products: arrayUnion(...fresh) }, { merge: true });
   catalogAt = 0; // next read picks them up
 }
@@ -4525,8 +4526,8 @@ export async function closeProductRequestListed(reqId) {
   logActivity('request', `closed a request (${(r.items || []).map((i) => i.name).join(', ')}): already in the store`, reqId);
 }
 
-export async function quoteProductRequest(reqId, costs, category) {
-  await quoteProductRequest__raw(reqId, costs, category);
+export async function quoteProductRequest(reqId, costs, category, reply = '') {
+  await quoteProductRequest__raw(reqId, costs, category, reply);
   let items = '';
   try {
     const snap = await getDoc(doc(db, 'productRequests', reqId));

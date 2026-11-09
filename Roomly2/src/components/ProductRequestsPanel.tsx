@@ -20,6 +20,7 @@ export const ProductRequestsPanel: React.FC<{ side?: 'inside' | 'store' | 'food'
   const [list, setList] = useState<any[]>([]);
   const [costs, setCosts] = useState<Record<string, string[]>>({});
   const [cats, setCats] = useState<Record<string, string>>({});
+  const [replies, setReplies] = useState<Record<string, string>>({});
   const [categories, setCategories] = useState<string[]>([]);
   const [busy, setBusy] = useState('');
   const [open, setOpen] = useState(true);
@@ -59,9 +60,10 @@ export const ProductRequestsPanel: React.FC<{ side?: 'inside' | 'store' | 'food'
 
   const send = async (r: any) => {
     const c = costs[r.id] || [];
+    if (!c.some((v) => Number(v) > 0) && !window.confirm("Tell the student this is not available? Their request closes and the item leaves their cart.")) return;
     setBusy(r.id);
     try {
-      await quoteProductRequest(r.id, r.items.map((_: any, i: number) => Number(c[i]) || 0), cats[r.id] ?? r.category);
+      await quoteProductRequest(r.id, r.items.map((_: any, i: number) => Number(c[i]) || 0), cats[r.id] ?? r.category, replies[r.id] || '');
     } catch (e: any) {
       window.alert(e?.message || 'Could not send the price.');
     }
@@ -159,13 +161,20 @@ export const ProductRequestsPanel: React.FC<{ side?: 'inside' | 'store' | 'food'
                     </option>
                   ))}
                 </select>
+                <textarea
+                  value={replies[r.id] || ''}
+                  onChange={(e) => setReplies((p) => ({ ...p, [r.id]: e.target.value.slice(0, 140) }))}
+                  rows={2}
+                  className={input}
+                  placeholder="Message to the student (optional)"
+                />
                 <button
                   type="button"
-                  disabled={busy === r.id || !c.some((v) => Number(v) > 0)}
+                  disabled={busy === r.id}
                   onClick={() => send(r)}
-                  className="w-full py-2 rounded-lg bg-[#0e9f55] text-white font-bold disabled:opacity-40 cursor-pointer"
+                  className={`w-full py-2 rounded-lg text-white font-bold disabled:opacity-40 cursor-pointer ${c.some((v) => Number(v) > 0) ? 'bg-[#0e9f55]' : 'bg-slate-500'}`}
                 >
-                  Send price to the student
+                  {c.some((v) => Number(v) > 0) ? 'Send price to the student' : "Tell the student it's not available"}
                 </button>
                 <p className="text-[10px] text-slate-400">The first price sent wins. Priced products are added to the store for everyone.</p>
                 <div className="pt-1 border-t border-slate-200 dark:border-slate-700 space-y-1.5">

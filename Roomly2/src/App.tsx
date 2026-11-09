@@ -667,9 +667,11 @@ export default function App() {
       requestStatus.current[id] = r.status;
       if (before === 'open' && r.status === 'quoted') {
         const names = (r.quotes || []).filter((q: any) => q.available).map((q: any) => q.name);
-        const text = names.length
-          ? `${names.slice(0, 2).join(', ')}${names.length > 2 ? ' and more' : ''} priced and saved in your cart. You can check out now.`
-          : 'Sorry, your requested item is not available right now.';
+        const text = r.reply
+          ? String(r.reply)
+          : names.length
+            ? `${names.slice(0, 2).join(', ')}${names.length > 2 ? ' and more' : ''} priced and saved in your cart. You can check out now.`
+            : 'Sorry, your requested item is not available right now.';
         setPriceReady(text);
         playChime('chat');
         notify('Your price is ready', text, 'roomly-price-' + id);
