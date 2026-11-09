@@ -171,8 +171,9 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
   return (
     <div className="space-y-4">
       {/* Hub sections: one level down from the main bar, so plain tabs with a green underline */}
-      <div role="tablist" className="grid grid-cols-4 border-b border-slate-200 dark:border-slate-800">
-        {HUB_SECTIONS.map((x) => {
+      {/* Three tabs on the first line, Lost & Found on its own line below, so nothing is squeezed on a phone */}
+      <div role="tablist" className="grid grid-cols-3 border-b border-slate-200 dark:border-slate-800">
+        {HUB_SECTIONS.map((x, i) => {
           const Icon = SECTION_ICON[x.id as Section];
           const on = section === x.id;
           return (
@@ -182,13 +183,13 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
               role="tab"
               aria-selected={on}
               onClick={() => setSection(x.id as Section)}
-              className={`relative h-11 flex items-center justify-center gap-1 px-0.5 text-[12px] font-bold cursor-pointer transition-colors ${
+              className={`relative h-11 flex items-center justify-center gap-1.5 px-1 text-[13px] font-bold cursor-pointer transition-colors ${i === 3 ? 'col-span-3 border-t border-slate-100 dark:border-slate-800' : ''} ${
                 on ? 'text-[#0e9f55]' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
-              <Icon className="w-3.5 h-3.5 shrink-0" />
+              <Icon className="w-4 h-4 shrink-0" />
               <span className="truncate">{x.label}</span>
-              <span className={`absolute left-2 right-2 -bottom-px h-[3px] rounded-full ${on ? 'bg-[#0e9f55]' : 'bg-transparent'}`} />
+              <span className={`absolute left-3 right-3 -bottom-px h-[3px] rounded-full ${on ? 'bg-[#0e9f55]' : 'bg-transparent'}`} />
             </button>
           );
         })}

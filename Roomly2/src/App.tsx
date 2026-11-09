@@ -23,7 +23,7 @@ import {
   subscribeProductRequest,
   getOutsideChoices,
 } from './api.js';
-import { onFoodMenu, FOOD_BATCH_LABEL, openDateText, INSIDE_LAUNCH_MS, caritasLineFor, liveStatusFor, SCHOOL_NAME, ShopGroup, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
+import { onFoodMenu, FOOD_BATCH_LABEL, dayWord, timeLabelFull, openDateText, INSIDE_LAUNCH_MS, caritasLineFor, liveStatusFor, SCHOOL_NAME, ShopGroup, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
 import { MessageCircle, Info } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
@@ -925,6 +925,15 @@ export default function App() {
   const hasCompletedOrder =
     signedInCustomer &&
     ((customer?.deliveredOrdersCount || 0) > 0 || screenOrders.some((o) => o.status === 'Delivered' && o.paymentStatus !== 'unpaid'));
+  // The chip next to the greeting: the food batch (the most ordered section), from the vendors actually cooking
+  const foodLive = useMemo(() => {
+    const now = new Date(clockMs);
+    const b = getOutsideChoices('food', now).batch;
+    if (!b) return { text: 'Food: back soon', open: false };
+    const name = b.id === 'midday' ? 'Lunch' : 'Dinner';
+    if (dayWord(b.date, now) === 'today') return { text: `${name}: order till ${timeLabelFull(b.startMin)}`, open: true };
+    return { text: `Food closed. Next: ${name.toLowerCase()} ${dayWord(b.date, now).replace(/^on /, '')}`, open: false };
+  }, [clockMs, batchTick]);
   // The last paid order, for the "order again" strip
   const lastPaidOrder = useMemo(
     () => screenOrders.find((o) => o.paymentStatus !== 'unpaid' && o.status !== 'Cancelled' && (o.items || []).length > 0) || null,
@@ -1219,7 +1228,7 @@ export default function App() {
             ) : (
               <HomeBanner
                 caritasLine={sourceMode === 'inside' && clockMs >= INSIDE_LAUNCH_MS ? caritasLineFor(new Date(clockMs)) : ''}
-                live={liveStatusFor(sourceMode, new Date(clockMs))}
+                live={foodLive}
                 onStart={() => window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)}
                 dayPart={dayPart as 'Good morning' | 'Good afternoon' | 'Good evening'}
                 name={firstName}

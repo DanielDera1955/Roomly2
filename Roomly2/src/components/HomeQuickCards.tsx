@@ -26,6 +26,18 @@ export function promiseLine(target: QuickTarget, now: Date = new Date(), storeOp
   return `${label}order before ${timeLabelFull(b.startMin)}, at the gate before ${gate}`;
 }
 
+/** Is this section taking orders right now (a batch today that hasn't closed)? */
+export function isOpenNow(target: QuickTarget, now: Date = new Date(), storeOpensAtMs = 0): boolean {
+  if (target === 'hub') return true;
+  if (target === 'room') {
+    const { next } = getNextBatch('inside', now);
+    return Boolean(next && next.batch.dayLabel === 'Today');
+  }
+  if (target === 'store' && storeOpensAtMs > now.getTime()) return false;
+  const b = getOutsideChoices(target, now).batch;
+  return Boolean(b && dayWord(b.date, now) === 'today');
+}
+
 /**
  * Home: four quick cards (everyone) and, for a returning student, an "order again" strip
  * with their last paid order, its price and the promise of the batch it would join now.
@@ -81,20 +93,33 @@ export const HomeQuickCards: React.FC<{
         </button>
       )}
       <div className="grid grid-cols-2 gap-2">
-        {cards.map(({ id, title, Icon }) => (
+        {cards.map(({ id, title, Icon }) => {
+          const open = isOpenNow(id, now, storeOpensAtMs);
+          return (
           <button
             key={id}
             type="button"
             onClick={() => onOpen(id)}
-            className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-left cursor-pointer active:scale-[0.98] transition-transform"
+            className={`p-3 rounded-2xl bg-white dark:bg-slate-900 border text-left cursor-pointer active:scale-[0.98] transition-transform ${
+              open && id !== 'hub' ? 'border-[#0e9f55]/60' : 'border-slate-200/80 dark:border-slate-800'
+            }`}
           >
             <span className="flex items-center gap-1.5 text-sm font-extrabold text-slate-900 dark:text-white">
               <Icon className="w-4 h-4 text-[#0e9f55] shrink-0" />
-              {title}
+              <span className="min-w-0 flex-1 truncate">{title}</span>
+              {/* Live dot: green and pulsing while taking orders now, amber when closed */}
+              <span className="relative flex w-2.5 h-2.5 shrink-0" aria-label={open ? 'Taking orders now' : 'Closed now'}>
+                {open && <span className="absolute inline-flex w-full h-full rounded-full bg-emerald-400 opacity-75 animate-ping" />}
+                <span className={`relative inline-flex w-2.5 h-2.5 rounded-full ${open ? 'bg-[#0e9f55]' : 'bg-amber-400'}`} />
+              </span>
+            </span>
+            <span className={`block mt-0.5 text-[10px] font-bold uppercase tracking-wide ${open ? 'text-[#0e9f55]' : 'text-amber-600 dark:text-amber-400'}`}>
+              {id === 'hub' ? 'Open anytime' : open ? 'Taking orders now' : 'Closed now'}
             </span>
             <span className="block mt-1 text-[11px] leading-snug text-slate-500 dark:text-slate-400">{promiseLine(id, now, storeOpensAtMs)}</span>
           </button>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
