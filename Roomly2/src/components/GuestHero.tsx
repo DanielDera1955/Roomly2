@@ -125,11 +125,12 @@ export const GuestHero: React.FC<{
         >
           Start ordering
         </button>
-        <span className="text-[12px] font-medium text-slate-400 dark:text-slate-500 select-none">No account needed</span>
+        <span className="min-w-0 text-[12px] leading-snug font-medium text-slate-400 dark:text-slate-500 select-none">
+          No account needed
+          <br />
+          Just pick, pay, and track your orders
+        </span>
       </div>
-      <span className="mt-2.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-900 text-[11px] font-bold text-[#0b8044] dark:text-emerald-300">
-        <span aria-hidden>✓</span> Just pick, pay, and track your orders
-      </span>
     </section>
   );
 };
