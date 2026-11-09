@@ -86,7 +86,7 @@ export const GuestHero: React.FC<{
       ? { status: shortDate(storeOpensMs), tone: 'soon', note: 'Restock, no Thursday trip' }
       : { status: 'Open now', tone: 'open', note: 'Restock, no Thursday trip' };
 
-  // Two per side: outside on the left, inside on the right
+  // Kept for reference; the home page's four cards (HomeQuickCards) now show these sections
   const tiles: Tile[] = [
     { key: 'food', title: 'Outside food', ...food, onTap: () => onOpenSection('outside', 'food') },
     { key: 'room', title: 'Room delivery', ...room, onTap: () => onOpenSection('inside', 'store') },
@@ -94,6 +94,7 @@ export const GuestHero: React.FC<{
     { key: 'hub', title: 'Hostel Hub', status: 'Open now', tone: 'open', note: 'Games, services, buy and sell', onTap: () => onOpenSection('inside', 'hub') },
   ];
 
+  void tiles;
   return (
     <section className="px-1 pt-1 pb-2">
       <p className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#0b8044] dark:text-emerald-400">Hey there, {dayPart.toLowerCase()}</p>
@@ -114,28 +115,7 @@ export const GuestHero: React.FC<{
         Roomly Caritas brings food and everyday items to your hostel room or the school gate. Built by a Caritas student.
       </p>
 
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        {tiles.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={t.onTap}
-            className="flex flex-col items-start justify-start text-left rounded-2xl p-3 cursor-pointer bg-white dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/60 active:scale-[0.98] transition-transform"
-          >
-            <span
-              className={`flex items-center gap-1.5 text-[11px] font-bold ${
-                t.tone === 'open' ? 'text-[#0b8044] dark:text-emerald-400' : 'text-amber-700 dark:text-amber-300'
-              }`}
-            >
-              <span className={`w-[7px] h-[7px] rounded-full ${t.tone === 'open' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`} />
-              {t.status}
-            </span>
-            <span className="block mt-1.5 text-[14px] font-extrabold text-slate-900 dark:text-white">{t.title}</span>
-            <span className="block mt-0.5 text-[11px] leading-snug text-slate-500 dark:text-slate-400">{t.note}</span>
-          </button>
-        ))}
-      </div>
-
+      {/* The four section cards sit under this header (HomeQuickCards), the same for new and returning students */}
       <button
         type="button"
         onClick={onStart}
