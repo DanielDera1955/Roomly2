@@ -81,6 +81,8 @@ interface CartSheetProps {
     operatorName?: string;
     turnRunner?: string;
     outOfStock: OutOfStockChoice;
+    /** Item name -> a different choice for that item (optional) */
+    outOfStockItems?: Record<string, OutOfStockChoice>;
     gatePickup?: boolean;
     payTo?: { bankName: string; accountNumber: string; accountName: string } | null;
     lateBatch?: boolean;
@@ -146,6 +148,9 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const [errorMessage, setErrorMessage] = useState('');
   const [girlsNote, setGirlsNote] = useState(false);
   const [outOfStock, setOutOfStock] = useState<OutOfStockChoice | ''>('');
+  // Optional: a different out-of-stock choice for single items
+  const [oosItems, setOosItems] = useState<Record<string, OutOfStockChoice>>({});
+  const [oosOpen, setOosOpen] = useState(false);
   // With items in more than one cart, start on the overview of all carts
   const filledCarts = (['inside', 'store', 'food'] as CartKind[]).filter((k) => cartCounts[k] > 0);
   const [overview, setOverview] = useState(filledCarts.length > 1);
@@ -408,6 +413,9 @@ export const CartSheet: React.FC<CartSheetProps> = ({
         operatorName: cart !== 'inside' ? chosenOp?.name : undefined,
         turnRunner: cart === 'inside' && !isExpress ? insideNext?.next?.by || '' : undefined,
         outOfStock,
+        outOfStockItems: Object.fromEntries(
+          Object.entries(oosItems).filter(([name, c]) => c && c !== outOfStock && items.some((i) => i.name === name))
+        ) as Record<string, OutOfStockChoice>,
         lateBatch: !isExpress && needTick, // for the dashboard: student accepted the next batch
         express: isExpress,
         gatePickup: cart !== 'inside' && gatePickup,
@@ -1207,6 +1215,39 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                 <span>{OUT_OF_STOCK_LABEL[k]}</span>
               </label>
             ))}
+            {/* Optional: a different choice for a single item (the main choice above still applies to the rest) */}
+            {outOfStock && items.filter((i) => !i.pendingQuote).length > 1 && (
+              <div className="pt-1">
+                <button type="button" onClick={() => setOosOpen((v) => !v)} className="text-[11px] font-bold text-[#0e9f55] cursor-pointer">
+                  {oosOpen ? 'Hide item choices' : 'Different choice for a specific item? (optional)'}
+                </button>
+                {oosOpen && (
+                  <div className="mt-2 space-y-1.5">
+                    {items
+                      .filter((i) => !i.pendingQuote)
+                      .map((i) => (
+                        <div key={i.id} className="flex items-center justify-between gap-2 text-xs">
+                          <span className="truncate text-slate-700 dark:text-slate-200">{i.name}</span>
+                          <select
+                            value={oosItems[i.name] || ''}
+                            onChange={(e) => setOosItems((p) => ({ ...p, [i.name]: e.target.value as OutOfStockChoice }))}
+                            className="shrink-0 max-w-[55%] px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[11px]"
+                          >
+                            <option value="">Same as above</option>
+                            {((cart === 'store' ? ['refund', 'tomorrow', 'swap'] : ['refund', 'swap']) as OutOfStockChoice[])
+                              .filter((k) => k !== outOfStock)
+                              .map((k) => (
+                                <option key={k} value={k}>
+                                  {k === 'refund' ? 'Refund it' : k === 'tomorrow' ? 'Get it tomorrow' : 'Same-category swap'}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* PAYMENT: everyone pays first */}

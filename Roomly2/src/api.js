@@ -578,6 +578,10 @@ export async function payWithPaystack(order) {
 
 /** yyyy-mm-dd of the day today's store run left ('' = not yet) */
 let storeRunLeftOn = '';
+/** Has today's store run left? */
+export function storeRunLeftToday(now = new Date()) {
+  return storeRunLeftOn === ymdOf(now);
+}
 /** Store grace right now: past 5:00pm, before 6:00pm, and today's run hasn't left */
 export function storeGraceOpen(now = new Date()) {
   const min = now.getHours() * 60 + now.getMinutes();
@@ -2134,6 +2138,13 @@ export async function createOrder(orderPayload) {
     collectedBy: collectsAsRoomly(cart) ? 'roomly' : '',
     express: isExpress ? { status: 'requested', requestedAt: createdAtIso } : null,
     outOfStock: orderPayload.outOfStock || 'refund',
+    // Optional per-item choices (item name -> choice), only those different from the main one
+    outOfStockItems: Object.fromEntries(
+      Object.entries(orderPayload.outOfStockItems || {})
+        .filter(([n, c]) => ['refund', 'tomorrow', 'swap'].includes(String(c)) && c !== (orderPayload.outOfStock || 'refund'))
+        .slice(0, 30)
+        .map(([n, c]) => [String(n).slice(0, 80), c])
+    ),
     gateReq: Boolean(orderPayload.gatePickup && (cart === 'store' || cart === 'food')),
     gatePickup:
       orderPayload.gatePickup && (cart === 'store' || cart === 'food')

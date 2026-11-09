@@ -432,6 +432,11 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                     {currentOrder.operatorName && <p>From: <strong>{currentOrder.operatorName}</strong> (delivered to the school gate)</p>}
                     {!currentOrder.operatorName && currentOrder.turnRunner && <p>Runner: <strong>{currentOrder.turnRunner}</strong></p>}
                     {currentOrder.outOfStock && <p>If out of stock: {OUT_OF_STOCK_LABEL[currentOrder.outOfStock]}</p>}
+                    {Object.entries((currentOrder as any).outOfStockItems || {}).map(([n, c]: [string, any]) => (
+                      <p key={n}>
+                        Except {n}: {OUT_OF_STOCK_LABEL[c as keyof typeof OUT_OF_STOCK_LABEL] || c}
+                      </p>
+                    ))}
                   </div>
                 )}
               </div>

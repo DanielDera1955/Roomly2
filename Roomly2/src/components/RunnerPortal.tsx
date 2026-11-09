@@ -61,7 +61,7 @@ import {
   EXPRESS_ENABLED,
   isRoomlyOrder,
 } from '../api.js';
-import { insideArrivalLeftMs, INSIDE_ARRIVAL_MINUTES } from '../config';
+import { insideArrivalLeftMs, INSIDE_ARRIVAL_MINUTES, outOfStockSummary } from '../config';
 import { AttentionCard, jumpTo } from './AttentionCard';
 import { OperatorGuide } from './OperatorGuide';
 
@@ -525,7 +525,7 @@ export const RunnerPortal: React.FC<RunnerPortalProps> = ({
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 {ord.turnRunner ? `Turn: ${ord.turnRunner}` : ''}
                 {ord.turnRunner && ord.outOfStock ? ' · ' : ''}
-                {ord.outOfStock ? `Out of stock: ${ord.outOfStock === 'swap' ? 'same-category swap' : 'refund'}` : ''}
+                {ord.outOfStock ? outOfStockSummary(ord as any) : ''}
               </p>
             )}
             {isRoomlyOrder(ord) && isAssignedToMe && <RoomlyPayoutLine order={ord} who="runner" />}

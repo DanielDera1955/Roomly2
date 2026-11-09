@@ -113,6 +113,8 @@ export interface OrderRecord {
   operatorName?: string;
   turnRunner?: string; // the runner whose turn it is, shown at checkout
   outOfStock?: 'refund' | 'tomorrow' | 'swap';
+  /** Item name -> a different out-of-stock choice for that item */
+  outOfStockItems?: Record<string, 'refund' | 'tomorrow' | 'swap'>;
   deliveryDate?: string;
   /** The operator moved this outside order to their next available day */
   movedAt?: string;

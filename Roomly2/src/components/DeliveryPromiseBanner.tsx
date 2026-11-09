@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Clock, Store, UtensilsCrossed } from 'lucide-react';
-import { getNextBatch, getOutsideChoices, storeGraceOpen } from '../api.js';
+import { getNextBatch, getOutsideChoices, storeGraceOpen, storeRunLeftToday } from '../api.js';
 import {
   SwitchSide,
   dayWord,
@@ -60,10 +60,10 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
     } else {
       const today = next.batch.dayLabel === 'Today';
       const when = today ? '' : ` ${next.batch.dayLabel.toLowerCase()}`;
-      headline = today ? 'Order now and get it in your room before ' + arrive : `Currently closed. Next batch${when}`;
+      headline = today ? 'Order now and get it in your room before ' + arrive : `Ordering for${when}`;
       lines = today
         ? [`Current batch ends by ${orderBy} and is delivered to your room before ${arrive}.`]
-        : [`You can still order now and get it in your room${when} before ${arrive}.`];
+        : [`Tonight's batch has closed. Order now and get it in your room${when} before ${arrive}.`, `Order before ${orderBy} for same-day delivery.`];
       if (next.unconfirmed) lines.push("No runner has confirmed this batch yet. You pay once a runner confirms.");
       if (note) lines.push(note);
     }
@@ -83,8 +83,12 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
       const today = dayWord(b.date, now) === 'today';
       const closesAt = timeLabelFull(b.startMin);
       if (!today) {
-        headline = 'Currently closed';
-        lines = [`You can still order now and get it ${dayWord(b.date, now)} before ${gateOf(b.id)}.`];
+        const w = dayWord(b.date, now).replace(/^on /, '');
+        headline = `Ordering for ${w}`;
+        lines = [
+          side === 'store' && storeRunLeftToday(now) ? "Today's run has been sent." : "Today's orders have closed.",
+          `Order now and get it ${dayWord(b.date, now)} before ${gateOf(b.id)}. Order before ${closesAt} for same-day delivery.`,
+        ];
       } else if (side === 'store' && storeGraceOpen(now)) {
         headline = `Late orders still open. Get it at the gate before ${gateOf(b.id)}`;
         lines = ["Today's run hasn't left yet. If it leaves before you pay, your order comes tomorrow."];

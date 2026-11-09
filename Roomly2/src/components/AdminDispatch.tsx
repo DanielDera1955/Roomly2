@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { outOfStockSummary } from '../config';
 import { ChevronDown, Trash2 } from 'lucide-react';
 import {
   subscribeOrders,
@@ -109,7 +110,7 @@ const OrderRow: React.FC<{ o: OrderRecord; showSection?: boolean }> = ({ o, show
             <span>Delivery</span>
             <span>{naira(o.deliveryFee)}</span>
           </div>
-          {o.outOfStock && <p className="text-[11px] text-slate-500">If out of stock: {o.outOfStock}</p>}
+          {o.outOfStock && <p className="text-[11px] text-slate-500">{outOfStockSummary(o as any)}</p>}
           {o.gatePickup && (
             <p className="text-[11px] text-slate-500">
               Gate pickup: {o.gatePickup.status}

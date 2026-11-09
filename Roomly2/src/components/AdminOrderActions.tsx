@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { outOfStockSummary } from '../config';
 import {
   getRunners,
   startPackagingOrder,
@@ -195,7 +196,7 @@ export const AdminOrderActions: React.FC<{ o: OrderRecord }> = ({ o }) => {
   const msg = [
     `Roomly order ${o.id}`,
     ...(o.items || []).map((i: any) => `- ${i.quantity}x ${i.name}`),
-    o.outOfStock ? `If out of stock: ${o.outOfStock === 'swap' ? 'same-category item at the same price' : 'leave it out'}` : '',
+    o.outOfStock ? outOfStockSummary(o) : '',
     `For ${o.name}, ${locationText(o)}`,
     'Please pack it and send me a photo before sending to the gate.',
   ]

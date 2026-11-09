@@ -235,6 +235,30 @@ export const OUT_OF_STOCK_LABEL: Record<OutOfStockChoice, string> = {
   tomorrow: "Get it in tomorrow's batch (no extra delivery)",
   swap: 'Buy a same-category item at the same price',
 };
+/** Short forms for the order summary line */
+export const OUT_OF_STOCK_SHORT: Record<OutOfStockChoice, string> = {
+  refund: 'refund',
+  tomorrow: "get it in tomorrow's batch",
+  swap: 'same-category item at the same price',
+};
+/**
+ * The out-of-stock line for an order: the main choice, then any item the student set differently.
+ * "If out of stock: refund. Except: Stove wick, get it in tomorrow's batch"
+ */
+export function outOfStockSummary(o: { outOfStock?: string; outOfStockItems?: Record<string, string> } | null | undefined): string {
+  if (!o) return '';
+  const main = (o.outOfStock || 'refund') as OutOfStockChoice;
+  const extra = Object.entries(o.outOfStockItems || {}).filter(([, c]) => c && c !== main && (OUT_OF_STOCK_SHORT as any)[c]);
+  const head = `If out of stock: ${OUT_OF_STOCK_SHORT[main] || 'refund'}`;
+  return extra.length ? `${head}. ${outOfStockExcept(o)}` : head;
+}
+/** Only the exceptions: "Except: Stove wick, get it in tomorrow's batch" ('' when none) */
+export function outOfStockExcept(o: { outOfStock?: string; outOfStockItems?: Record<string, string> } | null | undefined): string {
+  if (!o) return '';
+  const main = o.outOfStock || 'refund';
+  const extra = Object.entries(o.outOfStockItems || {}).filter(([, c]) => c && c !== main && (OUT_OF_STOCK_SHORT as any)[c]);
+  return extra.length ? `Except: ${extra.map(([name, c]) => `${name}, ${(OUT_OF_STOCK_SHORT as any)[c]}`).join('; ')}` : '';
+}
 
 const roundUp10 = (n: number) => Math.ceil((n - 0.000001) / 10) * 10;
 

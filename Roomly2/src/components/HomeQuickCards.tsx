@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { RotateCcw, ChevronDown } from 'lucide-react';
-import { getNextBatch, getOutsideChoices, storeGraceOpen } from '../api.js';
-import { dayWord, timeLabelFull, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, openDateText, BEHIND_EVERY_ORDER, OUTSIDE_STORE_GRACE_END_MIN } from '../config';
+import { getNextBatch, getOutsideChoices, storeGraceOpen, storeRunLeftToday } from '../api.js';
+import { dayWord, timeLabelFull, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, openDateText, BEHIND_EVERY_ORDER, OUTSIDE_STORE_GRACE_END_MIN, OUTSIDE_FOOD_ORDER_BY_MIN } from '../config';
 import type { OrderRecord } from '../types';
 
 export type QuickTarget = 'room' | 'food' | 'store' | 'hub';
@@ -38,12 +38,31 @@ export function cardLines(target: QuickTarget, now: Date = new Date(), storeOpen
     const { next } = getNextBatch('inside', now);
     if (!next) return ['Closed for now'];
     const w = when(next.batch.date);
+    if (w)
+      return [
+        "Tonight's batch: Closed",
+        `Order before ${timeLabelFull(INSIDE_ORDER_BY_MIN)} for same-day delivery`,
+        `Delivered:${w} before ${timeLabelFull(INSIDE_ARRIVE_BY_MIN)}`,
+      ];
     return [`Orders end: ${timeLabelFull(INSIDE_ORDER_BY_MIN)}${w}`, `Delivered before: ${timeLabelFull(INSIDE_ARRIVE_BY_MIN)}${w}`];
   }
   if (target === 'store' && storeOpensAtMs > now.getTime()) return [`Opens ${openDateText(storeOpensAtMs)}`];
   const b = getOutsideChoices(target, now).batch;
-  if (!b) return ['Back soon'];
+  if (!b) return ['Check back soon, or send a request'];
   const w = when(b.date);
+  // Today's delivery is over: order now for the next one
+  if (w) {
+    const mins = now.getHours() * 60 + now.getMinutes();
+    const first =
+      target === 'store'
+        ? storeRunLeftToday(now)
+          ? "Today's run: Sent ✓"
+          : "Today's orders: Closed"
+        : mins >= OUTSIDE_FOOD_ORDER_BY_MIN
+        ? "Today's dinner: Closed"
+        : "Today's lunch: Closed";
+    return [first, `Order before ${timeLabelFull(b.startMin)} for same-day delivery`, `Delivered:${w} before ${timeLabelFull(outsideArriveByFor(b.id))}`];
+  }
   if (target === 'store' && !w && storeGraceOpen(now))
     return [`Late orders open until ${timeLabelFull(OUTSIDE_STORE_GRACE_END_MIN)}`, `Delivered before: ${timeLabelFull(outsideArriveByFor(b.id))}`];
   return [`Orders end: ${timeLabelFull(b.startMin)}${w}`, `Delivered before: ${timeLabelFull(outsideArriveByFor(b.id))}${w}`];
@@ -59,6 +78,17 @@ export function isOpenNow(target: QuickTarget, now: Date = new Date(), storeOpen
   if (target === 'store' && storeOpensAtMs > now.getTime()) return false;
   const b = getOutsideChoices(target, now).batch;
   return Boolean(b && dayWord(b.date, now) === 'today');
+}
+
+/** The card's status word: open, late orders, order for tomorrow, or closed */
+function statusOf(id: QuickTarget, open: boolean, now: Date, storeOpensAtMs: number): string {
+  if (id === 'hub') return 'Open anytime';
+  if (open) return id === 'store' && storeGraceOpen(now) ? 'Late orders open' : 'Taking orders now';
+  if (id === 'store' && storeOpensAtMs > now.getTime()) return 'Closed now';
+  // Closed today, but ordering still works for the next batch
+  const forDay = (date?: string) => (date ? `Order for ${dayWord(date, now).replace(/^on /, '')}` : '');
+  if (id === 'room') return forDay(getNextBatch('inside', now).next?.batch.date) || 'Closed now';
+  return forDay(getOutsideChoices(id, now).batch?.date) || 'Paused';
 }
 
 /** Home: four quick cards (everyone): the live dot, the name and the promise of each section */
@@ -89,6 +119,8 @@ export const HomeQuickCards: React.FC<{
       <div className="grid grid-cols-2 gap-2">
         {cards.map(({ id, title }) => {
           const open = isOpenNow(id, now, storeOpensAtMs);
+          const grace = id === 'store' && open && storeGraceOpen(now);
+          const status = statusOf(id, open, now, storeOpensAtMs);
           return (
           <button
             key={id}
@@ -106,8 +138,8 @@ export const HomeQuickCards: React.FC<{
               </span>
               <span className="min-w-0 flex-1 truncate">{title}</span>
             </span>
-            <span className={`block mt-0.5 text-[10px] font-bold uppercase tracking-wide ${open ? 'text-[#0e9f55]' : 'text-amber-600 dark:text-amber-400'}`}>
-              {id === 'hub' ? 'Open anytime' : open ? 'Taking orders now' : 'Closed now'}
+            <span className={`block mt-0.5 text-[10px] font-bold uppercase tracking-wide ${open && !grace ? 'text-[#0e9f55]' : 'text-amber-600 dark:text-amber-400'}`}>
+              {status}
             </span>
             {cardLines(id, now, storeOpensAtMs).map((line) => (
               <span key={line} className="block mt-1 first-of-type:mt-1.5 text-[11px] leading-snug text-slate-600 dark:text-slate-300">

@@ -29,7 +29,7 @@ import { MyRatingsPanel } from './FeedbackPanels';
 import { OperatorGuide } from './OperatorGuide';
 import { AttentionCard, jumpTo } from './AttentionCard';
 import { OrderRecord, partLabel, shortLocation } from '../types';
-import { OUT_OF_STOCK_LABEL, dayWord, longDayLabel, outsideArriveByFor, timeLabelFull } from '../config';
+import { OUT_OF_STOCK_LABEL, outOfStockExcept, dayWord, longDayLabel, outsideArriveByFor, timeLabelFull } from '../config';
 import { playChime } from '../sound';
 import { SoundToggle } from './SoundToggle';
 import { ThemeToggle } from './ThemeToggle';
@@ -598,6 +598,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                     <p>
                       If out of stock: <strong>{OUT_OF_STOCK_LABEL[o.outOfStock || 'refund']}</strong>
                     </p>
+                    {outOfStockExcept(o as any) && <p className="font-semibold text-amber-700 dark:text-amber-300">{outOfStockExcept(o as any)}</p>}
                     <p>
                       {o.gatePickup && !gateCanAskAgain(o.gatePickup)
                         ? `An inside runner will collect it at the gate for ${shortLocation(o)}.`
