@@ -26,6 +26,26 @@ export function promiseLine(target: QuickTarget, now: Date = new Date(), storeOp
   return `${label}order before ${timeLabelFull(b.startMin)}, at the gate before ${gate}`;
 }
 
+/** The card's two lines: when current orders end, and when they are delivered ("tomorrow" etc. when closed today) */
+export function cardLines(target: QuickTarget, now: Date = new Date(), storeOpensAtMs = 0): string[] {
+  if (target === 'hub') return ['Games, Buy & Sell, Services, Lost & Found'];
+  const when = (date: string) => {
+    const w = dayWord(date, now);
+    return w === 'today' ? '' : ` ${w.replace(/^on /, '')}`;
+  };
+  if (target === 'room') {
+    const { next } = getNextBatch('inside', now);
+    if (!next) return ['Closed for now'];
+    const w = when(next.batch.date);
+    return [`Orders end: ${timeLabelFull(INSIDE_ORDER_BY_MIN)}${w}`, `Delivered before: ${timeLabelFull(INSIDE_ARRIVE_BY_MIN)}${w}`];
+  }
+  if (target === 'store' && storeOpensAtMs > now.getTime()) return [`Opens ${openDateText(storeOpensAtMs)}`];
+  const b = getOutsideChoices(target, now).batch;
+  if (!b) return ['Back soon'];
+  const w = when(b.date);
+  return [`Orders end: ${timeLabelFull(b.startMin)}${w}`, `Delivered before: ${timeLabelFull(outsideArriveByFor(b.id))}${w}`];
+}
+
 /** Is this section taking orders right now (a batch today that hasn't closed)? */
 export function isOpenNow(target: QuickTarget, now: Date = new Date(), storeOpensAtMs = 0): boolean {
   if (target === 'hub') return true;
@@ -86,7 +106,11 @@ export const HomeQuickCards: React.FC<{
             <span className={`block mt-0.5 text-[10px] font-bold uppercase tracking-wide ${open ? 'text-[#0e9f55]' : 'text-amber-600 dark:text-amber-400'}`}>
               {id === 'hub' ? 'Open anytime' : open ? 'Taking orders now' : 'Closed now'}
             </span>
-            <span className="block mt-1 text-[11px] leading-snug text-slate-500 dark:text-slate-400">{promiseLine(id, now, storeOpensAtMs)}</span>
+            {cardLines(id, now, storeOpensAtMs).map((line) => (
+              <span key={line} className="block mt-1 first-of-type:mt-1.5 text-[11px] leading-snug text-slate-600 dark:text-slate-300">
+                {line}
+              </span>
+            ))}
           </button>
           );
         })}
