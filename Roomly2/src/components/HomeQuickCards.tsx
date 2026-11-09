@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Clock, UtensilsCrossed, Store, Users, RotateCcw } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import { getNextBatch, getOutsideChoices } from '../api.js';
 import { dayWord, timeLabelFull, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, openDateText } from '../config';
 import type { OrderRecord } from '../types';
@@ -59,11 +59,11 @@ export const HomeQuickCards: React.FC<{
     };
   }, []);
   const now = new Date();
-  const cards: { id: QuickTarget; title: string; Icon: React.FC<{ className?: string }> }[] = [
-    { id: 'room', title: 'Room delivery', Icon: Clock },
-    { id: 'food', title: 'Cooked food', Icon: UtensilsCrossed },
-    { id: 'store', title: 'Outside store', Icon: Store },
-    { id: 'hub', title: 'Hostel Hub', Icon: Users },
+  const cards: { id: QuickTarget; title: string }[] = [
+    { id: 'room', title: 'Canteen Items' },
+    { id: 'food', title: 'Outside Food' },
+    { id: 'store', title: 'Outside Items' },
+    { id: 'hub', title: 'Hostel Hub' },
   ];
   const lastTarget: QuickTarget | null = lastOrder ? (lastOrder.cart === 'food' ? 'food' : lastOrder.cart === 'store' ? 'store' : 'room') : null;
   const names = lastOrder ? (lastOrder.items || []).map((i: any) => i.name).filter(Boolean) : [];
@@ -93,7 +93,7 @@ export const HomeQuickCards: React.FC<{
         </button>
       )}
       <div className="grid grid-cols-2 gap-2">
-        {cards.map(({ id, title, Icon }) => {
+        {cards.map(({ id, title }) => {
           const open = isOpenNow(id, now, storeOpensAtMs);
           return (
           <button
@@ -104,14 +104,13 @@ export const HomeQuickCards: React.FC<{
               open && id !== 'hub' ? 'border-[#0e9f55]/60' : 'border-slate-200/80 dark:border-slate-800'
             }`}
           >
-            <span className="flex items-center gap-1.5 text-sm font-extrabold text-slate-900 dark:text-white">
-              <Icon className="w-4 h-4 text-[#0e9f55] shrink-0" />
-              <span className="min-w-0 flex-1 truncate">{title}</span>
-              {/* Live dot: green and pulsing while taking orders now, amber when closed */}
-              <span className="relative flex w-2.5 h-2.5 shrink-0" aria-label={open ? 'Taking orders now' : 'Closed now'}>
-                {open && <span className="absolute inline-flex w-full h-full rounded-full bg-emerald-400 opacity-75 animate-ping" />}
+            <span className="flex items-center gap-2 text-sm font-extrabold text-slate-900 dark:text-white">
+              {/* Live dot first: pulsing green while taking orders, amber when closed, steady green for Hostel Hub */}
+              <span className="relative flex w-2.5 h-2.5 shrink-0" aria-label={id === 'hub' ? 'Open anytime' : open ? 'Taking orders now' : 'Closed now'}>
+                {open && id !== 'hub' && <span className="absolute inline-flex w-full h-full rounded-full bg-emerald-400 opacity-75 animate-ping" />}
                 <span className={`relative inline-flex w-2.5 h-2.5 rounded-full ${open ? 'bg-[#0e9f55]' : 'bg-amber-400'}`} />
               </span>
+              <span className="min-w-0 flex-1 truncate">{title}</span>
             </span>
             <span className={`block mt-0.5 text-[10px] font-bold uppercase tracking-wide ${open ? 'text-[#0e9f55]' : 'text-amber-600 dark:text-amber-400'}`}>
               {id === 'hub' ? 'Open anytime' : open ? 'Taking orders now' : 'Closed now'}
