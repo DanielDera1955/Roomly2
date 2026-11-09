@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { RotateCcw, ChevronDown } from 'lucide-react';
-import { getNextBatch, getOutsideChoices } from '../api.js';
-import { dayWord, timeLabelFull, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, openDateText, BEHIND_EVERY_ORDER } from '../config';
+import { getNextBatch, getOutsideChoices, storeGraceOpen } from '../api.js';
+import { dayWord, timeLabelFull, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, openDateText, BEHIND_EVERY_ORDER, OUTSIDE_STORE_GRACE_END_MIN } from '../config';
 import type { OrderRecord } from '../types';
 
 export type QuickTarget = 'room' | 'food' | 'store' | 'hub';
@@ -22,6 +22,7 @@ export function promiseLine(target: QuickTarget, now: Date = new Date(), storeOp
   if (!b) return 'Back soon';
   const gate = timeLabelFull(outsideArriveByFor(b.id));
   if (dayWord(b.date, now) !== 'today') return `Closed. Order now for ${dayWord(b.date, now).replace(/^on /, '')}, gate before ${gate}`;
+  if (target === 'store' && storeGraceOpen(now)) return `Late orders open until ${timeLabelFull(OUTSIDE_STORE_GRACE_END_MIN)}, at the gate before ${gate}`;
   const label = target === 'food' ? (b.id === 'midday' ? 'Lunch: ' : 'Dinner: ') : '';
   return `${label}order before ${timeLabelFull(b.startMin)}, at the gate before ${gate}`;
 }
@@ -43,6 +44,8 @@ export function cardLines(target: QuickTarget, now: Date = new Date(), storeOpen
   const b = getOutsideChoices(target, now).batch;
   if (!b) return ['Back soon'];
   const w = when(b.date);
+  if (target === 'store' && !w && storeGraceOpen(now))
+    return [`Late orders open until ${timeLabelFull(OUTSIDE_STORE_GRACE_END_MIN)}`, `Delivered before: ${timeLabelFull(outsideArriveByFor(b.id))}`];
   return [`Orders end: ${timeLabelFull(b.startMin)}${w}`, `Delivered before: ${timeLabelFull(outsideArriveByFor(b.id))}${w}`];
 }
 

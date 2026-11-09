@@ -397,6 +397,13 @@ export function formatRemaining(ms: number): string {
  */
 /** Outside store items: same-day orders close at 5:00pm */
 export const OUTSIDE_ORDER_BY_MIN = T(17);
+/**
+ * Store grace: after 5:00pm, late store orders still join today's run until it leaves
+ * (the first "Order delivered" tap on today's last orders) or 6:00pm, whichever comes first.
+ */
+export const OUTSIDE_STORE_GRACE_END_MIN = T(18);
+/** Orders placed from 4:50pm are the last of the day: delivering one means the run has left */
+export const OUTSIDE_STORE_LAST_ORDERS_MIN = T(16, 50);
 /** Outside cooked food, dinner batch: same-day orders close at 6:00pm */
 export const OUTSIDE_FOOD_ORDER_BY_MIN = T(18);
 /** Outside cooked food, lunch batch (day vendor): orders close at 12:30pm */

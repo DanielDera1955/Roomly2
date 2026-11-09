@@ -18,8 +18,8 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
-import { HOSTELS, BOYS_HOSTELS, GIRLS_HOSTELS, GIRLS_SIDE_OPEN, GIRLS_SOON_MSG, HOSTEL_FLOORS, hostelSideOf, splitFloorRoom, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, outsideBannerFor, outsideArriveByFor, timeLabel, timeLabelFull, OUTSIDE_DELIVERY_FEE, outsideLaunchOn, requestReplyInfo, arrivalText } from '../config';
-import { getNextBatch, getOutsideChoices, getExpressRunners, paystackFor, collectsAsRoomly } from '../api.js';
+import { HOSTELS, BOYS_HOSTELS, GIRLS_HOSTELS, GIRLS_SIDE_OPEN, GIRLS_SOON_MSG, HOSTEL_FLOORS, hostelSideOf, splitFloorRoom, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, outsideBannerFor, outsideArriveByFor, timeLabel, timeLabelFull, OUTSIDE_DELIVERY_FEE, outsideLaunchOn, requestReplyInfo, arrivalText, OUTSIDE_STORE_GRACE_END_MIN } from '../config';
+import { getNextBatch, getOutsideChoices, getExpressRunners, paystackFor, collectsAsRoomly, storeGraceOpen } from '../api.js';
 import { isValidNigerianPhone, isValidPin, normalizePhone } from '../api.js';
 
 interface CartSheetProps {
@@ -243,7 +243,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const pausedText = chosen
     ? ''
     : cart !== 'inside'
-    ? `${cart === 'food' ? 'Food orders' : 'Store orders'}: back soon. Every ${cart === 'food' ? 'food vendor' : 'store'} is fully booked for the next few days.`
+    ? `${cart === 'food' ? 'Food orders' : 'Store orders'} are paused right now. Check back soon, or send a request for what you need.`
     : `Ordering is paused right now.${pauseNote ? ' ' + pauseNote : ' Please check back soon.'}`;
   // Outside: which day this order is for ("today" / "tomorrow" / "on Friday"), and the fixed date
   const outsideDay = cart !== 'inside' && selectedBatch ? dayWord(selectedBatch.date) : '';
@@ -702,8 +702,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             </h3>
             {cart !== 'inside' && (
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-200">
-                <strong className="text-slate-900 dark:text-white">Delivered to the school gate.</strong> Collect it there. Once it arrives, you can ask an inside runner to bring it
-                to your room from your order screen. The runner will tell you the amount.
+                <strong className="text-slate-900 dark:text-white">Delivered to the school gate.</strong> Collect it there when it arrives. You can track it live from your
+                order screen.
               </div>
             )}
             <div className="grid grid-cols-1 gap-2.5">
@@ -984,9 +984,21 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 {cart === 'food' ? 'Choose a food vendor' : 'Choose a store'}
               </h3>
-              {outsideClosedToday ? (
+              {cart === 'store' && storeGraceOpen() && !outsideClosedToday ? (
+                <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 text-xs text-emerald-900 dark:text-emerald-200">
+                  <strong>Late orders still open.</strong> Today's run hasn't left yet. Pay before {timeLabelFull(OUTSIDE_STORE_GRACE_END_MIN)} to join it, at the school gate before{' '}
+                  {selectedBatch ? gateTimeOf(selectedBatch.id) : timeLabelFull(OUTSIDE_STORE_GRACE_END_MIN + 60)}. If the run leaves first, your order comes tomorrow.
+                </div>
+              ) : outsideClosedToday ? (
                 <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200">
-                  Today's orders have closed. Anything you order now will be delivered {outsideDay || 'on the next day'}.
+                  {cart === 'store' ? (
+                    <>
+                      <strong>Today's store orders have closed.</strong> Orders placed now come {outsideDay || 'on the next day'}, at the school gate before{' '}
+                      {selectedBatch ? gateTimeOf(selectedBatch.id) : '7:00pm'}.
+                    </>
+                  ) : (
+                    <>Today's orders have closed. Anything you order now will be delivered {outsideDay || 'on the next day'}.</>
+                  )}
                 </div>
               ) : !anyNow && currentBatch ? (
                 <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200">

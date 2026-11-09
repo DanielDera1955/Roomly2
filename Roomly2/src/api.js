@@ -45,6 +45,9 @@ import {
   INSIDE_ARRIVAL_MINUTES,
   NOT_RECEIVED_WINDOW_HOURS,
   insideTimerOrder,
+  OUTSIDE_STORE_GRACE_END_MIN,
+  OUTSIDE_STORE_LAST_ORDERS_MIN,
+  OUTSIDE_ORDER_BY_MIN as STORE_CLOSE_MIN,
 } from './config.ts';
 import { db, auth } from './firebase.ts';
 import { CLOUDINARY } from './cloudinary.ts';
@@ -363,6 +366,15 @@ try {
     },
     () => {}
   );
+  // Store grace: the day today's store run left (late orders stop joining it)
+  onSnapshot(
+    doc(db, 'adminControl', 'storeRun'),
+    (s) => {
+      storeRunLeftOn = s.exists() ? String(s.data().leftOn || '') : '';
+      fireBatches();
+    },
+    () => {}
+  );
   // How students pay: 'direct' (the runner's / operator's own account) or 'paystack' (Roomly, confirmed automatically)
   onSnapshot(
     doc(db, 'adminControl', 'payments'),
@@ -564,6 +576,33 @@ export async function payWithPaystack(order) {
   return { status: 'checking' };
 }
 
+/** yyyy-mm-dd of the day today's store run left ('' = not yet) */
+let storeRunLeftOn = '';
+/** Store grace right now: past 5:00pm, before 6:00pm, and today's run hasn't left */
+export function storeGraceOpen(now = new Date()) {
+  const min = now.getHours() * 60 + now.getMinutes();
+  return min >= STORE_CLOSE_MIN && min < OUTSIDE_STORE_GRACE_END_MIN && storeRunLeftOn !== ymdOf(now);
+}
+/** "Order delivered" on one of today's last store orders (placed from 4:50pm) or any tap after 5:00pm: the run has left */
+async function markStoreRunLeft(order) {
+  const now = new Date();
+  const today = ymdOf(now);
+  if (!order || order.cart !== 'store' || storeRunLeftOn === today) return;
+  if (order.deliveryDate && order.deliveryDate !== today) return;
+  const made = new Date(order.createdAt || 0);
+  const madeMin = made.getHours() * 60 + made.getMinutes();
+  const lastOrder = ymdOf(made) === today && madeMin >= OUTSIDE_STORE_LAST_ORDERS_MIN;
+  const afterClose = now.getHours() * 60 + now.getMinutes() >= STORE_CLOSE_MIN;
+  if (!lastOrder && !afterClose) return;
+  storeRunLeftOn = today;
+  fireBatches();
+  try {
+    await setDoc(doc(db, 'adminControl', 'storeRun'), { leftOn: today, at: Date.now() }, { merge: true });
+  } catch (e) {
+    /* only the admin can record it; the admin's own tap does */
+  }
+}
+
 const ymdOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 /** On, and not yet turned off by the cut-off (10pm inside, 5:10pm store, 5:30pm food). Switching on after the cut-off lasts until the next night. */
@@ -598,6 +637,8 @@ export function switchStartDate(opt, sw) {
  */
 export function batchCloseDate(opt, side) {
   const day = new Date(opt.date + 'T00:00:00');
+  // Store grace: today's run takes late orders until it leaves, or 6:00pm at the latest
+  if (side === 'store' && storeRunLeftOn !== opt.date) return new Date(day.getTime() + OUTSIDE_STORE_GRACE_END_MIN * 60000);
   // Outside: each batch closes exactly at its order-by time (store 5:00pm, lunch 12:30pm, dinner 6:00pm)
   if (side !== 'inside') return opt.orderBy instanceof Date ? new Date(opt.orderBy.getTime()) : new Date(day.getTime() + opt.startMin * 60000);
   const cut = side === 'inside' ? SWITCH_CUTOFF_MIN.inside : side === 'food' ? SWITCH_CUTOFF_MIN.food : SWITCH_CUTOFF_MIN.outside;
@@ -807,7 +848,9 @@ export function isOverdue(dates, now = new Date()) {
 
 /** Operators of one kind that the admin has not switched off, settled up, with a payment account saved (students pay them directly) */
 function activeOperators(kind) {
-  return Object.values(operatorDocs).filter((o) => o.kind === kind && !o.adminOff && !isOverdue(o.unsettled) && o.payTo);
+  // Manual mode: every order is paid to Roomly, so only the admin's ON/OFF (and the operator's days) decide
+  const roomly = collectsAsRoomly(kind);
+  return Object.values(operatorDocs).filter((o) => o.kind === kind && !o.adminOff && (roomly || (!isOverdue(o.unsettled) && o.payTo)));
 }
 
 /**
@@ -2626,6 +2669,7 @@ async function updatePartStatus__raw(orderId, kind, status, who = 'Operator') {
     // A completed order goes into this operator's small daily summary (counted once)
     if (updated && status === 'sent' && !wasSent) {
       recordOperatorDelivery(updated, kind).catch((e) => console.error('Daily summary not saved:', e));
+      if (kind === 'store') markStoreRunLeft(updated).catch(() => {});
     }
     return updated;
   } catch (e) {

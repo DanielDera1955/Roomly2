@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Clock, Store, UtensilsCrossed } from 'lucide-react';
-import { getNextBatch, getOutsideChoices } from '../api.js';
+import { getNextBatch, getOutsideChoices, storeGraceOpen } from '../api.js';
 import {
   SwitchSide,
   dayWord,
@@ -77,14 +77,17 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
       headline = `Store items will open on ${openDateText(storeOpensAtMs)}`;
       lines = ["Browse what's coming. Orders open on launch day, delivered to the school gate."];
     } else if (!b) {
-      headline = 'Back soon';
-      lines = [`Every ${side === 'food' ? 'food vendor' : 'store'} is fully booked for the next few days. Check back soon.`];
+      headline = 'Paused right now';
+      lines = ['Check back soon, or send a request for what you need.'];
     } else {
       const today = dayWord(b.date, now) === 'today';
       const closesAt = timeLabelFull(b.startMin);
       if (!today) {
         headline = 'Currently closed';
         lines = [`You can still order now and get it ${dayWord(b.date, now)} before ${gateOf(b.id)}.`];
+      } else if (side === 'store' && storeGraceOpen(now)) {
+        headline = `Late orders still open. Get it at the gate before ${gateOf(b.id)}`;
+        lines = ["Today's run hasn't left yet. If it leaves before you pay, your order comes tomorrow."];
       } else if (side === 'store') {
         headline = `Order anytime before ${closesAt} and get it at the gate before ${gateOf(b.id)}`;
       } else if (b.id === 'midday') {
