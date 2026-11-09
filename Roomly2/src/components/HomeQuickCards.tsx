@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, ChevronDown } from 'lucide-react';
 import { getNextBatch, getOutsideChoices } from '../api.js';
 import { dayWord, timeLabelFull, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, openDateText } from '../config';
 import type { OrderRecord } from '../types';
@@ -38,16 +38,11 @@ export function isOpenNow(target: QuickTarget, now: Date = new Date(), storeOpen
   return Boolean(b && dayWord(b.date, now) === 'today');
 }
 
-/**
- * Home: four quick cards (everyone) and, for a returning student, an "order again" strip
- * with their last paid order, its price and the promise of the batch it would join now.
- */
+/** Home: four quick cards (everyone): the live dot, the name and the promise of each section */
 export const HomeQuickCards: React.FC<{
   onOpen: (t: QuickTarget) => void;
-  lastOrder?: OrderRecord | null;
-  onReorder?: (o: OrderRecord) => void;
   storeOpensAtMs?: number;
-}> = ({ onOpen, lastOrder, onReorder, storeOpensAtMs = 0 }) => {
+}> = ({ onOpen, storeOpensAtMs = 0 }) => {
   const [, setTick] = useState(0);
   useEffect(() => {
     const h = () => setTick((n) => n + 1);
@@ -60,38 +55,14 @@ export const HomeQuickCards: React.FC<{
   }, []);
   const now = new Date();
   const cards: { id: QuickTarget; title: string }[] = [
-    { id: 'room', title: 'Canteen Items' },
     { id: 'food', title: 'Outside Food' },
     { id: 'store', title: 'Outside Items' },
     { id: 'hub', title: 'Hostel Hub' },
+    { id: 'room', title: 'Canteen Items' },
   ];
-  const lastTarget: QuickTarget | null = lastOrder ? (lastOrder.cart === 'food' ? 'food' : lastOrder.cart === 'store' ? 'store' : 'room') : null;
-  const names = lastOrder ? (lastOrder.items || []).map((i: any) => i.name).filter(Boolean) : [];
 
   return (
     <div className="space-y-3">
-      {lastOrder && onReorder && lastTarget && names.length > 0 && (
-        <button
-          type="button"
-          onClick={() => onReorder(lastOrder)}
-          className="w-full flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900 text-left cursor-pointer"
-        >
-          <span className="w-10 h-10 shrink-0 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 flex items-center justify-center">
-            <RotateCcw className="w-4 h-4 text-[#0e9f55]" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[11px] font-bold uppercase tracking-wider text-[#0e9f55]">Order again</span>
-            <span className="block text-sm font-bold text-slate-900 dark:text-white truncate">
-              {names.slice(0, 3).join(', ')}
-              {names.length > 3 ? ` +${names.length - 3}` : ''}
-            </span>
-            <span className="block text-[11px] text-slate-500 dark:text-slate-400 truncate">
-              ₦{Number(lastOrder.subtotal || 0).toLocaleString()} items · {promiseLine(lastTarget, now, storeOpensAtMs)}
-            </span>
-          </span>
-          <span className="shrink-0 text-xs font-bold text-[#0e9f55]">Add ›</span>
-        </button>
-      )}
       <div className="grid grid-cols-2 gap-2">
         {cards.map(({ id, title }) => {
           const open = isOpenNow(id, now, storeOpensAtMs);
@@ -120,6 +91,42 @@ export const HomeQuickCards: React.FC<{
           );
         })}
       </div>
+    </div>
+  );
+};
+
+/**
+ * "My last order: Order again", folded by default (near the Featured row): the last paid order,
+ * its price and the promise of the batch it would join now. One tap puts it back in its own cart.
+ */
+export const LastOrderStrip: React.FC<{ order: OrderRecord; onReorder: (o: OrderRecord) => void; storeOpensAtMs?: number }> = ({
+  order,
+  onReorder,
+  storeOpensAtMs = 0,
+}) => {
+  const [open, setOpen] = useState(false);
+  const target: QuickTarget = order.cart === 'food' ? 'food' : order.cart === 'store' ? 'store' : 'room';
+  const names = (order.items || []).map((i: any) => i.name).filter(Boolean);
+  if (!names.length) return null;
+  return (
+    <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 overflow-hidden">
+      <button type="button" onClick={() => setOpen(!open)} className="w-full flex items-center justify-between gap-2 px-3.5 py-3 text-left cursor-pointer">
+        <span className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
+          <RotateCcw className="w-4 h-4 text-[#0e9f55]" /> My last order: Order again
+        </span>
+        <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="px-3.5 pb-3.5 space-y-2 border-t border-slate-100 dark:border-slate-800 pt-2.5">
+          <p className="text-sm font-semibold text-slate-900 dark:text-white">{names.join(', ')}</p>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            ₦{Number(order.subtotal || 0).toLocaleString()} items · {promiseLine(target, new Date(), storeOpensAtMs)}
+          </p>
+          <button type="button" onClick={() => onReorder(order)} className="w-full py-2.5 rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer">
+            Add to cart
+          </button>
+        </div>
+      )}
     </div>
   );
 };

@@ -42,7 +42,7 @@ import { BecomeRunner } from './components/BecomeRunner';
 import { GuestHero } from './components/GuestHero';
 import { FeedbackBox } from './components/FeedbackBox';
 import { ProfileSettings } from './components/ProfileSettings';
-import { HomeQuickCards, QuickTarget } from './components/HomeQuickCards';
+import { HomeQuickCards, QuickTarget, LastOrderStrip } from './components/HomeQuickCards';
 import { subscribeHubSettings, outsideStoreOpensAt } from './hub.js';
 import { getLinkTarget } from './links.js';
 import { ProductCard } from './components/ProductCard';
@@ -1247,11 +1247,9 @@ export default function App() {
             )}
           </div>
 
-          {/* Four quick cards for everyone, with an "order again" strip for returning students */}
+          {/* Four quick cards for everyone */}
           <HomeQuickCards
             storeOpensAtMs={storeLocked ? storeOpensMs : 0}
-            lastOrder={signedInCustomer ? lastPaidOrder : null}
-            onReorder={handleReorderOrder}
             onOpen={(t: QuickTarget) => {
               setSearchQuery('');
               setSelectedFilter('All');
@@ -1363,6 +1361,10 @@ export default function App() {
               onAdd={(p) => (p.isFood ? setCustomizingFood(p) : handleAddSimpleProduct(p))}
               onOpen={(p) => (p.isFood ? setCustomizingFood(p) : setDetailProduct(p))}
             />
+          )}
+
+          {!searchQuery && signedInCustomer && lastPaidOrder && (
+            <LastOrderStrip order={lastPaidOrder} onReorder={handleReorderOrder} storeOpensAtMs={storeLocked ? storeOpensMs : 0} />
           )}
 
           {!searchQuery && (
