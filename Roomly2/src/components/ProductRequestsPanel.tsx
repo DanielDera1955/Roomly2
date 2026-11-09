@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { subscribeSideRequests, quoteProductRequest, mySide, getCategories, getCurrentStaff, moveProductRequest, closeProductRequestListed } from '../api.js';
-import { sellingPrice, categoriesForStore } from '../config';
+import { sellingPrice, categoriesForStore, requestReplyInfo, arrivalText, minsLeftText } from '../config';
 
 const naira = (n: number) => `₦${Math.round(n || 0).toLocaleString()}`;
 const input =
@@ -21,6 +21,12 @@ export const ProductRequestsPanel: React.FC<{ side?: 'inside' | 'store' | 'food'
   const [costs, setCosts] = useState<Record<string, string[]>>({});
   const [cats, setCats] = useState<Record<string, string>>({});
   const [replies, setReplies] = useState<Record<string, string>>({});
+  // Ticks so the "Reply by" countdowns stay current
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(new Date()), 30000);
+    return () => window.clearInterval(t);
+  }, []);
   const [categories, setCategories] = useState<string[]>([]);
   const [busy, setBusy] = useState('');
   const [open, setOpen] = useState(true);
@@ -99,6 +105,7 @@ export const ProductRequestsPanel: React.FC<{ side?: 'inside' | 'store' | 'food'
                   From {r.name || 'a student'} · {new Date(r.createdAt).toLocaleString([], { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
                   {r.movedBy ? ` · moved here from ${SIDE_NAME[r.movedFrom] || 'another side'} by ${r.movedBy}` : ''}
                 </p>
+                <ReplyBy r={r} now={now} />
                 {/* Only the admin sees the student's number; providers get it once there is a paid order */}
                 {isAdmin && (
                   <p className="text-[11px] font-semibold">
@@ -211,3 +218,16 @@ export const ProductRequestsPanel: React.FC<{ side?: 'inside' | 'store' | 'food'
     </div>
   );
 };
+
+/** "Reply by 4:30pm · 42 min left": red in the last 10 minutes and once it has passed */
+function ReplyBy({ r, now }: { r: any; now: Date }) {
+  const { replyBy, closeAt, late } = requestReplyInfo(r.side, r.movedAt || r.createdAt || now);
+  const target = late ? closeAt : replyBy;
+  const left = target.getTime() - now.getTime();
+  const urgent = left <= 10 * 60000;
+  const text =
+    left > 0
+      ? `Reply by ${arrivalText(target.getTime(), now)} · ${minsLeftText(target, now)} left${late ? ' (sent late)' : ''}`
+      : `Reply overdue (was due ${arrivalText(target.getTime(), now)})`;
+  return <p className={`text-[11px] font-bold ${urgent ? 'text-red-600 dark:text-red-400' : 'text-amber-700 dark:text-amber-300'}`}>{text}</p>;
+}

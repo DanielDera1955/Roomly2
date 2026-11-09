@@ -624,7 +624,8 @@ export default function App() {
           pendingQuote: true,
           requestId: id,
           requestIdx: i,
-        })),
+          requestAt: new Date().toISOString(),
+        })) as CartItem[],
       ]);
     }
   };

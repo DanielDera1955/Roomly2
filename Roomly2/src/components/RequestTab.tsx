@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, Camera, Sparkles, Clock, Check } from 'lucide-react';
 import { uploadProductImage } from '../api.js';
 import { InstallPrompt } from './InstallPrompt';
-import { openDateText } from '../config';
+import { openDateText, requestReplyInfo, arrivalText, minsLeftText } from '../config';
 
 export type RequestSide = 'inside' | 'store' | 'food';
 
@@ -51,7 +51,13 @@ export const RequestTab: React.FC<RequestTabProps> = ({
   const [addToCart, setAddToCart] = useState(true);
   const [uploading, setUploading] = useState(-1);
   const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [sent, setSent] = useState<RequestSide | ''>('');
+  // Ticks so the reply countdowns stay current
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(new Date()), 30000);
+    return () => window.clearInterval(t);
+  }, []);
 
   useEffect(() => setSide(defaultSide), [defaultSide]);
 
@@ -81,8 +87,8 @@ export const RequestTab: React.FC<RequestTabProps> = ({
       await onSubmit(side, filled, note, addToCart);
       setItems([blank()]);
       setNote('');
-      setSent(true);
-      setTimeout(() => setSent(false), 6000);
+      setSent(side);
+      setTimeout(() => setSent(''), 20000);
     } catch (err: any) {
       window.alert(err?.message || 'Could not send. Check your connection and try again.');
     }
@@ -184,7 +190,7 @@ export const RequestTab: React.FC<RequestTabProps> = ({
         >
           {busy ? 'Sending…' : `Send request to ${SIDE_LABEL[side]}`}
         </button>
-        {sent && <p className="text-xs text-[#0e9f55] font-semibold text-center">Sent. You'll see the price below as soon as someone replies.</p>}
+        {sent && <p className="text-xs text-[#0e9f55] font-semibold text-center">{replySentText(sent)}</p>}
       </form>
 
       {/* Waiting for a price: install the app or turn on notifications, or check back before the next batch */}
@@ -219,6 +225,7 @@ export const RequestTab: React.FC<RequestTabProps> = ({
                   </span>
                 </div>
               ))}
+              {r.status === 'open' && <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">{replyWaitText(r, now)}</p>}
               {r.status === 'quoted' && r.reply && <p className="text-[11px] text-slate-600 dark:text-slate-300">Roomly: {r.reply}</p>}
               {r.status === 'closed' && <p className="text-[11px] text-slate-500">This is already in the store. Search for it to add it to your cart.</p>}
               {r.status === 'quoted' && r.quotes.some((q: any) => q.available) && !cartRequestIds.has(r.id) && (
@@ -237,3 +244,20 @@ export const RequestTab: React.FC<RequestTabProps> = ({
     </div>
   );
 };
+
+/** Shown right after sending: when the reply is due */
+function replySentText(side: string): string {
+  const { replyBy, closeAt, late } = requestReplyInfo(side);
+  if (late) return `Sent. You'll get a reply soon. If it comes after ${arrivalText(closeAt.getTime())}, your item joins the next batch.`;
+  return `Sent. You'll get a reply before ${arrivalText(replyBy.getTime())}.`;
+}
+/** Under a waiting request: countdown to the reply target */
+function replyWaitText(r: any, now: Date): string {
+  const { replyBy, closeAt, late } = requestReplyInfo(r.side, r.movedAt || r.createdAt || now);
+  if (late || now.getTime() >= replyBy.getTime()) {
+    return now.getTime() < closeAt.getTime()
+      ? `Reply coming soon. If it comes after ${arrivalText(closeAt.getTime(), now)}, your item joins the next batch.`
+      : 'Reply coming soon. Your item will join the next batch.';
+  }
+  return `Reply in ${minsLeftText(replyBy, now)} (before ${arrivalText(replyBy.getTime(), now)})`;
+}

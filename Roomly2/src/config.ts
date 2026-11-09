@@ -1643,3 +1643,39 @@ export function countdownText(ms: number): string {
   if (h > 0) return `${h}h ${m}m`;
   return `${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }
+
+/* ---------- Product requests: when the student can expect a reply ---------- */
+/** Reply target: 30 minutes before the next order close for the side asked */
+export const REQUEST_REPLY_LEAD_MIN = 30;
+/** Order close times (minutes from midnight) for a request side on a given weekday */
+function requestCloseMins(side: string, weekday: number): number[] {
+  if (side === 'store') return [OUTSIDE_ORDER_BY_MIN];
+  if (side === 'food') return DAY_FOOD_OFF_DAYS.includes(weekday) ? [OUTSIDE_FOOD_ORDER_BY_MIN] : [DAY_FOOD_ORDER_BY_MIN, OUTSIDE_FOOD_ORDER_BY_MIN];
+  return [INSIDE_ORDER_BY_MIN];
+}
+/**
+ * For a request made at `from`: the next order close for its side, the reply target
+ * (30 min before it) and whether the request came in too late for that target.
+ */
+export function requestReplyInfo(side: string, from: Date | string | number = new Date()): { closeAt: Date; replyBy: Date; late: boolean } {
+  const t = new Date(from);
+  for (let add = 0; add < 8; add++) {
+    const day = new Date(t);
+    day.setHours(0, 0, 0, 0);
+    day.setDate(day.getDate() + add);
+    for (const m of requestCloseMins(side, day.getDay()).sort((a, b) => a - b)) {
+      const closeAt = new Date(day.getTime() + m * 60000);
+      if (closeAt.getTime() <= t.getTime()) continue;
+      const replyBy = new Date(closeAt.getTime() - REQUEST_REPLY_LEAD_MIN * 60000);
+      return { closeAt, replyBy, late: t.getTime() > replyBy.getTime() };
+    }
+  }
+  const closeAt = new Date(t.getTime() + 86400000);
+  return { closeAt, replyBy: closeAt, late: false };
+}
+/** "42 min" / "1 hr 5 min" until a time (never negative) */
+export function minsLeftText(to: Date, now: Date = new Date()): string {
+  const m = Math.max(0, Math.ceil((to.getTime() - now.getTime()) / 60000));
+  if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)} hr${m % 60 ? ` ${m % 60} min` : ''}`;
+}

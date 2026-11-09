@@ -18,7 +18,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
-import { HOSTELS, BOYS_HOSTELS, GIRLS_HOSTELS, GIRLS_SIDE_OPEN, GIRLS_SOON_MSG, HOSTEL_FLOORS, hostelSideOf, splitFloorRoom, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, outsideBannerFor, outsideArriveByFor, timeLabel, timeLabelFull, OUTSIDE_DELIVERY_FEE, outsideLaunchOn } from '../config';
+import { HOSTELS, BOYS_HOSTELS, GIRLS_HOSTELS, GIRLS_SIDE_OPEN, GIRLS_SOON_MSG, HOSTEL_FLOORS, hostelSideOf, splitFloorRoom, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, outsideBannerFor, outsideArriveByFor, timeLabel, timeLabelFull, OUTSIDE_DELIVERY_FEE, outsideLaunchOn, requestReplyInfo, arrivalText } from '../config';
 import { getNextBatch, getOutsideChoices, getExpressRunners, paystackFor, collectsAsRoomly } from '../api.js';
 import { isValidNigerianPhone, isValidPin, normalizePhone } from '../api.js';
 
@@ -481,7 +481,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                         {i.quantity}x {i.name}
                       </span>
                       <span className="shrink-0 font-mono font-semibold">
-                        {i.pendingQuote ? <span className="text-amber-600">Waiting for price</span> : `₦${i.totalPrice.toLocaleString()}`}
+                        {i.pendingQuote ? <span className="text-amber-600">{waitingLabel(i)}</span> : `₦${i.totalPrice.toLocaleString()}`}
                       </span>
                     </div>
                   ))}
@@ -586,7 +586,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                           </span>
                         )}
                         {item.pendingQuote ? (
-                          <p className="text-[11px] font-bold text-amber-600 dark:text-amber-400">Waiting for price</p>
+                          <p className="text-[11px] font-bold text-amber-600 dark:text-amber-400">{waitingLabel(item)}</p>
                         ) : (
                           <p className="text-xs font-mono font-semibold text-[#0e9f55]">
                             ₦{item.totalPrice.toLocaleString()}
@@ -1368,3 +1368,11 @@ export const CartSheet: React.FC<CartSheetProps> = ({
     </div>
   );
 };
+
+/** A requested item still waiting for its price: "Waiting for price · reply by 4:30pm" */
+function waitingLabel(i: any): string {
+  const side = i.source === 'outside' ? 'store' : i.source === 'food' ? 'food' : 'inside';
+  const { replyBy, late } = requestReplyInfo(side, i.requestAt || Date.now());
+  if (late || Date.now() >= replyBy.getTime()) return 'Waiting for price · reply soon';
+  return `Waiting for price · reply by ${arrivalText(replyBy.getTime())}`;
+}
