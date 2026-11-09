@@ -49,6 +49,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   };
 
   const hasRealImage = product.imageUrl && !imageError;
+  // Cooked food photos fill the frame, a little zoomed in; closer on hover (laptop) or while pressed (phone)
+  const cookedFood = product.source === 'food' && Boolean(product.isFood);
 
   return (
     <div
@@ -66,7 +68,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               alt={product.name}
               onError={() => setImageError(true)}
               referrerPolicy="no-referrer"
-              className="w-full h-full object-contain mix-blend-multiply"
+              className={
+                cookedFood
+                  ? 'w-full h-full object-cover scale-110 group-hover:scale-125 group-active:scale-125 transition-transform duration-500 ease-out'
+                  : 'w-full h-full object-contain mix-blend-multiply'
+              }
             />
           ) : (
             <div
