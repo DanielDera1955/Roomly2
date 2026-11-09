@@ -125,7 +125,7 @@ export const GuestHero: React.FC<{
         >
           Start ordering
         </button>
-        <span className="min-w-0 text-[12px] leading-snug font-medium text-slate-400 dark:text-slate-500 select-none">
+        <span className="min-w-0 text-[10.5px] leading-snug font-medium text-slate-400 dark:text-slate-500 select-none">
           No account needed
           <br />
           Just pick, pay, and track your orders
