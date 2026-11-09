@@ -8,7 +8,7 @@ import { INSIDE_LAUNCH_MS, OUTSIDE_FOOD_ORDER_BY_MIN, getBookableSlots, timeLabe
  */
 
 /** The rotating word: things Caritas students order most. Edit freely. */
-export const HERO_WORDS = ['Indomie', 'egg roll', 'kerosene', 'drinks', 'spices', 'canteen food', 'a barber', 'water'];
+export const HERO_WORDS = ['a stove', 'jollof rice', 'a power bank', 'kerosene', 'Indomie', 'any item'];
 
 type Tone = 'open' | 'soon';
 interface Tile {
@@ -108,11 +108,11 @@ export const GuestHero: React.FC<{
           </span>
         </span>
         <br />
-        <span className="text-slate-500 dark:text-slate-300">without leaving your room.</span>
+        <span className="text-slate-500 dark:text-slate-300">without leaving school.</span>
       </h1>
 
       <p className="mt-3 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
-        Roomly Caritas brings food and everyday items to your hostel room or the school gate. Built by a Caritas student.
+        Food and items from Oye to the school gate, and canteen items to your room at night. Built by a Caritas student.
       </p>
 
       {/* The four section cards sit under this header (HomeQuickCards), the same for new and returning students */}
