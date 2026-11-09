@@ -151,7 +151,7 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
 
   return (
     <div
-      className={`relative overflow-hidden rounded-3xl p-4 ${plain ? 'bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm' : `${isGuest ? 'min-h-[176px]' : 'min-h-[140px]'} shadow-md`} ${ink}`}
+      className={`relative overflow-hidden rounded-3xl p-4 ${plain ? 'bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm' : `min-h-[176px] shadow-md`} ${ink}`}
       style={plain ? undefined : { background: sky }}
     >
       <style>{`
@@ -330,14 +330,17 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
                   'Welcome to Roomly Caritas'
                 ) : (
                   <>
-                    {dayPart}
-                    {name ? ', ' : ''}
-                    {name && <span className={nameColor}>{name}</span>}
+                    <span className="block text-[18px] font-bold opacity-90">
+                      {dayPart}
+                      {name ? ',' : ''}
+                    </span>
+                    {/* The name on its own line, so long names fit */}
+                    {name && <span className={`block mt-0.5 text-[28px] leading-tight break-words ${nameColor}`}>{name}</span>}
                   </>
                 )}
               </h1>
               {!isGuest && (
-                <p className={`text-[14px] font-medium leading-snug mt-0.5 ${softText}`}>{isNew ? 'Welcome to Roomly.' : 'Welcome back to Roomly.'}</p>
+                <p className={`text-[14px] font-medium leading-snug mt-2 ${softText}`}>{isNew ? 'Welcome to Roomly.' : 'Welcome back to Roomly.'}</p>
               )}
               {/* Signed-in students: just the greeting, no extra lines */}
               {isGuest && (
@@ -346,7 +349,7 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
                 </p>
               )}
             </div>
-            <div className={`${plain ? 'mt-3' : 'mt-5 mb-2'} flex items-center justify-between gap-3`}>
+            <div className={`${plain ? 'mt-3' : 'mt-4 mb-1'} flex items-center justify-between gap-3`}>
               {isGuest && live.text ? (
                 <span className={`min-w-0 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-[12px] font-bold leading-snug backdrop-blur-sm ${chipBg}`}>
                   <span className={`w-[7px] h-[7px] shrink-0 rounded-full ${live.open ? 'bg-emerald-400 rb-twinkle' : 'bg-amber-300'}`} />
