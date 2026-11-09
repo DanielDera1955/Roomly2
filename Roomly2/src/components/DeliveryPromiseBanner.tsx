@@ -62,7 +62,7 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
       const when = today ? '' : ` ${next.batch.dayLabel.toLowerCase()}`;
       headline = today ? 'Order now and get it in your room before ' + arrive : `Currently closed. Next batch${when}`;
       lines = today
-        ? [`Tonight's batch starts at 8:30pm. Orders close at ${orderBy}.`]
+        ? [`Current batch ends by ${orderBy} and is delivered to your room before ${arrive}.`]
         : [`You can still order now and get it in your room${when} before ${arrive}.`];
       if (next.unconfirmed) lines.push("No runner has confirmed this batch yet. You pay once a runner confirms.");
       if (note) lines.push(note);
@@ -110,7 +110,7 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
         <div className="flex items-center justify-between gap-2">
           <p className="min-w-0 text-[11px] font-bold uppercase tracking-wider text-emerald-200 flex items-center gap-1.5">
             <Icon className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">Today's Batch: {label}</span>
+            <span className="truncate">{side === 'inside' ? 'Night Batch Only' : `Today's Batch: ${label}`}</span>
           </p>
           <span className="shrink-0 px-2 py-0.5 rounded-full bg-white/15 text-[10px] font-bold text-white whitespace-nowrap">{badge}</span>
         </div>
