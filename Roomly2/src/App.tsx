@@ -596,13 +596,13 @@ export default function App() {
 
   const sideSource = (side: RequestSide) => (side === 'store' ? 'outside' : side === 'food' ? 'food' : 'school') as CartItem['source'];
 
-  const handleSubmitRequest = async (side: RequestSide, items: RequestItemInput[], note: string, addToCart: boolean) => {
+  const handleSubmitRequest = async (side: RequestSide, items: RequestItemInput[], note: string, addToCart: boolean, contactPhone = '') => {
     const id = await createProductRequest({
       side,
       items,
       note,
       category: selectedFilter !== 'All' ? selectedFilter : '',
-      phone,
+      phone: phone || contactPhone,
       name: customer?.name || '',
     });
     setRequestIds((prev) => [id, ...prev.filter((x) => x !== id)].slice(0, 20));
@@ -666,7 +666,10 @@ export default function App() {
       if (!r) return;
       const before = requestStatus.current[id];
       requestStatus.current[id] = r.status;
-      if (before === 'open' && r.status === 'quoted') {
+      // A reply that came while Roomly was closed: shown once when the student comes back
+      const fresh = before === 'open' || (before === undefined && replyUnseen(id, r));
+      if (fresh && r.status !== 'open') markReplySeen(id);
+      if (fresh && r.status === 'quoted') {
         const names = (r.quotes || []).filter((q: any) => q.available).map((q: any) => q.name);
         const text = r.reply
           ? String(r.reply)
@@ -678,7 +681,7 @@ export default function App() {
         notify('Your price is ready', text, 'roomly-price-' + id);
       }
       // Already in the store: the request is closed and the student is pointed to the product
-      if (before === 'open' && r.status === 'closed') {
+      if (fresh && r.status === 'closed') {
         const names = (r.items || []).map((q: any) => q.name).filter(Boolean);
         const text = `${names.slice(0, 2).join(', ') || 'Your item'} is already in the store. Search for it to add it to your cart.`;
         setPriceReady(text);
@@ -1424,6 +1427,7 @@ export default function App() {
               myRequests={requestIds.map((id) => requests[id]).filter(Boolean)}
               cartRequestIds={new Set(cartItems.map((i) => i.requestId || '').filter(Boolean))}
               onSubmit={handleSubmitRequest}
+              knownPhone={phone}
               onAddQuoteToCart={handleAddQuoteToCart}
               storeOpensMs={storeLocked ? storeOpensMs : 0}
             />
@@ -1637,4 +1641,29 @@ export default function App() {
       </div>
     </div>
   );
+}
+
+/* Replies to product requests the student has already been shown (kept on this phone) */
+const SEEN_KEY = 'roomly_request_replies_seen';
+function seenReplies(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(SEEN_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+function markReplySeen(id: string) {
+  try {
+    const list = seenReplies().filter((x) => x !== id);
+    localStorage.setItem(SEEN_KEY, JSON.stringify([id, ...list].slice(0, 40)));
+  } catch {
+    /* storage can be unavailable */
+  }
+}
+/** Answered in the last 3 days and not shown yet */
+function replyUnseen(id: string, r: any): boolean {
+  if (!r || r.status === 'open') return false;
+  const at = Date.parse(r.quotedAt || r.closedAt || '');
+  if (!at || Date.now() - at > 3 * 86400000) return false;
+  return !seenReplies().includes(id);
 }

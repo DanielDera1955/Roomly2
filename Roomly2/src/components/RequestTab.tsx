@@ -19,7 +19,9 @@ interface RequestTabProps {
   initialName?: string;
   myRequests: any[];
   cartRequestIds: Set<string>;
-  onSubmit: (side: RequestSide, items: RequestItemInput[], note: string, addToCart: boolean) => Promise<void>;
+  onSubmit: (side: RequestSide, items: RequestItemInput[], note: string, addToCart: boolean, contactPhone?: string) => Promise<void>;
+  /** The signed-in student's number; guests type theirs on the form */
+  knownPhone?: string;
   onAddQuoteToCart: (req: any) => void;
   /** While the outside store has not opened yet: when it opens (ms), else 0 */
   storeOpensMs?: number;
@@ -42,6 +44,7 @@ export const RequestTab: React.FC<RequestTabProps> = ({
   myRequests,
   cartRequestIds,
   onSubmit,
+  knownPhone,
   onAddQuoteToCart,
   storeOpensMs = 0,
 }) => {
@@ -52,6 +55,15 @@ export const RequestTab: React.FC<RequestTabProps> = ({
   const [uploading, setUploading] = useState(-1);
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<RequestSide | ''>('');
+  // Guests leave a WhatsApp number so Roomly can reach them about the request
+  const [contact, setContact] = useState(() => {
+    try {
+      return localStorage.getItem('roomly_request_phone') || '';
+    } catch {
+      return '';
+    }
+  });
+  const needsPhone = !knownPhone;
   // Ticks so the reply countdowns stay current
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -82,9 +94,21 @@ export const RequestTab: React.FC<RequestTabProps> = ({
       window.alert('Type the name of at least one product.');
       return;
     }
+    const cleaned = contact.replace(/[\s-]/g, '');
+    if (needsPhone && !/^(0[789][01]\d{8}|\+?234[789][01]\d{8})$/.test(cleaned)) {
+      window.alert('Enter your WhatsApp number (e.g. 08012345678) so we can reach you about your request.');
+      return;
+    }
     setBusy(true);
     try {
-      await onSubmit(side, filled, note, addToCart);
+      await onSubmit(side, filled, note, addToCart, needsPhone ? cleaned : '');
+      if (needsPhone) {
+        try {
+          localStorage.setItem('roomly_request_phone', cleaned);
+        } catch {
+          /* storage can be unavailable */
+        }
+      }
       setItems([blank()]);
       setNote('');
       setSent(side);
@@ -175,6 +199,21 @@ export const RequestTab: React.FC<RequestTabProps> = ({
         </button>
 
         <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} rows={2} className={input} placeholder="Note (optional), e.g. brand, size, colour" />
+
+        {needsPhone && (
+          <div className="space-y-1">
+            <input
+              type="tel"
+              inputMode="tel"
+              value={contact}
+              onChange={(e) => setContact(e.target.value.slice(0, 16))}
+              className={input}
+              placeholder="Your WhatsApp number"
+              required
+            />
+            <p className="text-[11px] text-slate-500">So we can ask you about your request.</p>
+          </div>
+        )}
 
         <label className="flex items-start gap-2 text-xs text-slate-700 dark:text-slate-200 cursor-pointer">
           <input type="checkbox" checked={addToCart} onChange={(e) => setAddToCart(e.target.checked)} className="w-4 h-4 mt-0.5 accent-[#0e9f55]" />
