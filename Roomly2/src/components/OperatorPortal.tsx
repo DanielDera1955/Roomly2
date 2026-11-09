@@ -700,7 +700,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                     </div>
                   ) : (
                   <>
-                  <PackagePhoto o={o} canEdit={!isAdmin && st !== 'sent'} />
+                  <PackagePhoto o={o} canEdit={isAdmin || st !== 'sent'} />
                   <button
                     type="button"
                     disabled={busy === o.id || st === 'sent'}

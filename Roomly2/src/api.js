@@ -2611,11 +2611,12 @@ export async function addPackagePhoto(orderId, file) {
   if (!res.ok) throw new Error('Photo upload failed. Check your connection and try again.');
   const data = await res.json();
   const url = String(data.secure_url).replace('/upload/', '/upload/w_1000,c_limit,q_auto,f_auto/');
-  const who = getCurrentStaff()?.name || 'Operator';
+  const staff = getCurrentStaff();
   const updated = await patchOrder(orderId, (o) => {
     o.packPhoto = url;
     o.packPhotoAt = new Date().toISOString();
-    o.packPhotoBy = who;
+    // The admin adds it for the store: the student sees the store's (or vendor's) name
+    o.packPhotoBy = staff?.role === 'admin' ? o.operatorName || 'Roomly' : staff?.name || 'Operator';
   });
   if (!updated) throw new Error('Order not found.');
   logActivity('order', `added a package photo to ${orderLabel(updated)}`, orderId);

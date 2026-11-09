@@ -212,7 +212,24 @@ export const AdminOrderActions: React.FC<{ o: OrderRecord }> = ({ o }) => {
         </a>
       )}
       {done ? (
-        <p className="text-[11px] text-slate-500">Sent to the gate.</p>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <p className="text-[11px] text-slate-500 mr-1">Sent to the gate.</p>
+          {/* A photo can still be added after delivery: it helps the student find the package at the gate */}
+          <button type="button" disabled={!!busy} className={plain} onClick={() => fileRef.current?.click()}>
+            {busy === 'photo' ? 'Uploading...' : o.packPhoto ? 'Change photo' : 'Add packed photo'}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (f) run('photo', () => addPackagePhoto(o.id, f));
+            }}
+          />
+        </div>
       ) : (
         <div className="flex flex-wrap gap-1.5">
           <a href={wa} target="_blank" rel="noopener noreferrer" className={primary}>
