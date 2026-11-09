@@ -116,14 +116,20 @@ export const GuestHero: React.FC<{
       </p>
 
       {/* The four section cards sit under this header (HomeQuickCards), the same for new and returning students */}
-      <button
-        type="button"
-        onClick={onStart}
-        className="mt-4 h-11 px-5 rounded-xl bg-[#0e9f55] hover:bg-[#0b8044] text-white text-sm font-bold cursor-pointer active:scale-[0.98] transition-transform"
-      >
-        Start ordering
-      </button>
-      <p className="mt-2 text-[12px] text-slate-400 dark:text-white/50">No sign-up needed. Just pick what you need and check out.</p>
+      {/* The button, with a faded note on the same line (plain text, not a link) */}
+      <div className="mt-4 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onStart}
+          className="h-11 px-5 rounded-xl bg-[#0e9f55] hover:bg-[#0b8044] text-white text-sm font-bold cursor-pointer active:scale-[0.98] transition-transform shrink-0"
+        >
+          Start ordering
+        </button>
+        <span className="text-[12px] font-medium text-slate-400 dark:text-slate-500 select-none">No account needed</span>
+      </div>
+      <span className="mt-2.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-900 text-[11px] font-bold text-[#0b8044] dark:text-emerald-300">
+        <span aria-hidden>✓</span> Just pick, pay, and track your orders
+      </span>
     </section>
   );
 };
