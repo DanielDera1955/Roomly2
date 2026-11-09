@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { RotateCcw, ChevronDown } from 'lucide-react';
 import { getNextBatch, getOutsideChoices } from '../api.js';
-import { dayWord, timeLabelFull, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, openDateText } from '../config';
+import { dayWord, timeLabelFull, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, openDateText, BEHIND_EVERY_ORDER } from '../config';
 import type { OrderRecord } from '../types';
 
 export type QuickTarget = 'room' | 'food' | 'store' | 'hub';
@@ -114,6 +114,19 @@ export const HomeQuickCards: React.FC<{
           </button>
           );
         })}
+      </div>
+
+      {/* Behind every order: the real people who make the promise happen */}
+      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 px-3 pt-2.5 pb-3">
+        <p className="text-center text-[10px] font-black uppercase tracking-[0.18em] text-[#0e9f55]">Behind every order</p>
+        <div className="mt-2 grid grid-cols-4 divide-x divide-slate-100 dark:divide-slate-800">
+          {BEHIND_EVERY_ORDER.map((x) => (
+            <div key={x.label} className="px-1 text-center">
+              <p className="text-lg font-black leading-none text-slate-900 dark:text-white tabular-nums">{x.count}</p>
+              <p className="mt-1 text-[10px] leading-tight font-medium text-slate-500 dark:text-slate-400">{x.label}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

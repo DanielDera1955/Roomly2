@@ -128,6 +128,17 @@ export const PRICING = {
   outsideBigFrom: 10000,
 };
 
+/**
+ * "Behind every order" on the home page. Count only partners who are active right now.
+ * Change a number here when you add or lose a store, vendor, runner or keke rider.
+ */
+export const BEHIND_EVERY_ORDER: { count: number; label: string }[] = [
+  { count: 5, label: 'Oye stores' },
+  { count: 2, label: 'Food vendors' },
+  { count: 4, label: 'Student runners' },
+  { count: 5, label: 'Keke riders' },
+];
+
 /** Outside delivery to the school gate: ₦800 normal price */
 export const OUTSIDE_DELIVERY_FEE = 800;
 /** Launch price for outside delivery, until the end of 30 November 2026. After that it goes back to ₦800 by itself. */
