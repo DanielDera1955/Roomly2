@@ -26,6 +26,8 @@ interface DeliveryPromiseBannerProps {
  */
 export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mode, tab, storeOpensAtMs = 0 }) => {
   const [, setTick] = useState(0);
+  // Compact by default: the headline only; the details open on tap
+  const [more, setMore] = useState(false);
 
   useEffect(() => {
     const refresh = () => setTick((n) => n + 1);
@@ -111,7 +113,7 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
   }
 
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 via-teal-700 to-emerald-800 text-white p-4 shadow-md shadow-emerald-950/10">
+    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 via-teal-700 to-emerald-800 text-white px-3.5 py-3 shadow-md shadow-emerald-950/10">
       <div className="absolute -right-4 -bottom-4 w-28 h-28 bg-white/10 rounded-full blur-xl pointer-events-none" />
       <div className="relative z-10 space-y-1">
         <div className="flex items-center justify-between gap-2">
@@ -121,12 +123,18 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
           </p>
           <span className="shrink-0 px-2 py-0.5 rounded-full bg-white/15 text-[10px] font-bold text-white whitespace-nowrap">{badge}</span>
         </div>
-        <h2 className="text-lg font-extrabold tracking-tight leading-snug">{headline}</h2>
-        {lines.map((l) => (
-          <p key={l} className="text-xs text-emerald-100/90">
-            {l}
-          </p>
-        ))}
+        <h2 className="text-[15px] font-extrabold tracking-tight leading-snug">{headline}</h2>
+        {lines.length > 0 && (
+          <button type="button" onClick={() => setMore((v) => !v)} className="text-[11px] font-bold text-emerald-200 cursor-pointer">
+            {more ? 'Less' : 'Details ›'}
+          </button>
+        )}
+        {more &&
+          lines.map((l) => (
+            <p key={l} className="text-xs text-emerald-100/90">
+              {l}
+            </p>
+          ))}
       </div>
     </div>
   );

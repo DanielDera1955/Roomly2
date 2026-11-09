@@ -75,8 +75,8 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
     : afternoon
     ? 'linear-gradient(180deg,#0ea5e9 0%,#38bdf8 55%,#7dd3fc 100%)'
     : 'linear-gradient(180deg,#1e1b4b 0%,#312e81 55%,#0e7490 100%)';
-  // Remembered students get a plain card: a greeting, no time-of-day sky (the sky stays for new visitors)
-  const plain = !isGuest;
+  // Everyone gets the time-of-day sky (sunrise, blue sky, moon and stars)
+  const plain = false;
   const ink = plain ? 'text-slate-900 dark:text-white' : morning ? 'text-orange-950' : 'text-white';
   // Colour touches that follow the sky: the name, the faded welcome line, the delivery chip and the button
   const nameColor = plain ? 'text-[#0e9f55]' : morning ? 'text-orange-700' : afternoon ? 'text-yellow-200' : 'text-amber-200';
@@ -151,7 +151,7 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
 
   return (
     <div
-      className={`relative overflow-hidden rounded-3xl p-4 ${plain ? 'bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm' : 'min-h-[176px] shadow-md'} ${ink}`}
+      className={`relative overflow-hidden rounded-3xl p-4 ${plain ? 'bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm' : `${isGuest ? 'min-h-[176px]' : 'min-h-[140px]'} shadow-md`} ${ink}`}
       style={plain ? undefined : { background: sky }}
     >
       <style>{`
@@ -325,12 +325,13 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
           /* 4. greeting: two lines at the top (clear of the sky), then the live line and My orders in one row */
           <div className="mt-1">
             <div className={plain ? '' : 'pr-[96px]'}>
-              <h1 className={`${isGuest ? 'text-[24px]' : 'text-[26px]'} font-extrabold tracking-tight leading-tight`}>
+              <h1 className={`${isGuest ? 'text-[24px]' : 'text-[23px]'} font-extrabold tracking-tight leading-tight`}>
                 {isGuest ? (
                   'Welcome to Roomly Caritas'
                 ) : (
                   <>
-                    Hi{name ? ', ' : ''}
+                    {dayPart}
+                    {name ? ', ' : ''}
                     {name && <span className={nameColor}>{name}</span>}
                   </>
                 )}
@@ -338,14 +339,15 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
               {!isGuest && (
                 <p className={`text-[14px] font-medium leading-snug mt-0.5 ${softText}`}>{isNew ? 'Welcome to Roomly.' : 'Welcome back to Roomly.'}</p>
               )}
-              {(caritasLine || isGuest) && (
+              {/* Signed-in students: just the greeting, no extra lines */}
+              {isGuest && (
                 <p className="text-[13px] opacity-90 leading-snug mt-1.5">
                   {caritasLine || 'Food and everyday items delivered to your room or the school gate.'}
                 </p>
               )}
             </div>
             <div className={`${plain ? 'mt-3' : 'mt-5 mb-2'} flex items-center justify-between gap-3`}>
-              {live.text ? (
+              {isGuest && live.text ? (
                 <span className={`min-w-0 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-[12px] font-bold leading-snug backdrop-blur-sm ${chipBg}`}>
                   <span className={`w-[7px] h-[7px] shrink-0 rounded-full ${live.open ? 'bg-emerald-400 rb-twinkle' : 'bg-amber-300'}`} />
                   <span className="min-w-0">{live.text}</span>
