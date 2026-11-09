@@ -235,7 +235,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const unconfirmed = Boolean((chosen as any)?.unconfirmed);
   const selectedBatch = chosen?.batch;
   const payBy = chosen ? chosen.start : null;
-  const payByTime = payBy ? payBy.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+  // "8:50pm": same style as every other time in the app
+  const payByTime = payBy ? timeLabelFull(payBy.getHours() * 60 + payBy.getMinutes()) : '';
   // Outside orders for a later day: say which day the payment time is on
   const payByText = payBy && cart !== 'inside' && selectedBatch && dayWord(selectedBatch.date) !== 'today' ? `${payByTime} ${dayWord(selectedBatch.date)}` : payByTime;
   const pauseNote = cart === 'inside' ? insideNext?.note : outside?.note;
@@ -1127,21 +1128,23 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                   {cart === 'inside' ? (
                     <div>
                       <span className="text-xs font-extrabold text-slate-900 dark:text-white">
-                        {selectedBatch.dayLabel}, {selectedBatch.window}
+                        {selectedBatch.dayLabel === 'Today' ? "Tonight's batch" : `${selectedBatch.dayLabel}'s batch`}
                       </span>
                       <span className="block text-[11px] text-slate-600 dark:text-slate-300 leading-snug">
                         {unconfirmed
-                          ? `No runner has confirmed this batch yet. Once one does, your order reaches your room by ${byMaxText} max.`
-                          : (chosen as any).early
-                          ? `The ${(chosen as any).early.window} batch has started. If your runner can still make it, you'll get it before ${clockOf((chosen as any).early.endMs)}. If not, it comes in the ${chosen.startText} batch, by ${byMaxText} max.`
-                          : `Your order is in the ${timeLabel(selectedBatch.startMin)} evening batch${selectedBatch.dayLabel === 'Today' ? '' : ` (${selectedBatch.dayLabel.toLowerCase()})`} and reaches your room before ${byMaxText}. Orders close at 8:50pm.`}
+                          ? `No runner has confirmed this batch yet. Once one does, it's in your room before ${byMaxText}.`
+                          : `Pay by ${payByText} · In your room before ${byMaxText}`}
                       </span>
                     </div>
                   ) : (
                     <div>
-                      <span className="text-xs font-extrabold text-slate-900 dark:text-white">This order is for {outsideDate}</span>
-                      <span className="block text-[11px] text-slate-500 dark:text-slate-400">
-                        At the school gate {outsideDay}, before {gateTimeOf(selectedBatch.id)}.
+                      <span className="text-xs font-extrabold text-slate-900 dark:text-white">
+                        {selectedBatch.name}
+                        {outsideDay && outsideDay !== 'today' ? `, ${outsideDate}` : ''}
+                      </span>
+                      <span className="block text-[11px] text-slate-600 dark:text-slate-300 leading-snug">
+                        Pay by {payByText} · At the gate before {gateTimeOf(selectedBatch.id)}
+                        {outsideDay && outsideDay !== 'today' ? ` ${outsideDay}` : ''}
                       </span>
                     </div>
                   )}
@@ -1149,14 +1152,6 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                     ₦{deliveryFee.toLocaleString()}
                   </span>
                 </div>
-                <p className="mt-2 text-[11px] font-bold text-amber-700 dark:text-amber-300">
-                  {cart !== 'inside'
-                    ? `Pay before ${payByText} to keep this order.`
-                    : `Pay before ${payByText} to join the ${selectedBatch.window} batch.`}
-                </p>
-                <p className="text-[10px] text-slate-400 mt-0.5">
-                  {cart !== 'inside' ? outsideBannerFor(cart) : 'Every order joins the next batch.'}
-                </p>
               </div>
             ) : (
               <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200">
@@ -1216,19 +1211,11 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               </p>
             ) : (
               <p className="text-xs text-slate-600 dark:text-slate-300">
-                Pay first by bank transfer. After you place the order you'll see {collectsAsRoomly(cart) ? "Roomly's" : cart === 'inside' ? "the runner's" : "the operator's"} account. Transfer
-                {payByText ? ` before ${payByText}` : ''}, then tap <strong>"I have made payment"</strong>.
+                After you place the order, you'll see {collectsAsRoomly(cart) ? "Roomly's" : cart === 'inside' ? "the runner's" : "the vendor's"} account. Transfer and tap{' '}
+                <strong>"I have made payment"</strong>.
               </p>
             )}
           </div>
-
-          {/* Small order: nudge the student to fill the cart with their roommates' items before paying delivery */}
-          {!isExpress && itemTotal > 0 && itemTotal < 1500 && (
-            <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 text-xs text-emerald-900 dark:text-emerald-200 leading-snug">
-              <strong>Ordering just {items.length === 1 ? 'one item' : 'a few items'}?</strong> Ask your {cart === 'inside' ? 'roommates' : 'friends'} what they need.
-              One cart, one ₦{deliveryFee.toLocaleString()} delivery for everyone.
-            </div>
-          )}
 
           {/* Price Breakdown */}
           <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
@@ -1244,10 +1231,14 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             </div>
             {/* Delivery is per order, not per item: show what it comes to when roommates share one cart */}
             {!isExpress && deliveryFee > 0 && (
-              <p className="text-[11px] text-[#0b8044] dark:text-emerald-400 leading-snug -mt-1">
-                ₦{deliveryFee.toLocaleString()} for the whole order. With {cart === 'inside' ? 'roommates' : 'friends'}: 2 of you ₦
-                {Math.ceil(deliveryFee / 2).toLocaleString()} each · 4 of you ₦{Math.ceil(deliveryFee / 4).toLocaleString()} each
-              </p>
+              <div className="-mt-1 space-y-0.5 text-[11px] leading-snug">
+                <p className="text-[#0b8044] dark:text-emerald-400">
+                  Share it: 2 of you ₦{Math.ceil(deliveryFee / 2).toLocaleString()} each · 4 of you ₦{Math.ceil(deliveryFee / 4).toLocaleString()} each
+                </p>
+                <p className="text-slate-500 dark:text-slate-400">
+                  Ordering alone? Add your {cart === 'inside' ? "roommates'" : "friends'"} items, one delivery covers everyone.
+                </p>
+              </div>
             )}
             <div className="flex justify-between text-sm font-extrabold text-slate-900 dark:text-white pt-2 border-t border-slate-200 dark:border-slate-800">
               <span>Total to Pay</span>
@@ -1306,25 +1297,17 @@ export const CartSheet: React.FC<CartSheetProps> = ({
           )}
 
           {/* MANDATORY WARNING BEFORE FINAL CHECKOUT */}
-          <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 space-y-2.5">
-            <div className="flex items-start gap-2 text-amber-900 dark:text-amber-200">
-              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-              <div className="text-xs">
-                <strong className="block font-bold">Please Recheck Your Order Carefully</strong>
-                <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-0.5 leading-snug">
-                  Because campus runners are dispatched immediately to prepare and deliver your items to your room, <strong>orders cannot be cancelled</strong> once placed.
-                </p>
-              </div>
-            </div>
-
-            <label className="flex items-center gap-2.5 pt-1 text-xs text-amber-950 dark:text-amber-200 font-semibold cursor-pointer select-none">
+          <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60">
+            <label className="flex items-start gap-2.5 text-xs text-amber-950 dark:text-amber-200 font-semibold cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={acknowledgedNoCancel}
                 onChange={(e) => setAcknowledgedNoCancel(e.target.checked)}
                 className="w-4 h-4 rounded text-[#0e9f55] accent-[#0e9f55] cursor-pointer"
               />
-              <span>I confirm my room number & items (No cancellations after dispatch)</span>
+              <span>
+                I've checked my {cart === 'inside' ? 'room and ' : ''}items. Orders can't be cancelled once placed.
+              </span>
             </label>
           </div>
 
