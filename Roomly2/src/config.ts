@@ -609,14 +609,14 @@ export const CATEGORY_SETUP: Record<'inside' | 'store' | 'food', CategorySetup[]
     { name: 'Phone & Gadgets', emoji: '🔌', subs: ['Chargers & Cords', 'Power', 'Audio', 'Phone Accessories'] },
   ],
   food: [
+    // Soft Drinks first (right after All): drinks go with every meal
+    { name: 'Soft Drinks', emoji: '🥤', subs: [] },
     { name: 'Rice Meals', emoji: '🍚', subs: [] },
     { name: 'Swallow & Soup', emoji: '🥣', subs: [] },
     { name: 'Beans, Yam & Plantain', emoji: '🍠', subs: [] },
     { name: 'Pasta & Noodles', emoji: '🍝', subs: [] },
     { name: 'Local Specials', emoji: '🫔', subs: [] },
     { name: 'Small Chops & Snacks', emoji: '🌯', subs: [] },
-    // One drinks category for the food store (drinks that go with a meal); not shared with the other stores' Drinks
-    { name: 'Soft Drinks', emoji: '🥤', subs: [] },
   ],
 };
 const plainCats = (list: CategorySetup[]) => list.map(({ name, emoji }) => ({ name, emoji }));
