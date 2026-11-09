@@ -71,7 +71,7 @@ export const HomeQuickCards: React.FC<{
             key={id}
             type="button"
             onClick={() => onOpen(id)}
-            className={`p-3 rounded-2xl bg-white dark:bg-slate-900 border text-left cursor-pointer active:scale-[0.98] transition-transform ${
+            className={`h-full flex flex-col justify-start items-stretch p-3 rounded-2xl bg-white dark:bg-slate-900 border text-left cursor-pointer active:scale-[0.98] transition-transform ${
               open && id !== 'hub' ? 'border-[#0e9f55]/60' : 'border-slate-200/80 dark:border-slate-800'
             }`}
           >
