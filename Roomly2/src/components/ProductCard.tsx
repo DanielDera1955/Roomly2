@@ -105,11 +105,16 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       {/* Price & Action row */}
       <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-1">
         <div>
-          <span className="font-extrabold text-sm text-slate-900 dark:text-white font-mono tabular-nums">
-            ₦{product.price.toLocaleString()}
-          </span>
-          {product.isFood && (
-            <span className="block text-[10px] text-slate-400 leading-none">base</span>
+          {/* Dishes with extras start at this price: "from" tells students extras cost more */}
+          {product.isFood && ((product as any).extras?.length || (product as any).choices?.length) ? (
+            <span className="font-extrabold text-sm text-slate-900 dark:text-white tabular-nums">
+              <span className="text-[10px] font-semibold text-slate-400 mr-0.5">from</span>
+              <span className="font-mono">₦{product.price.toLocaleString()}</span>
+            </span>
+          ) : (
+            <span className="font-extrabold text-sm text-slate-900 dark:text-white font-mono tabular-nums">
+              ₦{product.price.toLocaleString()}
+            </span>
           )}
         </div>
 

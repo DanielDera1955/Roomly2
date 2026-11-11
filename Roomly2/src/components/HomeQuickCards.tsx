@@ -76,7 +76,9 @@ function statusOf(id: QuickTarget, open: boolean, now: Date, storeOpensAtMs: num
 export const HomeQuickCards: React.FC<{
   onOpen: (t: QuickTarget) => void;
   storeOpensAtMs?: number;
-}> = ({ onOpen, storeOpensAtMs = 0 }) => {
+  /** New visitors see the trust strip under the cards; returning students see it at the bottom of the page */
+  showBehind?: boolean;
+}> = ({ onOpen, storeOpensAtMs = 0, showBehind = true }) => {
   const [, setTick] = useState(0);
   useEffect(() => {
     const h = () => setTick((n) => n + 1);
@@ -138,23 +140,27 @@ export const HomeQuickCards: React.FC<{
         })}
       </div>
 
-      {/* Behind every order: the real people who make the promise happen */}
-      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 px-2 py-2.5">
-        <p className="text-center text-[9px] font-black uppercase tracking-[0.2em] text-[#0e9f55]">Behind every order</p>
-        <div className="mt-1.5 grid grid-cols-4 divide-x divide-slate-100 dark:divide-slate-800">
-          {BEHIND_EVERY_ORDER.map((x) => (
-            <div key={x.label} className="min-w-0 px-0.5 text-center">
-              <p className="text-[15px] font-black leading-none text-slate-900 dark:text-white tabular-nums">{x.count}</p>
-              <p className="mt-1 text-[9px] leading-none font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap overflow-hidden text-ellipsis">
-                {x.label}
-              </p>
-            </div>
-          ))}
-        </div>
-      </div>
+      {showBehind && <BehindEveryOrder />}
     </div>
   );
 };
+
+/** Behind every order: the real people who make the promise happen */
+export const BehindEveryOrder: React.FC = () => (
+  <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 px-2 py-2.5">
+    <p className="text-center text-[9px] font-black uppercase tracking-[0.2em] text-[#0e9f55]">Behind every order</p>
+    <div className="mt-1.5 grid grid-cols-4 divide-x divide-slate-100 dark:divide-slate-800">
+      {BEHIND_EVERY_ORDER.map((x) => (
+        <div key={x.label} className="min-w-0 px-0.5 text-center">
+          <p className="text-[15px] font-black leading-none text-slate-900 dark:text-white tabular-nums">{x.count}</p>
+          <p className="mt-1 text-[9px] leading-none font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap overflow-hidden text-ellipsis">
+            {x.label}
+          </p>
+        </div>
+      ))}
+    </div>
+  </div>
+);
 
 /**
  * "My last order: Order again", folded by default (near the Featured row). Open: the last paid order's items

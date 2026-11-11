@@ -43,7 +43,7 @@ import { BecomeRunner } from './components/BecomeRunner';
 import { GuestHero } from './components/GuestHero';
 import { FeedbackBox } from './components/FeedbackBox';
 import { ProfileSettings } from './components/ProfileSettings';
-import { HomeQuickCards, QuickTarget, LastOrderStrip } from './components/HomeQuickCards';
+import { HomeQuickCards, QuickTarget, LastOrderStrip, BehindEveryOrder } from './components/HomeQuickCards';
 import { subscribeHubSettings, outsideStoreOpensAt } from './hub.js';
 import { getLinkTarget } from './links.js';
 import { ProductCard } from './components/ProductCard';
@@ -1268,6 +1268,7 @@ export default function App() {
           {/* Four quick cards for everyone */}
           <HomeQuickCards
             storeOpensAtMs={storeLocked ? storeOpensMs : 0}
+            showBehind={!signedInCustomer}
             onOpen={(t: QuickTarget) => {
               setSearchQuery('');
               setSelectedFilter('All');
@@ -1284,21 +1285,6 @@ export default function App() {
               window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
             }}
           />
-
-          {/* How Roomly works: folded guide, until the student's 3rd completed order */}
-          {showHowItWorks && <HowRoomlyWorks
-            storeOpensMs={storeOpensMs}
-            onStart={() => {
-              setSourceMode('inside');
-              setSelectedTab('store');
-              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
-            }}
-            onHub={() => {
-              setSourceMode('inside');
-              setSelectedTab('hub');
-              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
-            }}
-          />}
 
           {/* No sign-in box on the home screen: new students give their details once, at checkout.
               Returning students on a new phone use "Sign in" in the header, which opens this popup. */}
@@ -1513,6 +1499,23 @@ export default function App() {
           )}
           </CategoryNav>
 
+
+          {/* Lower on the page so the menu comes first: trust strip (returning students) and the how-to + runner link */}
+          {signedInCustomer && <BehindEveryOrder />}
+          {/* How Roomly works: folded guide, until the student's 3rd completed order */}
+          {showHowItWorks && <HowRoomlyWorks
+            storeOpensMs={storeOpensMs}
+            onStart={() => {
+              setSourceMode('inside');
+              setSelectedTab('store');
+              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+            }}
+            onHub={() => {
+              setSourceMode('inside');
+              setSelectedTab('hub');
+              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+            }}
+          />}
 
           {/* Feedback: a short form that lands in Admin > Feedback */}
           <button

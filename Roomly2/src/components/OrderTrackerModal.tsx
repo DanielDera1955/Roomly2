@@ -620,7 +620,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                         <strong className="block mb-1">
                           Pay before{' '}
                           {new Date(currentOrder.paymentDeadline).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} to
-                          join your batch.
+                          join the next batch.
                         </strong>
                       )}
                       Pay with bank transfer, card or USSD. Your payment is confirmed automatically, so there's nothing else to tap.
@@ -663,7 +663,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                         <strong className="block mb-1">
                           Pay before{' '}
                           {new Date(currentOrder.paymentDeadline).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} to
-                          join your batch.
+                          join the next batch.
                         </strong>
                       )}
                       Orders are attended to once payment is confirmed. Please transfer{' '}
@@ -671,9 +671,9 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                     </p>
                     {collectsAsRoomly(currentOrder.cart) && payAcct && (
                       <p className="text-[11px] text-amber-900 dark:text-amber-200 leading-snug">
-                        <strong>Roomly's official payment account.</strong> This account is managed by Roomly's operator, {payAcct.accountName}. Once your
-                        payment is confirmed, your order is sent straight to the {isOutside ? 'vendor' : 'runner'} and joins this batch's countdown. Never pay a{' '}
-                        {isOutside ? 'vendor' : 'runner'} directly. Roomly only accepts payment through this account.
+                        <strong>Roomly's official payment account.</strong> Pay into Roomly's {payAcct.bankName || ''} business account, managed by Roomly's
+                        operator (account name: {payAcct.accountName}). Once your payment is confirmed, your order goes straight to the right{' '}
+                        {isOutside ? 'vendor for your items' : 'runner'} and joins this batch's countdown.
                       </p>
                     )}
                     {payAcct ? (
