@@ -8,8 +8,10 @@ import {
   getProducts,
   getCategories,
   getCustomerByPhone,
+  ensureCustomerProfile,
   subscribeAnnouncement,
   createOrder,
+  DEMO,
   getOrderById,
   getMyOrders,
   subscribeOrder,
@@ -17,11 +19,13 @@ import {
   getStoreStatus,
   setStoreOverride,
   isValidNigerianPhone,
+  isValidPin,
   createProductRequest,
   subscribeProductRequest,
+  getOutsideChoices,
 } from './api.js';
-import { SCHOOL_NAME, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
-import { MessageCircle } from 'lucide-react';
+import { onFoodMenu, FOOD_BATCH_LABEL, dayWord, timeLabelFull, openDateText, INSIDE_LAUNCH_MS, caritasLineFor, liveStatusFor, SCHOOL_NAME, ShopGroup, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
+import { MessageCircle, Info } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
 import { notify } from './notify';
@@ -33,6 +37,15 @@ import { PhoneLookupBar } from './components/PhoneLookupBar';
 import { SearchBar } from './components/SearchBar';
 import { DeliveryPromiseBanner } from './components/DeliveryPromiseBanner';
 import { CategoryNav, ShopTab } from './components/CategoryNav';
+import { HostelHub } from './components/HostelHub';
+import { HowRoomlyWorks } from './components/HowRoomlyWorks';
+import { BecomeRunner } from './components/BecomeRunner';
+import { GuestHero } from './components/GuestHero';
+import { FeedbackBox } from './components/FeedbackBox';
+import { ProfileSettings } from './components/ProfileSettings';
+import { HomeQuickCards, QuickTarget, LastOrderStrip, BehindEveryOrder } from './components/HomeQuickCards';
+import { subscribeHubSettings, outsideStoreOpensAt } from './hub.js';
+import { getLinkTarget } from './links.js';
 import { ProductCard } from './components/ProductCard';
 import { FoodCustomizerSheet } from './components/FoodCustomizerSheet';
 import { ProductSheet, OrderAgainRow, FeaturedRow, PairingsBar } from './components/ShopExtras';
@@ -61,6 +74,8 @@ export default function App() {
   const [currentPortal, setCurrentPortal] = useState<PortalMode>(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash.toLowerCase();
+      // The runner sign-up page (yourlink/#join) is a customer page, even on a staff phone
+      if (hash === '#join') return 'customer';
       if (hash.includes('admin')) return 'admin';
       if (hash.includes('operator')) return 'operator';
       if (hash.includes('runner')) return 'runner';
@@ -76,6 +91,8 @@ export default function App() {
     }
     return 'customer';
   });
+  // "Become a Roomly Runner" page: yourlink/#join
+  const [joinOpen, setJoinOpen] = useState(() => typeof window !== 'undefined' && window.location.hash.toLowerCase() === '#join');
 
   // Store status (6am - 11pm)
   const [storeStatus, setStoreStatus] = useState(() => getStoreStatus());
@@ -83,30 +100,83 @@ export default function App() {
   // Categories & Products from API
   const [categories, setCategories] = useState<CategoryDefinition[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  // Outside store items open on launch day (Admin > Hub & Games can change the date or open it now)
+  const [hubSettings, setHubSettings] = useState<any>({});
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  useEffect(() => subscribeHubSettings(setHubSettings), []);
+  // Demo mode (?demo=1) shows outside store items as already open
+  const storeOpensMs = DEMO ? 0 : outsideStoreOpensAt(hubSettings);
+  const [clockMs, setClockMs] = useState(Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setClockMs(Date.now()), 60000);
+    return () => window.clearInterval(id);
+  }, []);
+  const storeLocked = storeOpensMs > clockMs;
+  // Food shows one menu at a time: the batch now taking orders (lunch until 12:30pm, then dinner)
+  const [batchTick, setBatchTick] = useState(0);
+  useEffect(() => {
+    const h = () => setBatchTick((n) => n + 1);
+    window.addEventListener('roomly-batches', h);
+    return () => window.removeEventListener('roomly-batches', h);
+  }, []);
+  const foodBatchNow = useMemo(() => {
+    const c = getOutsideChoices('food', new Date(clockMs));
+    return ((c.batch || c.current) && (c.batch || c.current).id) || 'evening';
+  }, [clockMs, batchTick]);
+
+  // Opening the app on Outside school before the store opens: show Food first
+  useEffect(() => {
+    if (sourceMode === 'outside' && storeLocked && selectedTab === 'store') setSelectedTab('food');
+    // only when the open date is first known
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeLocked]);
   // The app opens on the side and category of the student's last placed order (saved on this phone).
-  // Nothing saved, or unreadable storage: Inside school > Store Items.
+  // Nothing saved, or unreadable storage: Inside school > Store Items
+  // (Outside > Cooked Food before inside delivery launches, so first visitors land where they can order).
   const lastShop = useMemo(() => {
+    // A post link (e.g. #outside-food or #hub-buysell) opens that section
+    const link = getLinkTarget();
+    if (link) return { side: link.side, tab: link.tab } as { side: 'inside' | 'outside'; tab: 'store' | 'food' | 'hub' };
+    // A WhatsApp link from Games (?game= or ?match=) opens Hostel Hub > Games
     try {
-      const v = JSON.parse(localStorage.getItem('roomly_last_shop') || '{}');
+      const q = new URLSearchParams(window.location.search);
+      if (q.get('game') || q.get('match')) {
+        localStorage.setItem('roomly_hub_section', 'games');
+        return { side: 'inside', tab: 'hub' } as { side: 'inside' | 'outside'; tab: 'store' | 'food' | 'hub' };
+      }
+    } catch {}
+    try {
+      const saved = localStorage.getItem('roomly_last_shop');
+      if (!saved && Date.now() < INSIDE_LAUNCH_MS) {
+        return { side: 'outside', tab: 'food' } as { side: 'inside' | 'outside'; tab: 'store' | 'food' | 'hub' };
+      }
+      const v = JSON.parse(saved || '{}');
       return {
         side: v.side === 'outside' ? 'outside' : 'inside',
         tab: v.tab === 'food' ? 'food' : 'store',
-      } as { side: 'inside' | 'outside'; tab: 'store' | 'food' };
+      } as { side: 'inside' | 'outside'; tab: 'store' | 'food' | 'hub' };
     } catch {
-      return { side: 'inside', tab: 'store' } as { side: 'inside' | 'outside'; tab: 'store' | 'food' };
+      return { side: 'inside', tab: 'store' } as { side: 'inside' | 'outside'; tab: 'store' | 'food' | 'hub' };
     }
   }, []);
   // Two categories per side: 'store' (Store Items) and 'food' (Cooked Food), plus the Request form
   const [selectedTab, setSelectedTab] = useState<ShopTab>(lastShop.tab);
   const [selectedFilter, setSelectedFilter] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
+  // Header "Sign in" popup for guests (returning students on a new phone)
+  const [signInOpen, setSignInOpen] = useState(false);
   const [sourceMode, setSourceMode] = useState<'inside' | 'outside'>(lastShop.side);
   const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
   // The last section browsed (store or food), so the request form and delivery card know where the student is
-  const [lastGroup, setLastGroup] = useState<'store' | 'food'>(lastShop.tab);
+  const [lastGroup, setLastGroup] = useState<'store' | 'food'>(lastShop.tab === 'food' ? 'food' : 'store');
   useEffect(() => {
-    if (selectedTab !== 'Request') setLastGroup(selectedTab);
+    if (selectedTab !== 'Request' && selectedTab !== 'hub') setLastGroup(selectedTab);
   }, [selectedTab]);
+  // Hostel Hub is inside school only
+  useEffect(() => {
+    if (sourceMode === 'outside' && selectedTab === 'hub') setSelectedTab('store');
+  }, [sourceMode, selectedTab]);
 
   // Customer & Phone Lookup
   // Remember the customer on this device until they press Sign out
@@ -185,7 +255,9 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.toLowerCase();
-      if (hash.includes('admin')) setCurrentPortal('admin');
+      setJoinOpen(hash === '#join');
+      if (hash === '#join') setCurrentPortal('customer');
+      else if (hash.includes('admin')) setCurrentPortal('admin');
       else if (hash.includes('operator')) setCurrentPortal('operator');
       else if (hash.includes('runner')) setCurrentPortal('runner');
       else setCurrentPortal('customer');
@@ -229,7 +301,7 @@ export default function App() {
 
   // Save the login on this device once the PIN is confirmed
   useEffect(() => {
-    if (customer && !customer.wrongPin && /^\d{6}$/.test(pin) && phone) {
+    if (customer && !customer.wrongPin && isValidPin(pin) && phone) {
       try {
         localStorage.setItem('roomly_customer', JSON.stringify({ phone, pin, name: localName, intro: introPhone }));
       } catch (e) {
@@ -268,7 +340,7 @@ export default function App() {
   const handleOpenHistory = async () => {
     setIsTrackerOpen(false);
     setHistoryOpen(true);
-    if (!isValidNigerianPhone(phone) || !/^\d{6}$/.test(pin)) return;
+    if (!isValidNigerianPhone(phone) || !isValidPin(pin)) return;
     setHistoryLoading(true);
     setHistoryOrders(await getMyOrders(phone, pin));
     setHistoryLoading(false);
@@ -323,7 +395,7 @@ export default function App() {
 
   // ---------- Saved carts (on this phone): one for guests, one per signed-in number ----------
   const cartOwner =
-    customer && customer.name && !customer.wrongPin && isValidNigerianPhone(phone) && /^\d{6}$/.test(pin) ? `u_${customer.phone || phone}` : 'guest';
+    customer && customer.name && !customer.wrongPin && isValidNigerianPhone(phone) && isValidPin(pin) ? `u_${customer.phone || phone}` : 'guest';
   const [loadedOwner, setLoadedOwner] = useState('');
   const readCart = (owner: string): CartItem[] => {
     try {
@@ -414,6 +486,9 @@ export default function App() {
     return () => window.clearTimeout(t);
   }, [pairFor]);
 
+  // Sections that haven't started yet: items go in the cart with no message; the home notices and checkout say when it starts.
+  const startsAtFor = (kind: CartKind): number =>
+    kind === 'inside' ? (clockMs < INSIDE_LAUNCH_MS ? INSIDE_LAUNCH_MS : 0) : kind === 'store' ? (storeLocked ? storeOpensMs : 0) : 0;
   // Cart operations
   const handleAddSimpleProduct = (product: Product) => {
     addSimpleToCart(product);
@@ -522,13 +597,13 @@ export default function App() {
 
   const sideSource = (side: RequestSide) => (side === 'store' ? 'outside' : side === 'food' ? 'food' : 'school') as CartItem['source'];
 
-  const handleSubmitRequest = async (side: RequestSide, items: RequestItemInput[], note: string, addToCart: boolean) => {
+  const handleSubmitRequest = async (side: RequestSide, items: RequestItemInput[], note: string, addToCart: boolean, contactPhone = '') => {
     const id = await createProductRequest({
       side,
       items,
       note,
       category: selectedFilter !== 'All' ? selectedFilter : '',
-      phone,
+      phone: phone || contactPhone,
       name: customer?.name || '',
     });
     setRequestIds((prev) => [id, ...prev.filter((x) => x !== id)].slice(0, 20));
@@ -550,7 +625,8 @@ export default function App() {
           pendingQuote: true,
           requestId: id,
           requestIdx: i,
-        })),
+          requestAt: new Date().toISOString(),
+        })) as CartItem[],
       ]);
     }
   };
@@ -591,14 +667,27 @@ export default function App() {
       if (!r) return;
       const before = requestStatus.current[id];
       requestStatus.current[id] = r.status;
-      if (before === 'open' && r.status === 'quoted') {
+      // A reply that came while Roomly was closed: shown once when the student comes back
+      const fresh = before === 'open' || (before === undefined && replyUnseen(id, r));
+      if (fresh && r.status !== 'open') markReplySeen(id);
+      if (fresh && r.status === 'quoted') {
         const names = (r.quotes || []).filter((q: any) => q.available).map((q: any) => q.name);
-        const text = names.length
-          ? `${names.slice(0, 2).join(', ')}${names.length > 2 ? ' and more' : ''} priced and saved in your cart. You can check out now.`
-          : 'Sorry, your requested item is not available right now.';
+        const text = r.reply
+          ? String(r.reply)
+          : names.length
+            ? `${names.slice(0, 2).join(', ')}${names.length > 2 ? ' and more' : ''} priced and saved in your cart. You can check out now.`
+            : 'Sorry, your requested item is not available right now.';
         setPriceReady(text);
         playChime('chat');
         notify('Your price is ready', text, 'roomly-price-' + id);
+      }
+      // Already in the store: the request is closed and the student is pointed to the product
+      if (fresh && r.status === 'closed') {
+        const names = (r.items || []).map((q: any) => q.name).filter(Boolean);
+        const text = `${names.slice(0, 2).join(', ') || 'Your item'} is already in the store. Search for it to add it to your cart.`;
+        setPriceReady(text);
+        playChime('chat');
+        notify('Already in the store', text, 'roomly-price-' + id);
       }
     });
   }, [requests]);
@@ -611,6 +700,16 @@ export default function App() {
         .map((i) => {
           if (!i.pendingQuote || !i.requestId) return i;
           const r = requests[i.requestId];
+          // Closed because it's already in the store: the waiting item leaves the cart so checkout isn't blocked
+          if (r && r.status === 'closed') {
+            changed = true;
+            return null;
+          }
+          // Moved to another side (e.g. food to store): the waiting item follows it to that cart
+          if (r && r.status === 'open' && sideSource(r.side) !== i.source) {
+            changed = true;
+            return { ...i, source: sideSource(r.side) };
+          }
           if (!r || r.status !== 'quoted') return i;
           changed = true;
           const q = r.quotes?.[i.requestIdx ?? -1];
@@ -625,11 +724,11 @@ export default function App() {
   // Place Order flow
   const handlePlaceOrder = async (orderPayload: any) => {
     if (customer?.wrongPin) {
-      window.alert('This phone number is already registered. Enter the correct PIN at the top, or ask Roomly to reset it.');
+      window.alert('This phone number is already registered. Enter your PIN in the checkout form, or ask Roomly on WhatsApp to reset it.');
       return;
     }
-    if (!/^\d{6}$/.test(pin)) {
-      window.alert('Please enter a 6-digit PIN at the top of the page. It saves your details for next time.');
+    if (!isValidPin(pin)) {
+      window.alert('Please create your 4-digit PIN in the checkout form. It saves your details for next time.');
       return;
     }
     try {
@@ -723,20 +822,33 @@ export default function App() {
     return map;
   }, [cartItems]);
 
+  // Food dishes in the cart that the batch now cooking doesn't make (added before the lunch batch closed)
+  const offMenuFoodIds = useMemo(
+    () =>
+      cartItems
+        .filter((i) => cartOf(i) === 'food' && !i.pendingQuote)
+        .filter((i) => {
+          const p = products.find((x) => x.id === i.productId);
+          return p && p.source === 'food' && !onFoodMenu(p, foodBatchNow);
+        })
+        .map((i) => i.id),
+    [cartItems, products, foodBatchNow]
+  );
   // Products on the chosen side (inside or outside school)
   const sideProducts = useMemo(
     () =>
       products.filter(
         (p) =>
           p.isAvailable !== false && // out-of-stock items are hidden from students
-          (sourceMode === 'outside' ? isOutsideSource(p.source) : !isOutsideSource(p.source))
+          (sourceMode === 'outside' ? isOutsideSource(p.source) : !isOutsideSource(p.source)) &&
+          (p.source !== 'food' || onFoodMenu(p, foodBatchNow))
       ),
-    [products, sourceMode]
+    [products, sourceMode, foodBatchNow]
   );
 
   // Quick filters inside a category, taken from the products' own categories (Drinks, Toiletries...)
   const groupFilters = useMemo(() => {
-    if (selectedTab === 'Request') return [];
+    if (selectedTab === 'Request' || selectedTab === 'hub') return [];
     // Every category of this store always shows (even empty), in the store's standard order.
     // Products without a category, or with another store's category, show under All only.
     if (sourceMode === 'inside') {
@@ -761,9 +873,20 @@ export default function App() {
           (p.description && p.description.toLowerCase().includes(q))
       );
     }
-    if (selectedTab === 'Request') return [];
+    if (selectedTab === 'Request' || selectedTab === 'hub') return [];
     let list = sideProducts.filter((p) => shopGroupOf(p) === selectedTab);
     if (selectedFilter !== 'All') list = list.filter((p) => p.category.toLowerCase() === selectedFilter.toLowerCase());
+    // Cooked food: Rice Meals, then Swallow & Soup, then the other dishes (menu order), drinks last.
+    // Within a category the order stays as it is.
+    if (selectedTab === 'food') {
+      const order = ['rice meals', 'swallow & soup', 'beans, yam & plantain', 'pasta & noodles', 'local specials', 'small chops & snacks'];
+      const rank = (p: Product) => {
+        if (!p.isFood) return 100; // drinks and other add-ons
+        const i = order.indexOf(String(p.category || '').toLowerCase());
+        return i < 0 ? 50 : i; // a dish in another category comes after the known ones
+      };
+      list = list.map((p, i) => ({ p, i })).sort((a, b) => rank(a.p) - rank(b.p) || a.i - b.i).map((x) => x.p);
+    }
     return list;
   }, [sideProducts, selectedTab, selectedFilter, searchQuery]);
 
@@ -811,13 +934,57 @@ export default function App() {
     (Boolean(customer?.name) || (introPhone !== '' && introPhone === phone)) &&
     !customer?.wrongPin &&
     isValidNigerianPhone(phone) &&
-    /^\d{6}$/.test(pin);
-  const firstName = String(customer?.name || localName || '').trim().split(/\s+/)[0] || '';
+    isValidPin(pin);
+  useEffect(() => {
+    if (signedInCustomer) setSignInOpen(false);
+  }, [signedInCustomer]);
+  // Greeting name: what they asked to be called, else the first word of their name
+  const firstName = String((customer as any)?.callName || '').trim() || String(customer?.name || localName || '').trim().split(/\s+/)[0] || '';
   const hasCompletedOrder =
     signedInCustomer &&
     ((customer?.deliveredOrdersCount || 0) > 0 || screenOrders.some((o) => o.status === 'Delivered' && o.paymentStatus !== 'unpaid'));
-  const hour = new Date().getHours();
-  const dayPart = hour >= 5 && hour < 12 ? 'Good morning' : hour >= 12 && hour < 17 ? 'Good afternoon' : 'Good evening';
+  // The chip next to the greeting: the food batch (the most ordered section), from the vendors actually cooking
+  const foodLive = useMemo(() => {
+    const now = new Date(clockMs);
+    const b = getOutsideChoices('food', now).batch;
+    if (!b) return { text: 'Food: back soon', open: false };
+    const name = b.id === 'midday' ? 'Lunch' : 'Dinner';
+    if (dayWord(b.date, now) === 'today') return { text: `${name}: order till ${timeLabelFull(b.startMin)}`, open: true };
+    return { text: `Food closed. Next: ${name.toLowerCase()} ${dayWord(b.date, now).replace(/^on /, '')}`, open: false };
+  }, [clockMs, batchTick]);
+  // The last paid order, for the "order again" strip
+  const lastPaidOrder = useMemo(
+    () => screenOrders.find((o) => o.paymentStatus !== 'unpaid' && o.status !== 'Cancelled' && (o.items || []).length > 0) || null,
+    [screenOrders]
+  );
+  // Order again: the last order's items go back into their own cart at today's prices (other carts are kept)
+  const handleReorderOrder = (o: OrderRecord) => {
+    const kind: CartKind = o.cart === 'food' ? 'food' : o.cart === 'store' ? 'store' : 'inside';
+    const fresh = (o.items || [])
+      .map((item: any) => {
+        const p = products.find((x) => x.id === item.productId);
+        if (!p || p.isAvailable === false) return null;
+        const unit = item.isFood ? item.unitPrice : p.price;
+        return { ...item, unitPrice: unit, totalPrice: unit * item.quantity, id: `${item.productId}-${Date.now()}-${Math.random()}` };
+      })
+      .filter(Boolean) as CartItem[];
+    if (!fresh.length) {
+      window.alert('The items from your last order are not available right now.');
+      return;
+    }
+    setCartItems((cur) => [...cur.filter((i) => cartOf(i) !== kind), ...fresh]);
+    setCartKind(kind);
+    setIsCartOpen(true);
+  };
+  // "How Roomly works" shows until a student has completed 3 orders
+  const completedCount = Math.max(
+    customer?.deliveredOrdersCount || 0,
+    screenOrders.filter((o) => o.status === 'Delivered' && o.paymentStatus !== 'unpaid').length
+  );
+  const showHowItWorks = !(signedInCustomer && completedCount >= 3);
+  // Midnight to noon is morning (the banner keeps a night sky until 5am)
+  const hour = new Date(clockMs).getHours();
+  const dayPart = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const heroGreeting = "Hi there, we've got you covered.";
 
   // Home announcement: one at a time, set by the admin. A student can dismiss it.
@@ -877,7 +1044,7 @@ export default function App() {
   }, [signedInCustomer, phone, pin]);
 
   // "Order again": their most-bought items on this side, from delivered orders
-  const featured = useMemo(() => sideProducts.filter((p) => p.featured).slice(0, 8), [sideProducts]);
+  const featured = useMemo(() => sideProducts.filter((p) => p.featured).slice(0, 10), [sideProducts]);
   const pairSource = pairFor ? products.find((p) => p.id === pairFor.id) : undefined;
   const pairItems = useMemo(() => {
     if (!pairSource) return [] as Product[];
@@ -900,11 +1067,30 @@ export default function App() {
       .slice(0, 6);
   }, [signedInCustomer, screenOrders, sideProducts]);
 
-  // Water add-on for the inside cart: an in-stock inside product named "water", a bag preferred
-  const waterProduct = useMemo(() => {
-    const list = products.filter((p) => p.isAvailable !== false && !isOutsideSource(p.source) && !p.isFood && /water/i.test(p.name));
-    return list.find((p) => /bag/i.test(p.name)) || list[0] || null;
-  }, [products]);
+  // Drink add-on: when the cart has bread, pastries, biscuits, Indomie/noodles or cooked food but no drink,
+  // the cart suggests up to 3 soft drinks from the same store (inside store, or the outside food vendor's menu).
+  // Water doesn't count as a drink here.
+  const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  const catText = (p?: Product) => (p ? `${p.category || ''} ${p.subcategory || ''}` : '');
+  const isSoftDrink = (p?: Product) => Boolean(p) && /soft drink|juice|malt|energy|drink/i.test(catText(p)) && !/water/i.test(`${p!.name} ${p!.subcategory || ''}`);
+  const wantsDrink = (p?: Product, isFoodItem?: boolean) =>
+    Boolean(isFoodItem) || /bread|pastr|bun|biscuit|snack|noodle|indomie/i.test(`${catText(p)} ${p?.name || ''}`);
+  const suggestedDrinks = useMemo(() => {
+    if (cartKind === 'store') return [];
+    const inCart = cartItems.filter((i) => cartOf(i) === cartKind);
+    const prods = inCart.map((i) => productById.get(i.productId));
+    const hasDrink = inCart.some((i, k) => isSoftDrink(prods[k]) || /coke|pepsi|fanta|sprite|malt|juice|7up|mirinda/i.test(i.name));
+    const wants = inCart.some((i, k) => !isSoftDrink(prods[k]) && wantsDrink(prods[k], i.isFood));
+    if (hasDrink || !wants) return [];
+    const src = cartKind === 'food' ? 'food' : 'school';
+    const soft = (p: Product) => /soft drink/i.test(catText(p));
+    const pool = products.filter((p) => p.isAvailable !== false && (p.source || 'school') === src && isSoftDrink(p));
+    // Soft drinks first, then featured, then cheapest
+    return pool
+      .sort((a, b) => Number(soft(b)) - Number(soft(a)) || Number(Boolean(b.featured)) - Number(Boolean(a.featured)) || a.price - b.price)
+      .slice(0, 3);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, cartItems, cartKind, productById]);
 
   // Tap a product: details and similar items
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
@@ -965,11 +1151,31 @@ export default function App() {
     );
   }
 
+  // RUNNER SIGN-UP PAGE (yourlink/#join)
+  if (joinOpen) {
+    return (
+      <BecomeRunner
+        onBack={() => {
+          window.location.hash = '';
+          setJoinOpen(false);
+          window.scrollTo(0, 0);
+        }}
+      />
+    );
+  }
+
   // RENDER PORTAL 3: CUSTOMER STOREFRONT
   return (
     <div className="min-h-screen bg-[#e8efeb] dark:bg-slate-950 flex justify-center selection:bg-[#0e9f55]/20">
-      <div className="w-full max-w-[480px] bg-[#f4f8f6] dark:bg-slate-900 min-h-screen flex flex-col relative shadow-2xl border-x border-slate-200/60 dark:border-slate-800/60 pb-24">
+      <div className="w-full max-w-[480px] bg-[#f4f8f6] dark:bg-slate-900 min-h-screen flex flex-col relative shadow-2xl border-x border-slate-200/60 dark:border-slate-800/60 pb-36">
         <AdminSwitcher current="customer" onSelect={handleSelectPortal} />
+        {DEMO && (
+          <div className="sticky top-0 z-[60] flex justify-center pointer-events-none">
+            <span className="mt-1 px-3 py-1 rounded-full bg-slate-900/85 dark:bg-white/90 text-white dark:text-slate-900 text-[11px] font-bold">
+              Demo: nothing is really ordered
+            </span>
+          </div>
+        )}
         {/* Header */}
         <Header
           currentPortal={currentPortal}
@@ -983,7 +1189,23 @@ export default function App() {
           activeOrderCount={activeOrderCount}
           signedIn={signedInCustomer}
           onSignOut={handleSignOut}
+          onSignIn={() => setSignInOpen(true)}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
+        {settingsOpen && signedInCustomer && (
+          <ProfileSettings
+            phone={phone}
+            callName={(customer as any)?.callName || ''}
+            fullName={customer?.name || localName || ''}
+            onClose={() => setSettingsOpen(false)}
+            onSaved={(next) => {
+              setPhone(next.phone);
+              setPin(next.pin);
+              // Reload the profile so the greeting and history follow the change
+              getCustomerByPhone(next.phone, next.pin).then((c: any) => c && setCustomer(c));
+            }}
+          />
+        )}
 
         {/* A requested price just came back */}
         {priceReady && (
@@ -1004,12 +1226,28 @@ export default function App() {
         )}
 
         {/* Main Storefront Body */}
-        <main className="p-4 space-y-4 flex-1">
+        <main className="px-3 py-4 space-y-4 flex-1">
 
           {/* Phone Number Input & Customer Recognition */}
           <div className="-mx-4 -mt-4 px-4 pt-5 pb-3 bg-gradient-to-b from-emerald-100/70 to-transparent dark:from-emerald-950/40">
-            {signedInCustomer ? (
+            {!signedInCustomer ? (
+              <GuestHero
+                dayPart={dayPart}
+                nowMs={clockMs}
+                storeOpensMs={storeOpensMs}
+                onStart={() => window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)}
+                onOpenSection={(side, tab) => {
+                  setSourceMode(side);
+                  setSelectedTab(tab);
+                  setSelectedFilter('All');
+                  window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+                }}
+              />
+            ) : (
               <HomeBanner
+                caritasLine={sourceMode === 'inside' && clockMs >= INSIDE_LAUNCH_MS ? caritasLineFor(new Date(clockMs)) : ''}
+                live={foodLive}
+                onStart={() => window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)}
                 dayPart={dayPart as 'Good morning' | 'Good afternoon' | 'Good evening'}
                 name={firstName}
                 isNew={!hasCompletedOrder}
@@ -1024,37 +1262,62 @@ export default function App() {
                 onAnnouncementAction={handleAnnouncementAction}
                 onDismissAnnouncement={handleDismissAnnouncement}
               />
-            ) : (
-              <p className="font-semibold text-[#0b8044] dark:text-[#0e9f55] leading-snug text-sm mb-1">{heroGreeting}</p>
-            )}
-            {!signedInCustomer && (
-              <>
-                <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-snug">
-                  Order Food, Provisions and Your Everyday Essentials
-                </h1>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  From inside or outside {SCHOOL_NAME}, delivered to your room or the school gate.
-                </p>
-              </>
             )}
           </div>
 
-          {/* Sign-in box: guests only. Signed-in students use the Orders and Account buttons in the header */}
-          {!signedInCustomer && (
-            <PhoneLookupBar
-              phone={phone}
-              onPhoneChange={setPhone}
-              pin={pin}
-              onPinChange={setPin}
-              customer={customer}
-              onOpenHistory={handleOpenHistory}
-              onSignOut={handleSignOut}
-              cartCount={cartItems.reduce((n, i) => n + i.quantity, 0)}
-              isNewNumber={customerLoaded && !customer}
-              name={localName}
-              onNameChange={setLocalName}
-              onContinue={handleContinueNew}
-            />
+          {/* Four quick cards for everyone */}
+          <HomeQuickCards
+            storeOpensAtMs={storeLocked ? storeOpensMs : 0}
+            showBehind={!signedInCustomer}
+            onOpen={(t: QuickTarget) => {
+              setSearchQuery('');
+              setSelectedFilter('All');
+              if (t === 'room') {
+                setSourceMode('inside');
+                setSelectedTab('store');
+              } else if (t === 'hub') {
+                setSourceMode('inside');
+                setSelectedTab('hub');
+              } else {
+                setSourceMode('outside');
+                setSelectedTab(t === 'store' && storeLocked ? 'food' : t);
+              }
+              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+            }}
+          />
+
+          {/* No sign-in box on the home screen: new students give their details once, at checkout.
+              Returning students on a new phone use "Sign in" in the header, which opens this popup. */}
+          {signInOpen && !signedInCustomer && (
+            <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 px-3 pt-20" onClick={() => setSignInOpen(false)}>
+              <div className="w-full max-w-[460px] space-y-2" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between px-1">
+                  <p className="text-sm font-bold text-white">Sign in</p>
+                  <button type="button" onClick={() => setSignInOpen(false)} className="text-xs font-bold text-white/80 cursor-pointer">
+                    Close
+                  </button>
+                </div>
+                <PhoneLookupBar
+                  phone={phone}
+                  onPhoneChange={setPhone}
+                  pin={pin}
+                  onPinChange={setPin}
+                  customer={customer}
+                  onOpenHistory={handleOpenHistory}
+                  onSignOut={handleSignOut}
+                  isNewNumber={customerLoaded && !customer}
+                  signInOnly
+                  onCreateAccount={async (newName: string) => {
+                    await ensureCustomerProfile(phone, pin, newName, '');
+                    const created = await getCustomerByPhone(phone, pin);
+                    if (!created || created.wrongPin || !created.name) throw new Error('Could not create your account. Check your connection and try again.');
+                    setLocalName(newName);
+                    setCustomer(created);
+                    setCustomerLoaded(true);
+                  }}
+                />
+              </div>
+            </div>
           )}
 
           {/* Inside school or outside school */}
@@ -1064,7 +1327,14 @@ export default function App() {
                 <button
                   key={m}
                   type="button"
-                  onClick={() => setSourceMode(m)}
+                  onClick={() => {
+                    setSourceMode(m);
+                    // Until outside store items open, Outside school opens on Food
+                    if (m === 'outside' && storeLocked) {
+                      setSelectedTab('food');
+                      setSelectedFilter('All');
+                    }
+                  }}
                   className={`py-2.5 rounded-xl text-sm font-bold cursor-pointer transition-all ${
                     sourceMode === m
                       ? 'bg-white dark:bg-slate-900 text-[#0e9f55] shadow-xs'
@@ -1078,10 +1348,21 @@ export default function App() {
           </div>
 
           {/* Delivery bar: changes with the toggle above */}
-          <DeliveryPromiseBanner mode={sourceMode} tab={lastGroup} />
+          <DeliveryPromiseBanner mode={sourceMode} tab={lastGroup} storeOpensAtMs={storeLocked ? storeOpensMs : 0} />
 
-          {/* Search Bar */}
-          <SearchBar query={searchQuery} onChange={setSearchQuery} />
+          {/* Before inside delivery launches: say when it starts (Hostel Hub works already) */}
+          {sourceMode === 'inside' && selectedTab !== 'hub' && clockMs < INSIDE_LAUNCH_MS && (
+            <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-xs text-amber-900 dark:text-amber-200">
+              <strong className="block">Delivery to your room starts {openDateText(INSIDE_LAUNCH_MS)}.</strong>
+              You can add items to your cart now and check out from that day. Prices are still being updated and may change before then. Outside food is open today, delivered to the school gate.
+            </div>
+          )}
+          {sourceMode === 'outside' && selectedTab === 'store' && storeLocked && (
+            <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-xs text-amber-900 dark:text-amber-200">
+              <strong className="block">Outside store delivery starts {openDateText(storeOpensMs)}.</strong>
+              You can add items to your cart now and check out from that day. Prices are still being updated and may change before then.
+            </div>
+          )}
 
           {!searchQuery && <InstallBanner variant="home" />}
 
@@ -1094,31 +1375,45 @@ export default function App() {
             />
           )}
 
-          {!searchQuery && (
-            <OrderAgainRow
-              items={orderAgain}
-              qtyOf={(id) => productQuantityMap[id] || 0}
-              onAdd={handleAddSimpleProduct}
-              onOpen={setDetailProduct}
-              ownerKey={phone}
+          {!searchQuery && signedInCustomer && lastPaidOrder && (
+            <LastOrderStrip
+              order={lastPaidOrder}
+              products={products}
+              onReorder={handleReorderOrder}
+              onAddOne={(p: Product) => (p.isFood ? setCustomizingFood(p) : handleAddSimpleProduct(p))}
+              storeOpensAtMs={storeLocked ? storeOpensMs : 0}
             />
           )}
 
-          {/* Two categories per side */}
-          {!searchQuery && (
-            <CategoryNav
-              side={sourceMode}
-              selected={selectedTab}
-              onSelect={setSelectedTab}
-              filters={groupFilters}
-              selectedFilter={selectedFilter}
-              onSelectFilter={setSelectedFilter}
-              requestCount={customRequest ? 1 : 0}
-            />
-          )}
+          {/* "My usuals" row removed: the last order strip above covers it */}
 
+          {/* Store Items / Food toggle, then search, then category chips and request */}
+          <div id="shop-sections" className="scroll-mt-20" />
+          <CategoryNav
+            side={sourceMode}
+            selected={selectedTab}
+            onSelect={(t) => {
+              setSelectedTab(t);
+              setSearchQuery('');
+            }}
+            filters={groupFilters}
+            selectedFilter={selectedFilter}
+            onSelectFilter={setSelectedFilter}
+            requestCount={customRequest ? 1 : 0}
+            searching={Boolean(searchQuery)}
+            searchSlot={<SearchBar query={searchQuery} onChange={setSearchQuery} />}
+          >
           {/* Request Tab vs Product Grid */}
-          {!searchQuery && selectedTab === 'Request' ? (
+          {!searchQuery && selectedTab === 'hub' ? (
+            <HostelHub
+              productNames={sideProducts.map((p) => p.name)}
+              session={{ name: customer?.name || localName, phone, pin }}
+              onGoStore={() => {
+                setSelectedTab('store');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+            />
+          ) : !searchQuery && selectedTab === 'Request' ? (
             <RequestTab
               key={requestPrefill}
               defaultSide={sourceMode === 'inside' ? 'inside' : lastGroup}
@@ -1127,7 +1422,9 @@ export default function App() {
               myRequests={requestIds.map((id) => requests[id]).filter(Boolean)}
               cartRequestIds={new Set(cartItems.map((i) => i.requestId || '').filter(Boolean))}
               onSubmit={handleSubmitRequest}
+              knownPhone={phone}
               onAddQuoteToCart={handleAddQuoteToCart}
+              storeOpensMs={storeLocked ? storeOpensMs : 0}
             />
           ) : (
             <div className="space-y-3">
@@ -1139,20 +1436,21 @@ export default function App() {
                       : selectedTab === 'Request'
                       ? ''
                       : selectedFilter !== 'All'
-                      ? `${shopGroupLabel(selectedTab, sourceMode)} › ${selectedFilter}`
-                      : shopGroupLabel(selectedTab, sourceMode)}
+                      ? `${shopGroupLabel(selectedTab as ShopGroup, sourceMode)} › ${selectedFilter}`
+                      : shopGroupLabel(selectedTab as ShopGroup, sourceMode)}
                   </h2>
                   <p className="text-[11px] text-slate-400">
                     {filteredProducts.length} {filteredProducts.length === 1 ? 'item' : 'items'} available
                     {filteredProducts.length > visibleCount ? `, showing ${visibleCount}. Search to find any item fast.` : ''}
                   </p>
+                  {selectedTab === 'food' && !searchQuery && (
+                    <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-[#0e9f55]">
+                      <Info className="w-3.5 h-3.5 shrink-0" /> Optional: You can order proteins without the food.
+                    </p>
+                  )}
                 </div>
 
-                {selectedTab === 'food' && !searchQuery && (
-                  <span className="text-[10px] font-bold text-[#0e9f55] bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200/60">
-                    0-plate protein orders supported
-                  </span>
-                )}
+
               </div>
 
               {filteredProducts.length === 0 ? (
@@ -1182,6 +1480,7 @@ export default function App() {
                         onRemove={handleRemoveSimpleProduct}
                         onOpenFoodCustomizer={(prod) => setCustomizingFood(prod)}
                         onOpenDetails={setDetailProduct}
+                        lockedLabel={undefined}
                       />
                     ))}
                   </div>
@@ -1198,17 +1497,52 @@ export default function App() {
               )}
             </div>
           )}
+          </CategoryNav>
 
-          {/* Feedback on WhatsApp */}
-          <a
-            href={`https://wa.me/${STORE_CONFIG.feedbackWhatsApp}?text=${encodeURIComponent('Hi Roomly, I have a suggestion / complaint: ')}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/30 text-xs font-bold text-[#0e9f55]"
+
+          {/* Lower on the page so the menu comes first: trust strip (returning students) and the how-to + runner link */}
+          {signedInCustomer && <BehindEveryOrder />}
+          {/* How Roomly works: folded guide, until the student's 3rd completed order */}
+          {showHowItWorks && <HowRoomlyWorks
+            storeOpensMs={storeOpensMs}
+            onStart={() => {
+              setSourceMode('inside');
+              setSelectedTab('store');
+              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+            }}
+            onHub={() => {
+              setSourceMode('inside');
+              setSelectedTab('hub');
+              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+            }}
+          />}
+
+          {/* Feedback: a short form that lands in Admin > Feedback */}
+          <button
+            type="button"
+            onClick={() => setFeedbackOpen(true)}
+            className="cursor-pointer w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/30 text-xs font-bold text-[#0e9f55]"
           >
             <MessageCircle className="w-4 h-4" />
-            <span>Suggest a feature or send a complaint on WhatsApp</span>
-          </a>
+            <span>Suggest a feature or send a complaint</span>
+          </button>
+          {feedbackOpen && (
+            <FeedbackBox
+              onClose={() => setFeedbackOpen(false)}
+              phone={signedInCustomer ? phone : ''}
+              info={
+                signedInCustomer && customer
+                  ? {
+                      name: customer.name,
+                      hostel: [customer.building, customer.room].filter(Boolean).join(' '),
+                      ordersCount: customer.ordersCount,
+                      lastOrderId: screenOrders[0]?.id || '',
+                    }
+                  : {}
+              }
+              whatsAppNumber={STORE_CONFIG.feedbackWhatsApp}
+            />
+          )}
         </main>
 
         {/* Floating Cart Bar */}
@@ -1248,14 +1582,26 @@ export default function App() {
 
         {/* Cart & Checkout Sheet (delivery fee, basket nudge, water add-on, no-cancellation check) */}
         <CartSheet
+          startsAtMs={startsAtFor(cartKind)}
           isOpen={isCartOpen}
           onClose={() => setIsCartOpen(false)}
           cart={cartKind}
           cartCounts={cartCounts}
           onSwitchCart={setCartKind}
           allItems={cartItems}
-          suggestWater={waterProduct}
-          onAddSuggested={() => waterProduct && handleAddSimpleProduct(waterProduct)}
+          suggestDrinks={suggestedDrinks}
+          onSeeAllDrinks={() => {
+            // Close the cart (it stays saved) and open the drinks list for this cart's store
+            const food = cartKind === 'food';
+            const drinksCat = categoriesForStore(categories, food ? 'food' : 'inside').find((c) => /drink/i.test(c.name))?.name || 'All';
+            setIsCartOpen(false);
+            setSearchQuery('');
+            setSourceMode(food ? 'outside' : 'inside');
+            setSelectedTab(food ? 'food' : 'store');
+            setSelectedFilter(drinksCat);
+            window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+          }}
+          onAddDrink={(p) => (p.isFood ? setCustomizingFood(p) : handleAddSimpleProduct(p))}
           items={cartItems.filter((i) => cartOf(i) === cartKind)}
           customRequest={cartKind === 'inside' ? customRequest : ''}
           onUpdateQuantity={handleUpdateCartQuantity}
@@ -1265,7 +1611,12 @@ export default function App() {
           guestName={localName}
           phone={phone}
           onPhoneChange={setPhone}
+          pin={pin}
+          onPinChange={setPin}
+          signedIn={signedInCustomer}
           onPlaceOrder={handlePlaceOrder}
+          offMenuIds={offMenuFoodIds}
+          foodBatchName={FOOD_BATCH_LABEL[foodBatchNow as 'midday' | 'evening'] || ''}
         />
 
         {/* Order Status & Live Runner Tracker Modal */}
@@ -1274,7 +1625,7 @@ export default function App() {
           onClose={() => setHistoryOpen(false)}
           orders={screenOrders}
           loading={historyLoading}
-          signedIn={isValidNigerianPhone(phone) && /^\d{6}$/.test(pin) && !customer?.wrongPin}
+          signedIn={isValidNigerianPhone(phone) && isValidPin(pin) && !customer?.wrongPin}
           onSelect={(o) => {
             setActiveOrder(o);
             setHistoryOpen(false);
@@ -1302,4 +1653,29 @@ export default function App() {
       </div>
     </div>
   );
+}
+
+/* Replies to product requests the student has already been shown (kept on this phone) */
+const SEEN_KEY = 'roomly_request_replies_seen';
+function seenReplies(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(SEEN_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+function markReplySeen(id: string) {
+  try {
+    const list = seenReplies().filter((x) => x !== id);
+    localStorage.setItem(SEEN_KEY, JSON.stringify([id, ...list].slice(0, 40)));
+  } catch {
+    /* storage can be unavailable */
+  }
+}
+/** Answered in the last 3 days and not shown yet */
+function replyUnseen(id: string, r: any): boolean {
+  if (!r || r.status === 'open') return false;
+  const at = Date.parse(r.quotedAt || r.closedAt || '');
+  if (!at || Date.now() - at > 3 * 86400000) return false;
+  return !seenReplies().includes(id);
 }
