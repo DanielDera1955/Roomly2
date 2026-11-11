@@ -147,13 +147,13 @@ export const HomeQuickCards: React.FC<{
 
 /** Behind every order: the real people who make the promise happen */
 export const BehindEveryOrder: React.FC = () => (
-  <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 px-2 py-2.5">
-    <p className="text-center text-[9px] font-black uppercase tracking-[0.2em] text-[#0e9f55]">Behind every order</p>
-    <div className="mt-1.5 grid grid-cols-4 divide-x divide-slate-100 dark:divide-slate-800">
+  <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 px-3 py-3.5">
+    <p className="text-center text-xs font-bold text-slate-600 dark:text-slate-300">The team behind every order</p>
+    <div className="mt-3 grid grid-cols-4 divide-x divide-slate-100 dark:divide-slate-800">
       {BEHIND_EVERY_ORDER.map((x) => (
-        <div key={x.label} className="min-w-0 px-0.5 text-center">
-          <p className="text-[15px] font-black leading-none text-slate-900 dark:text-white tabular-nums">{x.count}</p>
-          <p className="mt-1 text-[9px] leading-none font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap overflow-hidden text-ellipsis">
+        <div key={x.label} className="min-w-0 px-1 flex flex-col items-center justify-center text-center">
+          <p className="text-lg font-black leading-none text-slate-900 dark:text-white tabular-nums">{x.count}</p>
+          <p className="mt-1.5 w-full text-[10px] leading-tight font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap overflow-hidden text-ellipsis">
             {x.label}
           </p>
         </div>
