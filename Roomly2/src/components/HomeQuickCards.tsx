@@ -91,8 +91,8 @@ export const HomeQuickCards: React.FC<{
   const cards: { id: QuickTarget; title: string }[] = [
     { id: 'food', title: 'Outside Food' },
     { id: 'store', title: 'Outside Items' },
-    { id: 'hub', title: 'Hostel Hub' },
     { id: 'room', title: 'Canteen Items' },
+    { id: 'hub', title: 'Hostel Hub' },
   ];
 
   return (
