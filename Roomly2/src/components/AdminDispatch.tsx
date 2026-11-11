@@ -22,6 +22,7 @@ import {
 import { OrderRecord, locationText } from '../types';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { AdminOrderActions } from './AdminOrderActions';
+import { BatchSummary } from './BatchSummary';
 
 type Section = 'inside' | 'store' | 'food';
 type View = 'all' | Section;
@@ -98,14 +99,37 @@ const OrderRow: React.FC<{ o: OrderRecord; showSection?: boolean }> = ({ o, show
       {open && (
         <div className="space-y-1.5 pt-1 border-t border-slate-200 dark:border-slate-700">
           <p className="text-[11px] text-slate-500">{locationText(o)} · {o.phone}</p>
-          {(o.items || []).map((i, idx) => (
-            <div key={idx} className="flex justify-between gap-2">
-              <span className="truncate">
-                {i.quantity}x {i.name}
-              </span>
-              <span className="font-mono shrink-0">{naira(i.totalPrice)}</span>
-            </div>
-          ))}
+          {(o.items || []).map((i: any, idx) => {
+            const opts: any[] = i.extras || [];
+            const optsTotal = opts.reduce((t, e) => t + (e.price || 0) * (e.quantity || 1), 0);
+            const dish = (i.totalPrice || 0) - optsTotal * (i.quantity || 1);
+            return (
+              <div key={idx} className="space-y-0.5">
+                <div className="flex justify-between gap-2">
+                  <span className="font-semibold">
+                    {i.quantity}x {i.name}
+                  </span>
+                  <span className="font-mono shrink-0">{naira(i.totalPrice)}</span>
+                </div>
+                {i.isFood && i.plates > 0 && opts.length > 0 && (
+                  <div className="flex justify-between gap-2 pl-3 text-[11px] text-slate-500">
+                    <span>• Rice/dish: {i.plates} {i.plates === 1 ? 'plate' : 'plates'}</span>
+                    <span className="font-mono shrink-0">{naira(dish)}</span>
+                  </div>
+                )}
+                {opts.map((e, k) => (
+                  <div key={k} className="flex justify-between gap-2 pl-3 text-[11px] text-slate-600 dark:text-slate-300">
+                    <span>
+                      • {e.name}
+                      {(e.quantity || 1) > 1 ? ` x${e.quantity}` : ''} <span className="text-slate-400">({naira(e.price)} each)</span>
+                    </span>
+                    <span className="font-mono shrink-0">{naira((e.price || 0) * (e.quantity || 1) * (i.quantity || 1))}</span>
+                  </div>
+                ))}
+                {i.specialNote && <p className="pl-3 text-[11px] text-amber-700 dark:text-amber-300">Note: {i.specialNote}</p>}
+              </div>
+            );
+          })}
           <div className="flex justify-between text-[11px] text-slate-500">
             <span>Delivery</span>
             <span>{naira(o.deliveryFee)}</span>
@@ -302,8 +326,12 @@ export const AdminDispatch: React.FC = () => {
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [section, setSection] = useState<View>('all');
   const [tab, setTab] = useState<Tab>('active');
-  const [day, setDay] = useState(ymd(new Date()));
+  const [range, setRange] = useState<'today' | 'week' | 'month' | 'custom'>('today');
+  const [from, setFrom] = useState(ymd(new Date()));
+  const [to, setTo] = useState(ymd(new Date()));
   const [search, setSearch] = useState('');
+  // Completed: Today, 7 days, 30 days or picked dates (the count follows the range)
+  const [rFrom, rTo] = range === 'custom' ? [from <= to ? from : to, from <= to ? to : from] : moneyRange(range);
 
   useEffect(() => subscribeOrders((list: OrderRecord[]) => setOrders(list || [])), []);
 
@@ -328,12 +356,18 @@ export const AdminDispatch: React.FC = () => {
   const counts = {
     active: inSection.filter((o) => orderStage(o) === 'active').length,
     confirmed: inSection.filter((o) => orderStage(o) === 'confirmed').length,
+    completed: inSection.filter((o) => {
+      if (orderStage(o) !== 'completed') return false;
+      const d = ymd(new Date(o.deliveredAt || o.createdAt));
+      return d >= rFrom && d <= rTo;
+    }).length,
   };
   const q = search.trim().toLowerCase();
   const list = inSection
     .filter((o) =>
       tab === 'completed'
-        ? orderStage(o) === 'completed' && (q !== '' || ymd(new Date(o.deliveredAt || o.createdAt)) === day) // a search looks across all days
+        ? orderStage(o) === 'completed' &&
+          (q !== '' || (ymd(new Date(o.deliveredAt || o.createdAt)) >= rFrom && ymd(new Date(o.deliveredAt || o.createdAt)) <= rTo)) // a search looks across all days
         : orderStage(o) === tab
     )
     .filter((o) => !q || o.name.toLowerCase().includes(q) || o.id.toLowerCase().includes(q) || String(o.phone).includes(q));
@@ -378,13 +412,28 @@ export const AdminDispatch: React.FC = () => {
           options={[
             ['active', `Active (${counts.active})`],
             ['confirmed', `Payments Confirmed (${counts.confirmed})`],
-            ['completed', 'Completed'],
+            ['completed', `Completed (${counts.completed})`],
           ]}
         />
         {tab === 'completed' && (
-          <div className="grid grid-cols-2 gap-2">
-            <input type="date" value={day} onChange={(e) => setDay(e.target.value)} className={input} />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} className={input} placeholder="Search name, phone or ID" />
+          <div className="space-y-2">
+            <Pills
+              value={range}
+              onChange={setRange}
+              options={[
+                ['today', 'Today'],
+                ['week', '7 days'],
+                ['month', '30 days'],
+                ['custom', 'Custom'],
+              ]}
+            />
+            {range === 'custom' && (
+              <div className="grid grid-cols-2 gap-2">
+                <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={input} aria-label="From" />
+                <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={input} aria-label="To" />
+              </div>
+            )}
+            <input value={search} onChange={(e) => setSearch(e.target.value)} className={input} placeholder="Search name, phone or ID (all dates)" />
           </div>
         )}
         <p className="text-[11px] text-slate-500">
@@ -394,6 +443,7 @@ export const AdminDispatch: React.FC = () => {
             ? 'Payment confirmed. Being packed and delivered.'
             : 'Delivered to the room (inside) or sent to the school gate (outside).'}
         </p>
+        {tab === 'confirmed' && section !== 'inside' && <BatchSummary orders={inSection} />}
         {list.length === 0 && <p className="text-xs text-slate-400">Nothing here.</p>}
         {list.map((o) => (
           <OrderRow key={o.id} o={o} showSection={section === 'all'} />

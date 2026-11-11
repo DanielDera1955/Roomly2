@@ -671,8 +671,9 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                     </p>
                     {collectsAsRoomly(currentOrder.cart) && payAcct && (
                       <p className="text-[11px] text-amber-900 dark:text-amber-200 leading-snug">
-                        <strong>Pay Roomly.</strong> Pay into Roomly's {payAcct.bankName || 'business'} account (account name: {payAcct.accountName}). Roomly
-                        confirms your payment and sends your order to the {isOutside ? 'vendor' : 'runner'}, who follows this batch's countdown.
+                        <strong>Roomly's official payment account.</strong> This account is managed by Roomly's operator, {payAcct.accountName}. Once your
+                        payment is confirmed, your order is sent straight to the {isOutside ? 'vendor' : 'runner'} and joins this batch's countdown. Never pay a{' '}
+                        {isOutside ? 'vendor' : 'runner'} directly. Roomly only accepts payment through this account.
                       </p>
                     )}
                     {payAcct ? (

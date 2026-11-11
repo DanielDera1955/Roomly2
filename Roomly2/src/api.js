@@ -438,6 +438,40 @@ export async function roomlyPayoutOf(order) {
   const { spent, fee, estimated } = await insideProfitOf(order);
   return { amount: spent + fee, items: spent, delivery: fee, estimated };
 }
+/** Vendor-price breakdown of an outside order, line by line: plates at the dish cost, each option at its own cost.
+ * Used for the WhatsApp message to the vendor and the batch summary. cost = null when no cost price was entered. */
+export async function vendorBreakdownOf(order) {
+  const products = (await readCatalog()).products || [];
+  const opId = order?.operatorId || '';
+  const lines = (order?.items || []).map((item) => {
+    const found = products.find((x) => x.id === item.productId);
+    const own = found && opId && found.opCosts ? found.opCosts[opId] : 0;
+    const p = found && own > 0 ? { ...found, costPrice: own } : found;
+    const opts = p ? [...(p.extras || []), ...(p.choices || []).map((c) => ({ ...c, id: `choice-${c.id}` }))] : [];
+    const options = (item.extras || []).map((e) => {
+      const o = opts.find((x) => x.id === e.id);
+      const mine = o && opId && o.opCosts ? o.opCosts[opId] : 0;
+      const cost = mine > 0 ? mine : typeof o?.cost === 'number' ? o.cost : null;
+      return { name: e.name, quantity: e.quantity || 1, cost };
+    });
+    const plateCost = item.isFood && item.plates > 0 && p?.costPrice > 0 ? p.costPrice : null;
+    const total = costOf(item, products, false, opId);
+    return {
+      name: found?.name || item.name,
+      fullName: item.name,
+      quantity: item.quantity || 1,
+      isFood: !!item.isFood,
+      plates: item.plates || 0,
+      plateCost,
+      unitCost: !item.isFood && p?.costPrice > 0 ? p.costPrice : null,
+      options,
+      note: item.specialNote || '',
+      total: total.cost,
+      estimated: total.estimated,
+    };
+  });
+  return { lines, items: lines.reduce((t, l) => t + (l.total || 0), 0), estimated: lines.some((l) => l.estimated) };
+}
 /** Who Roomly pays for an order: { key, name, phone, kind } (runner for inside, store / food vendor for outside) */
 export function payeeOf(o) {
   if (!o) return null;

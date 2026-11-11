@@ -13,6 +13,7 @@ import {
   roomlyPayoutOf,
   waNumber,
   recordRefund,
+  vendorBreakdownOf,
 } from '../api.js';
 import { OrderRecord, locationText } from '../types';
 
@@ -35,6 +36,15 @@ export const RoomlyPayoutLine: React.FC<{ order: OrderRecord; who: 'runner' | 'a
   }, [order.id, order.items?.length]);
   if (!p) return null;
   const outside = order.cart === 'store' || order.cart === 'food';
+  // Outside: transport is paid once per batch (see the Batch summary), so each order shows items only
+  if (outside && who === 'admin')
+    return (
+      <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+        Items for the store {naira(p.items)}
+        {p.estimated ? ' est.' : ''}
+        <span className="font-normal text-slate-500 dark:text-slate-400"> (transport is paid once per batch, see Batch summary)</span>
+      </p>
+    );
   return (
     <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
       {who === 'runner' ? "You'll receive" : outside ? 'Pay the store' : 'Pay the runner'} {naira(p.amount)}
@@ -84,9 +94,21 @@ export const AdminOrderActions: React.FC<{ o: OrderRecord }> = ({ o }) => {
   const [pick, setPick] = useState('');
   const [busy, setBusy] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  const [vb, setVb] = useState<any>(null);
 
   const outside = o.cart === 'store' || o.cart === 'food';
   const kind = o.cart === 'food' ? 'food' : 'store';
+  // The vendor's own prices for each line, for the WhatsApp message
+  useEffect(() => {
+    if (!outside) return;
+    let live = true;
+    vendorBreakdownOf(o)
+      .then((r: any) => live && setVb(r))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [o.id, o.items?.length, outside]);
   useEffect(() => {
     if (outside || runnerCache) return;
     getRunners()
@@ -193,14 +215,34 @@ export const AdminOrderActions: React.FC<{ o: OrderRecord }> = ({ o }) => {
 
   // Outside: the admin relays the order to the store and runs it to the gate
   const storePhone = contactPhoneFor(o);
+  const lineText = (l: any, n: number) => {
+    const head = l.isFood
+      ? `${n}) ${l.plates > 0 ? `${l.name} x ${l.plates} ${l.plates === 1 ? 'plate' : 'plates'}` : `${l.name}, extras only`}`
+      : `${n}) ${l.name} x ${l.quantity}${l.unitCost ? `: ${naira(l.unitCost * l.quantity)}` : ''}`;
+    const rows = [head];
+    if (l.isFood && l.plates > 0) rows.push(`   - Plates: ${l.plateCost ? `${naira(l.plateCost)} x ${l.plates} = ${naira(l.plateCost * l.plates)}` : l.plates}`);
+    l.options.forEach((e: any) => {
+      const q = e.quantity * (l.quantity || 1);
+      rows.push(`   - ${e.name}${q > 1 ? ` x ${q}` : ''}${typeof e.cost === 'number' && e.cost > 0 ? `: ${naira(e.cost)}${q > 1 ? ` x ${q} = ${naira(e.cost * q)}` : ''}` : ''}`);
+    });
+    if (l.note) rows.push(`   - Note: ${l.note}`);
+    return rows.join('\n');
+  };
+  const when = (o as any).deliveryDate
+    ? `${new Date((o as any).deliveryDate + 'T00:00:00').toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'short' })}, ${o.deliveryTime || ''}`
+    : o.deliveryTime || '';
   const msg = [
-    `Roomly order ${o.id}`,
-    ...(o.items || []).map((i: any) => `- ${i.quantity}x ${i.name}`),
+    `New Roomly order: ${o.id}`,
+    when ? `For: ${when}` : '',
+    '',
+    ...(vb ? vb.lines.map((l: any, k: number) => lineText(l, k + 1)) : (o.items || []).map((i: any) => `- ${i.quantity}x ${i.name}`)),
     o.outOfStock ? outOfStockSummary(o) : '',
-    `For ${o.name}, ${locationText(o)}`,
+    '',
+    vb && vb.items > 0 ? `Items total: ${naira(vb.items)}${vb.estimated ? ' (estimate, please confirm)' : ''}` : '',
+    `Customer: ${o.name}, ${locationText(o)}`,
     'Please pack it and send me a photo before sending to the gate.',
   ]
-    .filter(Boolean)
+    .filter((x, k, a) => x !== '' || (k > 0 && a[k - 1] !== ''))
     .join('\n');
   const wa = `https://wa.me/${storePhone ? waNumber(storePhone) : ''}?text=${encodeURIComponent(msg)}`;
 
@@ -215,6 +257,9 @@ export const AdminOrderActions: React.FC<{ o: OrderRecord }> = ({ o }) => {
       {done ? (
         <div className="flex flex-wrap items-center gap-1.5">
           <p className="text-[11px] text-slate-500 mr-1">Sent to the gate.</p>
+          <a href={wa} target="_blank" rel="noopener noreferrer" className={plain}>
+            Resend to {o.operatorName || 'store'}
+          </a>
           {/* A photo can still be added after delivery: it helps the student find the package at the gate */}
           <button type="button" disabled={!!busy} className={plain} onClick={() => fileRef.current?.click()}>
             {busy === 'photo' ? 'Uploading...' : o.packPhoto ? 'Change photo' : 'Add packed photo'}
@@ -254,9 +299,17 @@ export const AdminOrderActions: React.FC<{ o: OrderRecord }> = ({ o }) => {
             type="button"
             disabled={!!busy}
             className={primary}
-            onClick={() =>
-              run('gate', () => updatePartStatus(o.id, kind, 'sent', 'Roomly'), 'Mark as sent to the gate? The student sees it will arrive in under 15 minutes.')
-            }
+            onClick={() => {
+              // An order for a later day must not be closed early: it would leave Payments Confirmed before it is delivered
+              const forDay = (o as any).deliveryDate || '';
+              const now = new Date();
+              const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+              const early = forDay && forDay > today;
+              const ask = early
+                ? `This order is for ${new Date(forDay + 'T00:00:00').toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'short' })}, not today. Mark it as sent to the gate NOW anyway? It will move to Completed.`
+                : 'Mark as sent to the gate? The student sees it will arrive in under 15 minutes.';
+              run('gate', () => updatePartStatus(o.id, kind, 'sent', 'Roomly'), ask);
+            }}
           >
             Sent to gate
           </button>
