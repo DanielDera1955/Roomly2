@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { RotateCcw, ChevronDown, ChevronRight, Gamepad2, UtensilsCrossed, ShoppingBasket, Store } from 'lucide-react';
+import { RotateCcw, ChevronDown, ChevronRight, Gamepad2, UtensilsCrossed, ShoppingBasket, Store, Crown, Trophy } from 'lucide-react';
 import { getNextBatch, getOutsideChoices, storeGraceOpen, storeRunLeftToday } from '../api.js';
 import { dayWord, timeLabel, timeLabelFull, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, openDateText, BEHIND_EVERY_ORDER, OUTSIDE_STORE_GRACE_END_MIN, isOutsideSource } from '../config';
 import type { OrderRecord } from '../types';
@@ -79,8 +79,16 @@ export function shortStatus(id: QuickTarget, now: Date = new Date(), storeOpensA
   return { text: `Open · gate before ${timeLabel(outsideArriveByFor(b.id))}`, open: true };
 }
 
-/** The card photo: a featured product with a photo from that section, else any product with a photo */
-function photoFor(id: QuickTarget, products: any[]): string {
+/** Fixed card photos (public/images/cards). Swap a file to change a card's photo. */
+const CARD_PHOTO: Record<QuickTarget, string> = {
+  food: '/images/cards/food.webp',
+  store: '/images/cards/store.webp',
+  room: '/images/cards/canteen.webp',
+  hub: '',
+};
+
+/** Backup only, if a fixed photo fails to load: a featured product photo from that section */
+function productPhotoFor(id: QuickTarget, products: any[]): string {
   if (id === 'hub') return '';
   const inSection = (p: any) =>
     p && p.imageUrl && p.isAvailable !== false &&
@@ -88,6 +96,25 @@ function photoFor(id: QuickTarget, products: any[]): string {
   const list = products.filter(inSection);
   return (list.find((p) => p.featured) || list[0])?.imageUrl || '';
 }
+
+/** Hostel Hub's tile: a lively games banner instead of a photo */
+const HubTile: React.FC = () => (
+  <div className="relative w-full h-24 overflow-hidden bg-gradient-to-br from-violet-600 via-fuchsia-600 to-indigo-700">
+    <span className="absolute -top-6 -left-4 w-20 h-20 rounded-full bg-white/10" />
+    <span className="absolute -bottom-8 left-16 w-24 h-24 rounded-full bg-white/10" />
+    <span className="absolute top-3 right-14 w-1.5 h-1.5 rounded-full bg-amber-300" />
+    <span className="absolute bottom-4 right-24 w-1 h-1 rounded-full bg-white/80" />
+    <Gamepad2 className="absolute right-1.5 bottom-1.5 w-12 h-12 text-white/90 -rotate-12" />
+    <span className="absolute top-2.5 left-2.5 flex flex-col items-start gap-1.5">
+      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-400 text-amber-950 text-[10px] font-extrabold">
+        <Crown className="w-3 h-3" /> Best in Caritas
+      </span>
+      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/20 text-white text-[10px] font-bold">
+        <Trophy className="w-3 h-3" /> Leaderboard
+      </span>
+    </span>
+  </div>
+);
 
 const FALLBACK_ICON: Record<QuickTarget, React.FC<{ className?: string }>> = {
   food: UtensilsCrossed,
@@ -126,10 +153,12 @@ export const HomeQuickCards: React.FC<{
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-2.5">
+      {/* Tells first-timers these four cards are the whole app */}
+      <p className="px-1 text-center text-xs font-bold text-slate-700 dark:text-slate-200">Everything on Roomly</p>
+      <div className="grid grid-cols-2 gap-2.5 -mt-1">
         {cards.map(({ id, title }) => {
           const { text, open } = shortStatus(id, now, storeOpensAtMs);
-          const photo = broken[id] ? '' : photoFor(id, products);
+          const photo = broken[id] ? productPhotoFor(id, products) : CARD_PHOTO[id];
           const Icon = FALLBACK_ICON[id];
           return (
             <button
@@ -138,13 +167,15 @@ export const HomeQuickCards: React.FC<{
               onClick={() => onOpen(id)}
               className="h-full flex flex-col items-stretch rounded-2xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-left cursor-pointer active:scale-[0.98] transition-transform"
             >
-              {photo ? (
+              {id === 'hub' ? (
+                <HubTile />
+              ) : photo && !broken[id + '_backup'] ? (
                 <img
                   src={photo}
                   alt=""
                   loading="lazy"
                   referrerPolicy="no-referrer"
-                  onError={() => setBroken((b) => ({ ...b, [id]: true }))}
+                  onError={() => setBroken((b) => (b[id] ? { ...b, [id + '_backup']: true } : { ...b, [id]: true }))}
                   className="w-full h-24 object-cover bg-slate-100 dark:bg-slate-800"
                 />
               ) : (
