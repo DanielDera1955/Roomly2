@@ -18,7 +18,7 @@ import {
   isRoomlyOrder,
   payoutPending,
 } from '../api.js';
-import { slotsForDay, RATING_GOOD, INSIDE_ARRIVAL_MINUTES } from '../config';
+import { slotsForDay, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN } from '../config';
 import { playChime } from '../sound';
 import { OrderRecord } from '../types';
 
@@ -117,8 +117,6 @@ export const AdminActionBoard: React.FC = () => {
   const lastRed = useRef<number | null>(null);
 
   useEffect(() => subscribeOrders((list: OrderRecord[]) => setOrders(list || [])), []);
-  useEffect(() => subscribeOpenSettlements((list: any[]) => setSettlements(list || [])), []);
-  useEffect(() => subscribeAllRatings((list: any[]) => setRatings(list || [])), []);
   useEffect(() => subscribeFeedbackMessages((list: any[]) => setMessages(list || [])), []);
   useEffect(() => {
     const offs = (['inside', 'store', 'food'] as const).map((side) =>
@@ -156,329 +154,124 @@ export const AdminActionBoard: React.FC = () => {
   const studentContact = (o: any): Contact[] => (o.phone ? [{ name: o.name || 'Student', phone: o.phone }] : []);
   const ratedIds = new Set(ratings.map((r) => r.orderId || r.id));
 
-  // ---------- 1. Batches: is the next inside batch covered by a runner who is really around? ----------
-  const sides = ['boys', ...(girlsSideInUse() ? ['girls'] : [])];
-  const roomlyMode = collectsAsRoomly();
-  // Roomly collects and assigns: what matters is paid orders waiting on you, not runner switches
-  const roomlyOpen = orders.filter(
-    (o: any) => isRoomlyOrder(o) && o.paymentStatus === 'payment_confirmed' && o.status !== 'Cancelled' && o.status !== 'Delivered'
-  );
-  const unassigned = roomlyOpen.filter((o: any) => !isOutside(o) && !o.runnerId);
-  if (unassigned.length) {
-    const soonest = Math.min(...unassigned.map((o: any) => insideBatchStart(o) || nowMs));
-    const n = unassigned.length;
-    items.push({
-      id: 'r-unassigned',
-      level: soonest - nowMs <= 30 * MIN ? 'red' : 'amber',
-      title: `${n} paid inside ${n === 1 ? 'order is' : 'orders are'} not assigned to a runner`,
-      detail: `The first one is for the ${clock(soonest)} batch.`,
-      todo: 'Call a runner, then open the order in Orders and tap Assign.',
-      contacts: runnerContacts('boys'),
-    });
-  } else if (roomlyMode) {
-    items.push({ id: 'r-unassigned-ok', level: 'green', title: 'Inside: every paid order is assigned to a runner' });
-  }
-  const outsideToday = roomlyOpen.filter((o: any) => isOutside(o) && (o.deliveryDate || today) <= today);
-  if (outsideToday.length) {
-    const n = outsideToday.length;
-    items.push({
-      id: 'r-outside',
-      level: nowMs >= atMin(now, 17, 45) ? 'red' : nowMs >= atMin(now, 16) ? 'amber' : 'grey',
-      title: `${n} paid outside ${n === 1 ? 'order' : 'orders'} not sent to the gate yet`,
-      detail: 'Outside parcels must reach the gate before 6pm.',
-      todo: 'Send each to the store on WhatsApp, add the packed photo, then tap Sent to gate.',
-      contacts: [...opContacts('food'), ...opContacts('store')],
-    });
-  } else if (roomlyMode) {
-    items.push({ id: 'r-outside-ok', level: 'green', title: 'Outside: no paid orders waiting to go to the gate' });
-  }
-  const payoutsDue = orders.filter((o: any) => payoutPending(o));
-  if (payoutsDue.length) {
-    const people = new Set(payoutsDue.map((o: any) => (isOutside(o) ? o.operatorId || o.cart : o.runnerId)));
-    items.push({
-      id: 'r-payouts',
-      level: 'amber',
-      title: `Payouts due on ${payoutsDue.length} delivered ${payoutsDue.length === 1 ? 'order' : 'orders'} (${people.size} ${people.size === 1 ? 'person' : 'people'})`,
-      todo: 'Open the Money tab, send each payout, then tap Mark paid.',
-    });
-  } else if (roomlyMode) {
-    items.push({ id: 'r-payouts-ok', level: 'green', title: 'Payouts: everyone is paid for delivered orders' });
-  }
+  // Only four things: live batch countdowns, payments waiting, product requests, complaints.
+  // (Runner and operator checks, settlements and ratings are off while Roomly runs every order itself.)
 
-  if (!roomlyMode) sides.forEach((hs) => {
-    const nb = getAdminNextInside(hs, now);
-    if (!nb) return;
-    const label = `${nb.opt.window}${nb.opt.date === today ? '' : ' tomorrow'}`;
-    const sideName = hs === 'girls' ? "Girls' hostels: " : sides.length > 1 ? "Boys' hostels: " : '';
-    const left = nb.start.getTime() - nowMs;
-    if (!nb.live) {
-      items.push({
-        id: `nobody-${hs}`,
-        level: left <= 120 * MIN ? 'red' : 'amber',
-        title: `${sideName}No runner is scheduled for the ${label} batch`,
-        detail: 'Students can order but cannot pay until a runner takes it.',
-        todo: 'Ask a runner to add this batch to their week or switch it on for today.',
-        contacts: runnerContacts(hs),
-      });
-      return;
+  // ---------- 1. Batch countdowns: one line per batch with paid orders, until sent + the 15-minute gate countdown ----------
+  const GATE_MIN = 15;
+  type Group = { key: string; label: string; place: string; closeAt: number; dueAt: number; orders: any[] };
+  const groups: Record<string, Group> = {};
+  orders.forEach((o: any) => {
+    if (o.status === 'Cancelled' || o.paymentStatus !== 'payment_confirmed' || !o.deliveryDate) return;
+    const side = isOutside(o) ? o.cart : 'inside';
+    const day = new Date(o.deliveryDate + 'T00:00:00');
+    if (!Number.isFinite(day.getTime())) return;
+    let label = '';
+    let closeMin = 0;
+    let dueMin = 0;
+    if (side === 'inside') {
+      label = 'Canteen night batch';
+      closeMin = INSIDE_ORDER_BY_MIN;
+      dueMin = INSIDE_ARRIVE_BY_MIN;
+    } else {
+      const opt: any = slotsForDay(side, day, 0).find((x: any) => x.id === o.deliveryBatch) || slotsForDay(side, day, 0)[0];
+      closeMin = opt ? (opt.orderBy instanceof Date ? opt.orderBy.getHours() * 60 + opt.orderBy.getMinutes() : opt.startMin) : 0;
+      dueMin = outsideArriveByFor(opt?.id || o.deliveryBatch);
+      label = side === 'store' ? 'Store daily run' : (opt?.id || o.deliveryBatch) === 'midday' ? 'Food: Lunch' : 'Food: Dinner';
     }
-    const sw = nb.sw || {};
-    const lastSeen = Math.max(Number(seen[sw.byUid] || 0), Number(sw.at || 0));
-    const activeToday = sameDay(lastSeen, nb.opt.date);
-    const who = sw.by || 'The runner';
-    if (!activeToday && left <= 120 * MIN) {
-      items.push({
-        id: `quiet-${hs}`,
-        level: left <= 60 * MIN ? 'red' : 'amber',
-        title: `${sideName}${who} ${sw.auto ? 'is scheduled for' : 'confirmed'} the ${label} batch but hasn't opened Roomly today`,
-        detail: 'Students are paying into their account.',
-        todo: `Make sure ${who} is coming, or ask them to switch the batch off for today.`,
-        contacts: sw.byPhone ? [{ name: who, phone: sw.byPhone }] : [],
-      });
-      return;
-    }
-    items.push({ id: `ok-${hs}`, level: 'green', title: `${sideName}Next batch ${label}: ${who} is taking it, ${ago(lastSeen, nowMs)}` });
+    // Finished: sent to the gate / delivered and the 15-minute gate countdown is over
+    const doneAt = o.status === 'Delivered' ? ms(o.deliveredAt) || 0 : 0;
+    const finished = doneAt && (side === 'inside' || nowMs >= doneAt + GATE_MIN * MIN);
+    const key = `${side}|${o.deliveryDate}|${label}`;
+    if (!groups[key])
+      groups[key] = { key, label, place: side === 'inside' ? 'rooms' : 'the gate', closeAt: day.getTime() + closeMin * MIN, dueAt: day.getTime() + dueMin * MIN, orders: [] };
+    if (!finished) groups[key].orders.push(o);
   });
-
-  // ---------- 2. Outside operators: orders today and the portal hasn't been open recently ----------
-  (['store', 'food'] as const).forEach((kind) => {
-    const due = orders.filter(
-      (o: any) =>
-        o.cart === kind &&
-        o.payReady &&
-        !isRoomlyOrder(o) &&
-        (o.deliveryDate || today) === today &&
-        o.status !== 'Cancelled' &&
-        o.status !== 'Delivered' &&
-        (kind === 'food' ? o.foodStatus : o.storeStatus) !== 'sent' &&
-        !o.paymentNotReceived
-    );
-    const name = kind === 'food' ? 'Food' : 'Store';
-    if (!due.length) {
-      items.push({ id: `${kind}-none`, level: 'green', title: `${name}: no orders waiting today` });
-      return;
-    }
-    // Store parcels must reach the gate by 6pm: amber from 4pm, red from 5pm. Food comes 4:30-6pm: amber from 2:30pm, red from 4:30pm.
-    const amberAt = kind === 'food' ? atMin(now, 14, 30) : atMin(now, 16);
-    const redAt = kind === 'food' ? atMin(now, 16, 30) : atMin(now, 17);
-    const byOp = new Map<string, number>();
-    due.forEach((o: any) => byOp.set(o.operatorId || '', (byOp.get(o.operatorId || '') || 0) + 1));
-    byOp.forEach((count, uid) => {
-      const op = ops.find((x) => x.id === uid) || {};
-      const opName = op.name || (due.find((o: any) => (o.operatorId || '') === uid) as any)?.operatorName || 'The operator';
-      const last = Number(op.seenAt || 0);
-      const quiet = nowMs - last > 120 * MIN;
-      const orderWord = `${count} ${kind} ${count === 1 ? 'order' : 'orders'}`;
-      if (quiet && nowMs >= amberAt) {
-        items.push({
-          id: `${kind}-${uid}`,
-          level: nowMs >= redAt ? 'red' : 'amber',
-          title: `${opName} has ${orderWord} today and hasn't opened Roomly in 2 hours`,
-          detail: `${ago(last, nowMs)}. ${kind === 'food' ? 'Food goes out from 4:30pm.' : 'Store parcels must reach the gate before 6pm.'}`,
-          todo: `Call ${opName} and make sure the orders are being packed.`,
-          contacts: op.phone ? [{ name: opName, phone: op.phone }] : [],
-        });
+  Object.values(groups)
+    .filter((g) => g.orders.length > 0)
+    .sort((x, y) => x.dueAt - y.dueAt)
+    .forEach((g) => {
+      const n = g.orders.length;
+      const notSent = g.orders.filter((o: any) => o.status !== 'Delivered').length;
+      const dayNote = sameDay(g.dueAt, today) ? '' : ` (${new Date(g.dueAt).toLocaleDateString([], { weekday: 'short' })})`;
+      const head = `${g.label}${dayNote}: ${n} paid ${n === 1 ? 'order' : 'orders'}`;
+      let level: Level = 'grey';
+      let title = '';
+      if (nowMs < g.closeAt) {
+        title = `${head} · orders close in ${mins(g.closeAt - nowMs)}`;
+      } else if (nowMs < g.dueAt) {
+        title = `${head} · must reach ${g.place} in ${mins(g.dueAt - nowMs)} (by ${clock(g.dueAt)})`;
       } else {
-        items.push({ id: `${kind}-${uid}`, level: 'green', title: `${name}: ${opName} has ${orderWord} today, ${ago(last, nowMs)}` });
+        title = `${head} · deadline ${clock(g.dueAt)} passed`;
       }
-    });
-  });
-
-  // ---------- 3. Payments: a student tapped paid and nobody answered ----------
-  const waiting = orders.filter(
-    (o: any) =>
-      o.paymentStatus === 'payment_sent' && !o.paymentNotReceived && o.status !== 'Cancelled' && o.paymentSentAt && nowMs - ms(o.paymentSentAt) >= 15 * MIN
-  );
-  waiting.forEach((o: any) => {
-    const sentAt = ms(o.paymentSentAt);
-    if (isRoomlyOrder(o)) {
+      const left = g.dueAt - nowMs;
+      if (notSent > 0 && left <= 0) level = 'red';
+      else if (notSent > 0 && left <= 45 * MIN) level = 'amber';
       items.push({
-        id: `pay-${o.id}`,
-        level: 'red',
-        title: `${o.name} sent ${naira(o.totalAmount)} to Roomly ${mins(nowMs - sentAt)} ago and is still waiting`,
-        detail: `Tapped paid at ${clock(sentAt)}.`,
-        todo: "Check Roomly's account, then open the order in Orders and tap Money received or Not received.",
-        contacts: studentContact(o),
+        id: `batch-${g.key}`,
+        level,
+        title,
+        detail: notSent ? `${notSent} not sent yet: ${g.orders.filter((o: any) => o.status !== 'Delivered').map((o: any) => o.name).join(', ')}.` : 'All sent. Waiting for the 15-minute gate countdown to finish.',
       });
-      return;
-    }
-    const who = o.operatorName || o.runnerName || o.turnRunner || 'the runner';
+    });
+  if (!Object.values(groups).some((g) => g.orders.length)) items.push({ id: 'batch-ok', level: 'green', title: 'Batches: no active paid orders right now' });
+
+  // ---------- 2. Payments: a student tapped paid and it isn't confirmed yet ----------
+  const waiting = orders.filter((o: any) => o.paymentStatus === 'payment_sent' && !o.paymentNotReceived && o.status !== 'Cancelled');
+  waiting.forEach((o: any) => {
+    const sentAt = ms(o.paymentSentAt) || ms(o.createdAt);
+    const long = nowMs - sentAt >= 15 * MIN;
     items.push({
       id: `pay-${o.id}`,
-      level: 'red',
-      title: `${o.name} tapped paid ${mins(nowMs - sentAt)} ago and is still waiting`,
-      detail: `${naira(o.totalAmount)} to ${who}, tapped at ${clock(sentAt)}.`,
-      todo: `Ask ${who} to check their account and tap Confirm payment, or mark Payment not received.`,
-      contacts: [...providerContact(o), ...studentContact(o)],
+      level: long ? 'red' : 'amber',
+      title: `${o.name} says they sent ${naira(o.totalAmount)}${sentAt ? ` (${mins(nowMs - sentAt)} ago)` : ''}`,
+      detail: sentAt ? `Tapped paid at ${clock(sentAt)}.` : undefined,
+      todo: 'Check your account, then open the order in Orders and tap Money received or Not received.',
+      contacts: studentContact(o),
     });
   });
-  if (!waiting.length) items.push({ id: 'pay-ok', level: 'green', title: 'Payments: every student who tapped paid was answered within 15 minutes' });
+  if (!waiting.length) items.push({ id: 'pay-ok', level: 'green', title: 'Payments: nothing waiting for confirmation' });
 
-  // ---------- 4. Orders: stuck, reported not received, or countdown ended with no word from the student ----------
-  let orderProblems = 0;
-  orders.forEach((o: any) => {
-    if (o.status === 'Cancelled') return;
-
-    // Student says it never came
-    if (o.notReceived && !o.notReceived.resolvedAt) {
-      orderProblems++;
-      items.push({
-        id: `nr-${o.id}`,
-        level: 'red',
-        title: `${o.name} says they haven't received their order`,
-        detail: `${naira(o.totalAmount)}, ${o.runnerName || o.turnRunner || 'runner'}. Flagged at ${clock(Number(o.notReceived.atMs) || ms(o.notReceived.at))}.`,
-        todo: 'Call the student and the runner, then resolve it in Orders.',
-        contacts: [...studentContact(o), ...providerContact(o)],
-      });
-      return;
-    }
-
-    // Inside: paid and confirmed, but the runner hasn't left 30 minutes after the batch started
-    if (!isOutside(o) && o.paymentStatus === 'payment_confirmed' && o.status !== 'On the way' && o.status !== 'Delivered') {
-      const from = Math.max(insideBatchStart(o), ms(o.paymentConfirmedAt));
-      if (from && nowMs - from >= 30 * MIN) {
-        orderProblems++;
-        const who = o.runnerName || o.turnRunner || 'The runner';
-        items.push({
-          id: `stuck-${o.id}`,
-          level: nowMs - from >= 45 * MIN ? 'red' : 'amber',
-          title: `${o.name}'s order is paid but ${who} hasn't left yet`,
-          detail: `${mins(nowMs - from)} since the batch started. ${naira(o.totalAmount)} to ${[o.building, o.room].filter(Boolean).join(' ') || 'their room'}.`,
-          todo: `Call ${who}. If they can't go, ask another runner to help.`,
-          contacts: providerContact(o),
-        });
-        return;
-      }
-    }
-
-    // Outside: paid and confirmed, but not sent towards the gate as 6pm gets close
-    if (isOutside(o) && o.paymentStatus === 'payment_confirmed' && o.status !== 'Delivered' && (o.deliveryDate || today) === today) {
-      const part = o.cart === 'food' ? o.foodStatus : o.storeStatus;
-      if (part !== 'sent' && nowMs >= atMin(now, 17, 30)) {
-        orderProblems++;
-        const who = o.operatorName || 'The operator';
-        items.push({
-          id: `late-${o.id}`,
-          level: nowMs >= atMin(now, 17, 45) ? 'red' : 'amber',
-          title: `${o.name}'s ${o.cart} order hasn't left for the gate`,
-          detail: `${naira(o.totalAmount)} with ${who}. It must reach the gate before 6pm.`,
-          todo: `Call ${who}. If it can't make it, ask them to tap Move to tomorrow so the student is told.`,
-          contacts: providerContact(o),
-        });
-        return;
-      }
-    }
-
-    // Countdown ended and the student hasn't rated or said anything: worth a glance, not an alarm
-    if (o.status === 'Delivered' && !ratedIds.has(o.id)) {
-      const end = isOutside(o) ? ms(o.deliveredAt) + 15 * MIN : o.autoDelivered ? Number(o.onTheWayAtMs || 0) + INSIDE_ARRIVAL_MINUTES * MIN : 0;
-      if (end > 15 * MIN && nowMs >= end && nowMs - end < 30 * MIN) {
-        items.push({
-          id: `cd-${o.id}`,
-          level: 'grey',
-          title: `${o.name}'s countdown ended ${mins(nowMs - end)} ago, no word from them yet`,
-          detail: isOutside(o) ? 'Should be at the gate by now.' : 'Marked delivered by the timer, not by the runner.',
-          todo: "Nothing needed unless they say it hasn't arrived. Clears in 30 minutes.",
-          contacts: studentContact(o),
-        });
-      }
-    }
-  });
-  if (!orderProblems) items.push({ id: 'orders-ok', level: 'green', title: 'Orders: none stuck, no "not received" reports' });
-
-  // ---------- 5. Settlements ----------
-  let dueTotal = 0;
-  let settleAlerts = 0;
-  const dueFrom = new Set<string>();
-  settlements.forEach((s: any) => {
-    const owed = Math.max(0, Number(s.due || 0) - Number(s.confirmed || 0));
-    const state = settlementState(s, now);
-    const sent = Math.max(0, Number(s.sentTotal || 0) - Number(s.confirmed || 0));
-    if (!owed && state !== 'waiting') return;
-    const person = s.name || 'A runner';
-    const r = runners.find((x) => x.name === s.name);
-    const op = ops.find((x) => x.id === s.uid);
-    const phone = (op && op.phone) || (r && r.phone) || '';
-    const contacts = phone ? [{ name: person, phone }] : [];
-    const day = new Date(s.date + 'T00:00:00').toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
-    if (state === 'waiting') {
-      settleAlerts++;
-      items.push({
-        id: `set-w-${s.id}`,
-        level: 'amber',
-        title: `${person} sent ${naira(sent)} for ${day}. Waiting for you`,
-        todo: `Check your account, then confirm ${naira(sent)} from ${person} in Money.`,
-        contacts,
-      });
-    } else if (state === 'overdue') {
-      settleAlerts++;
-      items.push({
-        id: `set-o-${s.id}`,
-        level: 'red',
-        title: `${person} hasn't settled ${naira(owed)} for ${day}`,
-        detail: 'They are hidden from checkout until they settle, so fewer people can take orders.',
-        todo: `Ask ${person} to settle in their portal now.`,
-        contacts,
-      });
-    } else {
-      dueTotal += owed;
-      dueFrom.add(person);
-    }
-  });
-  if (dueTotal > 0)
-    items.push({ id: 'set-due', level: 'green', title: `Settlements: ${naira(dueTotal)} due by 6am from ${dueFrom.size} ${dueFrom.size === 1 ? 'person' : 'people'}` });
-  else if (!settleAlerts) items.push({ id: 'set-ok', level: 'green', title: 'Settlements: everyone is cleared' });
-
-  // ---------- 6. Product requests waiting over 2 hours for a quote ----------
+  // ---------- 3. Product requests: every open request, as soon as it comes in ----------
   let reqWaiting = 0;
   (['inside', 'store', 'food'] as const).forEach((side) => {
     (requests[side] || []).forEach((q: any) => {
       if (q.status !== 'open') return;
       const age = nowMs - ms(q.createdAt);
-      if (age < 120 * MIN || age > 3 * 24 * 60 * MIN) return;
+      if (age > 3 * 24 * 60 * MIN) return;
       reqWaiting++;
       const what = (q.items || []).map((i: any) => i.name).slice(0, 3).join(', ');
-      const who = side === 'inside' ? 'runners' : side === 'store' ? 'store operator' : 'food operator';
       items.push({
         id: `req-${q.id}`,
-        level: age >= 6 * 60 * MIN ? 'red' : 'amber',
-        title: `${q.name || 'A student'} asked for ${what || 'a product'} ${mins(age)} ago, no quote yet`,
-        detail: "Their cart can't check out until it's quoted.",
-        todo: `Ask the ${who} to check Product requests and send a price.`,
-        contacts: side === 'inside' ? runnerContacts('boys') : opContacts(side),
+        level: age >= 2 * 60 * MIN ? 'red' : 'amber',
+        title: `${q.name || 'A student'} requested ${what || 'a product'} (${side === 'inside' ? 'canteen' : side === 'store' ? 'store' : 'food'}, ${mins(age)} ago)`,
+        detail: "Their cart can't check out until it's priced.",
+        todo: 'Check the price with the vendor, then quote it in Product requests.',
+        contacts: q.phone ? [{ name: q.name || 'Student', phone: q.phone }] : [],
       });
     });
   });
-  if (!reqWaiting) items.push({ id: 'req-ok', level: 'green', title: 'Product requests: none waiting over 2 hours' });
+  if (!reqWaiting) items.push({ id: 'req-ok', level: 'green', title: 'Product requests: none open' });
 
-  // ---------- 7. Bad feedback (you clear these yourself once you've read them) ----------
-  let badCount = 0;
-  const weekAgo = nowMs - 7 * 24 * 60 * MIN;
-  ratings.forEach((r: any) => {
-    const reasons: string[] = r.reasons || [];
-    if (reasons.includes(RATING_GOOD) || seenRatings.includes(r.id) || ms(r.createdAt) < weekAgo) return;
-    badCount++;
-    const serious = reasons.some((x) => x === 'Wrong or missing item' || x === 'Damaged or spilled' || x === 'Runner or operator attitude');
+  // ---------- 4. Complaints: "I haven't received my order" and complaint messages ----------
+  let complaints = 0;
+  orders.forEach((o: any) => {
+    if (o.status === 'Cancelled' || !o.notReceived || o.notReceived.resolvedAt) return;
+    complaints++;
     items.push({
-      id: `rate-${r.id}`,
-      level: serious ? 'red' : 'amber',
-      title: `${r.customer || 'A student'} rated ${r.providerName || 'a delivery'}: ${reasons.join(', ') || 'problem'}`,
-      detail: `${r.comment ? `"${r.comment}" ` : ''}${new Date(ms(r.createdAt)).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}.`,
-      todo: `Talk to ${r.providerName || 'them'} about it. Repeat problems mean replacement.`,
-      clear: {
-        label: 'Mark as read',
-        run: () => {
-          const next = [...seenRatings, r.id];
-          setSeenRatings(next);
-          writeSeen(next);
-        },
-      },
+      id: `nr-${o.id}`,
+      level: 'red',
+      title: `${o.name} says they haven't received their order`,
+      detail: `${naira(o.totalAmount)}, ${o.id}. Flagged at ${clock(Number(o.notReceived.atMs) || ms(o.notReceived.at))}.`,
+      todo: 'Call the student, check with the vendor, then mark it resolved in Orders.',
+      contacts: [...studentContact(o), ...providerContact(o)],
     });
   });
+  const weekAgo = nowMs - 7 * 24 * 60 * MIN;
   messages.forEach((m: any) => {
     if (m.status === 'done' || Number(m.atMs || 0) < weekAgo) return;
     if (m.type !== 'Complaint' && m.type !== 'Problem with an order') return;
-    badCount++;
+    complaints++;
     items.push({
       id: `fb-${m.id}`,
       level: m.type === 'Problem with an order' ? 'red' : 'amber',
@@ -489,7 +282,7 @@ export const AdminActionBoard: React.FC = () => {
       clear: { label: 'Mark done', run: () => void setFeedbackStatus(m.id, 'done').catch(() => window.alert('Could not update. Try again.')) },
     });
   });
-  if (!badCount) items.push({ id: 'fb-ok', level: 'green', title: 'Feedback: no complaints or bad ratings this week' });
+  if (!complaints) items.push({ id: 'fb-ok', level: 'green', title: 'Complaints: none this week' });
 
   // ---------- sort and split ----------
   const rank: Record<Level, number> = { red: 0, amber: 1, grey: 2, green: 3 };
@@ -597,7 +390,7 @@ export const AdminActionBoard: React.FC = () => {
       )}
 
       <p className="text-[10px] text-slate-400 leading-snug">
-        Updates live while admin is open. Alerts clear on their own once the runner or operator does what's needed. Feedback clears when you mark it.
+        Updates live while admin is open. Batch lines show only while a batch has paid orders. Complaints clear when you mark them done.
       </p>
     </div>
   );

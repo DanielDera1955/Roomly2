@@ -874,8 +874,13 @@ function closedByStaff(opt, side, hs = 'boys') {
   });
 }
 
+/** Settlements are OFF while Roomly collects every payment and pays vendors itself.
+ * Turn back on (true) only when operators collect money again and must settle with Roomly. */
+export const SETTLEMENTS_ON = false;
+
 /** A day must be cleared before 6am the next morning; after that the provider is hidden from checkout */
 export function isOverdue(dates, now = new Date()) {
+  if (!SETTLEMENTS_ON) return false;
   return (dates || []).some((d) => {
     const due = new Date(d + 'T00:00:00');
     due.setDate(due.getDate() + 1);
@@ -2773,6 +2778,7 @@ const dayId = (uid, day) => `${uid}_${day}`;
 
 /** Add one delivered order (or gate fee) to the signed-in provider's record for today. Counted once per key. */
 async function addToMyDay(kind, key, add, estimated, day = ymdOf(new Date()), cart = null) {
+  if (!SETTLEMENTS_ON) return;
   const uid = auth.currentUser?.uid;
   const staff = getCurrentStaff();
   if (!uid || !staff) return;
@@ -3121,6 +3127,10 @@ export async function getMySummaries(from, to) {
 /** Provider: their days not yet settled (oldest first) */
 /** @returns {() => void} */
 export function subscribeMyOpenSettlements(cb) {
+  if (!SETTLEMENTS_ON) {
+    cb([]);
+    return () => {};
+  }
   const uid = auth.currentUser?.uid;
   if (!uid) {
     cb([]);
@@ -3158,6 +3168,10 @@ async function sendSettlement__raw(id, amount, note) {
 /** Admin: every day not yet settled, across all providers */
 /** @returns {() => void} */
 export function subscribeOpenSettlements(cb) {
+  if (!SETTLEMENTS_ON) {
+    cb([]);
+    return () => {};
+  }
   const q = query(collection(db, 'settlements'), where('settled', '==', false), limit(200));
   return onSnapshot(
     q,
@@ -3769,6 +3783,10 @@ export function subscribeSettlementsByDate(day, cb) {
 /** @returns {Promise<any[]>} */
 /** Admin: every day not yet settled that owes money, across all dates, live. Used for "Who owes you" and the Money badge. */
 export function subscribeAdminOwing(cb) {
+  if (!SETTLEMENTS_ON) {
+    cb([]);
+    return () => {};
+  }
   try {
     return onSnapshot(
       query(collection(db, 'settlements'), where('settled', '==', false), limit(1000)),

@@ -42,7 +42,6 @@ import {
 } from '../config';
 import { payWithPaystack, preloadPaystack, paystackFor, isRoomlyOrder, collectsAsRoomly, ROOMLY_SUPPORT_PHONE, waNumber } from '../api.js';
 import { markPaymentSent, paymentState, getPayProvider, cancelExpress, markExpressReceived, markExpressNotHere, markNotReceived, canFlagNotReceived, contactPhoneFor } from '../api.js';
-import { RateExperience } from './RateExperience';
 import { InstallBanner } from './InstallPrompt';
 
 const mmss = (ms: number) => {
@@ -333,6 +332,30 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
     return h ? `${h}h ${m}m ${sec}s` : `${m}m ${sec}s`;
   })();
   const gateDone = gateLeftMs !== null && gateLeftMs <= 0;
+  // After arrival: how long it has been waiting, and whether it beat the promised time (never the total from payment)
+  const promisedMs = currentOrder ? arrivalDeadlineMs(currentOrder) : null;
+  const arrivedOnTime = Number.isFinite(arrivedAtMs) && promisedMs !== null && arrivedAtMs <= promisedMs;
+  const sinceText = (() => {
+    if (!Number.isFinite(arrivedAtMs) || arrivedAtMs > nowMs) return '';
+    const m = Math.floor((nowMs - arrivedAtMs) / 60000);
+    return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.floor(m / 60)}h ${m % 60}m ago`;
+  })();
+  const atClock = Number.isFinite(arrivedAtMs) ? new Date(arrivedAtMs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+  const ArrivalNote: React.FC<{ where: string }> = ({ where }) =>
+    !atClock ? null : (
+      <div className="mt-1 space-y-0.5">
+        <p className="text-[11px] font-bold text-emerald-900 dark:text-emerald-200">
+          {where} since {atClock}
+          {sinceText ? ` (${sinceText})` : ''}
+        </p>
+        {promisedMs !== null &&
+          (arrivedOnTime ? (
+            <p className="text-[11px] text-emerald-800 dark:text-emerald-300">Arrived before the promised {arrivalText(promisedMs)} ✓</p>
+          ) : (
+            <p className="text-[11px] text-amber-800 dark:text-amber-300">Sorry this came later than promised. Message us if anything is wrong.</p>
+          ))}
+      </div>
+    );
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs transition-opacity animate-in fade-in">
@@ -902,11 +925,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                             ? `It will be at the school gate in under ${GATE_ARRIVAL_MINUTES} minutes. Head to the gate when the timer is nearly done.`
                             : 'Please collect it. Your number is on the pack.'}
                         </p>
-                        {gateDone && tookText && (
-                          <p className="mt-1 text-[11px] font-bold text-emerald-900 dark:text-emerald-200">
-                            Your order took {tookText} from payment to the school gate.
-                          </p>
-                        )}
+                        {gateDone && <ArrivalNote where="At the school gate" />}
                       </div>
                       {gateLeftMs !== null && gateLeftMs > 0 && (
                         <span className="shrink-0 font-mono text-sm font-extrabold text-[#0e9f55]">{mmss(gateLeftMs)}</span>
@@ -930,9 +949,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                       <div>
                         <h4 className="text-xs font-bold text-emerald-950 dark:text-emerald-200">Order Delivered & Handed Over!</h4>
                         <p className="text-[11px] text-emerald-800 dark:text-emerald-400">Delivered to {shortLocation(currentOrder)}. Enjoy your order!</p>
-                        {!isOutside && tookText && (
-                          <p className="mt-1 text-[11px] font-bold text-emerald-900 dark:text-emerald-200">Your order took {tookText} from payment to your room.</p>
-                        )}
+                        {!isOutside && <ArrivalNote where="Delivered to your room" />}
                       </div>
                     </div>
 
@@ -1176,7 +1193,6 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
               </div>
 
               {/* Rate your experience: one rating per delivered cart, straight to Roomly */}
-              {shownDelivered && !(isOutside && !gateDone) && <RateExperience order={currentOrder} />}
 
               {/* Chat and call, under the items and total */}
               <div className="space-y-2">

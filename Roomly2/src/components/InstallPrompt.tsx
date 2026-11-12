@@ -75,20 +75,20 @@ export const InstallPrompt: React.FC<{ className?: string }> = ({ className = ''
 };
 
 /* ---------- Install bar: homepage, and on the order screen after ordering ---------- */
-const HIDE_DAYS = 3;
+// × hides the bar for this visit only: it comes back on the next visit until Roomly is installed
 const hideKey = (variant: string) => `roomly_install_hide_${variant}`;
 const hiddenNow = (variant: string) => {
   try {
-    return Number(localStorage.getItem(hideKey(variant)) || 0) > Date.now();
+    return sessionStorage.getItem(hideKey(variant)) === '1';
   } catch {
     return false;
   }
 };
-const hideForDays = (variant: string, days = HIDE_DAYS) => {
+const hideForVisit = (variant: string) => {
   try {
-    localStorage.setItem(hideKey(variant), String(Date.now() + days * 86400000));
+    sessionStorage.setItem(hideKey(variant), '1');
   } catch {
-    /* storage blocked: it just shows again next visit */
+    /* storage blocked: it just shows again */
   }
 };
 /** Real Chrome on Android (not WhatsApp, Instagram, Facebook, Opera or other in-app browsers, which can't install) */
@@ -106,7 +106,7 @@ const openInChrome = () => {
 
 /**
  * Shows on any device where Roomly isn't installed. Disappears for good once installed;
- * × or a cancelled install hides it for 3 days on that device.
+ * × or a cancelled install hides it for this visit only; it shows again next visit.
  */
 export const InstallBanner: React.FC<{ variant?: 'home' | 'order'; className?: string }> = ({ variant = 'home', className = '' }) => {
   const [, setTick] = useState(0);
@@ -124,8 +124,7 @@ export const InstallBanner: React.FC<{ variant?: 'home' | 'order'; className?: s
   if (!mode) return null; // Chrome that isn't offering install (usually already installed)
 
   const dismiss = () => {
-    // Other browsers can't tell if Roomly is already installed, so × there hides the message for good
-    hideForDays(variant, mode === 'chrome' ? 3650 : HIDE_DAYS);
+    hideForVisit(variant);
     setHidden(true);
   };
   const install = async () => {
