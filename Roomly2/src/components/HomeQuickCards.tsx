@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { RotateCcw, ChevronDown } from 'lucide-react';
+import { RotateCcw, ChevronDown, ChevronRight, Gamepad2, UtensilsCrossed, ShoppingBasket, Store } from 'lucide-react';
 import { getNextBatch, getOutsideChoices, storeGraceOpen, storeRunLeftToday } from '../api.js';
-import { dayWord, timeLabelFull, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, openDateText, BEHIND_EVERY_ORDER, OUTSIDE_STORE_GRACE_END_MIN } from '../config';
+import { dayWord, timeLabel, timeLabelFull, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, openDateText, BEHIND_EVERY_ORDER, OUTSIDE_STORE_GRACE_END_MIN, isOutsideSource } from '../config';
 import type { OrderRecord } from '../types';
 
 export type QuickTarget = 'room' | 'food' | 'store' | 'hub';
@@ -61,25 +61,52 @@ export function isOpenNow(target: QuickTarget, now: Date = new Date(), storeOpen
   return Boolean(b && dayWord(b.date, now) === 'today');
 }
 
-/** The card's status word: open, late orders, order for tomorrow, or closed */
-function statusOf(id: QuickTarget, open: boolean, now: Date, storeOpensAtMs: number): string {
-  if (id === 'hub') return 'Open anytime';
-  if (open) return 'Open now';
-  if (id === 'store' && storeOpensAtMs > now.getTime()) return 'Closed now';
-  // Closed today, but ordering still works for the next batch
-  const forDay = (date?: string) => (date ? `For ${dayWord(date, now).replace(/^on /, '')}` : '');
-  if (id === 'room') return forDay(getNextBatch('inside', now).next?.batch.date) || 'Closed now';
-  return forDay(getOutsideChoices(id, now).batch?.date) || 'Paused';
+/** One short status line per card: "Open · gate before 7pm", "Closed · order for tomorrow", etc. */
+export function shortStatus(id: QuickTarget, now: Date = new Date(), storeOpensAtMs = 0): { text: string; open: boolean } {
+  if (id === 'hub') return { text: 'Games · Buy and Sell · Services · Lost and Found', open: true };
+  const forWord = (date?: string) => (date ? dayWord(date, now).replace(/^on /, '') : 'later');
+  if (id === 'room') {
+    const { next } = getNextBatch('inside', now);
+    if (!next) return { text: 'Closed for now', open: false };
+    if (next.batch.dayLabel === 'Today') return { text: `Tonight · room by ${timeLabel(INSIDE_ARRIVE_BY_MIN)}`, open: true };
+    return { text: `Closed · order for ${forWord(next.batch.date)}`, open: false };
+  }
+  if (id === 'store' && storeOpensAtMs > now.getTime()) return { text: `Opens ${openDateText(storeOpensAtMs)}`, open: false };
+  const b = getOutsideChoices(id, now).batch;
+  if (!b) return { text: 'Back soon', open: false };
+  if (dayWord(b.date, now) !== 'today') return { text: `Closed · order for ${forWord(b.date)}`, open: false };
+  if (id === 'store' && storeGraceOpen(now)) return { text: `Late orders till ${timeLabel(OUTSIDE_STORE_GRACE_END_MIN)}`, open: true };
+  return { text: `Open · gate before ${timeLabel(outsideArriveByFor(b.id))}`, open: true };
 }
 
-/** Home: four quick cards (everyone): the live dot, the name and the promise of each section */
+/** The card photo: a featured product with a photo from that section, else any product with a photo */
+function photoFor(id: QuickTarget, products: any[]): string {
+  if (id === 'hub') return '';
+  const inSection = (p: any) =>
+    p && p.imageUrl && p.isAvailable !== false &&
+    (id === 'food' ? p.source === 'food' : id === 'store' ? p.source === 'outside' : !isOutsideSource(p.source));
+  const list = products.filter(inSection);
+  return (list.find((p) => p.featured) || list[0])?.imageUrl || '';
+}
+
+const FALLBACK_ICON: Record<QuickTarget, React.FC<{ className?: string }>> = {
+  food: UtensilsCrossed,
+  store: ShoppingBasket,
+  room: Store,
+  hub: Gamepad2,
+};
+
+/** Home: four photo cards (everyone): photo, name with an arrow, and one short status line */
 export const HomeQuickCards: React.FC<{
   onOpen: (t: QuickTarget) => void;
   storeOpensAtMs?: number;
+  /** Products, for each card's photo */
+  products?: any[];
   /** New visitors see the trust strip under the cards; returning students see it at the bottom of the page */
   showBehind?: boolean;
-}> = ({ onOpen, storeOpensAtMs = 0, showBehind = true }) => {
+}> = ({ onOpen, storeOpensAtMs = 0, products = [], showBehind = true }) => {
   const [, setTick] = useState(0);
+  const [broken, setBroken] = useState<Record<string, boolean>>({});
   useEffect(() => {
     const h = () => setTick((n) => n + 1);
     window.addEventListener('roomly-batches', h);
@@ -90,52 +117,61 @@ export const HomeQuickCards: React.FC<{
     };
   }, []);
   const now = new Date();
-  const cards: { id: QuickTarget; title: string; cta: string }[] = [
-    { id: 'food', title: 'Outside Food', cta: 'Tap to order food' },
-    { id: 'store', title: 'Outside Items', cta: 'Tap to shop items' },
-    { id: 'room', title: 'Canteen Items', cta: 'Tap to order to your room' },
-    { id: 'hub', title: 'Hostel Hub', cta: 'Tap to open Hub' },
+  const cards: { id: QuickTarget; title: string }[] = [
+    { id: 'food', title: 'Outside Food' },
+    { id: 'store', title: 'Outside Items' },
+    { id: 'room', title: 'Canteen Items' },
+    { id: 'hub', title: 'Hostel Hub' },
   ];
 
   return (
     <div className="space-y-3">
-      {/* Tells first-timers these four cards are the whole app (each card says to tap it) */}
-      <p className="px-1 text-center text-xs font-bold text-slate-700 dark:text-slate-200">Everything on Roomly</p>
-      <div className="grid grid-cols-2 gap-2 -mt-1">
-        {cards.map(({ id, title, cta }) => {
-          const open = isOpenNow(id, now, storeOpensAtMs);
-          const status = statusOf(id, open, now, storeOpensAtMs);
+      <div className="grid grid-cols-2 gap-2.5">
+        {cards.map(({ id, title }) => {
+          const { text, open } = shortStatus(id, now, storeOpensAtMs);
+          const photo = broken[id] ? '' : photoFor(id, products);
+          const Icon = FALLBACK_ICON[id];
           return (
-          <button
-            key={id}
-            type="button"
-            onClick={() => onOpen(id)}
-            className={`h-full flex flex-col justify-start items-stretch p-3 rounded-2xl bg-white dark:bg-slate-900 border text-left cursor-pointer active:scale-[0.98] transition-transform ${
-              open && id !== 'hub' ? 'border-[#0e9f55]/60' : 'border-slate-200/80 dark:border-slate-800'
-            }`}
-          >
-            <span className="flex items-center gap-2 text-sm font-extrabold text-slate-900 dark:text-white">
-              {/* Live dot first: pulsing green while taking orders, amber when closed, steady green for Hostel Hub */}
-              <span className="relative flex w-2.5 h-2.5 shrink-0" aria-label={id === 'hub' ? 'Open anytime' : open ? 'Taking orders now' : 'Closed now'}>
-                {open && id !== 'hub' && <span className="absolute inline-flex w-full h-full rounded-full bg-emerald-400 opacity-75 animate-ping" />}
-                <span className={`relative inline-flex w-2.5 h-2.5 rounded-full ${open ? 'bg-[#0e9f55]' : 'bg-amber-400'}`} />
+            <button
+              key={id}
+              type="button"
+              onClick={() => onOpen(id)}
+              className="h-full flex flex-col items-stretch rounded-2xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-left cursor-pointer active:scale-[0.98] transition-transform"
+            >
+              {photo ? (
+                <img
+                  src={photo}
+                  alt=""
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  onError={() => setBroken((b) => ({ ...b, [id]: true }))}
+                  className="w-full h-24 object-cover bg-slate-100 dark:bg-slate-800"
+                />
+              ) : (
+                <div className={`w-full h-24 flex items-center justify-center ${id === 'hub' ? 'bg-violet-100 dark:bg-violet-950/50' : 'bg-emerald-50 dark:bg-emerald-950/40'}`}>
+                  <Icon className={`w-9 h-9 ${id === 'hub' ? 'text-violet-600 dark:text-violet-300' : 'text-[#0e9f55]'}`} />
+                </div>
+              )}
+              <span className="flex flex-col px-3 py-2.5">
+                <span className="flex items-center gap-1 text-sm font-extrabold text-slate-900 dark:text-white">
+                  <span className="min-w-0 truncate">{title}</span>
+                  <ChevronRight className="w-4 h-4 shrink-0 text-slate-400" />
+                </span>
+                <span
+                  className={`mt-1 flex items-start gap-1.5 text-[11px] leading-snug font-semibold ${
+                    id === 'hub' ? 'text-slate-500 dark:text-slate-400' : open ? 'text-[#0b8044] dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'
+                  }`}
+                >
+                  {id !== 'hub' && (
+                    <span className="relative flex w-2 h-2 mt-1 shrink-0" aria-hidden="true">
+                      {open && <span className="absolute inline-flex w-full h-full rounded-full bg-emerald-400 opacity-75 animate-ping" />}
+                      <span className={`relative inline-flex w-2 h-2 rounded-full ${open ? 'bg-[#0e9f55]' : 'bg-amber-400'}`} />
+                    </span>
+                  )}
+                  <span className="min-w-0">{text}</span>
+                </span>
               </span>
-              <span className="min-w-0 flex-1 truncate">{title}</span>
-            </span>
-            <span className="flex items-center gap-1.5 mt-0.5">
-              <span className={`text-[10px] font-bold uppercase tracking-wide ${open ? 'text-[#0e9f55]' : 'text-amber-600 dark:text-amber-400'}`}>{status}</span>
-            </span>
-            {cardLines(id, now, storeOpensAtMs).map((line) => (
-              <span key={line} className="block mt-1 first-of-type:mt-1.5 text-[11px] leading-snug text-slate-600 dark:text-slate-300">
-                {line}
-              </span>
-            ))}
-            {/* Tap cue: pinned to the bottom so every card ends on the same line */}
-            <span className="mt-auto pt-2 flex items-center gap-1 text-[11px] font-bold text-[#0e9f55]">
-              {cta}
-              <span aria-hidden="true">&rarr;</span>
-            </span>
-          </button>
+            </button>
           );
         })}
       </div>

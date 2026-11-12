@@ -1268,6 +1268,7 @@ export default function App() {
           {/* Four quick cards for everyone */}
           <HomeQuickCards
             storeOpensAtMs={storeLocked ? storeOpensMs : 0}
+            products={products}
             showBehind={!signedInCustomer}
             onOpen={(t: QuickTarget) => {
               setSearchQuery('');

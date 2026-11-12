@@ -1,115 +1,90 @@
-import React, { useState } from 'react';
-import { HelpCircle, ChevronDown } from 'lucide-react';
+import React from 'react';
+import { ChevronDown, Plus, Check, Timer } from 'lucide-react';
 
 /**
- * Home page: "New here? How you can use Roomly". Folded so it never pushes the products down;
- * shows a small "New here?" label until the student has opened it once.
+ * Home page: "How Roomly works". Four drawn mini screens (no screenshots, so it stays light on data
+ * and never goes out of date), shown until the student's 3rd completed order (App decides).
  */
-export const HowRoomlyWorks: React.FC<{ storeOpensMs: number; onStart: () => void; onHub: () => void }> = ({ storeOpensMs, onStart, onHub }) => {
-  const [open, setOpen] = useState(false);
-  const [seen, setSeen] = useState(() => {
-    try {
-      return localStorage.getItem('roomly_seen_guide') === '1';
-    } catch {
-      return true;
-    }
-  });
-  const toggle = () => {
-    setOpen(!open);
-    if (!seen) {
-      setSeen(true);
-      try {
-        localStorage.setItem('roomly_seen_guide', '1');
-      } catch {}
-    }
-  };
-  const storeOpen = Date.now() >= storeOpensMs;
-  const d = new Date(storeOpensMs);
-  const opens = `${d.toLocaleDateString('en-GB', { weekday: 'long' })}, ${d.getDate()} ${d.toLocaleDateString('en-GB', { month: 'long' })}`;
+const Screen: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="h-[72px] rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-center justify-center px-2">
+    {children}
+  </div>
+);
 
-  const points: { title: string; lines: string[] }[] = [
+export const HowRoomlyWorks: React.FC<{ storeOpensMs: number; onStart: () => void; onHub: () => void }> = ({ onStart, onHub }) => {
+  const steps: { title: string; note?: string; screen: React.ReactNode }[] = [
     {
-      title: 'Order inside school',
-      lines: [
-        'Store items and canteen food, brought to your room by a Roomly runner.',
-        "Orders go out in batches: 3 a day from Monday to Friday, and 4 on Saturday and Sunday. You see the next batch time at checkout, so it's never long until the next one.",
-      ],
+      title: 'Pick what you want',
+      screen: (
+        <div className="w-full flex items-center gap-2">
+          <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 shrink-0" />
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="h-2 w-4/5 rounded bg-slate-300 dark:bg-slate-600" />
+            <div className="h-2 w-1/2 rounded bg-slate-200 dark:bg-slate-700" />
+          </div>
+          <span className="w-6 h-6 rounded-full bg-[#0e9f55] text-white flex items-center justify-center shrink-0">
+            <Plus className="w-3.5 h-3.5" />
+          </span>
+        </div>
+      ),
     },
     {
-      title: 'Order from outside school',
-      lines: [
-        'Cooked food, foodstuffs and everyday items from outside school, delivered to the school gate. Cooked food comes in two batches: lunch (order before 12:30pm, at the gate before 1:30pm, not on Mondays) and dinner (order before 6:00pm, at the gate before 7:00pm). Store items: order before 5:00pm, at the gate before 7:00pm.',
-        'You can track your order and see when your payment is confirmed, being packed, on its way, and a countdown until it reaches the gate.',
-        storeOpen ? 'Outside food and store items are both open.' : `Outside food is open now. Everyday store items start ${opens}.`,
-      ],
+      title: 'Pay and tap "I\'ve paid"',
+      screen: (
+        <div className="w-full space-y-1.5">
+          <div className="h-2 w-3/4 mx-auto rounded bg-slate-300 dark:bg-slate-600" />
+          <div className="h-6 rounded-lg bg-[#0e9f55] text-white text-[10px] font-bold flex items-center justify-center">I've paid</div>
+        </div>
+      ),
     },
-    { title: 'Track every order', lines: ['Check where any order is, anytime, in My orders.'] },
-    { title: "Can't find something?", lines: ["Tap Request and we'll get you a price."] },
     {
-      title: 'Hostel Hub (inside school)',
-      lines: [
-        'Be the best in Caritas at eFootball, FIFA, DLS, Free Fire and CODM. Sell or rent things you no longer use, or post what you need.',
-      ],
+      title: 'Your countdown starts',
+      screen: (
+        <div className="flex items-center gap-1.5 text-[#0b8044] dark:text-emerald-400">
+          <Timer className="w-4 h-4" />
+          <span className="font-mono tabular-nums text-base font-black">00:45:10</span>
+        </div>
+      ),
+    },
+    {
+      title: 'Delivered before it hits 0',
+      note: 'Outside orders at the gate, canteen orders to your room',
+      screen: (
+        <div className="flex flex-col items-center gap-1">
+          <span className="w-7 h-7 rounded-full bg-[#0e9f55] text-white flex items-center justify-center">
+            <Check className="w-4 h-4" />
+          </span>
+          <span className="text-[10px] font-bold text-[#0b8044] dark:text-emerald-400">Delivered</span>
+        </div>
+      ),
     },
   ];
 
   return (
     <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 overflow-hidden">
-      <button type="button" onClick={toggle} className="w-full flex items-center justify-between gap-2 px-4 py-3 cursor-pointer text-left">
-        <span className="flex items-center gap-2.5 min-w-0">
-          <span className="w-8 h-8 shrink-0 rounded-full bg-emerald-50 dark:bg-emerald-950/60 flex items-center justify-center">
-            <HelpCircle className="w-4 h-4 text-[#0e9f55]" />
-          </span>
-          <span className="text-sm font-bold text-slate-900 dark:text-white truncate">How you can use Roomly</span>
-          {!seen && (
-            <span className="shrink-0 px-2 py-0.5 rounded-full bg-[#0e9f55] text-white text-[10px] font-bold">New here?</span>
-          )}
-        </span>
-        <ChevronDown className={`w-4 h-4 shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && (
-        <div className="px-4 pb-4 border-t border-slate-100 dark:border-slate-800">
-          <ol className="pt-3 space-y-3">
-            {points.map((p, i) => (
-              <li key={p.title} className="flex gap-3">
-                <span className="w-6 h-6 shrink-0 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-[#0e9f55] text-[11px] font-black flex items-center justify-center">
-                  {i + 1}
-                </span>
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-slate-900 dark:text-white">{p.title}</p>
-                  {p.lines.map((l) => (
-                    <p key={l} className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mt-0.5">
-                      {l}
-                    </p>
-                  ))}
-                </div>
-              </li>
-            ))}
-          </ol>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                onStart();
-              }}
-              className="h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer"
-            >
-              Start ordering
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                onHub();
-              }}
-              className="h-11 rounded-xl border border-[#0e9f55] text-[#0e9f55] text-sm font-bold cursor-pointer"
-            >
-              Hostel Hub
-            </button>
-          </div>
+      <div className="px-4 pt-3.5 pb-4">
+        <p className="text-sm font-bold text-slate-900 dark:text-white">How Roomly works</p>
+        <ol className="mt-3 grid grid-cols-2 gap-2.5">
+          {steps.map((s, i) => (
+            <li key={s.title} className="min-w-0">
+              <Screen>{s.screen}</Screen>
+              <p className="mt-1.5 flex gap-1.5 text-xs font-bold text-slate-900 dark:text-white leading-snug">
+                <span className="text-[#0e9f55] shrink-0">{i + 1}</span>
+                <span className="min-w-0">{s.title}</span>
+              </p>
+              {s.note && <p className="mt-0.5 text-[10.5px] leading-snug text-slate-500 dark:text-slate-400">{s.note}</p>}
+            </li>
+          ))}
+        </ol>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <button type="button" onClick={onStart} className="h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer">
+            Start ordering
+          </button>
+          <button type="button" onClick={onHub} className="h-11 rounded-xl border border-[#0e9f55] text-[#0e9f55] text-sm font-bold cursor-pointer">
+            Hostel Hub
+          </button>
         </div>
-      )}
+      </div>
       {/* Runner sign-up: small and always visible, so students who want to earn can find it */}
       <a
         href="#join"
