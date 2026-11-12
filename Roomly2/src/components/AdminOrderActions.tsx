@@ -36,13 +36,12 @@ export const RoomlyPayoutLine: React.FC<{ order: OrderRecord; who: 'runner' | 'a
   }, [order.id, order.items?.length]);
   if (!p) return null;
   const outside = order.cart === 'store' || order.cart === 'food';
-  // Outside: transport is paid once per batch (see the Batch summary), so each order shows items only
+  // Outside: transport is paid once per batch, so each order shows items only
   if (outside && who === 'admin')
     return (
       <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
         Items for the store {naira(p.items)}
         {p.estimated ? ' est.' : ''}
-        <span className="font-normal text-slate-500 dark:text-slate-400"> (transport is paid once per batch, see Batch summary)</span>
       </p>
     );
   return (

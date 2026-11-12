@@ -23,6 +23,7 @@ import {
   createProductRequest,
   subscribeProductRequest,
   getOutsideChoices,
+  saveCustomerCart,
 } from './api.js';
 import { onFoodMenu, FOOD_BATCH_LABEL, dayWord, timeLabelFull, openDateText, INSIDE_LAUNCH_MS, caritasLineFor, liveStatusFor, SCHOOL_NAME, ShopGroup, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
 import { MessageCircle, Info } from 'lucide-react';
@@ -442,6 +443,19 @@ export default function App() {
   // Save every change for the current owner
   useEffect(() => {
     if (loadedOwner && loadedOwner === cartOwner) writeCart(cartOwner, cartItems);
+  }, [cartItems, cartOwner, loadedOwner]);
+  // Signed-in students: a short cart summary also goes to their profile (a few seconds after the
+  // last change), so admin can see carts left without an order
+  const lastCloudCart = useRef('');
+  useEffect(() => {
+    if (cartOwner === 'guest' || loadedOwner !== cartOwner) return;
+    const sig = JSON.stringify(cartItems.map((it) => [it.id, it.quantity]));
+    if (sig === lastCloudCart.current) return;
+    const t = window.setTimeout(() => {
+      lastCloudCart.current = sig;
+      saveCustomerCart(customer?.phone || phone, pin, cartItems);
+    }, 5000);
+    return () => window.clearTimeout(t);
   }, [cartItems, cartOwner, loadedOwner]);
   // Today's prices: a saved cart follows the current store price; deleted products drop out
   useEffect(() => {

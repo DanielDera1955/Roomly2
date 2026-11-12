@@ -22,7 +22,6 @@ import {
 import { OrderRecord, locationText } from '../types';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
 import { AdminOrderActions } from './AdminOrderActions';
-import { BatchSummary } from './BatchSummary';
 
 type Section = 'inside' | 'store' | 'food';
 type View = 'all' | Section;
@@ -443,7 +442,6 @@ export const AdminDispatch: React.FC = () => {
             ? 'Payment confirmed. Being packed and delivered.'
             : 'Delivered to the room (inside) or sent to the school gate (outside).'}
         </p>
-        {tab === 'confirmed' && section !== 'inside' && <BatchSummary orders={inSection} />}
         {list.length === 0 && <p className="text-xs text-slate-400">Nothing here.</p>}
         {list.map((o) => (
           <OrderRow key={o.id} o={o} showSection={section === 'all'} />

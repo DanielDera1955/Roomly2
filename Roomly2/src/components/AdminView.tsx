@@ -68,6 +68,7 @@ import {
   getRunners,
   assignRunnerToOrder,
   getAllCustomers,
+  waNumber,
   confirmPayment,
 } from '../api.js';
 
@@ -211,6 +212,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
   // Customers State
   const [customers, setCustomers] = useState<any[]>([]);
+  const [custList, setCustList] = useState<'ordered' | 'started' | 'none'>('ordered');
 
   const [loading, setLoading] = useState(false);
 
@@ -1671,60 +1673,110 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
         {currentTab === 'activity' && <ActivityLog />}
 
         {/* ================= TAB 4: CUSTOMERS ================= */}
-        {currentTab === 'customers' && (
-          <div className="space-y-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Registered Campus Students ({customers.length})
-            </h3>
+        {currentTab === 'customers' && (() => {
+          const lists: { id: 'ordered' | 'started' | 'none'; label: string }[] = [
+            { id: 'ordered', label: 'Ordered' },
+            { id: 'started', label: "Started, didn't finish" },
+            { id: 'none', label: 'Not ordered yet' },
+          ];
+          const count = (id: string) => customers.filter((c) => (c.group || 'none') === id).length;
+          const shown = customers
+            .filter((c) => (c.group || 'none') === custList)
+            .sort((a, b) => String(b.lastOrderAt || b.cart?.at || b.updatedAt || '').localeCompare(String(a.lastOrderAt || a.cart?.at || a.updatedAt || '')));
+          const firstName = (n: string) => String(n || '').trim().split(/\s+/)[0] || 'there';
+          const waText = (c: any) =>
+            c.group === 'started'
+              ? `Hi ${firstName(c.name)}, this is Roomly Caritas. I noticed you started an order but didn't finish. Did anything go wrong? I can help you complete it.`
+              : `Hi ${firstName(c.name)}, this is Roomly Caritas. Thanks for signing up. Food and items from Oye come to the school gate, and canteen items to your room at night. Need anything today?`;
+          return (
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800">
+                {lists.map((l) => (
+                  <button
+                    key={l.id}
+                    type="button"
+                    onClick={() => setCustList(l.id)}
+                    className={`py-2 px-1 rounded-xl text-[11px] leading-tight font-bold cursor-pointer ${
+                      custList === l.id ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs' : 'text-slate-500'
+                    }`}
+                  >
+                    {l.label} <span className="text-[#0e9f55]">{count(l.id)}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                {custList === 'ordered'
+                  ? 'Payment confirmed and sent to the gate or delivered. "In progress" means paid, not sent yet.'
+                  : custList === 'started'
+                  ? "Checked out without paying, or left items in their cart (signed-in students only, counted from today)."
+                  : 'Have an account (checkout or Games) but never started an order.'}
+              </p>
 
-            {customers.map((c, idx) => (
-              <div
-                key={idx}
-                className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center justify-between"
-              >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-xs text-slate-900 dark:text-white">
-                      {c.name || 'Student'}
-                    </span>
-                    {c.isReturning && (
-                      <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-[#0e9f55]">
-                        Returning
-                      </span>
+              {shown.length === 0 && (
+                <p className="text-xs text-slate-500 dark:text-slate-400 py-6 text-center">No students in this list yet.</p>
+              )}
+
+              {shown.map((c) => (
+                <div
+                  key={c.phone}
+                  className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-start justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-xs text-slate-900 dark:text-white">{c.name || 'Student'}</span>
+                      {c.tag && (
+                        <span className="text-[10px] font-bold px-1.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400">
+                          {c.tag}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Phone: <span className="font-mono text-slate-700 dark:text-slate-300">{c.phone}</span>
+                    </p>
+                    <p className="text-[11px] text-slate-500">Room: {locationText(c)}</p>
+                    {c.tag === 'Items in cart' && c.cart && (
+                      <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
+                        Cart: {(c.cart.items || []).join(', ')} · ₦{Number(c.cart.total || 0).toLocaleString()}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (window.confirm('Reset this customer? The phone number can then be registered again with a new PIN. Their saved details and order list are removed.')) {
+                          await resetCustomerPhone(c.phone);
+                          fetchAllData();
+                        }
+                      }}
+                      className="mt-1 text-[10px] font-bold text-rose-500 hover:underline cursor-pointer"
+                    >
+                      Reset PIN / free this number
+                    </button>
+                  </div>
+
+                  <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
+                    {custList === 'ordered' ? (
+                      <>
+                        <span className="text-xs font-mono font-bold text-slate-900 dark:text-white">
+                          {c.doneCount || 0} {c.doneCount === 1 ? 'order' : 'orders'}
+                        </span>
+                        <span className="block text-[10px] text-[#0e9f55]">{c.deliveredOrdersCount || 0} delivered</span>
+                      </>
+                    ) : (
+                      <a
+                        href={`https://wa.me/${waNumber(c.phone)}?text=${encodeURIComponent(waText(c))}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1.5 rounded-xl bg-[#0e9f55] text-white text-[11px] font-bold"
+                      >
+                        WhatsApp
+                      </a>
                     )}
                   </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Phone: <span className="font-mono text-slate-700 dark:text-slate-300">{c.phone}</span>
-                  </p>
-                  <p className="text-[11px] text-slate-500">
-                    Room: {locationText(c)}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (window.confirm('Reset this customer? The phone number can then be registered again with a new PIN. Their saved details and order list are removed.')) {
-                        await resetCustomerPhone(c.phone);
-                        fetchAllData();
-                      }
-                    }}
-                    className="mt-1 text-[10px] font-bold text-rose-500 hover:underline cursor-pointer"
-                  >
-                    Reset PIN / free this number
-                  </button>
                 </div>
-
-                <div className="text-right">
-                  <span className="text-xs font-mono font-bold text-slate-900 dark:text-white">
-                    {c.ordersCount || 1} orders
-                  </span>
-                  <span className="block text-[10px] text-[#0e9f55]">
-                    {c.deliveredOrdersCount || 0} delivered
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

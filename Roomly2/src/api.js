@@ -10,6 +10,7 @@
  */
 
 import { getRef, getHeardFrom, getHeardName } from './tracking.js';
+import { orderStageOf } from './types.ts';
 import {
   INITIAL_PRODUCTS,
   INITIAL_CATEGORIES,
@@ -1826,6 +1827,32 @@ export async function saveCustomer() {
   return null;
 }
 
+/**
+ * Signed-in student's cart, saved on their profile so admin can see carts left without an order.
+ * Only a short summary is stored. An empty cart clears it.
+ */
+export async function saveCustomerCart(phone, pin, items) {
+  const p = normalizePhone(phone);
+  if (!isValidNigerianPhone(p) || !isValidPin(pin)) return;
+  try {
+    const ref = doc(db, 'customers', await profileKey(p, pin));
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return;
+    const list = Array.isArray(items) ? items : [];
+    const cart = list.length
+      ? {
+          count: list.reduce((n, it) => n + (Number(it.quantity) || 1), 0),
+          total: list.reduce((n, it) => n + (Number(it.totalPrice) || 0), 0),
+          items: list.slice(0, 8).map((it) => `${it.quantity || 1} x ${String(it.name || 'Item').slice(0, 40)}`),
+          at: new Date().toISOString(),
+        }
+      : null;
+    await setDoc(ref, { cart }, { merge: true });
+  } catch (e) {
+    /* a missed cart save never blocks shopping */
+  }
+}
+
 /** @returns {Promise<any>} */
 export async function getAllCustomers() {
   try {
@@ -1838,7 +1865,25 @@ export async function getAllCustomers() {
     return Object.values(byPhone).map((c) => {
       const mine = orders.filter((o) => o.phone === c.phone);
       const delivered = mine.filter((o) => o.status === 'Delivered');
-      return { ...c, ordersCount: mine.length || 1, deliveredOrdersCount: delivered.length, isReturning: true };
+      // Which customer list they belong to (admin Customers tab)
+      const stages = mine.map((o) => orderStageOf(o));
+      const doneCount = stages.filter((s) => s === 'onway' || s === 'delivered').length;
+      const inProgress = stages.some((s) => s === 'received' || s === 'packaging');
+      const cartCount = c.cart && c.cart.count ? c.cart.count : 0;
+      let group = 'none';
+      let tag = '';
+      if (doneCount || inProgress) {
+        group = 'ordered';
+        tag = !doneCount ? 'In progress' : '';
+      } else if (mine.length) {
+        group = 'started';
+        tag = "Checked out, didn't pay";
+      } else if (cartCount) {
+        group = 'started';
+        tag = 'Items in cart';
+      }
+      const lastAt = mine.map((o) => o.createdAt || o.timestamp || '').sort().pop() || '';
+      return { ...c, ordersCount: mine.length, deliveredOrdersCount: delivered.length, doneCount, group, tag, lastOrderAt: lastAt, isReturning: mine.length > 0 };
     });
   } catch (e) {
     console.error(e);
