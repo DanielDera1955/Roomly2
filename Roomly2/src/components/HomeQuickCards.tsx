@@ -154,8 +154,12 @@ export const HomeQuickCards: React.FC<{
   return (
     <div className="space-y-3">
       {/* Tells first-timers these four cards are the whole app */}
-      <p className="px-1 text-center text-xs font-bold text-slate-700 dark:text-slate-200">Everything on Roomly</p>
-      <div className="grid grid-cols-2 gap-2.5 -mt-1">
+      <div className="flex items-center gap-3 px-1">
+        <span className="h-px flex-1 bg-gradient-to-r from-transparent to-emerald-300 dark:to-emerald-700" />
+        <span className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#0b8044] dark:text-emerald-400">Everything on Roomly</span>
+        <span className="h-px flex-1 bg-gradient-to-l from-transparent to-emerald-300 dark:to-emerald-700" />
+      </div>
+      <div className="grid grid-cols-2 gap-2.5">
         {cards.map(({ id, title }) => {
           const { text, open } = shortStatus(id, now, storeOpensAtMs);
           const photo = broken[id] ? productPhotoFor(id, products) : CARD_PHOTO[id];

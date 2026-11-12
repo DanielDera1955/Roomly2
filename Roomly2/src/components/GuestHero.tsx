@@ -1,6 +1,5 @@
-import React from 'react';
-import { INSIDE_LAUNCH_MS, OUTSIDE_FOOD_ORDER_BY_MIN, getBookableSlots, timeLabel, dayWord, outsideArriveByFor } from '../config';
-import { getOutsideChoices } from '../api.js';
+import React, { useEffect, useState } from 'react';
+import { INSIDE_LAUNCH_MS, OUTSIDE_FOOD_ORDER_BY_MIN, getBookableSlots, timeLabel } from '../config';
 
 /**
  * Home screen hero for first-time visitors (not signed in). Open layout, no card.
@@ -30,11 +29,37 @@ export const GuestHero: React.FC<{
   onStart: () => void;
   onOpenSection: (side: 'inside' | 'outside', tab: 'store' | 'food' | 'hub') => void;
 }> = ({ dayPart, nowMs, storeOpensMs, onStart, onOpenSection }) => {
-  // Need-based headline: the next food batch's promise
-  const foodBatch = getOutsideChoices('food', new Date(nowMs)).batch;
-  const foodToday = Boolean(foodBatch && dayWord(foodBatch.date, new Date(nowMs)) === 'today');
-  const foodGate = foodBatch ? timeLabel(outsideArriveByFor(foodBatch.id)) : '';
-  const foodDay = foodBatch && !foodToday ? dayWord(foodBatch.date, new Date(nowMs)).replace(/^on /, '') : '';
+  // Rotating word: slides out, swaps, slides in. Stays still for phones set to reduce motion.
+  const [i, setI] = useState(0);
+  const [phase, setPhase] = useState<'shown' | 'out' | 'in'>('shown');
+  useEffect(() => {
+    let still = false;
+    try {
+      still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch {}
+    if (still) return;
+    let t1 = 0;
+    let t2 = 0;
+    const id = window.setInterval(() => {
+      setPhase('out');
+      t1 = window.setTimeout(() => {
+        setI((n) => (n + 1) % HERO_WORDS.length);
+        setPhase('in');
+        t2 = window.setTimeout(() => setPhase('shown'), 30);
+      }, 320);
+    }, 2200);
+    return () => {
+      window.clearInterval(id);
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, []);
+  const wordStyle: React.CSSProperties =
+    phase === 'out'
+      ? { transform: 'translateY(-70%)', opacity: 0, transition: 'transform .32s ease, opacity .32s ease' }
+      : phase === 'in'
+      ? { transform: 'translateY(70%)', opacity: 0, transition: 'none' }
+      : { transform: 'translateY(0)', opacity: 1, transition: 'transform .32s ease, opacity .32s ease' };
 
   // Live status for each tile
   const now = new Date(nowMs);
@@ -75,11 +100,15 @@ export const GuestHero: React.FC<{
       <p className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#0b8044] dark:text-emerald-400">Hey there, {dayPart.toLowerCase()}</p>
 
       <h1 className="mt-3 text-[30px] leading-[1.15] font-extrabold tracking-tight text-slate-900 dark:text-white">
-        {foodToday || !foodBatch ? 'Hungry?' : `Hungry ${foodDay}?`}
+        Get
         <br />
-        <span className="text-[#0e9f55] dark:text-emerald-400">
-          {foodBatch ? `Food at the gate before ${foodGate}` : 'Food at the school gate'}
+        <span className="inline-block h-[38px] overflow-hidden align-bottom">
+          <span className="inline-block text-[#0e9f55] dark:text-emerald-400" style={wordStyle}>
+            {HERO_WORDS[i]}
+          </span>
         </span>
+        <br />
+        <span className="text-slate-500 dark:text-slate-300">without leaving school.</span>
       </h1>
 
       <p className="mt-3 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
