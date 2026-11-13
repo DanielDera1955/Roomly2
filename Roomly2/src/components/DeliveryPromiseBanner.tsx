@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Clock, Store, UtensilsCrossed } from 'lucide-react';
-import { getNextBatch, getOutsideChoices, storeGraceOpen, storeRunLeftToday, batchCloseDate } from '../api.js';
+import { getNextBatch, getOutsideChoices, storeGraceOpen, storeRunLeftToday, batchCloseDate, foodBatchAvailable } from '../api.js';
 import {
   SwitchSide,
   dayWord,
@@ -11,6 +11,8 @@ import {
   INSIDE_ORDER_BY_MIN,
   INSIDE_ARRIVE_BY_MIN,
   slotsForDay,
+  foodLateOrderByMin,
+  lateFoodFee,
 } from '../config';
 
 interface DeliveryPromiseBannerProps {
@@ -48,7 +50,7 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
   // Which section the student is in, named the way the home cards name it
   const section = side === 'inside' ? 'Canteen Items' : side === 'food' ? 'Outside Food' : 'Outside Items';
   type Tag = 'OPEN NOW' | 'NEXT' | 'CLOSED' | string;
-  type Row = { name: string; orderEnd: string; arrive: string; tag: Tag };
+  type Row = { name: string; orderEnd: string; arrive: string; tag: Tag; fee?: string; room?: boolean };
 
   let badge = '';
   let headline = '';
@@ -66,13 +68,13 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
       notes = ['Delivery to your room starts then. You can add items to your cart now.'];
     } else if (!next) {
       headline = 'Closed right now';
-      rows = [{ name: 'Night batch', orderEnd: orderBy, arrive, tag: 'CLOSED' }];
+      rows = [{ name: 'Night batch', room: true, orderEnd: orderBy, arrive, tag: 'CLOSED' }];
       if (note) notes = [note];
     } else {
       const today = next.batch.dayLabel === 'Today';
       const when = next.batch.dayLabel.toLowerCase();
       headline = today ? 'Taking orders now' : `Closed for today. Order now for ${when}`;
-      rows = [{ name: 'Night batch', orderEnd: orderBy, arrive, tag: today ? 'OPEN NOW' : when.toUpperCase() }];
+      rows = [{ name: 'Night batch', room: true, orderEnd: orderBy, arrive, tag: today ? 'OPEN NOW' : when.toUpperCase() }];
       if (next.unconfirmed) notes.push('No runner has confirmed this batch yet. You pay once a runner confirms.');
       if (note) notes.push(note);
     }
@@ -99,14 +101,42 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
         if (list.length && list[0].date === b.date) slots = list;
       }
       if (!slots.length) slots = [b];
-      rows = slots.map((o: any) => {
+      const dayTag = word.replace(/^on /, '').toUpperCase();
+      let openTaken = false;
+      rows = slots.flatMap((o: any) => {
         const end = o.orderBy instanceof Date ? minOf(o.orderBy) : o.startMin;
-        let tag: Tag;
-        if (!today) tag = word.replace(/^on /, '').toUpperCase();
-        else if (o.id === b.id) tag = 'OPEN NOW';
-        else if (now.getTime() >= batchCloseDate(o, side).getTime()) tag = 'CLOSED';
-        else tag = 'NEXT';
-        return { name: nameOf(o.id), orderEnd: timeLabelFull(end), arrive: gateOf(o.id), tag };
+        if (side !== 'food') {
+          let tag: Tag;
+          if (!today) tag = dayTag;
+          else if (o.id === b.id) tag = 'OPEN NOW';
+          else if (now.getTime() >= batchCloseDate(o, side).getTime()) tag = 'CLOSED';
+          else tag = 'NEXT';
+          return [{ name: nameOf(o.id), orderEnd: timeLabelFull(end), arrive: gateOf(o.id), tag }];
+        }
+        // Food: each batch has a normal window and a late window (higher delivery fee)
+        const lateEnd = foodLateOrderByMin(o.id);
+        const lateClose = new Date(o.orderBy.getTime() - end * 60000 + lateEnd * 60000);
+        const available = foodBatchAvailable(o, now);
+        const tagFor = (closeAt: Date, openNow: boolean): Tag => {
+          if (!today) return dayTag;
+          if (now.getTime() >= closeAt.getTime()) return 'CLOSED';
+          if (!available) return 'NOT AVAILABLE TODAY';
+          if (openNow && o.id === b.id && !openTaken) {
+            openTaken = true;
+            return 'OPEN NOW';
+          }
+          return 'NEXT';
+        };
+        const mainOpen = now.getTime() < o.orderBy.getTime();
+        const main: Row = { name: nameOf(o.id), orderEnd: timeLabelFull(end), arrive: gateOf(o.id), tag: tagFor(o.orderBy, mainOpen) };
+        const late: Row = {
+          name: `Late ${nameOf(o.id).toLowerCase()}`,
+          orderEnd: timeLabelFull(lateEnd),
+          arrive: timeLabelFull(outsideArriveByFor(o.id, true)),
+          tag: tagFor(lateClose, !mainOpen),
+          fee: `Late delivery ₦${lateFoodFee().toLocaleString()}`,
+        };
+        return [main, late];
       });
       if (!today) {
         headline = `Closed for today. Order now for ${word.replace(/^on /, '')}`;
@@ -114,6 +144,8 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
       } else if (side === 'store' && storeGraceOpen(now)) {
         headline = 'Late orders still open';
         notes = ["Today's run hasn't left yet. If it leaves before you pay, your order comes tomorrow."];
+      } else if (side === 'food' && c.lateFood) {
+        headline = `Late orders open now · ₦${lateFoodFee().toLocaleString()} delivery`;
       } else {
         headline = 'Taking orders now';
       }
@@ -121,7 +153,13 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
   }
 
   const tagClass = (t: Tag) =>
-    t === 'OPEN NOW' ? 'bg-white text-emerald-700' : t === 'NEXT' ? 'bg-white/20 text-white' : t === 'CLOSED' ? 'bg-black/20 text-emerald-100/70' : 'bg-amber-300 text-amber-950';
+    t === 'OPEN NOW'
+      ? 'bg-white text-emerald-700'
+      : t === 'NEXT'
+      ? 'bg-white/20 text-white'
+      : t === 'CLOSED' || t === 'NOT AVAILABLE TODAY'
+      ? 'bg-black/20 text-emerald-100/70'
+      : 'bg-amber-300 text-amber-950';
 
   return (
     <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 via-teal-700 to-emerald-800 text-white px-3.5 py-3 shadow-md shadow-emerald-950/10">
@@ -147,8 +185,9 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
                   <span className={`shrink-0 px-1.5 py-0.5 rounded-md text-[9px] font-black tracking-wide ${tagClass(r.tag)}`}>{r.tag}</span>
                 </div>
                 <p className="mt-0.5 pl-3.5 text-[11px] text-emerald-50/90">
-                  Order ends by {r.orderEnd} · Arrives before {r.arrive}
+                  Order before {r.orderEnd} · {r.room ? 'In your room' : 'At the gate'} before {r.arrive}
                 </p>
+                {r.fee && <p className="pl-3.5 text-[10.5px] font-bold text-amber-200">{r.fee}</p>}
               </div>
             ))}
           </div>

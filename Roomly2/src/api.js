@@ -49,6 +49,8 @@ import {
   OUTSIDE_STORE_GRACE_END_MIN,
   OUTSIDE_STORE_LAST_ORDERS_MIN,
   OUTSIDE_ORDER_BY_MIN as STORE_CLOSE_MIN,
+  foodLateCloseDate,
+  isLateFoodOpen,
 } from './config.ts';
 import { db, auth } from './firebase.ts';
 import { CLOUDINARY } from './cloudinary.ts';
@@ -678,6 +680,8 @@ export function batchCloseDate(opt, side) {
   const day = new Date(opt.date + 'T00:00:00');
   // Store grace: today's run takes late orders until it leaves, or 6:00pm at the latest
   if (side === 'store' && storeRunLeftOn !== opt.date) return new Date(day.getTime() + OUTSIDE_STORE_GRACE_END_MIN * 60000);
+  // Food: open through its late window (late lunch until 2:30pm, late dinner until 7:00pm)
+  if (side === 'food') return foodLateCloseDate(opt);
   // Outside: each batch closes exactly at its order-by time (store 5:00pm, lunch 12:30pm, dinner 6:00pm)
   if (side !== 'inside') return opt.orderBy instanceof Date ? new Date(opt.orderBy.getTime()) : new Date(day.getTime() + opt.startMin * 60000);
   const cut = side === 'inside' ? SWITCH_CUTOFF_MIN.inside : side === 'food' ? SWITCH_CUTOFF_MIN.food : SWITCH_CUTOFF_MIN.outside;
@@ -1054,7 +1058,7 @@ export function getOutsideChoices(kind, now = new Date()) {
         late: false,
         reason: '',
       };
-      return { batch, current: batch, operators: [demoOp], anyNow: true, note: '' };
+      return { batch, current: batch, operators: [demoOp], anyNow: true, note: '', lateFood: kind === 'food' && isLateFoodOpen(batch, now) };
     }
   }
   let ops = [];
@@ -1066,7 +1070,8 @@ export function getOutsideChoices(kind, now = new Date()) {
       for (const opt of slotsForDay(kind, now, d)) {
         const sw = opDaySwitch(op, opt);
         if (accepting(opt, sw, kind, now)) {
-          const start = switchStartDate(opt, sw);
+          // Late food window: pay before the late cut-off (2:30pm / 7:00pm)
+          const start = kind === 'food' && isLateFoodOpen(opt, now) ? foodLateCloseDate(opt) : switchStartDate(opt, sw);
           found = {
             ...base,
             status: current && opt.key === current.key ? 'now' : 'next',
@@ -1097,7 +1102,10 @@ export function getOutsideChoices(kind, now = new Date()) {
   if (!ops.length) return { batch: null, current, operators: [], anyNow: false, note: '', backSoon: true };
   // Nobody works today because it is their day off (e.g. food on Sunday)
   const dayOff = !anyNow && ops.every((o) => o.reason === 'dayoff');
-  return { batch: anyNow ? current : ops[0].batch, current, operators: ops, anyNow, note: '', dayOff };
+  const batchNow = anyNow ? current : ops[0].batch;
+  // Food past its normal cut-off but still taking late orders (higher delivery fee)
+  const lateFood = kind === 'food' && isLateFoodOpen(batchNow, now);
+  return { batch: batchNow, current, operators: ops, anyNow, note: '', dayOff, lateFood };
 }
 
 /** The number a student calls about their order: the runner (inside) or the vendor (outside). '' when unknown. */
@@ -1493,6 +1501,41 @@ async function setOperatorAdminOff__raw(uid, off) {
   operatorDocs = { ...operatorDocs, [uid]: { ...(operatorDocs[uid] || {}), adminOff: Boolean(off) } };
   fireBatches();
   await setDoc(doc(db, 'operatorStatus', uid), { adminOff: Boolean(off), adminAt: Date.now() }, { merge: true });
+}
+
+/** Food: is any vendor still taking orders for this batch (not switched off, not past its late cut-off) */
+export function foodBatchAvailable(opt, now = new Date()) {
+  if (DEMO) return now.getTime() < foodLateCloseDate(opt).getTime();
+  return activeOperators('food').some((op) => accepting(opt, opDaySwitch(op, opt), 'food', now));
+}
+/** The key of an outside operator's own batch today ("2026-11-13|evening"), or '' if none runs today */
+export function operatorTodayKey(op, now = new Date()) {
+  if (!op) return '';
+  const mineToday = slotsForDay(op.kind === 'food' ? 'food' : 'store', now, 0).find((o) => op.kind !== 'food' || o.id === foodBatchOf(op));
+  return mineToday ? mineToday.key : '';
+}
+/** Is this operator accepting orders today (their own switch for today's batch, ON unless switched off) */
+export function operatorAcceptingToday(op, now = new Date()) {
+  const key = operatorTodayKey(op, now);
+  if (!key) return false;
+  const sw = ((op && op.slots) || {})[key];
+  if (sw) return outsideDayOn(sw);
+  const wd = now.getDay();
+  return !((op && op.offDays) || []).includes(wd);
+}
+/**
+ * Admin: switch an outside operator OFF (or back ON) for today only. OFF closes their normal and late batch
+ * for the rest of the day; tomorrow starts ON again by itself (each day has its own switch).
+ */
+export async function setOperatorTodayByAdmin(uid, on) {
+  const op = operatorDocs[uid];
+  const key = operatorTodayKey(op);
+  if (!key) throw new Error('This operator has no batch today.');
+  const sw = { ...(((op && op.slots) || {})[key] || {}), on: Boolean(on), by: 'Roomly admin', at: Date.now() };
+  operatorDocs = { ...operatorDocs, [uid]: { ...op, slots: { ...((op && op.slots) || {}), [key]: sw } } };
+  fireBatches();
+  await setDoc(doc(db, 'operatorStatus', uid), { slots: { [key]: sw } }, { merge: true });
+  logActivity('staff', `switched ${(op && op.name) || 'an operator'} ${on ? 'back ON' : 'OFF'} for today`, uid);
 }
 
 /* ---------- catalog (one document: categories + products) ---------- */
@@ -2164,7 +2207,13 @@ export async function createOrder(orderPayload) {
   const hostelSide = hasOutside || orderPayload.isCustomLocation ? 'boys' : hostelSideOf(orderPayload.building);
   const isExpress = Boolean(orderPayload.express) && !hasOutside && getExpressRunners(new Date(), hostelSide).length > 0;
   if (orderPayload.express && !isExpress) throw new Error('Express is not available right now. Please choose normal delivery.');
-  const deliveryFee = isExpress ? EXPRESS_FEE : deliveryFeeFor(subtotal, hasOutside, (orderPayload.items || []).some((i) => isBagOfWater(i.name)));
+  // Late food: the batch is past its normal cut-off and still in its late window (checked here, not trusted from the phone)
+  let lateFood = false;
+  if (hasFood && !isExpress && orderPayload.deliveryDate && orderPayload.deliveryBatch) {
+    const opt = slotsForDay('food', new Date(orderPayload.deliveryDate + 'T12:00:00'), 0).find((o) => o.id === orderPayload.deliveryBatch);
+    lateFood = Boolean(opt && isLateFoodOpen(opt, new Date()));
+  }
+  const deliveryFee = isExpress ? EXPRESS_FEE : deliveryFeeFor(subtotal, hasOutside, (orderPayload.items || []).some((i) => isBagOfWater(i.name)), lateFood);
   const totalAmount = subtotal + deliveryFee;
 
   // Everyone pays first (pay on delivery has been removed)
@@ -2216,6 +2265,7 @@ export async function createOrder(orderPayload) {
     operatorName: orderPayload.operatorName || '',
     turnRunner: isExpress || collectsAsRoomly(cart) ? '' : orderPayload.turnRunner || '',
     lateBatch: isExpress ? false : Boolean(orderPayload.lateBatch),
+    lateFood,
     // Express: the account shows once a runner accepts
     payTo: isExpress ? null : collectsAsRoomly(cart) ? roomlyPayTo() : orderPayload.payTo || null,
     // Roomly collects the money: the admin assigns it and pays the runner / store out
@@ -2248,6 +2298,8 @@ export async function createOrder(orderPayload) {
     deliveryBatch: batchId,
     deliveryTime: isExpress
       ? 'Express: within 20 minutes of your payment'
+      : lateFood
+      ? outsideDeliveryText(orderPayload.deliveryDate, batchId, true)
       : orderPayload.deliveryTime || (batchMeta ? `${batchMeta.name} (${batchMeta.timeWindow})` : 'Next delivery batch'),
     deliveryDate: orderPayload.deliveryDate || '',
     subtotal,

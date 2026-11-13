@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { RotateCcw, ChevronDown, ChevronRight, Gamepad2, UtensilsCrossed, ShoppingBasket, Store, Crown, Trophy } from 'lucide-react';
 import { getNextBatch, getOutsideChoices, storeGraceOpen, storeRunLeftToday } from '../api.js';
-import { dayWord, timeLabel, timeLabelFull, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, openDateText, BEHIND_EVERY_ORDER, OUTSIDE_STORE_GRACE_END_MIN, isOutsideSource } from '../config';
+import { dayWord, timeLabel, timeLabelFull, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, openDateText, BEHIND_EVERY_ORDER, OUTSIDE_STORE_GRACE_END_MIN, isOutsideSource, foodLateOrderByMin, OUTSIDE_STORE_GRACE_END_MIN as STORE_LATE_MIN } from '../config';
 import type { OrderRecord } from '../types';
 
 export type QuickTarget = 'room' | 'food' | 'store' | 'hub';
@@ -18,10 +18,13 @@ export function promiseLine(target: QuickTarget, now: Date = new Date(), storeOp
       : `Closed. Next: ${next.batch.dayLabel.toLowerCase()} 8:30pm`;
   }
   if (target === 'store' && storeOpensAtMs > now.getTime()) return `Opens ${openDateText(storeOpensAtMs)}`;
-  const b = getOutsideChoices(target, now).batch;
+  const c: any = getOutsideChoices(target, now);
+  const b = c.batch;
   if (!b) return 'Back soon';
   const gate = timeLabelFull(outsideArriveByFor(b.id));
-  if (dayWord(b.date, now) !== 'today') return `Closed. Order now for ${dayWord(b.date, now).replace(/^on /, '')}, gate before ${gate}`;
+  if (target === 'food' && c.lateFood && dayWord(b.date, now) === 'today')
+    return `Late order: before ${timeLabelFull(foodLateOrderByMin(b.id))}, at the gate before ${timeLabelFull(outsideArriveByFor(b.id, true))}`;
+  if (dayWord(b.date, now) !== 'today') return `Order now for ${dayWord(b.date, now).replace(/^on /, '')}, gate before ${gate}`;
   if (target === 'store' && storeGraceOpen(now)) return `Late orders open until ${timeLabelFull(OUTSIDE_STORE_GRACE_END_MIN)}, at the gate before ${gate}`;
   const label = target === 'food' ? (b.id === 'midday' ? 'Lunch: ' : 'Dinner: ') : '';
   return `${label}order before ${timeLabelFull(b.startMin)}, at the gate before ${gate}`;
@@ -62,21 +65,39 @@ export function isOpenNow(target: QuickTarget, now: Date = new Date(), storeOpen
 }
 
 /** One short status line per card: "Open · gate before 7pm", "Closed · order for tomorrow", etc. */
-export function shortStatus(id: QuickTarget, now: Date = new Date(), storeOpensAtMs = 0): { text: string; open: boolean } {
-  if (id === 'hub') return { text: 'Games · Buy and Sell · Services · Lost and Found', open: true };
-  const forWord = (date?: string) => (date ? dayWord(date, now).replace(/^on /, '') : 'later');
+/**
+ * A home card's status: a pill (Open now / Late order open / Order for tomorrow) and two short time lines.
+ * tone: 'open' green and pulsing, 'late' amber and pulsing, 'next' grey and still, 'info' plain text (Hostel Hub).
+ */
+export type CardStatus = { pill: string; tone: 'open' | 'late' | 'next' | 'info'; lines: string[] };
+export function shortStatus(id: QuickTarget, now: Date = new Date(), storeOpensAtMs = 0): CardStatus {
+  if (id === 'hub') return { pill: '', tone: 'info', lines: ['Games · Buy and Sell · Services · Lost and Found'] };
+  const t = (min: number) => timeLabelFull(min);
+  const dayOf = (date: string) => {
+    const w = dayWord(date, now).replace(/^on /, '');
+    return w.charAt(0).toUpperCase() + w.slice(1);
+  };
   if (id === 'room') {
     const { next } = getNextBatch('inside', now);
-    if (!next) return { text: 'Closed for now', open: false };
-    if (next.batch.dayLabel === 'Today') return { text: `Tonight · room by ${timeLabel(INSIDE_ARRIVE_BY_MIN)}`, open: true };
-    return { text: `Closed · order for ${forWord(next.batch.date)}`, open: false };
+    if (!next) return { pill: 'Back soon', tone: 'next', lines: ['Room delivery is paused'] };
+    if (next.batch.dayLabel === 'Today')
+      return { pill: 'Open tonight', tone: 'open', lines: [`Order before ${t(INSIDE_ORDER_BY_MIN)}`, `In your room before ${t(INSIDE_ARRIVE_BY_MIN)}`] };
+    return { pill: `Order for ${dayOf(next.batch.date).toLowerCase()}`, tone: 'next', lines: ['Order now', `In your room before ${t(INSIDE_ARRIVE_BY_MIN)}`] };
   }
-  if (id === 'store' && storeOpensAtMs > now.getTime()) return { text: `Opens ${openDateText(storeOpensAtMs)}`, open: false };
-  const b = getOutsideChoices(id, now).batch;
-  if (!b) return { text: 'Back soon', open: false };
-  if (dayWord(b.date, now) !== 'today') return { text: `Closed · order for ${forWord(b.date)}`, open: false };
-  if (id === 'store' && storeGraceOpen(now)) return { text: `Late orders till ${timeLabel(OUTSIDE_STORE_GRACE_END_MIN)}`, open: true };
-  return { text: `Open · gate before ${timeLabel(outsideArriveByFor(b.id))}`, open: true };
+  if (id === 'store' && storeOpensAtMs > now.getTime())
+    return { pill: `Opens ${openDateText(storeOpensAtMs)}`, tone: 'next', lines: [] };
+  const c: any = getOutsideChoices(id, now);
+  const b = c.batch;
+  if (!b) return { pill: 'Back soon', tone: 'next', lines: [] };
+  const gate = t(outsideArriveByFor(b.id));
+  if (dayWord(b.date, now) !== 'today')
+    return { pill: `Order for ${dayOf(b.date).toLowerCase()}`, tone: 'next', lines: ['Order now', `At the gate before ${gate}`] };
+  if (id === 'store' && storeGraceOpen(now))
+    return { pill: 'Late order open', tone: 'late', lines: [`Order before ${t(STORE_LATE_MIN)}`, `At the gate before ${gate}`] };
+  if (id === 'food' && c.lateFood)
+    return { pill: 'Late order open', tone: 'late', lines: [`Order before ${t(foodLateOrderByMin(b.id))}`, `At the gate before ${t(outsideArriveByFor(b.id, true))}`] };
+  const end = b.orderBy instanceof Date ? b.orderBy.getHours() * 60 + b.orderBy.getMinutes() : b.startMin;
+  return { pill: 'Open now', tone: 'open', lines: [`Order before ${t(end)}`, `At the gate before ${gate}`] };
 }
 
 /** Fixed card photos (public/images/cards). Swap a file to change a card's photo. */
@@ -161,7 +182,7 @@ export const HomeQuickCards: React.FC<{
       </div>
       <div className="grid grid-cols-2 gap-2.5">
         {cards.map(({ id, title }) => {
-          const { text, open } = shortStatus(id, now, storeOpensAtMs);
+          const { pill, tone, lines } = shortStatus(id, now, storeOpensAtMs);
           const photo = broken[id] ? productPhotoFor(id, products) : CARD_PHOTO[id];
           const Icon = FALLBACK_ICON[id];
           return (
@@ -183,8 +204,8 @@ export const HomeQuickCards: React.FC<{
                   className="w-full h-24 object-cover bg-slate-100 dark:bg-slate-800"
                 />
               ) : (
-                <div className={`w-full h-24 flex items-center justify-center ${id === 'hub' ? 'bg-violet-100 dark:bg-violet-950/50' : 'bg-emerald-50 dark:bg-emerald-950/40'}`}>
-                  <Icon className={`w-9 h-9 ${id === 'hub' ? 'text-violet-600 dark:text-violet-300' : 'text-[#0e9f55]'}`} />
+                <div className="w-full h-24 flex items-center justify-center bg-emerald-50 dark:bg-emerald-950/40">
+                  <Icon className="w-9 h-9 text-[#0e9f55]" />
                 </div>
               )}
               <span className="flex flex-col px-3 py-2.5">
@@ -192,19 +213,34 @@ export const HomeQuickCards: React.FC<{
                   <span className="min-w-0 truncate">{title}</span>
                   <ChevronRight className="w-4 h-4 shrink-0 text-slate-400" />
                 </span>
-                <span
-                  className={`mt-1 flex items-start gap-1.5 text-[11px] leading-snug font-semibold ${
-                    id === 'hub' ? 'text-slate-500 dark:text-slate-400' : open ? 'text-[#0b8044] dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'
-                  }`}
-                >
-                  {id !== 'hub' && (
-                    <span className="relative flex w-2 h-2 mt-1 shrink-0" aria-hidden="true">
-                      {open && <span className="absolute inline-flex w-full h-full rounded-full bg-emerald-400 opacity-75 animate-ping" />}
-                      <span className={`relative inline-flex w-2 h-2 rounded-full ${open ? 'bg-[#0e9f55]' : 'bg-amber-400'}`} />
+                {tone === 'info' ? (
+                  <span className="mt-1 text-[11px] leading-snug font-semibold text-slate-500 dark:text-slate-400">{lines[0]}</span>
+                ) : (
+                  <>
+                    <span
+                      className={`mt-1.5 self-start inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-extrabold whitespace-nowrap ${
+                        tone === 'open'
+                          ? 'bg-emerald-100 text-[#0b6b39] dark:bg-emerald-950/60 dark:text-emerald-300'
+                          : tone === 'late'
+                          ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                      }`}
+                    >
+                      <span className="relative flex w-1.5 h-1.5 shrink-0" aria-hidden="true">
+                        {tone !== 'next' && (
+                          <span className={`absolute inline-flex w-full h-full rounded-full opacity-75 animate-ping ${tone === 'open' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                        )}
+                        <span className={`relative inline-flex w-1.5 h-1.5 rounded-full ${tone === 'open' ? 'bg-[#0e9f55]' : tone === 'late' ? 'bg-amber-500' : 'bg-slate-400'}`} />
+                      </span>
+                      {pill}
                     </span>
-                  )}
-                  <span className="min-w-0">{text}</span>
-                </span>
+                    {lines.map((l) => (
+                      <span key={l} className="mt-1 block text-[10.5px] leading-snug font-semibold tracking-tight text-slate-600 dark:text-slate-300">
+                        {l}
+                      </span>
+                    ))}
+                  </>
+                )}
               </span>
             </button>
           );

@@ -19,6 +19,9 @@ import {
   batchOpen,
   batchCloseDate,
   getMyHiddenReason,
+  operatorAcceptingToday,
+  operatorTodayKey,
+  setOperatorTodayByAdmin,
 } from '../api.js';
 
 const ymdNow = () => {
@@ -399,6 +402,8 @@ const OutsideDaySwitches: React.FC<{ side: 'store' | 'food' }> = ({ side }) => {
           <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-snug">
             {side === 'food' ? `You cook for the ${myBatch === 'midday' ? 'lunch' : 'dinner'} batch. ` : ''}Students order before {cutText} to get it the same day. Send by {cutText} so it reaches the school gate before {gateText}. If you can't make it,
             open the order and tap "Move to next available day".
+            {side === 'food' &&
+              ` Late orders: until ${myBatch === 'midday' ? '2:30pm' : '7:00pm'}, sent together so they reach the gate before ${myBatch === 'midday' ? '3:30pm' : '8:00pm'}.`}
           </p>
         </div>
       )}
@@ -518,6 +523,17 @@ export const OperatorOverridePanel: React.FC<{ kind?: 'store' | 'food' }> = ({ k
     setBusy('');
   };
 
+  const setToday = async (op: any, on: boolean) => {
+    if (operatorAcceptingToday(op, new Date()) === on) return;
+    setBusy(op.id);
+    try {
+      await setOperatorTodayByAdmin(op.id, on);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Could not update this operator.');
+    }
+    setBusy('');
+  };
+
   const set = async (op: any, off: boolean) => {
     if (Boolean(op.adminOff) === off) return;
     setBusy(op.id);
@@ -582,6 +598,34 @@ export const OperatorOverridePanel: React.FC<{ kind?: 'store' | 'food' }> = ({ k
                   ))}
                 </span>
               )}
+              {!off && operatorTodayKey(op, now) && (() => {
+                const today = operatorAcceptingToday(op, now);
+                return (
+                  <span className="mt-1.5 flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-slate-500">Accepting orders today</span>
+                    <span className="inline-grid grid-cols-2 rounded-lg overflow-hidden border border-slate-300 dark:border-slate-600">
+                      <button
+                        type="button"
+                        disabled={busy === op.id}
+                        onClick={() => setToday(op, false)}
+                        aria-pressed={!today}
+                        className={`px-2 py-1 text-[10px] font-bold cursor-pointer ${!today ? 'bg-rose-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-500'}`}
+                      >
+                        No
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy === op.id}
+                        onClick={() => setToday(op, true)}
+                        aria-pressed={today}
+                        className={`px-2 py-1 text-[10px] font-bold cursor-pointer ${today ? 'bg-[#0e9f55] text-white' : 'bg-white dark:bg-slate-900 text-slate-500'}`}
+                      >
+                        Yes
+                      </button>
+                    </span>
+                  </span>
+                );
+              })()}
             </div>
             <div className="shrink-0 grid grid-cols-2 rounded-xl overflow-hidden border border-slate-300 dark:border-slate-600">
               <button
@@ -611,7 +655,7 @@ export const OperatorOverridePanel: React.FC<{ kind?: 'store' | 'food' }> = ({ k
         );
       })}
       <p className="text-[11px] text-slate-400 leading-snug">
-        Your OFF overrides the operator. They cannot take orders until you switch them back ON.
+        Your OFF overrides the operator. They cannot take orders until you switch them back ON. "Accepting orders today: No" closes only today (normal and late orders); tomorrow starts on Yes by itself.
       </p>
     </div>
   );

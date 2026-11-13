@@ -56,6 +56,8 @@ export type DeliveryBatchId = 'premium' | 'morning' | 'midday' | 'afternoon' | '
 
 export interface OrderRecord {
   id: string;
+  /** Outside food ordered in the late window (late lunch / late dinner): higher fee, later gate time */
+  lateFood?: boolean;
   hasStore?: boolean;
   hasFood?: boolean;
   payReady?: boolean;

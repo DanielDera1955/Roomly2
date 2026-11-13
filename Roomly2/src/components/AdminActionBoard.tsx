@@ -18,7 +18,7 @@ import {
   isRoomlyOrder,
   payoutPending,
 } from '../api.js';
-import { slotsForDay, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN } from '../config';
+import { slotsForDay, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, foodLateOrderByMin } from '../config';
 import { playChime } from '../sound';
 import { OrderRecord } from '../types';
 
@@ -175,9 +175,17 @@ export const AdminActionBoard: React.FC = () => {
       dueMin = INSIDE_ARRIVE_BY_MIN;
     } else {
       const opt: any = slotsForDay(side, day, 0).find((x: any) => x.id === o.deliveryBatch) || slotsForDay(side, day, 0)[0];
-      closeMin = opt ? (opt.orderBy instanceof Date ? opt.orderBy.getHours() * 60 + opt.orderBy.getMinutes() : opt.startMin) : 0;
-      dueMin = outsideArriveByFor(opt?.id || o.deliveryBatch);
-      label = side === 'store' ? 'Store daily run' : (opt?.id || o.deliveryBatch) === 'midday' ? 'Food: Lunch' : 'Food: Dinner';
+      const late = side === 'food' && Boolean(o.lateFood);
+      closeMin = late
+        ? foodLateOrderByMin(opt?.id || o.deliveryBatch)
+        : opt
+        ? opt.orderBy instanceof Date
+          ? opt.orderBy.getHours() * 60 + opt.orderBy.getMinutes()
+          : opt.startMin
+        : 0;
+      dueMin = outsideArriveByFor(opt?.id || o.deliveryBatch, late);
+      const meal = (opt?.id || o.deliveryBatch) === 'midday' ? 'Lunch' : 'Dinner';
+      label = side === 'store' ? 'Store daily run' : late ? `Food: Late ${meal.toLowerCase()} (one run)` : `Food: ${meal}`;
     }
     // Finished: sent to the gate / delivered and the 15-minute gate countdown is over
     const doneAt = o.status === 'Delivered' ? ms(o.deliveredAt) || 0 : 0;
@@ -267,22 +275,21 @@ export const AdminActionBoard: React.FC = () => {
       contacts: [...studentContact(o), ...providerContact(o)],
     });
   });
-  const weekAgo = nowMs - 7 * 24 * 60 * MIN;
+  // Every message a student sends (suggestions too) stays here until you mark it attended
   messages.forEach((m: any) => {
-    if (m.status === 'done' || Number(m.atMs || 0) < weekAgo) return;
-    if (m.type !== 'Complaint' && m.type !== 'Problem with an order') return;
+    if (m.status === 'done') return;
     complaints++;
     items.push({
       id: `fb-${m.id}`,
-      level: m.type === 'Problem with an order' ? 'red' : 'amber',
-      title: `${m.type} from ${m.name || 'a student'}`,
+      level: m.type === 'Problem with an order' ? 'red' : m.type === 'Complaint' ? 'amber' : 'grey',
+      title: `${m.type} from ${m.name || 'a student'}${m.atMs ? ` (${mins(nowMs - Number(m.atMs))} ago)` : ''}`,
       detail: `"${m.message}"`,
-      todo: 'Reply to the student, then mark it done.',
+      todo: 'Read it, reply to the student if needed, then tap Mark attended.',
       contacts: m.phone ? [{ name: m.name || 'Student', phone: m.phone }] : [],
-      clear: { label: 'Mark done', run: () => void setFeedbackStatus(m.id, 'done').catch(() => window.alert('Could not update. Try again.')) },
+      clear: { label: 'Mark attended', run: () => void setFeedbackStatus(m.id, 'done').catch(() => window.alert('Could not update. Try again.')) },
     });
   });
-  if (!complaints) items.push({ id: 'fb-ok', level: 'green', title: 'Complaints: none this week' });
+  if (!complaints) items.push({ id: 'fb-ok', level: 'green', title: 'Student messages: all attended' });
 
   // ---------- sort and split ----------
   const rank: Record<Level, number> = { red: 0, amber: 1, grey: 2, green: 3 };

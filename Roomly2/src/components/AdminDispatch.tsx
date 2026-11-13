@@ -73,6 +73,11 @@ const OrderRow: React.FC<{ o: OrderRecord; showSection?: boolean }> = ({ o, show
         <div className="min-w-0">
           <p className="font-bold text-slate-900 dark:text-white">
             {o.name} <span className="font-mono font-normal text-slate-400">{o.id}</span>
+            {o.lateFood && (
+              <span className="ml-1.5 px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/60 text-[10px] font-black text-amber-700 dark:text-amber-300 align-middle">
+                LATE {o.deliveryBatch === 'midday' ? 'LUNCH' : 'DINNER'}
+              </span>
+            )}
           </p>
           <p className="text-[11px] text-slate-500 truncate">
             {showSection ? `${SHORT_LABEL[sectionOf(o)]} · ` : ''}

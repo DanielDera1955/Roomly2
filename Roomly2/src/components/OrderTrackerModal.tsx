@@ -591,13 +591,12 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                   (() => {
                     // Checking by hand: say when every payment for this batch is confirmed, and when the order arrives
                     const day = new Date(String(currentOrder.deliveryDate || '') + 'T00:00:00');
-                    const closeMin = orderCloseMinFor(currentOrder.cart, currentOrder.deliveryBatch);
+                    const lateFood = currentOrder.cart === 'food' && Boolean(currentOrder.lateFood);
+                    const closeMin = orderCloseMinFor(currentOrder.cart, currentOrder.deliveryBatch, lateFood);
                     const confirmBy = Number.isFinite(day.getTime()) ? arrivalText(day.getTime() + closeMin * 60000) : '';
                     const batchName =
                       currentOrder.cart === 'food'
-                        ? currentOrder.deliveryBatch === 'midday'
-                          ? 'lunch batch'
-                          : 'dinner batch'
+                        ? `${lateFood ? 'late ' : ''}${currentOrder.deliveryBatch === 'midday' ? 'lunch batch' : 'dinner batch'}`
                         : currentOrder.cart === 'store'
                         ? 'store batch'
                         : 'evening batch';

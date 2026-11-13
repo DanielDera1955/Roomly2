@@ -18,7 +18,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
-import { HOSTELS, BOYS_HOSTELS, GIRLS_HOSTELS, GIRLS_SIDE_OPEN, GIRLS_SOON_MSG, HOSTEL_FLOORS, hostelSideOf, splitFloorRoom, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, outsideBannerFor, outsideArriveByFor, timeLabel, timeLabelFull, OUTSIDE_DELIVERY_FEE, outsideLaunchOn, requestReplyInfo, arrivalText, OUTSIDE_STORE_GRACE_END_MIN } from '../config';
+import { HOSTELS, BOYS_HOSTELS, GIRLS_HOSTELS, GIRLS_SIDE_OPEN, GIRLS_SOON_MSG, HOSTEL_FLOORS, hostelSideOf, splitFloorRoom, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, outsideBannerFor, outsideArriveByFor, timeLabel, timeLabelFull, OUTSIDE_DELIVERY_FEE, outsideLaunchOn, requestReplyInfo, arrivalText, OUTSIDE_STORE_GRACE_END_MIN, isLateFoodOpen, lateFoodFee } from '../config';
 import { getNextBatch, getOutsideChoices, getExpressRunners, paystackFor, collectsAsRoomly, storeGraceOpen } from '../api.js';
 import { isValidNigerianPhone, isValidPin, normalizePhone } from '../api.js';
 
@@ -202,8 +202,6 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   useEffect(() => {
     if (speed === 'express' && !expressOn) setSpeed('normal');
   }, [speed, expressOn]);
-  const deliveryFee = isExpress ? EXPRESS_FEE : deliveryFeeFor(itemTotal, hasOutside, hasBag);
-  const grandTotal = itemTotal + deliveryFee;
 
   // Batches that are still open, refreshed when a runner switches one on or off
   useEffect(() => {
@@ -234,6 +232,10 @@ export const CartSheet: React.FC<CartSheetProps> = ({
     : outside?.batch && (outside as any).start
     ? { batch: outside.batch, start: (outside as any).start, startText: (outside as any).startText, late: Boolean((outside as any).late), by: '', unconfirmed: true, noProvider: true }
     : null;
+  // Late food: the chosen batch is past its normal cut-off but still taking late orders (higher delivery fee)
+  const lateFood = cart === 'food' && !isExpress && Boolean(chosen?.batch) && isLateFoodOpen(chosen.batch, new Date());
+  const deliveryFee = isExpress ? EXPRESS_FEE : deliveryFeeFor(itemTotal, hasOutside, hasBag, lateFood);
+  const grandTotal = itemTotal + deliveryFee;
   // Nobody has switched this batch on and nobody can take it yet: ordering still works
   const noProvider = Boolean(chosen?.noProvider);
   // The batch has not been opened by a runner / operator yet: ordering still works, the student just accepts it
@@ -254,7 +256,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   const outsideDay = cart !== 'inside' && selectedBatch ? dayWord(selectedBatch.date) : '';
   const outsideDate = cart !== 'inside' && selectedBatch ? longDayLabel(selectedBatch.date) : '';
   // Gate time for an outside batch: 1:30pm lunch, 7:00pm store and dinner
-  const gateTimeOf = (id?: string) => timeLabelFull(outsideArriveByFor(id));
+  const gateTimeOf = (id?: string) => timeLabelFull(outsideArriveByFor(id, lateFood));
   // Today's outside orders closed (5:00pm store, 6:00pm food): "this batch" is already another day
   const outsideClosedToday = cart !== 'inside' && Boolean(currentBatch) && dayWord(currentBatch.date) !== 'today';
   const otherCarts = (['inside', 'store', 'food'] as CartKind[]).filter((k) => k !== cart && cartCounts[k] > 0);
@@ -401,7 +403,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
         customRequest: customRequest.trim(),
         deliveryBatch: (selectedBatch?.id || 'afternoon') as DeliveryBatchId,
         // Outside: a fixed date ("Thursday 29 Oct: at the school gate before 6pm") so it never reads "Tomorrow" a day later
-        deliveryTime: cart !== 'inside' && selectedBatch ? outsideDeliveryText(selectedBatch.date, selectedBatch.id) : selectedBatch?.label || '',
+        deliveryTime: cart !== 'inside' && selectedBatch ? outsideDeliveryText(selectedBatch.date, selectedBatch.id, lateFood) : selectedBatch?.label || '',
         deliveryDate: selectedBatch?.date,
         paymentDeadline: isExpress ? undefined : payBy?.toISOString(),
         paymentMethod: 'pay_now',
@@ -1169,7 +1171,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                     </div>
                   )}
                   <span className="text-xs font-bold text-slate-700 dark:text-slate-300 text-right">
-                    {cart !== 'inside' && outsideLaunchOn() && (
+                    {lateFood && <span className="block text-[10px] font-bold text-amber-600 dark:text-amber-400">Late order</span>}
+                    {cart !== 'inside' && !lateFood && outsideLaunchOn() && (
                       <span className="block text-[10px] font-medium line-through text-slate-400">₦{OUTSIDE_DELIVERY_FEE.toLocaleString()}</span>
                     )}
                     ₦{deliveryFee.toLocaleString()}
@@ -1281,17 +1284,22 @@ export const CartSheet: React.FC<CartSheetProps> = ({
             </div>
             <div className="flex justify-between text-slate-600 dark:text-slate-400">
               <span>
-                {isExpress ? 'Express delivery' : 'Delivery'}
+                {isExpress ? 'Express delivery' : lateFood ? 'Late delivery' : 'Delivery'}
               </span>
               <span className="font-mono tabular-nums">
-                {cart !== 'inside' && !isExpress && outsideLaunchOn() && (
+                {cart !== 'inside' && !isExpress && !lateFood && outsideLaunchOn() && (
                   <span className="mr-1.5 line-through text-slate-400">₦{OUTSIDE_DELIVERY_FEE.toLocaleString()}</span>
                 )}
                 ₦{deliveryFee.toLocaleString()}
               </span>
             </div>
-            {cart !== 'inside' && !isExpress && outsideLaunchOn() && (
+            {cart !== 'inside' && !isExpress && !lateFood && outsideLaunchOn() && (
               <p className="-mt-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">Launch price until 30 Nov</p>
+            )}
+            {lateFood && (
+              <p className="-mt-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                Late order: ₦{lateFoodFee().toLocaleString()} delivery, at the gate before {gateTimeOf(chosen?.batch?.id)}. Order before the normal cut-off next time to pay ₦{deliveryFeeFor(itemTotal, true, false, false).toLocaleString()}.
+              </p>
             )}
             {/* Delivery is per order, not per item: show what it comes to when roommates share one cart */}
             {!isExpress && deliveryFee > 0 && (
