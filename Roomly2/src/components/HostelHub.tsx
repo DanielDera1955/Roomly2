@@ -163,11 +163,12 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
     setShowMine(false);
     setJustPosted(false);
   }, [section]);
-  const myCount = myUid ? listings.filter((l) => l.ownerUid === myUid && sectionTypes.includes(l.type)).length : 0;
 
   const waterOn = Boolean(settings.waterOn);
   const sectionTypes = HUB_SECTIONS.find((x) => x.id === section)?.types || [];
   const kinds = sectionTypes.filter((t) => t !== 'water' || waterOn);
+  // How many of this section's posts are this phone's (for the My listings button)
+  const myCount = myUid ? listings.filter((l) => l.ownerUid === myUid && sectionTypes.includes(l.type)).length : 0;
   useEffect(() => {
     if (kind === 'water' && !waterOn) setKind('all');
   }, [kind, waterOn]);
