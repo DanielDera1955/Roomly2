@@ -681,21 +681,21 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                           You missed this batch. If you pay now, your order joins the next batch. Unpaid orders expire at the end of the day.
                         </strong>
                       )}
-                      {paymentState(currentOrder) === 'open' && currentOrder.paymentDeadline && (
-                        <strong className="block mb-1">
-                          Pay before{' '}
+                      {paymentState(currentOrder) === 'open' && currentOrder.paymentDeadline ? (
+                        <strong className="block">
+                          Transfer ₦{currentOrder.totalAmount.toLocaleString()} before{' '}
                           {new Date(currentOrder.paymentDeadline).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} to
                           join this batch.
                         </strong>
+                      ) : (
+                        <>
+                          Please transfer <strong>₦{currentOrder.totalAmount.toLocaleString()}</strong> to:
+                        </>
                       )}
-                      Orders are attended to once payment is confirmed. Please transfer{' '}
-                      <strong>₦{currentOrder.totalAmount.toLocaleString()}</strong> to:
                     </p>
                     {collectsAsRoomly(currentOrder.cart) && payAcct && (
                       <p className="text-[11px] text-amber-900 dark:text-amber-200 leading-snug">
-                        <strong>Roomly's official account.</strong> This account is managed by a Roomly operator. Once your payment is confirmed, your
-                        order is automatically assigned to the right {isOutside ? 'vendor for your items' : 'runner'} and reaches you before the countdown ends.
-                        Roomly only accepts payment through this account.
+                        This is <strong>Roomly's official account</strong>, managed by a Roomly operator. Pay only to this account.
                       </p>
                     )}
                     {payAcct ? (
@@ -736,6 +736,11 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                       <Send className="w-3.5 h-3.5" />
                       <span>I have made payment</span>
                     </button>
+                    {collectsAsRoomly(currentOrder.cart) && (
+                      <p className="text-[11px] font-semibold text-center text-emerald-700 dark:text-emerald-300 leading-snug">
+                        Not {isOutside ? 'at the gate' : 'in your room'} before your countdown ends? You get a full refund.
+                      </p>
+                    )}
                   </div>
                 )
               ) : (
@@ -755,7 +760,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                 <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-xs font-bold text-slate-900 dark:text-white">Roomly support</p>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Questions about this order? Message or call us.</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Paid the wrong amount or have a question? Message or call us.</p>
                   </div>
                   <div className="flex gap-1.5 shrink-0">
                     <a
