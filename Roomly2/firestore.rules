@@ -325,6 +325,15 @@ service cloud.firestore {
         || (anyUser() && request.auth.uid == resource.data.ownerUid
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'expiresAtMs', 'confirmedAtMs', 'chargingNow', 'updatedAtMs'])
             && request.resource.data.status in ['active', 'sold', 'removed'])
+        // The poster: edit the title, price, note and photo
+        || (anyUser() && request.auth.uid == resource.data.ownerUid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'price', 'price2', 'note', 'photo', 'updatedAtMs'])
+            && request.resource.data.title is string
+            && request.resource.data.title.size() >= 2 && request.resource.data.title.size() <= 60
+            && request.resource.data.note is string && request.resource.data.note.size() <= 300
+            && request.resource.data.price is number && request.resource.data.price >= 0
+            && request.resource.data.price2 is number && request.resource.data.price2 >= 0
+            && request.resource.data.photo is string)
         // Anyone: one more tap on Call / WhatsApp
         || (anyUser()
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['contacts'])

@@ -343,6 +343,27 @@ export async function updateMyListing(id, action, days = 7) {
   await updateDoc(doc(hubDb, 'hubListings', id), patch);
 }
 
+/**
+ * Owner: edit a listing's title, price, note and photo (from the phone that posted it).
+ * input: { title, price, price2, note, photoFile, productNames }
+ */
+export async function editMyListing(listing, input) {
+  await hubUid();
+  const title = String(input.title || '').trim().slice(0, 60);
+  if (title.length < 2) throw new Error('Add a short title.');
+  const blocked = blockedReason(listing.type, title, input.productNames || []);
+  if (blocked) throw new Error(blocked);
+  const patch = {
+    title,
+    price: Math.max(0, Math.round(Number(input.price) || 0)),
+    price2: Math.max(0, Math.round(Number(input.price2) || 0)),
+    note: String(input.note || '').trim().slice(0, 300),
+    updatedAtMs: Date.now(),
+  };
+  if (input.photoFile) patch.photo = await uploadProductImage(input.photoFile);
+  await updateDoc(doc(hubDb, 'hubListings', listing.id), patch);
+}
+
 /** Anyone: counts a tap on Call / WhatsApp (for the admin's weekly numbers) */
 export function countContact(id) {
   hubUid()

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { takeHubSection } from '../links.js';
-import { Phone, Flag, Plus, X, ShoppingBag, MessageCircle, Camera, Loader2, BatteryCharging, CircleCheck, ChevronDown, ChevronRight, Gamepad2, Wrench, ShieldCheck, Users, Search } from 'lucide-react';
+import { Phone, Flag, Plus, X, Pencil, Trash2, ShoppingBag, MessageCircle, Camera, Loader2, BatteryCharging, CircleCheck, ChevronDown, ChevronRight, Gamepad2, Wrench, ShieldCheck, Users, Search } from 'lucide-react';
 import { NoPhoto } from './NoPhoto';
 import { HOSTELS } from '../config';
 import {
@@ -15,6 +15,8 @@ import {
   getMyListings,
   createListing,
   updateMyListing,
+  editMyListing,
+  knownHubUid,
   reportListing,
   countContact,
   priceLabel,
@@ -142,6 +144,12 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
   const [posting, setPosting] = useState(false);
   const [showMine, setShowMine] = useState(false);
   const [nowMs, setNowMs] = useState(Date.now());
+  // This phone's Hub id: its own posts get Edit / Remove, and My listings shows how many it has
+  const [myUid, setMyUid] = useState('');
+  const [justPosted, setJustPosted] = useState(false);
+  useEffect(() => {
+    knownHubUid().then(setMyUid).catch(() => {});
+  }, []);
 
   useEffect(() => subscribeListings(setListings), []);
   useEffect(() => subscribeHubSettings(setSettings), []);
@@ -153,7 +161,9 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
     setKind('all');
     setPosting(false);
     setShowMine(false);
+    setJustPosted(false);
   }, [section]);
+  const myCount = myUid ? listings.filter((l) => l.ownerUid === myUid && sectionTypes.includes(l.type)).length : 0;
 
   const waterOn = Boolean(settings.waterOn);
   const sectionTypes = HUB_SECTIONS.find((x) => x.id === section)?.types || [];
@@ -213,6 +223,7 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
                 onClick={() => {
                   setPosting(true);
                   setShowMine(false);
+                  setJustPosted(false);
                 }}
                 className="shrink-0 h-11 px-4 rounded-xl bg-[#0e9f55] text-white text-sm font-bold flex items-center gap-1.5 cursor-pointer"
               >
@@ -220,6 +231,28 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
               </button>
             )}
           </div>
+          {/* My listings: a clear button, not hidden at the end of the filters */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowMine(!showMine);
+              setPosting(false);
+              setJustPosted(false);
+            }}
+            className={`w-full h-10 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer ${
+              showMine
+                ? 'bg-slate-900 text-white border-slate-900 dark:bg-white dark:text-slate-900 dark:border-white'
+                : 'border-emerald-300 dark:border-emerald-800 text-[#0e9f55] bg-emerald-50/60 dark:bg-emerald-950/30'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            {showMine ? 'Back to all listings' : `My listings${myCount ? ` (${myCount})` : ''} · edit or remove your posts`}
+          </button>
+          {justPosted && !posting && !showMine && (
+            <p className="px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-xs font-semibold text-emerald-800 dark:text-emerald-200">
+              Posted. Edit or remove it anytime from My listings.
+            </p>
+          )}
 
           {/* Filters */}
           <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-3 px-3 pb-0.5">
@@ -240,16 +273,6 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              setShowMine(!showMine);
-              setPosting(false);
-            }}
-            className="flex items-center gap-1.5 text-xs font-bold text-[#0e9f55] cursor-pointer"
-          >
-            <Users className="w-3.5 h-3.5" /> {showMine ? 'Back to all listings' : 'My listings'}
-          </button>
 
           {section === 'buysell' && !posting && !showMine && (
             <div className={`${card} p-3.5 flex gap-3`}>
@@ -264,10 +287,22 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
           )}
 
           {posting && (
-            <PostForm types={kinds} startType={kind === 'all' ? kinds[0] : kind} productNames={productNames} session={session} onDone={() => setPosting(false)} />
+            <PostForm
+              types={kinds}
+              startType={kind === 'all' ? kinds[0] : kind}
+              productNames={productNames}
+              session={session}
+              onDone={(posted) => {
+                setPosting(false);
+                if (posted) {
+                  setJustPosted(true);
+                  knownHubUid().then(setMyUid).catch(() => {});
+                }
+              }}
+            />
           )}
 
-          {showMine && <MyListings />}
+          {showMine && <MyListings productNames={productNames} />}
 
           {!posting && !showMine && (
             <>
@@ -276,7 +311,7 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
               ) : (
                 <div className="space-y-3">
                   {shown.map((l) => (
-                    <ListingCard key={l.id} l={l} nowMs={nowMs} />
+                    <ListingCard key={l.id} l={l} nowMs={nowMs} mine={Boolean(myUid) && l.ownerUid === myUid} productNames={productNames} />
                   ))}
                 </div>
               )}
@@ -314,8 +349,23 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
 
 /* ------------------------------------------------------------------ */
 
-const ListingCard: React.FC<{ l: any; nowMs: number }> = ({ l, nowMs }) => {
+const ListingCard: React.FC<{ l: any; nowMs: number; mine?: boolean; productNames?: string[] }> = ({ l, nowMs, mine = false, productNames = [] }) => {
   const [showPhone, setShowPhone] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [managing, setManaging] = useState(false);
+  // Owner: mark sold / found / back with owner (not for services, charging or water, which stay up)
+  const canMarkDone = l.status === 'active' && l.type !== 'service' && l.type !== 'charging' && l.type !== 'water';
+  const doneLabel = l.type === 'wanted' ? 'Found it' : l.type === 'lost' || l.type === 'found' ? 'Back with owner' : 'Mark sold';
+  const ownerAct = async (action: string, question: string) => {
+    if (!window.confirm(question)) return;
+    setBusy(true);
+    try {
+      await updateMyListing(l.id, action);
+    } catch (e: any) {
+      window.alert(e?.message || 'Could not save. Please try again.');
+    }
+    setBusy(false);
+  };
   const [reporting, setReporting] = useState(false);
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
@@ -351,9 +401,13 @@ const ListingCard: React.FC<{ l: any; nowMs: number }> = ({ l, nowMs }) => {
             <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[9px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-300">
               {typeLabel(l.type)}
             </span>
-            <button type="button" onClick={() => setReporting(!reporting)} aria-label="Report this listing" className="-mt-1 -mr-1 p-1.5 text-slate-400 cursor-pointer">
-              <Flag className="w-4 h-4" />
-            </button>
+            {mine ? (
+              <span className="px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-[9px] font-black uppercase tracking-wider text-[#0b8044] dark:text-emerald-300">Your post</span>
+            ) : (
+              <button type="button" onClick={() => setReporting(!reporting)} aria-label="Report this listing" className="-mt-1 -mr-1 p-1.5 text-slate-400 cursor-pointer">
+                <Flag className="w-4 h-4" />
+              </button>
+            )}
           </div>
           <p className="mt-1 text-sm font-black text-slate-900 dark:text-white leading-tight">{l.title}</p>
           <p className="text-sm font-bold text-[#0e9f55] mt-0.5">{priceLabel(l)}</p>
@@ -371,8 +425,69 @@ const ListingCard: React.FC<{ l: any; nowMs: number }> = ({ l, nowMs }) => {
       {l.type === 'rent' && <p className="text-[11px] text-amber-700 dark:text-amber-400">Agree the deposit and who pays for damage before you hand it over.</p>}
       {l.type === 'charging' && <p className="text-[11px] text-amber-700 dark:text-amber-400">Only hand your phone to someone in your hostel.</p>}
 
+      {mine && editing && (
+        <EditForm
+          l={l}
+          productNames={productNames}
+          onDone={(saved) => {
+            setEditing(false);
+            if (saved) setManaging(false);
+          }}
+        />
+      )}
       <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
-        {showPhone ? (
+        {mine ? (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] text-slate-400">
+                {timeAgo(l.createdAtMs)}
+                {daysLeft ? ` · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left` : ''}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setManaging(!managing);
+                  setEditing(false);
+                }}
+                aria-expanded={managing}
+                className="h-10 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Pencil className="w-3.5 h-3.5" /> Manage
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${managing ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+            {managing && !editing && (
+              <div className="grid gap-1.5">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setEditing(true)}
+                  className="h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Pencil className="w-3.5 h-3.5" /> Edit details
+                </button>
+                {canMarkDone && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => ownerAct('sold', `Mark this as "${doneLabel}"? It will stop showing to everyone.`)}
+                    className="h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-xs font-bold text-[#0b8044] dark:text-emerald-300 flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <CircleCheck className="w-3.5 h-3.5" /> {doneLabel}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => ownerAct('remove', 'Remove this post? It will stop showing to everyone.')}
+                  className="h-10 rounded-xl border border-rose-200 dark:border-rose-900 text-xs font-bold text-rose-600 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> {busy ? 'Saving...' : 'Remove'}
+                </button>
+              </div>
+            )}
+          </div>
+        ) : showPhone ? (
           <div className="grid grid-cols-2 gap-2">
             <a href={`tel:${l.phone}`} className="h-10 flex items-center justify-center gap-1.5 rounded-xl bg-[#0e9f55] text-white text-xs font-bold">
               <Phone className="w-3.5 h-3.5" /> Call
@@ -431,12 +546,72 @@ const ListingCard: React.FC<{ l: any; nowMs: number }> = ({ l, nowMs }) => {
 
 /* ------------------------------------------------------------------ */
 
+/** Price field labels per listing type (post and edit forms) */
+const PRICE_FIELDS: Record<string, [string, string?]> = {
+  service: ['Lowest price (₦)', 'Highest price (₦, optional)'],
+  item: ['Price (₦)'],
+  wanted: ['Your budget (₦, optional)'],
+  rent: ['Price per day (₦)'],
+  charging: ['Charge to 50% (₦)', 'Charge to 100% (₦)'],
+  water: ['Price per bucket (₦)'],
+  lost: ['Reward (₦, optional)'],
+  found: ['Collection fee (₦, optional)'],
+};
+
+/** Owner: edit a post's title, price, note and photo */
+const EditForm: React.FC<{ l: any; productNames: string[]; onDone: (saved: boolean) => void }> = ({ l, productNames, onDone }) => {
+  const [title, setTitle] = useState(String(l.title || ''));
+  const [price, setPrice] = useState(l.price ? String(l.price) : '');
+  const [price2, setPrice2] = useState(l.price2 ? String(l.price2) : '');
+  const [note, setNote] = useState(String(l.note || ''));
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [label1, label2] = PRICE_FIELDS[l.type] || ['Price (₦)'];
+  const save = async () => {
+    setError('');
+    setBusy(true);
+    try {
+      await editMyListing(l, { title, price, price2, note, photoFile: photo, productNames });
+      onDone(true);
+    } catch (e: any) {
+      setError(e?.message || 'Could not save. Please try again.');
+    }
+    setBusy(false);
+  };
+  return (
+    <div className="space-y-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+      <p className="text-xs font-extrabold text-slate-900 dark:text-white">Edit your post</p>
+      <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={60} className={input} placeholder="Title" />
+      <div className={`grid gap-2 ${label2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        <input value={price} onChange={(e) => setPrice(e.target.value.replace(/\D/g, ''))} inputMode="numeric" className={input} placeholder={label1} aria-label={label1} />
+        {label2 && <input value={price2} onChange={(e) => setPrice2(e.target.value.replace(/\D/g, ''))} inputMode="numeric" className={input} placeholder={label2} aria-label={label2} />}
+      </div>
+      <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} rows={3} className={`${input} h-auto py-2`} placeholder="Note (optional)" />
+      <label className="flex items-center gap-2 text-xs font-bold text-[#0e9f55] cursor-pointer">
+        <Camera className="w-4 h-4" />
+        {photo ? `New photo: ${photo.name}` : l.photo ? 'Change photo (optional)' : 'Add a photo (optional)'}
+        <input type="file" accept="image/*" className="hidden" onChange={(e) => setPhoto(e.target.files?.[0] || null)} />
+      </label>
+      {error && <p className="text-xs text-rose-600">{error}</p>}
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" onClick={() => onDone(false)} disabled={busy} className="h-10 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
+          Cancel
+        </button>
+        <button type="button" onClick={save} disabled={busy} className="h-10 rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer disabled:opacity-60">
+          {busy ? 'Saving...' : 'Save changes'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const PostForm: React.FC<{
   types: string[];
   startType: string;
   productNames: string[];
   session: Props['session'];
-  onDone: () => void;
+  onDone: (posted?: boolean) => void;
 }> = ({ types, startType, productNames, session, onDone }) => {
   const [type, setType] = useState<string>(startType || types[0]);
   const [title, setTitle] = useState('');
@@ -454,17 +629,7 @@ const PostForm: React.FC<{
 
   const blocked = blockedReason(type, title, productNames);
   const longLived = LONG_LIVED.includes(type);
-  const priceFields: Record<string, [string, string?]> = {
-    service: ['Lowest price (₦)', 'Highest price (₦, optional)'],
-    item: ['Price (₦)'],
-    wanted: ['Your budget (₦, optional)'],
-    rent: ['Price per day (₦)'],
-    charging: ['Charge to 50% (₦)', 'Charge to 100% (₦)'],
-    water: ['Price per bucket (₦)'],
-    lost: ['Reward (₦, optional)'],
-    found: ['Collection fee (₦, optional)'],
-  };
-  const [label1, label2] = priceFields[type] || ['Price (₦)'];
+  const [label1, label2] = PRICE_FIELDS[type] || ['Price (₦)'];
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -485,7 +650,7 @@ const PostForm: React.FC<{
         hostel,
         productNames,
       });
-      onDone();
+      onDone(true);
     } catch (err: any) {
       setError(err?.message || 'Could not post. Please try again.');
     }
@@ -496,7 +661,7 @@ const PostForm: React.FC<{
     <form onSubmit={submit} className={`${card} p-4 space-y-3`}>
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">New listing</h3>
-        <button type="button" onClick={onDone} className="p-1 text-slate-400 cursor-pointer" aria-label="Close">
+        <button type="button" onClick={() => onDone(false)} className="p-1 text-slate-400 cursor-pointer" aria-label="Close">
           <X className="w-4 h-4" />
         </button>
       </div>
@@ -644,9 +809,10 @@ const PostForm: React.FC<{
 
 /* ------------------------------------------------------------------ */
 
-const MyListings: React.FC = () => {
+const MyListings: React.FC<{ productNames: string[] }> = ({ productNames }) => {
   const [list, setList] = useState<any[] | null>(null);
   const [busyId, setBusyId] = useState('');
+  const [editId, setEditId] = useState('');
   const load = () => getMyListings().then(setList).catch(() => setList([]));
   useEffect(() => {
     load();
@@ -724,12 +890,30 @@ const MyListings: React.FC = () => {
                 <button
                   type="button"
                   disabled={busyId === l.id}
-                  onClick={() => window.confirm('Remove this listing?') && act(l.id, 'remove')}
+                  onClick={() => setEditId(editId === l.id ? '' : l.id)}
+                  className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-bold cursor-pointer"
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  disabled={busyId === l.id}
+                  onClick={() => window.confirm('Remove this post? It will stop showing to everyone.') && act(l.id, 'remove')}
                   className="px-3 py-1.5 rounded-lg text-rose-600 text-[11px] font-bold cursor-pointer"
                 >
                   Remove
                 </button>
               </div>
+            )}
+            {editId === l.id && (
+              <EditForm
+                l={l}
+                productNames={productNames}
+                onDone={(saved) => {
+                  setEditId('');
+                  if (saved) load();
+                }}
+              />
             )}
           </div>
         );
