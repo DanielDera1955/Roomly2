@@ -732,6 +732,13 @@ export async function adminGamerPhone(gid) {
   const s = await getDoc(doc(db, 'gamerContact', gid));
   return s.exists() ? String(s.data().phone || '') : '';
 }
+/** Admin: clear a player's profile and PIN so they can register again (history stays: the id comes from their number) */
+export async function adminResetGamer(gid) {
+  await deleteDoc(doc(db, 'gamerSecret', gid));
+  await deleteDoc(doc(db, 'gamerContact', gid));
+  await deleteDoc(doc(db, 'gamers', gid));
+}
+
 export async function adminSetGamerBan(gid, banned) {
   await updateDoc(doc(db, 'gamers', gid), { banned: Boolean(banned) });
 }

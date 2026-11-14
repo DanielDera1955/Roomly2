@@ -17,6 +17,7 @@ import {
   adminResolveMatch,
   isScored,
   adminSetGamerBan,
+  adminResetGamer,
   adminGamerPhone,
   subscribeGamers,
   subscribeTournaments,
@@ -118,6 +119,7 @@ export const AdminHub: React.FC = () => {
       </div>
 
       <Disputes />
+      <ResetPlayer />
       <Schools settings={settings} />
       <AdminTournaments />
     </div>
@@ -376,6 +378,46 @@ const Schools: React.FC<{ settings: any }> = ({ settings }) => {
           </div>
         ))
       )}
+    </div>
+  );
+};
+
+/** A player locked out (for example, they changed their PIN): clear their profile so they can register again */
+const ResetPlayer: React.FC = () => {
+  const [gamers, setGamers] = useState<any[]>([]);
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState('');
+  useEffect(() => subscribeGamers(setGamers), []);
+  const term = q.trim().toLowerCase();
+  const found = term ? gamers.filter((g) => String(g.name || '').toLowerCase().includes(term)).slice(0, 8) : [];
+  const reset = async (g: any) => {
+    if (!window.confirm(`Reset ${g.name}? Their profile and PIN are cleared and they register again with a new PIN. Their results stay.`)) return;
+    setBusy(g.id);
+    try {
+      await adminResetGamer(g.id);
+      setQ('');
+    } catch (e: any) {
+      window.alert(e?.message || 'Could not reset.');
+    }
+    setBusy('');
+  };
+  return (
+    <div className={card}>
+      <p className={h}>Reset a player</p>
+      <p className="text-[11px] text-slate-500">For a player who cannot get their profile back, for example after changing their PIN. Search by gamer name.</p>
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Gamer name" className={input} />
+      {term && found.length === 0 && <p className="text-xs text-slate-400">No player with that name.</p>}
+      {found.map((g) => (
+        <div key={g.id} className="flex items-center justify-between gap-2 text-xs">
+          <span className="min-w-0 truncate text-slate-900 dark:text-white">
+            {g.name}
+            <span className="text-slate-400"> · {g.school === 'guest' ? 'Guest' : g.school === 'other' ? g.schoolName || 'Other school' : g.hostel}</span>
+          </span>
+          <button type="button" disabled={busy === g.id} onClick={() => reset(g)} className={`${btn} bg-rose-50 dark:bg-rose-950/40 text-rose-600 shrink-0`}>
+            Reset
+          </button>
+        </div>
+      ))}
     </div>
   );
 };
