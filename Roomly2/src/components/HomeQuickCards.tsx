@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { RotateCcw, ChevronDown, ChevronRight, Users, UtensilsCrossed, ShoppingBasket, Store, Crown } from 'lucide-react';
+import { RotateCcw, ChevronDown, ChevronRight, Users, UtensilsCrossed, ShoppingBasket, Store, Crown, Wrench, Tag, Search, Gamepad2, Trophy } from 'lucide-react';
 import { GAMES, fetchLeaders, isRegisteredGamer } from '../hub.js';
 import { getNextBatch, getOutsideChoices, storeGraceOpen, storeRunLeftToday } from '../api.js';
 import { dayWord, timeLabel, timeLabelFull, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, openDateText, BEHIND_EVERY_ORDER, OUTSIDE_STORE_GRACE_END_MIN, isOutsideSource, foodLateOrderByMin, OUTSIDE_STORE_GRACE_END_MIN as STORE_LATE_MIN } from '../config';
@@ -119,12 +119,33 @@ function productPhotoFor(id: QuickTarget, products: any[]): string {
   return (list.find((p) => p.featured) || list[0])?.imageUrl || '';
 }
 
-/** Hostel Hub's tile: a soft green block (Games has its own card below) */
-const HubTile: React.FC = () => (
-  <div className="relative w-full h-24 overflow-hidden flex items-center justify-center bg-emerald-50 dark:bg-emerald-950/40">
-    <Users className="w-9 h-9 text-[#0e9f55]" />
-  </div>
-);
+/** Hostel Hub's tile: a green scene with the four sections as little icon tiles (Games has its own card below) */
+const HubTile: React.FC = () => {
+  const chips = [
+    { Icon: Store, tilt: '-rotate-6', lift: 'translate-y-1' },
+    { Icon: Wrench, tilt: 'rotate-3', lift: '-translate-y-1.5' },
+    { Icon: Tag, tilt: '-rotate-3', lift: 'translate-y-1' },
+    { Icon: Search, tilt: 'rotate-6', lift: '-translate-y-1' },
+  ];
+  return (
+    <div className="relative w-full h-24 overflow-hidden flex items-center justify-center bg-gradient-to-br from-[#12a45b] via-[#0e8a4a] to-[#0a5f35]">
+      <span className="absolute -top-8 -left-6 w-24 h-24 rounded-full bg-white/10" />
+      <span className="absolute -bottom-10 -right-4 w-28 h-28 rounded-full bg-white/10" />
+      <span className="absolute top-2 right-3 w-1.5 h-1.5 rounded-full bg-white/70" />
+      <span className="absolute bottom-3 left-4 w-1 h-1 rounded-full bg-white/60" />
+      <div className="relative flex items-center -space-x-1.5">
+        {chips.map(({ Icon, tilt, lift }, i) => (
+          <span
+            key={i}
+            className={`w-10 h-10 rounded-xl bg-white/95 shadow-md shadow-black/20 flex items-center justify-center ${tilt} ${lift}`}
+          >
+            <Icon className="w-5 h-5 text-[#0a7a41]" />
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 const FALLBACK_ICON: Record<QuickTarget, React.FC<{ className?: string }>> = {
   food: UtensilsCrossed,
@@ -263,26 +284,33 @@ const HostelLeagueCard: React.FC<{ onOpen: (game?: string) => void }> = ({ onOpe
     };
   }, []);
   return (
-    <div className="rounded-3xl p-4 overflow-hidden text-white bg-gradient-to-br from-[#0e8a4a] to-[#0a5f35]">
-      <div className="flex items-start justify-between gap-3">
+    <div className="relative rounded-3xl p-4 overflow-hidden text-white bg-gradient-to-br from-[#12a45b] via-[#0e8a4a] to-[#08502d] shadow-lg shadow-emerald-900/20">
+      <span className="pointer-events-none absolute -top-12 -right-10 w-40 h-40 rounded-full bg-white/10" />
+      <span className="pointer-events-none absolute -bottom-16 -left-12 w-44 h-44 rounded-full bg-black/10" />
+      <Trophy className="pointer-events-none absolute top-3 right-24 w-16 h-16 text-white/10 -rotate-12" />
+      <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-emerald-100">Roomly Hostel League</p>
-          <h3 className="text-2xl font-black leading-tight">Best in Caritas</h3>
+          <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-100">
+            <Gamepad2 className="w-4 h-4" /> Roomly Hostel League
+          </p>
+          <h3 className="mt-1 text-xl font-extrabold leading-tight tracking-tight">Best in Caritas</h3>
         </div>
         <button
           type="button"
           onClick={() => onOpen()}
-          className="shrink-0 h-11 px-6 rounded-xl bg-white text-[#0a5f35] text-sm font-black cursor-pointer"
+          className="shrink-0 h-10 px-6 rounded-full bg-white text-[#0a5f35] text-sm font-bold shadow-md shadow-black/20 cursor-pointer active:scale-95 transition-transform"
         >
           {member ? 'Play' : 'Join'}
         </button>
       </div>
-      <p className="mt-2 text-sm text-emerald-50/95 leading-snug">Compete in the game you play and become the best in Caritas.</p>
-      <p className="mt-3 flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-emerald-100">
-        <Crown className="w-4 h-4" /> Who holds each crown right now
+      <p className="relative mt-1.5 max-w-[85%] text-[13px] font-normal text-emerald-50/90 leading-snug">
+        Compete in the game you play and become the best in Caritas.
+      </p>
+      <p className="relative mt-3.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-100/90">
+        <Crown className="w-3.5 h-3.5" /> Who holds each crown right now
       </p>
       {/* Tiles run off the right edge of the card on purpose */}
-      <div className="mt-2 -mr-4 flex gap-2.5 overflow-x-auto no-scrollbar pr-4">
+      <div className="relative mt-2 -mr-4 flex gap-2.5 overflow-x-auto no-scrollbar pr-4">
         {GAMES.map((g: { id: string; label: string }) => {
           const l = leaders ? leaders[g.id] : null;
           return (
@@ -290,17 +318,31 @@ const HostelLeagueCard: React.FC<{ onOpen: (game?: string) => void }> = ({ onOpe
               key={g.id}
               type="button"
               onClick={() => onOpen(g.id)}
-              className="shrink-0 w-[118px] text-left rounded-2xl px-3.5 py-2.5 bg-white/15 cursor-pointer"
+              className="shrink-0 w-[124px] text-left rounded-2xl px-3 py-2.5 bg-white/12 backdrop-blur-sm border border-white/20 cursor-pointer active:scale-[0.97] transition-transform"
             >
-              <span className="block text-base font-black">{g.label}</span>
-              <span className="block text-xs text-emerald-50/90 truncate">{leaders === null ? ' ' : l ? `${l.name}, ${l.pts} pts` : 'No crown yet'}</span>
+              <span className="flex items-center gap-1.5">
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center ${l ? 'bg-amber-300 text-amber-900' : 'bg-white/20 text-white/80'}`}>
+                  <Crown className="w-3 h-3" />
+                </span>
+                <span className="text-sm font-semibold">{g.label}</span>
+              </span>
+              <span className="mt-1 block text-[11px] text-emerald-50/85 truncate">{leaders === null ? ' ' : l ? `${l.name}, ${l.pts} pts` : 'No crown yet'}</span>
             </button>
           );
         })}
-        <button type="button" onClick={() => onOpen()} className="shrink-0 w-[118px] text-left rounded-2xl px-3.5 py-2.5 bg-white/15 cursor-pointer">
-          <span className="block text-base font-black">Full table</span>
-          <span className="flex items-center gap-1 text-xs text-emerald-50/90">
-            See all <ChevronRight className="w-3.5 h-3.5" />
+        <button
+          type="button"
+          onClick={() => onOpen()}
+          className="shrink-0 w-[124px] text-left rounded-2xl px-3 py-2.5 bg-white/12 backdrop-blur-sm border border-white/20 cursor-pointer active:scale-[0.97] transition-transform"
+        >
+          <span className="flex items-center gap-1.5">
+            <span className="w-5 h-5 rounded-full flex items-center justify-center bg-white/20 text-white/80">
+              <Trophy className="w-3 h-3" />
+            </span>
+            <span className="text-sm font-semibold">Full table</span>
+          </span>
+          <span className="mt-1 flex items-center gap-1 text-[11px] text-emerald-50/85">
+            See all <ChevronRight className="w-3 h-3" />
           </span>
         </button>
       </div>
