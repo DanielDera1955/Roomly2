@@ -9,9 +9,10 @@
  *
  * Students are signed in anonymously (one id per phone, the same Hub app instance), so each phone can read its own orders.
  */
-import { collection, doc, getDoc, getDocs, onSnapshot, query, where, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, onSnapshot, query, where, setDoc, writeBatch, increment } from 'firebase/firestore';
 import { hubDb, hubUid, knownHubUid } from './hub.js';
 import { BOYS_HOSTELS, GIRLS_HOSTELS, hostelSideOf } from './config.ts';
+import { normalizePhone, isValidNigerianPhone, isBannedFromRoomly, BANNED_MESSAGE } from './api.js';
 
 export { BOYS_HOSTELS, GIRLS_HOSTELS };
 
@@ -227,6 +228,7 @@ export async function saveShopOrder({ shop, picked, delivery, loc }) {
     sideMismatch: delivery === 'handover',
     createdAtMs: Date.now(),
   });
+  countShopOrder(shop.id, id);
   return id;
 }
 
@@ -251,6 +253,7 @@ export async function saveServiceRequest({ shop, service, when, loc }) {
     sideMismatch: !sameSide(shop, loc.hostel),
     createdAtMs: Date.now(),
   });
+  countShopOrder(shop.id, id);
   return id;
 }
 
@@ -276,4 +279,148 @@ export async function reportShop(shop, reason, note = '') {
     note: String(note || '').slice(0, 300),
     createdAtMs: Date.now(),
   });
+}
+
+/* ------------------------------------------------------------------ */
+/* Sharing                                                             */
+/* ------------------------------------------------------------------ */
+
+/** Every vendor and service has its own link that opens its page */
+export const shopLink = (id) => `${window.location.origin}/?shop=${encodeURIComponent(id)}`;
+
+/* ------------------------------------------------------------------ */
+/* Visits and orders (Phase 5)                                         */
+/* ------------------------------------------------------------------ */
+
+/** Today in Lagos (UTC+1, no daylight saving): "2026-11-14" */
+export const lagosDay = (ms = Date.now()) => new Date(ms + 3600000).toISOString().slice(0, 10);
+export const RANK_DAYS = 7;
+
+/**
+ * Counts one visit: one phone counts once per shop per day. The visit marker document has a fixed id
+ * (shop + day + phone), so a second try that day is refused by the rules and the counter never moves twice.
+ * Never blocks the page: any failure is ignored.
+ */
+export async function countShopVisit(shopId) {
+  try {
+    const day = lagosDay();
+    const seen = `roomly_shopvisit_${shopId}_${day}`;
+    if (localStorage.getItem(seen)) return;
+    const uid = await hubUid();
+    const sid = `${shopId}_${day}`;
+    const batch = writeBatch(hubDb);
+    batch.set(doc(hubDb, 'shopVisits', `${sid}_${uid}`), { shopId, day, uid, atMs: Date.now() });
+    batch.set(doc(hubDb, 'shopStats', sid), { shopId, day, visits: increment(1) }, { merge: true });
+    await batch.commit();
+    localStorage.setItem(seen, '1');
+  } catch {
+    /* not counted: nothing for the student to see */
+  }
+}
+
+/** Counts one order or request sent. Runs after the order is saved and never blocks it. */
+async function countShopOrder(shopId, orderId) {
+  try {
+    const day = lagosDay();
+    await setDoc(doc(hubDb, 'shopStats', `${shopId}_${day}`), { shopId, day, orders: increment(1), lastOrderId: orderId }, { merge: true });
+  } catch {
+    /* not counted */
+  }
+}
+
+/** Visits and orders per shop over the last 7 days: { [shopId]: { visits, orders } } */
+export async function getShopStats(days = RANK_DAYS, database = hubDb) {
+  const from = lagosDay(Date.now() - (days - 1) * 86400000);
+  const snap = await getDocs(query(collection(database, 'shopStats'), where('day', '>=', from)));
+  const out = {};
+  snap.docs.forEach((d) => {
+    const v = d.data();
+    const o = (out[v.shopId] = out[v.shopId] || { visits: 0, orders: 0 });
+    o.visits += Number(v.visits) || 0;
+    o.orders += Number(v.orders) || 0;
+  });
+  return out;
+}
+
+/**
+ * Order a list of shops (all vendors, or all services) by visits in the last 7 days.
+ * A new listing gets a boost for its first few days so it sits near the top. The shop with the most
+ * real visits gets the "Most visited" tag. Returns { list, topId }.
+ */
+export function rankShops(shops, stats, nowMs = Date.now()) {
+  const visits = (s) => (stats[s.id] && stats[s.id].visits) || 0;
+  const maxV = Math.max(0, ...shops.map(visits));
+  const isNew = (s) => shopTag({ ...s, tag: '' }, nowMs) === 'New';
+  const boost = Math.max(3, Math.ceil(maxV / 2));
+  const score = (s) => visits(s) + (isNew(s) ? boost : 0);
+  const list = [...shops].sort(
+    (a, b) => score(b) - score(a) || visits(b) - visits(a) || Number(b.approvedAtMs || b.createdAtMs || 0) - Number(a.approvedAtMs || a.createdAtMs || 0)
+  );
+  const top = maxV > 0 ? shops.find((s) => visits(s) === maxV) : null;
+  return { list, topId: top ? top.id : '' };
+}
+
+/* ------------------------------------------------------------------ */
+/* "List your business" (Phase 4)                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * input: { kind, name, hostel, room, phone, items: [{ name, price, priceFrom }], photos: [url], showRoom }
+ * Lands in the admin console under Applications.
+ */
+export async function submitShopApplication(input) {
+  const kind = input.kind === 'service' ? 'service' : 'vendor';
+  const name = String(input.name || '').trim().slice(0, 60);
+  if (name.length < 2) throw new Error('Add your name.');
+  if (!input.hostel) throw new Error('Choose your hostel.');
+  const room = String(input.room || '').trim().slice(0, 20);
+  if (!room) throw new Error('Add your room number.');
+  const phone = normalizePhone(input.phone);
+  if (!isValidNigerianPhone(phone)) throw new Error('Enter your 11-digit WhatsApp number.');
+  if (await isBannedFromRoomly(phone)) throw new Error(BANNED_MESSAGE);
+  const items = (input.items || [])
+    .map((i, n) => ({ id: `i${n + 1}`, name: String(i.name || '').trim().slice(0, 60), price: Math.max(0, Math.round(Number(i.price) || 0)), priceFrom: Boolean(i.priceFrom) }))
+    .filter((i) => i.name && i.price > 0);
+  if (!items.length) throw new Error(kind === 'service' ? 'Add at least one service with its price.' : 'Add at least one item with its price.');
+  const photos = (input.photos || []).filter((u) => typeof u === 'string' && u).slice(0, 3);
+  if (!photos.length) throw new Error('Add at least one photo.');
+  const uid = await hubUid();
+  const id = doc(collection(hubDb, 'shopApplications')).id;
+  await setDoc(doc(hubDb, 'shopApplications', id), {
+    status: 'new',
+    uid,
+    kind,
+    name,
+    hostel: String(input.hostel),
+    room,
+    showRoom: Boolean(input.showRoom),
+    phone,
+    items,
+    photos,
+    createdAtMs: Date.now(),
+  });
+  return id;
+}
+
+/* ------------------------------------------------------------------ */
+/* Vendor edit link (talks to /api/vendor-edit)                        */
+/* ------------------------------------------------------------------ */
+
+export const editLink = (token) => `${window.location.origin}/?edit=${token}`;
+
+/** action: 'get' | 'save'. The server decides which shop this is from the token alone. */
+export async function vendorEditApi(token, action, patch) {
+  let res;
+  try {
+    res = await fetch('/api/vendor-edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, action, patch }),
+    });
+  } catch {
+    throw new Error('No network. Check your connection and try again.');
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Could not save. Try again.');
+  return data;
 }

@@ -40,6 +40,8 @@ interface Props {
   onGoStore: () => void;
   /** Open a vendor's or service's page */
   onOpenShop: (shopId: string) => void;
+  /** Open the "List your business" form */
+  onListBusiness: (kind: 'vendor' | 'service') => void;
   /** The student's saved hostel, so Vendors and Services open on their side */
   startHostel?: string;
 }
@@ -140,7 +142,7 @@ const Guide: React.FC<{ section: Section }> = ({ section }) => {
 };
 
 /** Hostel Hub: Vendors, Services, Buy & Sell, Lost & Found. Opens on Vendors, unless a post link asked for another section. */
-export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore, onOpenShop, startHostel }) => {
+export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore, onOpenShop, onListBusiness, startHostel }) => {
   const [section, setSection] = useState<Section>(() => {
     const asked = takeHubSection();
     return HUB_SECTIONS.some((x) => x.id === asked) ? (asked as Section) : 'vendors';
@@ -217,10 +219,10 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore, o
       </div>
 
       {section === 'vendors' ? (
-        <ShopHub kind="vendor" startHostel={startHostel} onOpen={(shop: Shop) => onOpenShop(shop.id)} />
+        <ShopHub kind="vendor" startHostel={startHostel} onOpen={(shop: Shop) => onOpenShop(shop.id)} onList={() => onListBusiness('vendor')} />
       ) : (
         <>
-          {section === 'services' && <ShopHub kind="service" startHostel={startHostel} onOpen={(shop: Shop) => onOpenShop(shop.id)} />}
+          {section === 'services' && <ShopHub kind="service" startHostel={startHostel} onOpen={(shop: Shop) => onOpenShop(shop.id)} onList={() => onListBusiness('service')} />}
           {/* Quick posts (charging, water, one-off services, Buy & Sell, Lost & Found): the existing post board */}
           <div className="flex items-center justify-between gap-3">
             {section === 'services' ? (

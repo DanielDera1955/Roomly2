@@ -20,6 +20,7 @@ import {
 } from '../api.js';
 import { slotsForDay, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, foodLateOrderByMin } from '../config';
 import { playChime } from '../sound';
+import { subscribeShopApplications, subscribeShopReports, dismissShopReport } from '../shopsAdmin.js';
 import { OrderRecord } from '../types';
 
 /**
@@ -118,6 +119,11 @@ export const AdminActionBoard: React.FC = () => {
 
   useEffect(() => subscribeOrders((list: OrderRecord[]) => setOrders(list || [])), []);
   useEffect(() => subscribeFeedbackMessages((list: any[]) => setMessages(list || [])), []);
+  // Hostel Hub: new vendor and service applications, and "Report this listing" reports
+  const [shopApps, setShopApps] = useState<any[]>([]);
+  const [shopReports, setShopReports] = useState<any[]>([]);
+  useEffect(() => subscribeShopApplications((l: any[]) => setShopApps(l || [])), []);
+  useEffect(() => subscribeShopReports((l: any[]) => setShopReports(l || [])), []);
   useEffect(() => {
     const offs = (['inside', 'store', 'food'] as const).map((side) =>
       subscribeSideRequests(side, (list: any[]) => setRequests((r) => ({ ...r, [side]: list || [] })))
@@ -290,6 +296,31 @@ export const AdminActionBoard: React.FC = () => {
     });
   });
   if (!complaints) items.push({ id: 'fb-ok', level: 'green', title: 'Student messages: all attended' });
+
+  // ---------- Hostel Hub vendors and services ----------
+  const newShopApps = shopApps.filter((a: any) => a.status === 'new');
+  newShopApps.forEach((a: any) =>
+    items.push({
+      id: `shopapp-${a.id}`,
+      level: 'amber',
+      title: `New ${a.kind === 'service' ? 'service' : 'vendor'} application from ${a.name}`,
+      detail: `${a.hostel}, room ${a.room}`,
+      todo: 'Open Applications and approve or reject it, then send the vendor their edit link.',
+      contacts: a.phone ? [{ name: a.name, phone: a.phone }] : [],
+    })
+  );
+  const openShopReports = shopReports.filter((r: any) => r.status !== 'done');
+  openShopReports.forEach((r: any) =>
+    items.push({
+      id: `shoprep-${r.id}`,
+      level: 'amber',
+      title: `Report on ${r.shopName || 'a listing'}: ${r.reason}${r.createdAtMs ? ` (${mins(nowMs - Number(r.createdAtMs))} ago)` : ''}`,
+      detail: r.note ? `"${r.note}"` : undefined,
+      todo: 'Open Applications > Listings. Hide the listing if the report is right, then tap Mark attended.',
+      clear: { label: 'Mark attended', run: () => void dismissShopReport(r.id).catch(() => window.alert('Could not update. Try again.')) },
+    })
+  );
+  if (!newShopApps.length && !openShopReports.length) items.push({ id: 'shop-ok', level: 'green', title: 'Hostel Hub vendors: nothing waiting' });
 
   // ---------- sort and split ----------
   const rank: Record<Level, number> = { red: 0, amber: 1, grey: 2, green: 3 };

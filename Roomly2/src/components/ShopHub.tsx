@@ -5,6 +5,8 @@ import {
   BOYS_HOSTELS,
   GIRLS_HOSTELS,
   subscribeShops,
+  getShopStats,
+  rankShops,
   shopTitle,
   shopTag,
   placeLine,
@@ -40,8 +42,8 @@ const chip = (on: boolean) =>
 const countText = (n: number, kind: ShopKind) => `${n} ${kind === 'service' ? 'service' : 'vendor'}${n === 1 ? '' : 's'}`;
 
 /** One vendor or service card: photo, name, pin, tag, three rows and a bottom bar */
-export const ShopCard: React.FC<{ shop: Shop; onOpen: () => void }> = ({ shop, onOpen }) => {
-  const tag = shopTag(shop);
+export const ShopCard: React.FC<{ shop: Shop; onOpen: () => void; top?: boolean }> = ({ shop, onOpen, top }) => {
+  const tag = top ? 'Most visited' : shopTag(shop);
   const isService = shop.kind === 'service';
   const rows = shop.items.slice(0, 3);
   const photo = shop.photo || shop.cover || '';
@@ -98,11 +100,13 @@ export const ShopCard: React.FC<{ shop: Shop; onOpen: () => void }> = ({ shop, o
  * Vendors and Services in the Hub: Boys / Girls buttons with counts, hostel chips, then the cards.
  * startHostel: the student's own hostel, so the list opens on their side.
  */
-export const ShopHub: React.FC<{ kind: ShopKind; startHostel?: string; onOpen: (shop: Shop) => void }> = ({ kind, startHostel, onOpen }) => {
+export const ShopHub: React.FC<{ kind: ShopKind; startHostel?: string; onOpen: (shop: Shop) => void; onList: () => void }> = ({ kind, startHostel, onOpen, onList }) => {
   const [shops, setShops] = useState<Shop[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [side, setSide] = useState<'boys' | 'girls'>(startHostel && sideOf(startHostel) === 'girls' ? 'girls' : 'boys');
   const [hostel, setHostel] = useState('All');
+  // Visits in the last 7 days decide the order. The numbers are never shown here (admin only).
+  const [stats, setStats] = useState<Record<string, { visits: number; orders: number }>>({});
 
   useEffect(
     () =>
@@ -113,6 +117,12 @@ export const ShopHub: React.FC<{ kind: ShopKind; startHostel?: string; onOpen: (
     [kind]
   );
   useEffect(() => setHostel('All'), [side]);
+  useEffect(() => {
+    getShopStats()
+      .then(setStats)
+      .catch(() => {});
+  }, [kind]);
+  const ranked = useMemo(() => rankShops(shops, stats), [shops, stats]);
 
   const count = useMemo(
     () => ({
@@ -122,7 +132,7 @@ export const ShopHub: React.FC<{ kind: ShopKind; startHostel?: string; onOpen: (
     [shops]
   );
   const chips = ['All', ...(side === 'boys' ? BOYS_HOSTELS : GIRLS_HOSTELS)];
-  const shown = shops.filter((s) => sideOf(s.hostel) === side && (hostel === 'All' || s.hostel === hostel));
+  const shown = ranked.list.filter((s: Shop) => sideOf(s.hostel) === side && (hostel === 'All' || s.hostel === hostel));
 
   return (
     <div className="space-y-3">
@@ -165,11 +175,19 @@ export const ShopHub: React.FC<{ kind: ShopKind; startHostel?: string; onOpen: (
         </div>
       ) : (
         <div className="space-y-3">
-          {shown.map((s) => (
-            <ShopCard key={s.id} shop={s} onOpen={() => onOpen(s)} />
+          {shown.map((s: Shop) => (
+            <ShopCard key={s.id} shop={s} top={s.id === ranked.topId} onOpen={() => onOpen(s)} />
           ))}
         </div>
       )}
+
+      <div className="rounded-2xl p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300/70 dark:border-emerald-900">
+        <p className="text-base font-black text-slate-900 dark:text-white">Sell or offer a service in your hostel?</p>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300 leading-snug">Get your own shop page where students pick items and send you the order on WhatsApp. Free to list.</p>
+        <button type="button" onClick={onList} className="mt-3 h-11 px-6 rounded-xl bg-white dark:bg-white text-slate-900 text-sm font-black cursor-pointer border border-slate-200">
+          List your business
+        </button>
+      </div>
     </div>
   );
 };

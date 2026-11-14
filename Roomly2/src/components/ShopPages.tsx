@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, MapPin, Loader2, Check } from 'lucide-react';
+import { ArrowLeft, MapPin, Loader2, Check, Share2 } from 'lucide-react';
 import { NoPhoto } from './NoPhoto';
 import { HOSTELS } from '../config';
 import { REPORT_REASONS } from '../hub.js';
@@ -28,6 +28,8 @@ import {
   saveShopOrder,
   saveServiceRequest,
   reportShop,
+  countShopVisit,
+  shopLink,
 } from '../shops.js';
 import type { Shop } from './ShopHub';
 
@@ -73,10 +75,34 @@ const TopBar: React.FC<{ title: string; onBack: () => void }> = ({ title, onBack
   </div>
 );
 
+/** Every vendor and service has its own link. Share opens the phone's share sheet, or copies the link. */
+const shareShop = async (shop: Shop) => {
+  const url = shopLink(shop.id);
+  const text = `${shopTitle(shop)} on Roomly: ${url}`;
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: shopTitle(shop), text, url });
+      return;
+    }
+    await navigator.clipboard.writeText(url);
+    window.alert('Link copied.');
+  } catch {
+    /* cancelled */
+  }
+};
+
 const Cover: React.FC<{ shop: Shop; onBack: () => void }> = ({ shop, onBack }) => (
   <div className="relative h-[130px] bg-slate-200 dark:bg-slate-800 overflow-hidden">
     {shop.cover || shop.photo ? <img src={shop.cover || shop.photo} alt="" className="w-full h-full object-cover" /> : null}
     <BackButton onClick={onBack} floating />
+    <button
+      type="button"
+      onClick={() => shareShop(shop)}
+      aria-label="Share this page"
+      className="absolute top-4 right-4 h-11 px-4 rounded-full bg-slate-900/80 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer z-10"
+    >
+      <Share2 className="w-4 h-4" /> Share
+    </button>
   </div>
 );
 
@@ -204,6 +230,10 @@ export const ShopFlow: React.FC<{
   }, []);
 
   useEffect(() => subscribeShop(shopId, (s: Shop | null) => setShop(s)), [shopId]);
+  // One phone counts once per shop per day
+  useEffect(() => {
+    countShopVisit(shopId);
+  }, [shopId]);
   useEffect(() => {
     getShopWhatsApp(shopId)
       .then((p: string) => (phoneRef.current = p))

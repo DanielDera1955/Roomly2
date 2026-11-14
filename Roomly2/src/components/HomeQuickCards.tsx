@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { RotateCcw, ChevronDown, ChevronRight, Users, UtensilsCrossed, ShoppingBasket, Store, Crown } from 'lucide-react';
-import { GAMES, fetchLeaders } from '../hub.js';
+import { GAMES, fetchLeaders, isRegisteredGamer } from '../hub.js';
 import { getNextBatch, getOutsideChoices, storeGraceOpen, storeRunLeftToday } from '../api.js';
 import { dayWord, timeLabel, timeLabelFull, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, openDateText, BEHIND_EVERY_ORDER, OUTSIDE_STORE_GRACE_END_MIN, isOutsideSource, foodLateOrderByMin, OUTSIDE_STORE_GRACE_END_MIN as STORE_LATE_MIN } from '../config';
 import type { OrderRecord } from '../types';
@@ -246,13 +246,15 @@ export const HomeQuickCards: React.FC<{
 };
 
 /**
- * The fifth card: Roomly Hostel League. Tapping the card (or Join) opens the Games page.
+ * The fifth card: Roomly Hostel League. Only the button (Join, or Play once registered) opens the Games page; a game tile opens that game.
  * One row of game tiles shows who holds each crown. The next tile is left half visible so students know to swipe.
  */
 const HostelLeagueCard: React.FC<{ onOpen: (game?: string) => void }> = ({ onOpen }) => {
   const [leaders, setLeaders] = useState<Record<string, { name: string; pts: number } | null> | null>(null);
+  const [member, setMember] = useState(false);
   useEffect(() => {
     let live = true;
+    isRegisteredGamer().then((m: boolean) => live && setMember(m));
     fetchLeaders()
       .then((l: any) => live && setLeaders(l))
       .catch(() => live && setLeaders({}));
@@ -261,13 +263,7 @@ const HostelLeagueCard: React.FC<{ onOpen: (game?: string) => void }> = ({ onOpe
     };
   }, []);
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => onOpen()}
-      onKeyDown={(e) => (e.key === 'Enter' ? onOpen() : undefined)}
-      className="rounded-3xl p-4 overflow-hidden text-white bg-gradient-to-br from-[#0e8a4a] to-[#0a5f35] cursor-pointer"
-    >
+    <div className="rounded-3xl p-4 overflow-hidden text-white bg-gradient-to-br from-[#0e8a4a] to-[#0a5f35]">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-emerald-100">Roomly Hostel League</p>
@@ -275,13 +271,10 @@ const HostelLeagueCard: React.FC<{ onOpen: (game?: string) => void }> = ({ onOpe
         </div>
         <button
           type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpen();
-          }}
+          onClick={() => onOpen()}
           className="shrink-0 h-11 px-6 rounded-xl bg-white text-[#0a5f35] text-sm font-black cursor-pointer"
         >
-          Join
+          {member ? 'Play' : 'Join'}
         </button>
       </div>
       <p className="mt-2 text-sm text-emerald-50/95 leading-snug">Compete in the game you play and become the best in Caritas.</p>
@@ -289,7 +282,7 @@ const HostelLeagueCard: React.FC<{ onOpen: (game?: string) => void }> = ({ onOpe
         <Crown className="w-4 h-4" /> Who holds each crown right now
       </p>
       {/* Tiles run off the right edge of the card on purpose */}
-      <div className="mt-2 -mr-4 flex gap-2.5 overflow-x-auto no-scrollbar pr-4" onClick={(e) => e.stopPropagation()}>
+      <div className="mt-2 -mr-4 flex gap-2.5 overflow-x-auto no-scrollbar pr-4">
         {GAMES.map((g: { id: string; label: string }) => {
           const l = leaders ? leaders[g.id] : null;
           return (

@@ -911,3 +911,15 @@ export async function fetchLeaders() {
   } catch {}
   return leaders;
 }
+
+/** Is this phone already registered as a player? (Home card: "Play" instead of "Join") */
+export async function isRegisteredGamer() {
+  try {
+    const uid = await knownHubUid();
+    if (!uid) return false;
+    const snap = await getDocs(query(collection(hubDb, 'gamers'), where('ownerUid', '==', uid)));
+    return snap.docs.some((d) => !d.data().banned);
+  } catch {
+    return false;
+  }
+}

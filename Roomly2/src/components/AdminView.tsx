@@ -41,6 +41,7 @@ import { sellingPrice, isOutsideSource } from '../config';
 import { OrderRecord, CategoryDefinition, DeliveryRunner, locationText, shortLocation, roomText } from '../types';
 import { Product, FoodExtraOption, PRESET_PRODUCT_IMAGES, StoreKey, STORE_LABEL, STORE_SOURCE, categoriesForStore, storeOfSource } from '../config';
 import { AdminHub } from './AdminHub';
+import { AdminShops, useNewShopApplications } from './AdminShops';
 import { AdminPriceLists } from './AdminPriceLists';
 import { AdminDispatch, AdminTeam, AdminMoney, useOpenSettlements, needsAction } from './AdminDispatch';
 import { AdminInsights } from './AdminInsights';
@@ -165,7 +166,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
   // Active Admin Tab
   const [currentTab, setCurrentTab] = useState<AdminTab>('dashboard');
-  const newApplications = useNewApplicationCount();
+  const newApplications = useNewApplicationCount() + useNewShopApplications();
   // Red count on the Money tab: days sent and waiting for your confirmation, or overdue
   const moneyAlerts = needsAction(useOpenSettlements()).length;
 
@@ -772,7 +773,12 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
         )}
 
         {/* ================= APPLICATIONS: students who applied to be runners (#join page) ================= */}
-        {currentTab === 'applications' && <AdminRunnerApplications />}
+        {currentTab === 'applications' && (
+          <div className="space-y-8">
+            <AdminShops />
+            <AdminRunnerApplications />
+          </div>
+        )}
 
         {/* ================= MONEY: real totals from settlement records ================= */}
         {currentTab === 'money' && (

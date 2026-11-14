@@ -41,6 +41,8 @@ import { CategoryNav, ShopTab } from './components/CategoryNav';
 import { HostelHub } from './components/HostelHub';
 import { GamesPage } from './components/GamesPage';
 import { ShopFlow } from './components/ShopPages';
+import { ListBusiness } from './components/ListBusiness';
+import { VendorEditor } from './components/VendorEditor';
 import { HowRoomlyWorks } from './components/HowRoomlyWorks';
 import { BecomeRunner } from './components/BecomeRunner';
 import { GuestHero } from './components/GuestHero';
@@ -162,7 +164,30 @@ export default function App() {
   // Games has its own page (Home > Roomly Hostel League). A #games link or a WhatsApp ?game= / ?match= link opens it straight away.
   const [gamesOpen, setGamesOpen] = useState<{ game?: string } | null>(() => (linkOpensGames() ? {} : null));
   // A Hostel Hub vendor or service page (with items to start from when reordering)
-  const [shopOpen, setShopOpen] = useState<{ id: string; prefill?: Record<string, number> } | null>(null);
+  // A shared vendor or service link (?shop=ID) opens that page straight away
+  const [shopOpen, setShopOpen] = useState<{ id: string; prefill?: Record<string, number> } | null>(() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const id = q.get('shop');
+      if (id) {
+        q.delete('shop');
+        const rest = q.toString();
+        window.history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : ''));
+        return { id };
+      }
+    } catch {}
+    return null;
+  });
+  // "List your business" form
+  const [listOpen, setListOpen] = useState<'vendor' | 'service' | null>(null);
+  // A vendor's private edit link (?edit=TOKEN) opens their edit page
+  const editToken = useMemo(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('edit') || '';
+    } catch {
+      return '';
+    }
+  }, []);
   // Header "Sign in" popup for guests (returning students on a new phone)
   const [signInOpen, setSignInOpen] = useState(false);
   const [sourceMode, setSourceMode] = useState<'inside' | 'outside'>(lastShop.side);
@@ -1424,6 +1449,7 @@ export default function App() {
               session={{ name: customer?.name || localName, phone, pin }}
               startHostel={customer?.building || ''}
               onOpenShop={(id: string) => setShopOpen({ id })}
+              onListBusiness={(k: 'vendor' | 'service') => setListOpen(k)}
               onGoStore={() => {
                 setSelectedTab('store');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1659,6 +1685,11 @@ export default function App() {
         )}
 
         {/* A Hostel Hub vendor or service: page, order or request, then WhatsApp */}
+        {listOpen && <ListBusiness startKind={listOpen} startHostel={customer?.building || ''} onClose={() => setListOpen(null)} />}
+
+        {/* A vendor's private edit page */}
+        {editToken && <VendorEditor token={editToken} />}
+
         {shopOpen && <ShopFlow key={shopOpen.id} shopId={shopOpen.id} prefill={shopOpen.prefill} customer={customer} onClose={() => setShopOpen(null)} />}
 
         <OrderTrackerModal

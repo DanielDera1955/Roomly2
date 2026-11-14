@@ -405,7 +405,79 @@ service cloud.firestore {
         && id == request.resource.data.shopId + '_' + request.auth.uid
         && request.resource.data.reason in ['stolen', 'scam', 'fake', 'other']
         && request.resource.data.note.size() <= 300;
+      // The admin marks a report attended
+      allow update, delete: if isAdmin();
+    }
+
+    // "List your business": anyone can apply, only the admin reads (it holds the WhatsApp number)
+    match /shopApplications/{id} {
+      allow read: if isAdmin();
+      allow create: if anyUser()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.status == 'new'
+        && request.resource.data.kind in ['vendor', 'service']
+        && request.resource.data.keys().hasOnly(['status', 'uid', 'kind', 'name', 'hostel', 'room', 'showRoom', 'phone', 'items', 'photos', 'createdAtMs'])
+        && request.resource.data.name is string && request.resource.data.name.size() >= 2 && request.resource.data.name.size() <= 60
+        && request.resource.data.room is string && request.resource.data.room.size() <= 20
+        && request.resource.data.phone is string && request.resource.data.phone.size() == 11
+        && request.resource.data.items.size() >= 1 && request.resource.data.items.size() <= 30
+        && request.resource.data.photos.size() >= 1 && request.resource.data.photos.size() <= 3
+        && !exists(/databases/$(database)/documents/hubBans/$(request.resource.data.phone));
+      allow update, delete: if isAdmin();
+    }
+
+    // Vendor edit links. shopEditKeys/{sha256 of the token} -> which shop it opens. No phone can read it:
+    // only the Vercel function (admin credentials, bypasses these rules) looks tokens up. The admin writes them on approval.
+    match /shopEditKeys/{hash} {
+      allow read: if false;
+      allow write: if isAdmin();
+    }
+    // The admin's own copy of each link, so it can be copied again later
+    match /shopAdmin/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    // Visits (one document per shop, day and phone) and daily counters per shop.
+    // The counter only moves together with a brand-new visit marker, or for an order that really exists.
+    match /shopVisits/{vid} {
+      allow read: if isAdmin();
+      allow create: if anyUser()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['shopId', 'day', 'uid', 'atMs'])
+        && vid == request.resource.data.shopId + '_' + request.resource.data.day + '_' + request.auth.uid;
       allow update: if false;
+      allow delete: if isAdmin();
+    }
+    match /shopStats/{sid} {
+      function visitDoc() {
+        return /databases/$(database)/documents/shopVisits/$(sid + '_' + request.auth.uid);
+      }
+      function orderDoc() {
+        return /databases/$(database)/documents/shopOrders/$(request.resource.data.lastOrderId);
+      }
+      // Anyone can read the numbers (they only decide the order of the list; the app never shows them)
+      allow read: if true;
+      allow create: if anyUser()
+        && request.resource.data.keys().hasOnly(['shopId', 'day', 'visits', 'orders', 'lastOrderId'])
+        && sid == request.resource.data.shopId + '_' + request.resource.data.day
+        && ((request.resource.data.get('visits', 0) == 1 && request.resource.data.get('orders', 0) == 0
+             && !exists(visitDoc()) && existsAfter(visitDoc()))
+            || (request.resource.data.get('orders', 0) == 1 && request.resource.data.get('visits', 0) == 0
+                && exists(orderDoc())
+                && get(orderDoc()).data.shopId == request.resource.data.shopId
+                && get(orderDoc()).data.uid == request.auth.uid));
+      allow update: if anyUser()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visits', 'orders', 'lastOrderId'])
+        && ((request.resource.data.get('visits', 0) == resource.data.get('visits', 0) + 1
+             && request.resource.data.get('orders', 0) == resource.data.get('orders', 0)
+             && !exists(visitDoc()) && existsAfter(visitDoc()))
+            || (request.resource.data.get('orders', 0) == resource.data.get('orders', 0) + 1
+                && request.resource.data.get('visits', 0) == resource.data.get('visits', 0)
+                && request.resource.data.lastOrderId is string
+                && request.resource.data.lastOrderId != resource.data.get('lastOrderId', '')
+                && exists(orderDoc())
+                && get(orderDoc()).data.shopId == resource.data.shopId
+                && get(orderDoc()).data.uid == request.auth.uid));
       allow delete: if isAdmin();
     }
 
