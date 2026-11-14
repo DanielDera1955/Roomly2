@@ -235,6 +235,9 @@ const GamesHome: React.FC<{
         </div>
       </div>
 
+      {/* My settings: ready to be challenged, per game, and edit profile */}
+      {me && <MyStatusCard me={me} isOpen={isOpen} opensAt={opensAt} nowMs={nowMs} onEdit={onRegister} />}
+
       {/* Game cards */}
       <div className="flex items-end justify-between">
         <div>
@@ -512,6 +515,77 @@ const GamePage: React.FC<{
 };
 
 /* ------------------------------------------------------------------ */
+
+/** On the Games home: one place for a player's profile and a Ready switch for each game they play */
+const MyStatusCard: React.FC<{ me: any; isOpen: boolean; opensAt: number; nowMs: number; onEdit: () => void }> = ({ me, isOpen, opensAt, nowMs, onEdit }) => {
+  const [choice, setChoice] = useState('1w');
+  const [busy, setBusy] = useState('');
+  const mine = GAMES.filter((g: { id: string }) => playsGame(me, g.id));
+  if (mine.length === 0) return null;
+  const toggle = async (game: string, on: boolean) => {
+    setBusy(game);
+    try {
+      await setReady(me, game, on ? null : choice);
+    } catch (e: any) {
+      window.alert(e?.message || 'Could not save.');
+    }
+    setBusy('');
+  };
+  const anyOff = mine.some((g: { id: string }) => !readyFor(me, g.id, nowMs));
+  return (
+    <div className={`${card} p-4`}>
+      <div className="flex items-center gap-3">
+        <span className="w-10 h-10 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-[#0e9f55] font-black flex items-center justify-center">
+          {String(me.name || 'R')[0].toUpperCase()}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">My profile</p>
+          <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{me.name}</p>
+        </div>
+        <button type="button" onClick={onEdit} className="h-9 px-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-xs font-bold text-[#0e9f55] cursor-pointer">
+          Edit profile
+        </button>
+      </div>
+      <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-bold text-slate-900 dark:text-white">Ready to be challenged</p>
+          {!isOpen ? (
+            <span className="text-[11px] text-slate-400">Switches work from {openDay(opensAt)}</span>
+          ) : anyOff ? (
+            <select value={choice} onChange={(e) => setChoice(e.target.value)} className="h-8 px-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white">
+              {READY_CHOICES.map((c: { id: string; label: string }) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          ) : null}
+        </div>
+        {mine.map((g: { id: string; label: string }) => {
+          const on = readyFor(me, g.id, nowMs);
+          return (
+            <button
+              key={g.id}
+              type="button"
+              disabled={busy === g.id || !isOpen}
+              onClick={() => toggle(g.id, on)}
+              aria-pressed={on}
+              className="w-full flex items-center justify-between gap-3 cursor-pointer disabled:opacity-50 disabled:cursor-default"
+            >
+              <span className="text-sm font-semibold text-slate-900 dark:text-white">{g.label}</span>
+              <span className="flex items-center gap-2.5">
+                {on && <span className="text-[11px] text-slate-500">Until {new Date(Number(me.ready?.[g.id])).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</span>}
+                <span className={`w-11 h-6 rounded-full p-0.5 transition-colors ${on ? 'bg-[#0e9f55]' : 'bg-slate-300 dark:bg-slate-700'}`}>
+                  <span className={`block w-5 h-5 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-5' : ''}`} />
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
 
 const MyProfileCard: React.FC<{ me: any; row: any; game: string; isOpen: boolean; opensAt: number; nowMs: number; onEdit: () => void }> = ({
   me,

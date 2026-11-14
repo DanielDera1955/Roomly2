@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { takeHubSection } from '../links.js';
 import { Phone, Flag, Plus, X, Pencil, Trash2, ShoppingBag, MessageCircle, Camera, Loader2, BatteryCharging, CircleCheck, ChevronDown, ChevronRight, ShieldCheck, Users } from 'lucide-react';
 import { NoPhoto } from './NoPhoto';
-import { HOSTELS } from '../config';
+import { HOSTELS, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, timeLabelFull } from '../config';
 import {
   HUB_TYPES,
   HUB_SECTIONS,
@@ -367,8 +367,8 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore, o
           <ShoppingBag className="w-4 h-4 text-[#0e9f55]" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-bold text-slate-900 dark:text-white">Need something delivered to your room?</span>
-          <span className="block text-xs text-[#0e9f55]">Order from Store Items</span>
+          <span className="block text-sm font-bold text-slate-900 dark:text-white">Need something in your room?</span>
+          <span className="block text-xs text-[#0e9f55]">Order from the school canteen before {timeLabelFull(INSIDE_ORDER_BY_MIN)}. A runner brings it by {timeLabelFull(INSIDE_ARRIVE_BY_MIN)}.</span>
         </span>
         <ChevronRight className="w-4 h-4 text-[#0e9f55] shrink-0" />
       </button>
