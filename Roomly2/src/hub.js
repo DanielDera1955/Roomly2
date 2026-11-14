@@ -921,6 +921,33 @@ export async function fetchLeaders() {
   return leaders;
 }
 
+/**
+ * A student logged in to Roomly (number and PIN) whose profile belongs to another phone or browser: take it back quietly,
+ * once per page visit. It only works with the right PIN, so nobody can take someone else's profile.
+ */
+const restoreTried = new Set();
+export async function restoreGamerFromLogin(phone, pin) {
+  try {
+    const p = normalizePhone(phone);
+    if (!isValidNigerianPhone(p) || !isValidPin(pin) || restoreTried.has(p)) return false;
+    restoreTried.add(p);
+    const uid = await hubUid();
+    const gid = await gamerIdOf(p);
+    const ref = doc(hubDb, 'gamers', gid);
+    const snap = await getDoc(ref);
+    if (!snap.exists() || snap.data().banned) return false;
+    if (snap.data().ownerUid === uid) return true;
+    const nonce = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, '0')).join('');
+    const batch = writeBatch(hubDb);
+    batch.set(doc(hubDb, 'gamerClaims', `${gid}_${nonce}`), { gid, uid, nonce, pinHash: await pinHashOf(p, pin), atMs: Date.now() });
+    batch.update(ref, { ownerUid: uid, claimNonce: nonce });
+    await batch.commit();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Is this phone already registered as a player? (Home card: "Play" instead of "Join") */
 export async function isRegisteredGamer() {
   try {

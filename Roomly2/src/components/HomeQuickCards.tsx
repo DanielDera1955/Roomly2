@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { RotateCcw, ChevronDown, ChevronRight, Users, UtensilsCrossed, ShoppingBasket, Store, Crown, Wrench, Tag, Search, Gamepad2, Trophy } from 'lucide-react';
-import { GAMES, fetchLeaders, isRegisteredGamer } from '../hub.js';
+import { GAMES, fetchLeaders, isRegisteredGamer, restoreGamerFromLogin } from '../hub.js';
 import { getNextBatch, getOutsideChoices, storeGraceOpen, storeRunLeftToday } from '../api.js';
 import { dayWord, timeLabel, timeLabelFull, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, openDateText, BEHIND_EVERY_ORDER, OUTSIDE_STORE_GRACE_END_MIN, isOutsideSource, foodLateOrderByMin, OUTSIDE_STORE_GRACE_END_MIN as STORE_LATE_MIN } from '../config';
 import type { OrderRecord } from '../types';
@@ -164,7 +164,9 @@ export const HomeQuickCards: React.FC<{
   showBehind?: boolean;
   /** Open the Games page, on one game if a tile was tapped */
   onOpenGames: (game?: string) => void;
-}> = ({ onOpen, storeOpensAtMs = 0, products = [], showBehind = true, onOpenGames }) => {
+  /** The logged-in Roomly customer, so their player profile can be found on this browser */
+  session?: { phone?: string; pin?: string };
+}> = ({ onOpen, storeOpensAtMs = 0, products = [], showBehind = true, onOpenGames, session }) => {
   const [, setTick] = useState(0);
   const [broken, setBroken] = useState<Record<string, boolean>>({});
   useEffect(() => {
@@ -259,7 +261,7 @@ export const HomeQuickCards: React.FC<{
         })}
       </div>
 
-      <HostelLeagueCard onOpen={onOpenGames} />
+      <HostelLeagueCard onOpen={onOpenGames} session={session} />
 
       {showBehind && <BehindEveryOrder />}
     </div>
@@ -270,12 +272,14 @@ export const HomeQuickCards: React.FC<{
  * The fifth card: Roomly Hostel League. Only the button (Join, or Play once registered) opens the Games page; a game tile opens that game.
  * One row of game tiles shows who holds each crown. The next tile is left half visible so students know to swipe.
  */
-const HostelLeagueCard: React.FC<{ onOpen: (game?: string) => void }> = ({ onOpen }) => {
+const HostelLeagueCard: React.FC<{ onOpen: (game?: string) => void; session?: { phone?: string; pin?: string } }> = ({ onOpen, session }) => {
   const [leaders, setLeaders] = useState<Record<string, { name: string; pts: number } | null> | null>(null);
   const [member, setMember] = useState(false);
   useEffect(() => {
     let live = true;
-    isRegisteredGamer().then((m: boolean) => live && setMember(m));
+    const check = () => isRegisteredGamer().then((m: boolean) => live && setMember(m));
+    if (session?.phone && session?.pin) restoreGamerFromLogin(session.phone, session.pin).then(check);
+    else check();
     fetchLeaders()
       .then((l: any) => live && setLeaders(l))
       .catch(() => live && setLeaders({}));

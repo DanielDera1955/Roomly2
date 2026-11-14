@@ -10,6 +10,8 @@ import {
   playsGame,
   readyFor,
   knownHubUid,
+  hubUid,
+  restoreGamerFromLogin,
   myGamer,
   subscribeGamers,
   registerGamer,
@@ -91,6 +93,12 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
 
   useEffect(() => {
     knownHubUid().then(setUid);
+    // Logged in to Roomly but this browser is not recognised as the player: take the profile back quietly
+    if (session.phone && session.pin) {
+      restoreGamerFromLogin(session.phone, session.pin).then((ok: boolean) => {
+        if (ok) hubUid().then(setUid);
+      });
+    }
     if (linkParams.game || linkParams.match) {
       try {
         window.history.replaceState(null, '', window.location.pathname);

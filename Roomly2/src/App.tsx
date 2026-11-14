@@ -1323,6 +1323,7 @@ export default function App() {
 
           {/* Four quick cards for everyone */}
           <HomeQuickCards
+            session={{ phone, pin }}
             onOpenGames={(game?: string) => setGamesOpen({ game })}
             storeOpensAtMs={storeLocked ? storeOpensMs : 0}
             products={products}
