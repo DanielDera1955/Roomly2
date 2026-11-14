@@ -17,6 +17,8 @@ import {
   collectsAsRoomly,
   isRoomlyOrder,
   payoutPending,
+  foodBatchOf,
+  operatorLateOn,
 } from '../api.js';
 import { slotsForDay, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, foodLateOrderByMin } from '../config';
 import { playChime } from '../sound';
@@ -321,6 +323,32 @@ export const AdminActionBoard: React.FC = () => {
     })
   );
   if (!newShopApps.length && !openShopReports.length) items.push({ id: 'shop-ok', level: 'green', title: 'Hostel Hub vendors: nothing waiting' });
+
+  // ---------- Vendors you switched off or paused ----------
+  // These stay exactly as you set them until you change them, so they show here until you switch them back on.
+  // Test accounts (name starts with "Test") are left out.
+  const realOps = ops.filter((o) => !/^test\b/i.test(String(o.name || '')));
+  const heldOps = realOps.filter((o) => o.adminOff || o.adminPaused);
+  heldOps.forEach((o) =>
+    items.push({
+      id: `vendor-held-${o.id}`,
+      level: 'amber',
+      title: `${o.name || 'A vendor'} is ${o.adminOff ? 'switched OFF' : 'paused (Accepting orders: No)'} by you`,
+      detail: 'Students cannot order from them. This stays exactly as you set it until you switch it back.',
+      todo: 'In Orders & Dispatch, open Food (or Outside Store) and switch them back on when they can take orders again.',
+    })
+  );
+  // A dinner vendor's late orders turned off is your choice (dinner takes late orders by default; lunch has them off by default)
+  const lateHeld = realOps.filter((o) => o.kind === 'food' && !o.adminOff && !o.adminPaused && foodBatchOf(o) === 'evening' && !operatorLateOn(o));
+  lateHeld.forEach((o) =>
+    items.push({
+      id: `vendor-late-${o.id}`,
+      level: 'grey',
+      title: `${o.name || 'A vendor'}: late dinner orders are OFF`,
+      detail: 'Their dinner batch ends at 6:00pm. This stays off until you set Late orders back to Yes.',
+    })
+  );
+  if (!heldOps.length && !lateHeld.length) items.push({ id: 'vendor-sw-ok', level: 'green', title: 'Vendor switches: every vendor is on and taking orders' });
 
   // ---------- sort and split ----------
   const rank: Record<Level, number> = { red: 0, amber: 1, grey: 2, green: 3 };

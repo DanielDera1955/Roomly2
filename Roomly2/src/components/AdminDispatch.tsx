@@ -25,7 +25,7 @@ import { AdminOrderActions } from './AdminOrderActions';
 
 type Section = 'inside' | 'store' | 'food';
 type View = 'all' | Section;
-type Tab = 'active' | 'confirmed' | 'completed';
+type Tab = 'active' | 'confirmed' | 'completed' | 'wrong';
 
 const naira = (n: number) => `₦${Math.round(n || 0).toLocaleString()}`;
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -324,7 +324,119 @@ const SettleDayCard: React.FC<{ r: any; showDate?: boolean }> = ({ r, showDate }
   );
 };
 
-/** Admin Orders & Dispatch: live orders only. All, Inside, Outside Store or Food, each with Active, Payments Confirmed and Completed.
+/** One thing that went wrong on an order: a refund (with the reason Roomly recorded), a cancellation, or "I haven't received it" */
+type Problem = { o: OrderRecord; at: number; category: string; item: string; note: string; amount: number };
+
+const problemsOf = (o: OrderRecord): Problem[] => {
+  const out: Problem[] = [];
+  const created = new Date(o.createdAt).getTime() || 0;
+  const refunds: any[] = (o as any).refunds || [];
+  refunds.forEach((r) =>
+    out.push({
+      o,
+      at: Date.parse(r.at) || created,
+      // Refunds recorded before reasons were required only have free text
+      category: r.category || 'Older refund',
+      item: r.item || '',
+      note: r.note || (r.category ? '' : r.reason || ''),
+      amount: r.amount || 0,
+    })
+  );
+  if (o.status === 'Cancelled' && !refunds.length) out.push({ o, at: Date.parse((o as any).cancelledAt || '') || created, category: 'Cancelled', item: '', note: '', amount: 0 });
+  if (o.notReceived) out.push({ o, at: o.notReceived.atMs || created, category: 'Not received', item: '', note: o.notReceived.resolvedNote || '', amount: 0 });
+  return out;
+};
+
+/** "Lunch, late order" / "Dinner": which food batch the order was in, and whether it was a late order */
+const batchTag = (o: OrderRecord) =>
+  [o.deliveryBatch === 'midday' ? 'Lunch' : o.deliveryBatch === 'evening' ? 'Dinner' : '', o.lateFood ? 'late order' : ''].filter(Boolean).join(', ');
+
+const Tally: React.FC<{ title: string; rows: [string, { n: number; sum: number }][] }> = ({ title, rows }) => (
+  <div className="space-y-1">
+    <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">{title}</p>
+    {rows.map(([k, v]) => (
+      <div key={k} className="flex items-center justify-between gap-2 text-xs">
+        <span className="text-slate-800 dark:text-slate-200">{k}</span>
+        <span className="text-slate-500 shrink-0">
+          {v.n}
+          {v.sum > 0 ? ` · ${naira(v.sum)}` : ''}
+        </span>
+      </div>
+    ))}
+  </div>
+);
+
+/** What went wrong: refunds with their reasons, cancellations and "not received" orders, counted by reason, vendor and item */
+const WrongPanel: React.FC<{ problems: Problem[]; range: 'today' | 'week' | 'month'; onRange: (r: 'today' | 'week' | 'month') => void }> = ({ problems, range, onRange }) => {
+  const tally = (key: (p: Problem) => string, only: (p: Problem) => boolean = () => true) => {
+    const m = new Map<string, { n: number; sum: number }>();
+    problems.filter(only).forEach((p) => {
+      const k = key(p);
+      const cur = m.get(k) || { n: 0, sum: 0 };
+      m.set(k, { n: cur.n + 1, sum: cur.sum + p.amount });
+    });
+    return Array.from(m.entries()).sort((a, b) => b[1].n - a[1].n);
+  };
+  const byReason = tally((p) => p.category);
+  const byVendor = tally((p) => providerOf(p.o));
+  const byItem = tally(
+    (p) => p.item.trim().charAt(0).toUpperCase() + p.item.trim().slice(1).toLowerCase(),
+    (p) => p.category === 'Out of stock' && Boolean(p.item.trim())
+  );
+  const refunded = problems.reduce((t, p) => t + p.amount, 0);
+  const fromLate = problems.filter((p) => p.o.lateFood).length;
+  return (
+    <div className="space-y-3">
+      <Pills
+        value={range}
+        onChange={onRange}
+        options={[
+          ['today', 'Today'],
+          ['week', '7 days'],
+          ['month', '30 days'],
+        ]}
+      />
+      {problems.length === 0 ? (
+        <p className="text-xs text-slate-400">Nothing went wrong in this period.</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <Stat label="Problems" value={problems.length} tone="rose" />
+            <Stat label="Refunded" value={naira(refunded)} tone="rose" />
+          </div>
+          <Tally title="By reason" rows={byReason} />
+          <Tally title="By vendor" rows={byVendor} />
+          {byItem.length > 0 && <Tally title="Items that ran out" rows={byItem} />}
+          <p className="text-[11px] text-slate-500">
+            {fromLate} of {problems.length} came from late orders.
+          </p>
+          {[...problems]
+            .sort((a, b) => b.at - a.at)
+            .map((p, i) => (
+              <div key={`${p.o.id}-${i}`} className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs space-y-0.5">
+                <p className="font-bold text-slate-900 dark:text-white">
+                  {p.o.name} <span className="font-mono font-normal text-slate-400">{p.o.id}</span>
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  {[providerOf(p.o), batchTag(p.o), `${dayText(ymd(new Date(p.at)))} ${new Date(p.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+                <p className="text-[11px] font-bold text-rose-600">
+                  {p.category}
+                  {p.item ? `: ${p.item}` : ''}
+                  {p.amount ? ` · ${naira(p.amount)} refunded` : ''}
+                </p>
+                {p.note && <p className="text-[11px] text-slate-500">{p.note}</p>}
+              </div>
+            ))}
+        </>
+      )}
+    </div>
+  );
+};
+
+/** Admin Orders & Dispatch: live orders only. All, Inside, Outside Store or Food, each with Active, Payments Confirmed, Completed and What went wrong.
  * Settlement lives in the Money tab, across every section and date. */
 export const AdminDispatch: React.FC = () => {
   const [orders, setOrders] = useState<OrderRecord[]>([]);
@@ -334,6 +446,8 @@ export const AdminDispatch: React.FC = () => {
   const [from, setFrom] = useState(ymd(new Date()));
   const [to, setTo] = useState(ymd(new Date()));
   const [search, setSearch] = useState('');
+  // What went wrong: the period shown (refunds, cancellations and "not received")
+  const [wRange, setWRange] = useState<'today' | 'week' | 'month'>('week');
   // Completed: Today, 7 days, 30 days or picked dates (the count follows the range)
   const [rFrom, rTo] = range === 'custom' ? [from <= to ? from : to, from <= to ? to : from] : moneyRange(range);
 
@@ -357,6 +471,15 @@ export const AdminDispatch: React.FC = () => {
   };
 
   const inSection = useMemo(() => (section === 'all' ? orders : orders.filter((o) => sectionOf(o) === section)), [orders, section]);
+  const [wFrom, wTo] = moneyRange(wRange);
+  const problems = useMemo(
+    () =>
+      inSection.flatMap(problemsOf).filter((p) => {
+        const d = ymd(new Date(p.at));
+        return d >= wFrom && d <= wTo;
+      }),
+    [inSection, wFrom, wTo]
+  );
   const counts = {
     active: inSection.filter((o) => orderStage(o) === 'active').length,
     confirmed: inSection.filter((o) => orderStage(o) === 'confirmed').length,
@@ -417,6 +540,7 @@ export const AdminDispatch: React.FC = () => {
             ['active', `Active (${counts.active})`],
             ['confirmed', `Payments Confirmed (${counts.confirmed})`],
             ['completed', `Completed (${counts.completed})`],
+            ['wrong', `What went wrong (${problems.length})`],
           ]}
         />
         {tab === 'completed' && (
@@ -440,17 +564,23 @@ export const AdminDispatch: React.FC = () => {
             <input value={search} onChange={(e) => setSearch(e.target.value)} className={input} placeholder="Search name, phone or ID (all dates)" />
           </div>
         )}
-        <p className="text-[11px] text-slate-500">
-          {tab === 'active'
-            ? 'The student says they have paid. Waiting for the runner or operator to confirm it reached their account.'
-            : tab === 'confirmed'
-            ? 'Payment confirmed. Being packed and delivered.'
-            : 'Delivered to the room (inside) or sent to the school gate (outside).'}
-        </p>
-        {list.length === 0 && <p className="text-xs text-slate-400">Nothing here.</p>}
-        {list.map((o) => (
-          <OrderRow key={o.id} o={o} showSection={section === 'all'} />
-        ))}
+        {tab === 'wrong' ? (
+          <WrongPanel problems={problems} range={wRange} onRange={setWRange} />
+        ) : (
+          <>
+            <p className="text-[11px] text-slate-500">
+              {tab === 'active'
+                ? 'The student says they have paid. Waiting for the runner or operator to confirm it reached their account.'
+                : tab === 'confirmed'
+                ? 'Payment confirmed. Being packed and delivered.'
+                : 'Delivered to the room (inside) or sent to the school gate (outside).'}
+            </p>
+            {list.length === 0 && <p className="text-xs text-slate-400">Nothing here.</p>}
+            {list.map((o) => (
+              <OrderRow key={o.id} o={o} showSection={section === 'all'} />
+            ))}
+          </>
+        )}
         <p className="text-[11px] text-slate-400">Settlement and who owes you are in the Money tab.</p>
       </div>
     </div>

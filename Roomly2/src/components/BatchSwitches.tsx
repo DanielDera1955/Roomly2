@@ -19,9 +19,10 @@ import {
   batchOpen,
   batchCloseDate,
   getMyHiddenReason,
-  operatorAcceptingToday,
-  operatorTodayKey,
-  setOperatorTodayByAdmin,
+  operatorAccepting,
+  operatorLateOn,
+  setOperatorAcceptingByAdmin,
+  setOperatorLateByAdmin,
 } from '../api.js';
 
 const ymdNow = () => {
@@ -403,7 +404,9 @@ const OutsideDaySwitches: React.FC<{ side: 'store' | 'food' }> = ({ side }) => {
             {side === 'food' ? `You cook for the ${myBatch === 'midday' ? 'lunch' : 'dinner'} batch. ` : ''}Students order before {cutText} to get it the same day. Send by {cutText} so it reaches the school gate before {gateText}. If you can't make it,
             open the order and tap "Move to next available day".
             {side === 'food' &&
-              ` Late orders: until ${myBatch === 'midday' ? '2:30pm' : '7:00pm'}, sent together so they reach the gate before ${myBatch === 'midday' ? '3:30pm' : '8:00pm'}.`}
+              (operatorLateOn(mine)
+                ? ` Late orders: until ${myBatch === 'midday' ? '2:30pm' : '7:00pm'}, sent together so they reach the gate before ${myBatch === 'midday' ? '3:30pm' : '8:00pm'}.`
+                : ' Roomly has switched late orders off for you, so every order you get is for the normal batch.')}
           </p>
         </div>
       )}
@@ -495,6 +498,33 @@ const InsideBatchSwitches: React.FC<BatchSwitchesProps> = ({ side = 'inside' }) 
   );
 };
 
+/** A small labelled No / Yes switch used on each operator card */
+const YesNo: React.FC<{ label: string; yes: boolean; busy: boolean; onChange: (on: boolean) => void }> = ({ label, yes, busy, onChange }) => (
+  <span className="mt-1.5 flex items-center gap-2">
+    <span className="text-[10px] font-bold text-slate-500 w-[92px] shrink-0">{label}</span>
+    <span className="inline-grid grid-cols-2 rounded-lg overflow-hidden border border-slate-300 dark:border-slate-600">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => onChange(false)}
+        aria-pressed={!yes}
+        className={`px-2 py-1 text-[10px] font-bold cursor-pointer ${!yes ? 'bg-rose-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-500'}`}
+      >
+        No
+      </button>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => onChange(true)}
+        aria-pressed={yes}
+        className={`px-2 py-1 text-[10px] font-bold cursor-pointer ${yes ? 'bg-[#0e9f55] text-white' : 'bg-white dark:bg-slate-900 text-slate-500'}`}
+      >
+        Yes
+      </button>
+    </span>
+  </span>
+);
+
 /** Admin: store or food operators (filtered by view) with a clear OFF / ON override */
 export const OperatorOverridePanel: React.FC<{ kind?: 'store' | 'food' }> = ({ kind }) => {
   useBatchTick();
@@ -523,13 +553,25 @@ export const OperatorOverridePanel: React.FC<{ kind?: 'store' | 'food' }> = ({ k
     setBusy('');
   };
 
-  const setToday = async (op: any, on: boolean) => {
-    if (operatorAcceptingToday(op, new Date()) === on) return;
+  // Both switches stay exactly as you set them, day after day, until you change them (no daily reset)
+  const setAccepting = async (op: any, on: boolean) => {
+    if (operatorAccepting(op) === on) return;
     setBusy(op.id);
     try {
-      await setOperatorTodayByAdmin(op.id, on);
+      await setOperatorAcceptingByAdmin(op.id, on);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Could not update this operator.');
+      window.alert('Could not update this operator.');
+    }
+    setBusy('');
+  };
+
+  const setLate = async (op: any, on: boolean) => {
+    if (operatorLateOn(op) === on) return;
+    setBusy(op.id);
+    try {
+      await setOperatorLateByAdmin(op.id, on);
+    } catch (e) {
+      window.alert('Could not update this vendor.');
     }
     setBusy('');
   };
@@ -554,11 +596,19 @@ export const OperatorOverridePanel: React.FC<{ kind?: 'store' | 'food' }> = ({ k
       {ops.map((op: any) => {
         const n = liveCount(op);
         const off = Boolean(op.adminOff);
+        const paused = !off && !operatorAccepting(op);
+        const isFood = op.kind === 'food';
+        const lateOn = isFood ? operatorLateOn(op) : true;
+        const lunch = foodBatchOf(op) === 'midday';
         return (
           <div
             key={op.id}
             className={`flex items-center justify-between gap-2 p-3 rounded-2xl text-xs border-2 ${
-              off ? 'bg-rose-50/60 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/50' : 'bg-emerald-50 dark:bg-emerald-950/30 border-[#0e9f55]'
+              off
+                ? 'bg-rose-50/60 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/50'
+                : paused
+                ? 'bg-amber-50 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800/60'
+                : 'bg-emerald-50 dark:bg-emerald-950/30 border-[#0e9f55]'
             }`}
           >
             <div className="min-w-0">
@@ -566,9 +616,15 @@ export const OperatorOverridePanel: React.FC<{ kind?: 'store' | 'food' }> = ({ k
                 {op.name || 'Operator'}
                 {!kind && <span className="font-normal text-slate-500"> · {op.kind === 'food' ? 'Food' : 'Store'}</span>}
               </span>
-              <span className={`block text-[11px] font-bold ${off ? 'text-rose-600 dark:text-rose-400' : 'text-[#0e9f55]'}`}>
+              <span
+                className={`block text-[11px] font-bold ${
+                  off ? 'text-rose-600 dark:text-rose-400' : paused ? 'text-amber-700 dark:text-amber-300' : 'text-[#0e9f55]'
+                }`}
+              >
                 {off
                   ? 'OFF: hidden from students until you switch ON'
+                  : paused
+                  ? 'PAUSED: not taking orders until you set Accepting orders to Yes'
                   : !op.payTo
                   ? 'ON, but no payment account yet, so students cannot see them'
                   : n > 0
@@ -598,34 +654,25 @@ export const OperatorOverridePanel: React.FC<{ kind?: 'store' | 'food' }> = ({ k
                   ))}
                 </span>
               )}
-              {!off && operatorTodayKey(op, now) && (() => {
-                const today = operatorAcceptingToday(op, now);
-                return (
-                  <span className="mt-1.5 flex items-center gap-2">
-                    <span className="text-[10px] font-bold text-slate-500">Accepting orders today</span>
-                    <span className="inline-grid grid-cols-2 rounded-lg overflow-hidden border border-slate-300 dark:border-slate-600">
-                      <button
-                        type="button"
-                        disabled={busy === op.id}
-                        onClick={() => setToday(op, false)}
-                        aria-pressed={!today}
-                        className={`px-2 py-1 text-[10px] font-bold cursor-pointer ${!today ? 'bg-rose-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-500'}`}
-                      >
-                        No
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy === op.id}
-                        onClick={() => setToday(op, true)}
-                        aria-pressed={today}
-                        className={`px-2 py-1 text-[10px] font-bold cursor-pointer ${today ? 'bg-[#0e9f55] text-white' : 'bg-white dark:bg-slate-900 text-slate-500'}`}
-                      >
-                        Yes
-                      </button>
+              {!off && (
+                <>
+                  <YesNo label="Accepting orders" yes={!paused} busy={busy === op.id} onChange={(on) => setAccepting(op, on)} />
+                  {isFood && <YesNo label="Late orders" yes={lateOn} busy={busy === op.id} onChange={(on) => setLate(op, on)} />}
+                  {paused && (
+                    <span className="mt-1.5 block text-[10px] font-bold text-amber-700 dark:text-amber-300 leading-snug">
+                      Accepting orders: OFF until you switch it back to Yes. Students cannot order from them on any day.
                     </span>
-                  </span>
-                );
-              })()}
+                  )}
+                  {isFood && !lateOn && (
+                    <span className="mt-1 block text-[10px] font-bold text-amber-700 dark:text-amber-300 leading-snug">
+                      Late orders: OFF until you switch them to Yes. Orders end at {lunch ? '12:30pm' : '6:00pm'}, then students see the next batch.
+                    </span>
+                  )}
+                  {isFood && lateOn && (
+                    <span className="mt-1 block text-[10px] text-slate-500 leading-snug">Late orders: ON until {lunch ? '2:30pm' : '7:00pm'}.</span>
+                  )}
+                </>
+              )}
             </div>
             <div className="shrink-0 grid grid-cols-2 rounded-xl overflow-hidden border border-slate-300 dark:border-slate-600">
               <button
@@ -655,7 +702,8 @@ export const OperatorOverridePanel: React.FC<{ kind?: 'store' | 'food' }> = ({ k
         );
       })}
       <p className="text-[11px] text-slate-400 leading-snug">
-        Your OFF overrides the operator. They cannot take orders until you switch them back ON. "Accepting orders today: No" closes only today (normal and late orders); tomorrow starts on Yes by itself.
+        Your OFF overrides the operator. They cannot take orders until you switch them back ON. "Accepting orders: No" takes them off checkout on every day, and "Late orders: No" ends
+        their batch at its normal cut-off. Both stay exactly as you set them until you change them, with no daily reset. Set back to Yes, they work again on their normal times by themselves.
       </p>
     </div>
   );

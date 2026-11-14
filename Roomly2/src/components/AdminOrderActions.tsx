@@ -56,19 +56,42 @@ export const RoomlyPayoutLine: React.FC<{ order: OrderRecord; who: 'runner' | 'a
   );
 };
 
-/** Refunds Roomly has recorded on this order, and a button to add one */
+/** Why a refund happened. Required on every refund so the What went wrong tab can count them. */
+const REFUND_REASONS = ['Out of stock', 'Vendor unavailable', 'Arrived late', 'Wrong item', 'Customer cancelled', 'Payment issue', 'Other'];
+
+const refundField =
+  'w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white';
+
+/** Refunds Roomly has recorded on this order, and a form to add one (amount, a required reason and, for stock problems, the item) */
 const RefundRow: React.FC<{ o: OrderRecord }> = ({ o }) => {
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [amt, setAmt] = useState('');
+  const [cat, setCat] = useState('');
+  const [item, setItem] = useState('');
+  const [note, setNote] = useState('');
+  const [cancel, setCancel] = useState(false);
   const refunds: any[] = (o as any).refunds || [];
   const total = refunds.reduce((t, r) => t + (r.amount || 0), 0);
-  const add = async () => {
-    const amt = window.prompt(`Amount refunded to ${o.name} (₦)?\n\nSend the money first: Paystack dashboard > Transactions > this payment > Refund.`, '');
-    if (amt === null) return;
-    const reason = window.prompt('Reason (shown to the student), e.g. "Out of stock: 1x Peak milk"', '') || '';
-    const cancel = Number(amt) >= (o.totalAmount || 0) && window.confirm('That is the whole order. Cancel the order too?');
+  const itemAsked = cat === 'Out of stock' || cat === 'Wrong item';
+  const save = async () => {
+    const n = Math.round(Number(amt) || 0);
+    if (!n) return void window.alert('Enter the amount refunded.');
+    if (!cat) return void window.alert('Choose the reason for this refund.');
+    if (itemAsked && !item.trim()) return void window.alert(cat === 'Out of stock' ? 'Which item ran out?' : 'Which item was wrong?');
+    if (cat === 'Other' && !note.trim()) return void window.alert('Add a short note for "Other".');
+    const doCancel = cancel || (n >= (o.totalAmount || 0) && window.confirm('That is the whole order. Cancel the order too?'));
+    // What the student sees on their order, e.g. "Out of stock: Chicken"
+    const shownReason = `${[cat, item.trim()].filter(Boolean).join(': ')}${note.trim() ? ` (${note.trim()})` : ''}`;
     setBusy(true);
     try {
-      await recordRefund(o.id, amt, reason, cancel);
+      await recordRefund(o.id, n, shownReason, doCancel, { category: cat, item: item.trim(), note: note.trim() });
+      setOpen(false);
+      setAmt('');
+      setCat('');
+      setItem('');
+      setNote('');
+      setCancel(false);
     } catch (e: any) {
       window.alert(e?.message || 'Could not save the refund.');
     } finally {
@@ -76,11 +99,47 @@ const RefundRow: React.FC<{ o: OrderRecord }> = ({ o }) => {
     }
   };
   return (
-    <div className="flex items-center justify-between gap-2 text-[11px]">
-      <span className="text-rose-600">{total > 0 ? `Refunded ${naira(total)} (${refunds.map((r) => r.reason).filter(Boolean).join('; ') || 'no reason'})` : ''}</span>
-      <button type="button" disabled={busy} onClick={add} className="text-slate-500 underline cursor-pointer shrink-0">
-        {busy ? 'Saving...' : 'Record refund'}
-      </button>
+    <div className="space-y-1.5 text-[11px]">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-rose-600">{total > 0 ? `Refunded ${naira(total)} (${refunds.map((r) => r.reason).filter(Boolean).join('; ') || 'no reason'})` : ''}</span>
+        <button type="button" disabled={busy} onClick={() => setOpen((v) => !v)} className="text-slate-500 underline cursor-pointer shrink-0">
+          {open ? 'Close' : 'Record refund'}
+        </button>
+      </div>
+      {open && (
+        <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1.5">
+          <p className="text-slate-500 leading-snug">Send {o.name} the money first (bank transfer or Paystack), then record it here.</p>
+          <input type="number" inputMode="numeric" value={amt} onChange={(e) => setAmt(e.target.value)} className={refundField} placeholder="Amount refunded (₦)" />
+          <select value={cat} onChange={(e) => setCat(e.target.value)} className={refundField} aria-label="Reason for the refund">
+            <option value="">Reason for the refund (required)</option>
+            {REFUND_REASONS.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+          {itemAsked && (
+            <input
+              value={item}
+              onChange={(e) => setItem(e.target.value)}
+              className={refundField}
+              placeholder={cat === 'Out of stock' ? 'Which item ran out? e.g. Chicken' : 'Which item was wrong?'}
+            />
+          )}
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            className={refundField}
+            placeholder={cat === 'Other' ? 'What happened? (required)' : 'Note (optional)'}
+          />
+          <label className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+            <input type="checkbox" checked={cancel} onChange={(e) => setCancel(e.target.checked)} /> Cancel the whole order too
+          </label>
+          <button type="button" disabled={busy} onClick={save} className={primary}>
+            {busy ? 'Saving...' : 'Save refund'}
+          </button>
+        </div>
+      )}
     </div>
   );
 };

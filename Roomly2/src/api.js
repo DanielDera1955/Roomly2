@@ -506,13 +506,17 @@ export async function markPayoutPaid(entries, note = '') {
 /**
  * Admin: record a refund on a Roomly order (the money itself is sent back from the Paystack dashboard or a bank app).
  * cancel = the whole order is off: it is cancelled and leaves the payouts.
+ * meta = { category, item, note }: why it happened (Out of stock, Arrived late, ...) and which item, for the What went wrong tab.
  */
-export async function recordRefund(orderId, amount, reason, cancel = false) {
+export async function recordRefund(orderId, amount, reason, cancel = false, meta = {}) {
   const amt = Math.max(0, Math.round(Number(amount) || 0));
   if (!amt) throw new Error('Enter the amount refunded.');
   const at = new Date().toISOString();
+  const category = String((meta && meta.category) || '').slice(0, 40);
+  const item = String((meta && meta.item) || '').slice(0, 80);
+  const note = String((meta && meta.note) || '').slice(0, 200);
   const updated = await patchOrder(orderId, (o) => {
-    o.refunds = [...(o.refunds || []), { amount: amt, reason: String(reason || '').slice(0, 200), at, by: 'Roomly admin' }];
+    o.refunds = [...(o.refunds || []), { amount: amt, reason: String(reason || '').slice(0, 200), category, item, note, at, by: 'Roomly admin' }];
     o.history.push({
       status: cancel ? 'Cancelled' : o.status,
       timestamp: at,
@@ -708,14 +712,27 @@ export function opDaySwitch(op, opt) {
   // A food vendor only cooks for her own batch (lunch or dinner); the other batch is never hers
   if (op && op.kind === 'food' && opt && opt.id !== foodBatchOf(op)) return { on: false, notMine: true };
   const sw = ((op && op.slots) || {})[opt.key];
-  if (sw) return sw;
+  // A food vendor the admin set to "Late orders: No" takes no orders after her batch's normal cut-off (batchOpen checks noLate)
+  const noLate = Boolean(op && op.kind === 'food' && !operatorLateOn(op));
+  if (sw) return noLate ? { ...sw, noLate: true } : sw;
   const wd = new Date(opt.date + 'T00:00:00').getDay();
-  return ((op && op.offDays) || []).includes(wd) ? { on: false, dayOff: true } : undefined;
+  if (((op && op.offDays) || []).includes(wd)) return { on: false, dayOff: true };
+  return noLate ? { noLate: true } : undefined;
 }
 
 /** A food vendor's batch: 'midday' (lunch, day vendor) or 'evening' (dinner). Vendors not set are dinner vendors. */
 export function foodBatchOf(op) {
   return op && op.foodBatch === 'midday' ? 'midday' : 'evening';
+}
+
+/**
+ * Does this food vendor take late orders (the window after her batch's normal cut-off)?
+ * The admin's choice, kept until the admin changes it. Never set: dinner vendors take late orders, the lunch vendor does not
+ * (her food runs out early, so a late lunch order can't be kept).
+ */
+export function operatorLateOn(op) {
+  if (op && typeof op.lateOn === 'boolean') return op.lateOn;
+  return foodBatchOf(op) === 'evening';
 }
 
 /** The signed-in food vendor's batch ('midday' lunch or 'evening' dinner) */
@@ -841,7 +858,11 @@ export async function saveWeekly(days, runner) {
 }
 
 export function batchOpen(opt, sw, side, now = new Date()) {
-  if (side !== 'inside') return outsideDayOn(sw) && now.getTime() < batchCloseDate(opt, side).getTime();
+  if (side !== 'inside') {
+    // Food vendor with late orders switched off: her batch ends at its normal cut-off (12:30pm lunch, 6:00pm dinner)
+    if (side === 'food' && sw && sw.noLate && opt.orderBy instanceof Date && now.getTime() >= opt.orderBy.getTime()) return false;
+    return outsideDayOn(sw) && now.getTime() < batchCloseDate(opt, side).getTime();
+  }
   return switchIsLive(sw, 'inside', now) && now.getTime() < batchCloseDate(opt, side).getTime();
 }
 const accepting = (opt, sw, side, now) => batchOpen(opt, sw, side, now);
@@ -898,7 +919,8 @@ export function isOverdue(dates, now = new Date()) {
 function activeOperators(kind) {
   // Manual mode: every order is paid to Roomly, so only the admin's ON/OFF (and the operator's days) decide
   const roomly = collectsAsRoomly(kind);
-  return Object.values(operatorDocs).filter((o) => o.kind === kind && !o.adminOff && (roomly || (!isOverdue(o.unsettled) && o.payTo)));
+  // adminPaused = the admin set "Accepting orders: No" (stays until set back to Yes); adminOff = the admin's ON/OFF
+  return Object.values(operatorDocs).filter((o) => o.kind === kind && !o.adminOff && !o.adminPaused && (roomly || (!isOverdue(o.unsettled) && o.payTo)));
 }
 
 /**
@@ -1273,6 +1295,7 @@ export function getMyHiddenReason(now = new Date()) {
   if (staff.role === 'store' || staff.role === 'food') {
     const mine = operatorDocs[uid] || {};
     if (mine.adminOff) return { reason: 'admin', text: 'The admin has switched you off. Students cannot order from you until the admin allows you again.' };
+    if (mine.adminPaused) return { reason: 'admin', text: 'Roomly has paused your orders. Students cannot order from you until Roomly switches you back to accepting orders.' };
     if (isOverdue(mine.unsettled, now))
       return { reason: 'overdue', text: "A past day's settlement is not confirmed yet, so students cannot see you, even with your switches ON. Send what you owe, tap \"I have sent\", and you show again once Roomly confirms it." };
   }
@@ -1536,6 +1559,39 @@ export async function setOperatorTodayByAdmin(uid, on) {
   fireBatches();
   await setDoc(doc(db, 'operatorStatus', uid), { slots: { [key]: sw } }, { merge: true });
   logActivity('staff', `switched ${(op && op.name) || 'an operator'} ${on ? 'back ON' : 'OFF'} for today`, uid);
+}
+/** Is this operator accepting orders? Set by the admin ("Accepting orders: Yes / No"); stays exactly as set until the admin changes it */
+export function operatorAccepting(op) {
+  return !(op && op.adminPaused);
+}
+/**
+ * Admin: "Accepting orders" No / Yes for an outside operator. No takes them off checkout on every day, and it stays
+ * that way (no daily reset) until you set it back to Yes, which starts them again on their normal batch times.
+ */
+export async function setOperatorAcceptingByAdmin(uid, on) {
+  const op = operatorDocs[uid] || {};
+  const adminPaused = !on;
+  operatorDocs = { ...operatorDocs, [uid]: { ...op, adminPaused } };
+  fireBatches();
+  await setDoc(doc(db, 'operatorStatus', uid), { adminPaused, adminPausedAt: Date.now() }, { merge: true });
+  logActivity('staff', `set ${op.name || 'an operator'} to ${on ? 'accepting orders' : 'not accepting orders'}`, uid);
+}
+/**
+ * Admin: "Late orders" No / Yes for a food vendor. No ends her batch at its normal cut-off (12:30pm lunch, 6:00pm dinner);
+ * Yes keeps taking late orders (until 2:30pm lunch, 7:00pm dinner). Stays as set, with no daily reset.
+ */
+export async function setOperatorLateByAdmin(uid, on) {
+  const op = operatorDocs[uid] || {};
+  const lateOn = Boolean(on);
+  operatorDocs = { ...operatorDocs, [uid]: { ...op, lateOn } };
+  fireBatches();
+  await setDoc(doc(db, 'operatorStatus', uid), { lateOn, lateOnAt: Date.now() }, { merge: true });
+  logActivity('staff', `set ${op.name || 'a vendor'} late orders ${lateOn ? 'ON' : 'OFF'}`, uid);
+}
+/** Food: does any vendor of this batch still take late orders? (the late row and late checkout only show when one does) */
+export function foodLateAvailable(opt) {
+  if (DEMO) return true;
+  return activeOperators('food').some((op) => foodBatchOf(op) === opt.id && operatorLateOn(op) && outsideDayOn(opDaySwitch(op, opt)));
 }
 
 /* ---------- catalog (one document: categories + products) ---------- */
@@ -2212,6 +2268,8 @@ export async function createOrder(orderPayload) {
   if (hasFood && !isExpress && orderPayload.deliveryDate && orderPayload.deliveryBatch) {
     const opt = slotsForDay('food', new Date(orderPayload.deliveryDate + 'T12:00:00'), 0).find((o) => o.id === orderPayload.deliveryBatch);
     lateFood = Boolean(opt && isLateFoodOpen(opt, new Date()));
+    // The vendor for this batch has switched late orders off (a page left open since before the switch can still send one)
+    if (lateFood && !foodLateAvailable(opt)) throw new Error('Late orders for this batch have closed. Please refresh the page and choose the next batch.');
   }
   const deliveryFee = isExpress ? EXPRESS_FEE : deliveryFeeFor(subtotal, hasOutside, (orderPayload.items || []).some((i) => isBagOfWater(i.name)), lateFood);
   const totalAmount = subtotal + deliveryFee;

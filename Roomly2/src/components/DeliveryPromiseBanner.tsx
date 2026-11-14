@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getNextBatch, getOutsideChoices, storeGraceOpen, storeRunLeftToday, batchCloseDate, foodBatchAvailable } from '../api.js';
+import { getNextBatch, getOutsideChoices, storeGraceOpen, storeRunLeftToday, batchCloseDate, foodBatchAvailable, foodLateAvailable } from '../api.js';
 import {
   SwitchSide,
   dayWord,
@@ -134,7 +134,8 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
           tag: tagFor(lateClose, !mainOpen),
           fee: `Late delivery ₦${lateFoodFee().toLocaleString()}`,
         };
-        return [main, late];
+        // No late row when the vendor for this batch has switched late orders off (e.g. the lunch vendor)
+        return foodLateAvailable(o) ? [main, late] : [main];
       });
       if (!today) {
         headline = `Closed for today. Order now for ${word.replace(/^on /, '')}`;
