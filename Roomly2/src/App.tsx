@@ -39,6 +39,8 @@ import { SearchBar } from './components/SearchBar';
 import { DeliveryPromiseBanner } from './components/DeliveryPromiseBanner';
 import { CategoryNav, ShopTab } from './components/CategoryNav';
 import { HostelHub } from './components/HostelHub';
+import { GamesPage } from './components/GamesPage';
+import { ShopFlow } from './components/ShopPages';
 import { HowRoomlyWorks } from './components/HowRoomlyWorks';
 import { BecomeRunner } from './components/BecomeRunner';
 import { GuestHero } from './components/GuestHero';
@@ -46,7 +48,7 @@ import { FeedbackBox } from './components/FeedbackBox';
 import { ProfileSettings } from './components/ProfileSettings';
 import { HomeQuickCards, QuickTarget, LastOrderStrip, BehindEveryOrder } from './components/HomeQuickCards';
 import { subscribeHubSettings, outsideStoreOpensAt } from './hub.js';
-import { getLinkTarget } from './links.js';
+import { getLinkTarget, linkOpensGames } from './links.js';
 import { ProductCard } from './components/ProductCard';
 import { FoodCustomizerSheet } from './components/FoodCustomizerSheet';
 import { ProductSheet, OrderAgainRow, FeaturedRow, PairingsBar } from './components/ShopExtras';
@@ -139,14 +141,6 @@ export default function App() {
     // A post link (e.g. #outside-food or #hub-buysell) opens that section
     const link = getLinkTarget();
     if (link) return { side: link.side, tab: link.tab } as { side: 'inside' | 'outside'; tab: 'store' | 'food' | 'hub' };
-    // A WhatsApp link from Games (?game= or ?match=) opens Hostel Hub > Games
-    try {
-      const q = new URLSearchParams(window.location.search);
-      if (q.get('game') || q.get('match')) {
-        localStorage.setItem('roomly_hub_section', 'games');
-        return { side: 'inside', tab: 'hub' } as { side: 'inside' | 'outside'; tab: 'store' | 'food' | 'hub' };
-      }
-    } catch {}
     try {
       const saved = localStorage.getItem('roomly_last_shop');
       if (!saved && Date.now() < INSIDE_LAUNCH_MS) {
@@ -165,6 +159,10 @@ export default function App() {
   const [selectedTab, setSelectedTab] = useState<ShopTab>(lastShop.tab);
   const [selectedFilter, setSelectedFilter] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
+  // Games has its own page (Home > Roomly Hostel League). A #games link or a WhatsApp ?game= / ?match= link opens it straight away.
+  const [gamesOpen, setGamesOpen] = useState<{ game?: string } | null>(() => (linkOpensGames() ? {} : null));
+  // A Hostel Hub vendor or service page (with items to start from when reordering)
+  const [shopOpen, setShopOpen] = useState<{ id: string; prefill?: Record<string, number> } | null>(null);
   // Header "Sign in" popup for guests (returning students on a new phone)
   const [signInOpen, setSignInOpen] = useState(false);
   const [sourceMode, setSourceMode] = useState<'inside' | 'outside'>(lastShop.side);
@@ -1281,6 +1279,7 @@ export default function App() {
 
           {/* Four quick cards for everyone */}
           <HomeQuickCards
+            onOpenGames={(game?: string) => setGamesOpen({ game })}
             storeOpensAtMs={storeLocked ? storeOpensMs : 0}
             products={products}
             showBehind={!signedInCustomer}
@@ -1423,6 +1422,8 @@ export default function App() {
             <HostelHub
               productNames={sideProducts.map((p) => p.name)}
               session={{ name: customer?.name || localName, phone, pin }}
+              startHostel={customer?.building || ''}
+              onOpenShop={(id: string) => setShopOpen({ id })}
               onGoStore={() => {
                 setSelectedTab('store');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1646,7 +1647,19 @@ export default function App() {
             setHistoryOpen(false);
             setIsTrackerOpen(true);
           }}
+          onOpenShop={(id, prefill) => {
+            setHistoryOpen(false);
+            setShopOpen({ id, prefill });
+          }}
         />
+
+        {/* Games: its own page */}
+        {gamesOpen && (
+          <GamesPage session={{ name: customer?.name || localName, phone, pin }} initialGame={gamesOpen.game} onClose={() => setGamesOpen(null)} />
+        )}
+
+        {/* A Hostel Hub vendor or service: page, order or request, then WhatsApp */}
+        {shopOpen && <ShopFlow key={shopOpen.id} shopId={shopOpen.id} prefill={shopOpen.prefill} customer={customer} onClose={() => setShopOpen(null)} />}
 
         <OrderTrackerModal
           isOpen={isTrackerOpen}

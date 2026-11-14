@@ -360,6 +360,55 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ================= HOSTEL HUB SHOPS: Vendors and Services =================
+    // Listings are public. Until the vendor edit links ship, only the admin writes them (Firestore console or admin).
+    match /shops/{id} {
+      allow read: if resource.data.status == 'live' || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // The vendor's WhatsApp number: one document at a time (never listed), only used to build the WhatsApp link
+    match /shopContacts/{id} {
+      allow get: if true;
+      allow list: if false;
+      allow write: if isAdmin();
+    }
+
+    // Orders and service requests, saved before WhatsApp opens. Each phone reads only its own; the admin reads all.
+    match /shopOrders/{id} {
+      allow read: if isAdmin() || (anyUser() && resource.data.uid == request.auth.uid);
+      allow create: if anyUser()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.type in ['order', 'request']
+        && request.resource.data.keys().hasOnly(['type', 'uid', 'shopId', 'shopName', 'vendorName', 'items', 'itemsTotal', 'delivery',
+             'deliveryFee', 'total', 'serviceId', 'serviceName', 'price', 'priceFrom', 'whenText',
+             'studentName', 'studentHostel', 'studentRoom', 'sideMismatch', 'createdAtMs'])
+        && request.resource.data.shopId is string
+        && exists(/databases/$(database)/documents/shops/$(request.resource.data.shopId))
+        && request.resource.data.studentName is string && request.resource.data.studentName.size() <= 60
+        && request.resource.data.createdAtMs is number
+        && (request.resource.data.type == 'order'
+            ? (request.resource.data.items.size() > 0 && request.resource.data.items.size() <= 40
+               && request.resource.data.delivery in ['pickup', 'room', 'handover']
+               && request.resource.data.total == request.resource.data.itemsTotal + request.resource.data.deliveryFee)
+            : (request.resource.data.serviceName is string && request.resource.data.whenText is string
+               && request.resource.data.whenText.size() <= 120));
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // "Report this listing": one per phone per listing
+    match /shopReports/{id} {
+      allow read: if isAdmin();
+      allow create: if anyUser()
+        && request.resource.data.uid == request.auth.uid
+        && id == request.resource.data.shopId + '_' + request.auth.uid
+        && request.resource.data.reason in ['stolen', 'scam', 'fake', 'other']
+        && request.resource.data.note.size() <= 300;
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
     // Phone numbers that can't post in the Hub (they can still order from Roomly)
     match /hubBans/{phone} {
       allow get: if true;

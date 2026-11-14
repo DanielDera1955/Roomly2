@@ -76,8 +76,10 @@ const linkParams = (() => {
 
 /* ================================================================== */
 
-export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: string } }> = ({ session }) => {
-  const [game, setGame] = useState<string>(GAMES.some((g) => g.id === linkParams.game) ? linkParams.game : '');
+export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: string }; /** Open straight on this game (from a Home tile) */ initialGame?: string }> = ({ session, initialGame }) => {
+  const [game, setGame] = useState<string>(
+    GAMES.some((g) => g.id === linkParams.game) ? linkParams.game : GAMES.some((g) => g.id === initialGame) ? String(initialGame) : ''
+  );
   const [focusMatch, setFocusMatch] = useState(linkParams.match);
   const [uid, setUid] = useState('');
   const [gamers, setGamers] = useState<any[]>([]);

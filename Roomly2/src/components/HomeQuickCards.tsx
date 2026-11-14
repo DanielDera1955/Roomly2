@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { RotateCcw, ChevronDown, ChevronRight, Gamepad2, UtensilsCrossed, ShoppingBasket, Store, Crown, Trophy } from 'lucide-react';
+import { RotateCcw, ChevronDown, ChevronRight, Users, UtensilsCrossed, ShoppingBasket, Store, Crown } from 'lucide-react';
+import { GAMES, fetchLeaders } from '../hub.js';
 import { getNextBatch, getOutsideChoices, storeGraceOpen, storeRunLeftToday } from '../api.js';
 import { dayWord, timeLabel, timeLabelFull, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, openDateText, BEHIND_EVERY_ORDER, OUTSIDE_STORE_GRACE_END_MIN, isOutsideSource, foodLateOrderByMin, OUTSIDE_STORE_GRACE_END_MIN as STORE_LATE_MIN } from '../config';
 import type { OrderRecord } from '../types';
@@ -8,7 +9,7 @@ export type QuickTarget = 'room' | 'food' | 'store' | 'hub';
 
 /** One line per section: the live promise of the batch now taking orders */
 export function promiseLine(target: QuickTarget, now: Date = new Date(), storeOpensAtMs = 0): string {
-  if (target === 'hub') return 'Games, Buy & Sell, Services, Lost & Found';
+  if (target === 'hub') return 'Vendors, Services, Buy & Sell, Lost & Found';
   if (target === 'room') {
     const { next } = getNextBatch('inside', now);
     if (!next) return 'Closed for now';
@@ -33,7 +34,7 @@ export function promiseLine(target: QuickTarget, now: Date = new Date(), storeOp
 /** The card's lines: "Orders end" and "Arrives before" for the batch now taking orders (today or the next day).
  *  The status above already says which day, so the lines carry only the times. */
 export function cardLines(target: QuickTarget, now: Date = new Date(), storeOpensAtMs = 0): string[] {
-  if (target === 'hub') return ['Games, Buy & Sell, Services, Lost & Found'];
+  if (target === 'hub') return ['Vendors, Services, Buy & Sell, Lost & Found'];
   if (target === 'room') {
     const { next } = getNextBatch('inside', now);
     if (!next) return ['Check back soon'];
@@ -71,7 +72,7 @@ export function isOpenNow(target: QuickTarget, now: Date = new Date(), storeOpen
  */
 export type CardStatus = { pill: string; tone: 'open' | 'late' | 'next' | 'info'; lines: string[] };
 export function shortStatus(id: QuickTarget, now: Date = new Date(), storeOpensAtMs = 0): CardStatus {
-  if (id === 'hub') return { pill: '', tone: 'info', lines: ['Games · Buy and Sell · Services · Lost and Found'] };
+  if (id === 'hub') return { pill: '', tone: 'info', lines: ['Vendors · Services · Buy and Sell · Lost and Found'] };
   const t = (min: number) => timeLabelFull(min);
   const dayOf = (date: string) => {
     const w = dayWord(date, now).replace(/^on /, '');
@@ -118,22 +119,10 @@ function productPhotoFor(id: QuickTarget, products: any[]): string {
   return (list.find((p) => p.featured) || list[0])?.imageUrl || '';
 }
 
-/** Hostel Hub's tile: a lively games banner instead of a photo */
+/** Hostel Hub's tile: a soft green block (Games has its own card below) */
 const HubTile: React.FC = () => (
-  <div className="relative w-full h-24 overflow-hidden bg-gradient-to-br from-violet-600 via-fuchsia-600 to-indigo-700">
-    <span className="absolute -top-6 -left-4 w-20 h-20 rounded-full bg-white/10" />
-    <span className="absolute -bottom-8 left-16 w-24 h-24 rounded-full bg-white/10" />
-    <span className="absolute top-3 right-14 w-1.5 h-1.5 rounded-full bg-amber-300" />
-    <span className="absolute bottom-4 right-24 w-1 h-1 rounded-full bg-white/80" />
-    <Gamepad2 className="absolute right-1.5 bottom-1.5 w-12 h-12 text-white/90 -rotate-12" />
-    <span className="absolute top-2.5 left-2.5 flex flex-col items-start gap-1.5">
-      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-400 text-amber-950 text-[10px] font-extrabold">
-        <Crown className="w-3 h-3" /> Best in Caritas
-      </span>
-      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/20 text-white text-[10px] font-bold">
-        <Trophy className="w-3 h-3" /> Leaderboard
-      </span>
-    </span>
+  <div className="relative w-full h-24 overflow-hidden flex items-center justify-center bg-emerald-50 dark:bg-emerald-950/40">
+    <Users className="w-9 h-9 text-[#0e9f55]" />
   </div>
 );
 
@@ -141,7 +130,7 @@ const FALLBACK_ICON: Record<QuickTarget, React.FC<{ className?: string }>> = {
   food: UtensilsCrossed,
   store: ShoppingBasket,
   room: Store,
-  hub: Gamepad2,
+  hub: Users,
 };
 
 /** Home: four photo cards (everyone): photo, name with an arrow, and one short status line */
@@ -152,7 +141,9 @@ export const HomeQuickCards: React.FC<{
   products?: any[];
   /** New visitors see the trust strip under the cards; returning students see it at the bottom of the page */
   showBehind?: boolean;
-}> = ({ onOpen, storeOpensAtMs = 0, products = [], showBehind = true }) => {
+  /** Open the Games page, on one game if a tile was tapped */
+  onOpenGames: (game?: string) => void;
+}> = ({ onOpen, storeOpensAtMs = 0, products = [], showBehind = true, onOpenGames }) => {
   const [, setTick] = useState(0);
   const [broken, setBroken] = useState<Record<string, boolean>>({});
   useEffect(() => {
@@ -247,7 +238,79 @@ export const HomeQuickCards: React.FC<{
         })}
       </div>
 
+      <HostelLeagueCard onOpen={onOpenGames} />
+
       {showBehind && <BehindEveryOrder />}
+    </div>
+  );
+};
+
+/**
+ * The fifth card: Roomly Hostel League. Tapping the card (or Join) opens the Games page.
+ * One row of game tiles shows who holds each crown. The next tile is left half visible so students know to swipe.
+ */
+const HostelLeagueCard: React.FC<{ onOpen: (game?: string) => void }> = ({ onOpen }) => {
+  const [leaders, setLeaders] = useState<Record<string, { name: string; pts: number } | null> | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetchLeaders()
+      .then((l: any) => live && setLeaders(l))
+      .catch(() => live && setLeaders({}));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen()}
+      onKeyDown={(e) => (e.key === 'Enter' ? onOpen() : undefined)}
+      className="rounded-3xl p-4 overflow-hidden text-white bg-gradient-to-br from-[#0e8a4a] to-[#0a5f35] cursor-pointer"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-emerald-100">Roomly Hostel League</p>
+          <h3 className="text-2xl font-black leading-tight">Best in Caritas</h3>
+        </div>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen();
+          }}
+          className="shrink-0 h-11 px-6 rounded-xl bg-white text-[#0a5f35] text-sm font-black cursor-pointer"
+        >
+          Join
+        </button>
+      </div>
+      <p className="mt-2 text-sm text-emerald-50/95 leading-snug">Compete in the game you play and become the best in Caritas.</p>
+      <p className="mt-3 flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-emerald-100">
+        <Crown className="w-4 h-4" /> Who holds each crown right now
+      </p>
+      {/* Tiles run off the right edge of the card on purpose */}
+      <div className="mt-2 -mr-4 flex gap-2.5 overflow-x-auto no-scrollbar pr-4" onClick={(e) => e.stopPropagation()}>
+        {GAMES.map((g: { id: string; label: string }) => {
+          const l = leaders ? leaders[g.id] : null;
+          return (
+            <button
+              key={g.id}
+              type="button"
+              onClick={() => onOpen(g.id)}
+              className="shrink-0 w-[118px] text-left rounded-2xl px-3.5 py-2.5 bg-white/15 cursor-pointer"
+            >
+              <span className="block text-base font-black">{g.label}</span>
+              <span className="block text-xs text-emerald-50/90 truncate">{leaders === null ? ' ' : l ? `${l.name}, ${l.pts} pts` : 'No crown yet'}</span>
+            </button>
+          );
+        })}
+        <button type="button" onClick={() => onOpen()} className="shrink-0 w-[118px] text-left rounded-2xl px-3.5 py-2.5 bg-white/15 cursor-pointer">
+          <span className="block text-base font-black">Full table</span>
+          <span className="flex items-center gap-1 text-xs text-emerald-50/90">
+            See all <ChevronRight className="w-3.5 h-3.5" />
+          </span>
+        </button>
+      </div>
     </div>
   );
 };

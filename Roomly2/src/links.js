@@ -12,9 +12,11 @@ export const SECTION_LINKS = {
   'inside-food': { side: 'inside', tab: 'food', label: 'Inside school: Food' },
   'outside-food': { side: 'outside', tab: 'food', label: 'Outside: Cooked Food and Drinks' },
   'outside-store': { side: 'outside', tab: 'store', label: 'Outside: Store Items' },
+  'hub-vendors': { side: 'inside', tab: 'hub', hub: 'vendors', label: 'Hostel Hub: Vendors' },
   'hub-services': { side: 'inside', tab: 'hub', hub: 'services', label: 'Hostel Hub: Services' },
   'hub-buysell': { side: 'inside', tab: 'hub', hub: 'buysell', label: 'Hostel Hub: Buy & Sell' },
-  games: { side: 'inside', tab: 'hub', hub: 'games', label: 'Hostel Hub: Games' },
+  // Games has its own page now (opened from the Home card)
+  games: { side: 'inside', tab: 'store', games: true, label: 'Games' },
   'hub-lostfound': { side: 'inside', tab: 'hub', hub: 'lostfound', label: 'Hostel Hub: Lost & Found' },
 };
 
@@ -84,6 +86,17 @@ let hubPending = '';
 /** The section this visit's link asked for (null for a plain link) */
 export function getLinkTarget() {
   return target;
+}
+
+/** Did the link ask for the Games page? (a #games post link, or a WhatsApp ?game= / ?match= link) */
+export function linkOpensGames() {
+  try {
+    if (target && target.games) return true;
+    const q = new URLSearchParams(window.location.search);
+    return Boolean(q.get('game') || q.get('match'));
+  } catch {
+    return false;
+  }
 }
 
 /** Hostel Hub: the section the link asked for, used once */

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { takeHubSection } from '../links.js';
-import { Phone, Flag, Plus, X, Pencil, Trash2, ShoppingBag, MessageCircle, Camera, Loader2, BatteryCharging, CircleCheck, ChevronDown, ChevronRight, Gamepad2, Wrench, ShieldCheck, Users, Search } from 'lucide-react';
+import { Phone, Flag, Plus, X, Pencil, Trash2, ShoppingBag, MessageCircle, Camera, Loader2, BatteryCharging, CircleCheck, ChevronDown, ChevronRight, ShieldCheck, Users } from 'lucide-react';
 import { NoPhoto } from './NoPhoto';
 import { HOSTELS } from '../config';
 import {
@@ -25,9 +25,11 @@ import {
   needsConfirm,
   blockedReason,
 } from '../hub.js';
-import { Gaming } from './Gaming';
+import { ShopHub } from './ShopHub';
+import type { Shop } from './ShopHub';
+import { sideOf } from '../shops.js';
 
-type Section = 'games' | 'buysell' | 'services' | 'lostfound';
+type Section = 'vendors' | 'buysell' | 'services' | 'lostfound';
 type Kind = 'all' | 'service' | 'charging' | 'water' | 'item' | 'rent' | 'wanted' | 'lost' | 'found';
 
 interface Props {
@@ -36,6 +38,10 @@ interface Props {
   /** The student signed in on this phone (prefills the forms) */
   session: { name?: string; phone?: string; pin?: string };
   onGoStore: () => void;
+  /** Open a vendor's or service's page */
+  onOpenShop: (shopId: string) => void;
+  /** The student's saved hostel, so Vendors and Services open on their side */
+  startHostel?: string;
 }
 
 const input =
@@ -49,11 +55,12 @@ const chip = (on: boolean) =>
       ? 'bg-emerald-50 dark:bg-emerald-950/50 border-[#0e9f55] text-[#0e9f55]'
       : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
   }`;
-const SECTION_ICON: Record<Section, React.FC<{ className?: string }>> = { games: Gamepad2, buysell: ShoppingBag, services: Wrench, lostfound: Search };
-const SECTION_HEAD: Record<'buysell' | 'services' | 'lostfound', { title: string; sub: string }> = {
-  buysell: { title: 'Buy & Sell', sub: 'Good finds, shared around your hostel.' },
-  services: { title: 'Services', sub: 'Helpful skills, right around the hostel.' },
-  lostfound: { title: 'Lost & Found', sub: 'Lost something, or found something? Post it here.' },
+/** Each section: a small green label and a title */
+const SECTION_HEAD: Record<Section, { label: string; title: string }> = {
+  vendors: { label: 'Sold by students near you', title: 'Shops inside your hostel' },
+  services: { label: 'A little help, right here', title: 'Good people, useful skills' },
+  buysell: { label: 'Pre-owned, shared', title: 'Good finds, shared around your hostel' },
+  lostfound: { label: 'Lost and found', title: 'Lost something, or found something?' },
 };
 
 /* ------------------------------------------------------------------ */
@@ -61,14 +68,12 @@ const SECTION_HEAD: Record<'buysell' | 'services' | 'lostfound', { title: string
 /* ------------------------------------------------------------------ */
 
 const GUIDES: Record<Section, string[]> = {
-  games: [
-    'Register once: gamer name, hostel, WhatsApp number, your Roomly PIN and the games you play. Your number stays private.',
-    'Week one is registration week. Challenges open on the date shown at the top.',
-    'It works like a football league table: a win earns 3 points, a draw 1 (football games), a loss 0. The top player in each game wears the crown as Best in Caritas.',
-    'Switch on Ready to play, then challenge any ready player on WhatsApp, including the leader.',
-    'After the match, one of you logs the score and your opponent confirms. No reply in 24 hours and it counts. A wrong result can be disputed with a screenshot.',
-    'Roomly hosts tournaments on set dates: 1st +10, 2nd +6, 3rd +3 points. If a tournament does not fill up, everyone is refunded in full.',
-    '1v1 challenges are free and there is no betting. Challenge the best in Caritas at any game you play, and see every player on the table.',
+  vendors: [
+    'Vendors are students who sell from inside your hostel. Pick the side (boys or girls), then your hostel.',
+    'Open a shop, pick what you want and tap View order. Your order is sent to the vendor on WhatsApp.',
+    'You pay the vendor directly when you receive your order. Roomly does not hold the payment or deliver the order.',
+    'A vendor in a boys\' hostel can deliver to any boys\' hostel, and a vendor in a girls\' hostel to any girls\' hostel. On the other side, you and the vendor agree where to hand over.',
+    'See something fake? Tap "Report this listing" on the vendor\'s page.',
   ],
   buysell: [
     "Selling new stock inside the hostel isn't allowed by the school, so Buy & Sell is only for your own used items: stove, bucket, power bank, phone, textbooks.",
@@ -134,10 +139,12 @@ const Guide: React.FC<{ section: Section }> = ({ section }) => {
   );
 };
 
-/** Hostel Hub: Games, Buy & Sell, Services */
-export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore }) => {
-  // Hostel Hub opens on Games, unless a post link asked for Services or Buy & Sell
-  const [section, setSection] = useState<Section>(() => (takeHubSection() as Section) || 'games');
+/** Hostel Hub: Vendors, Services, Buy & Sell, Lost & Found. Opens on Vendors, unless a post link asked for another section. */
+export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore, onOpenShop, startHostel }) => {
+  const [section, setSection] = useState<Section>(() => {
+    const asked = takeHubSection();
+    return HUB_SECTIONS.some((x) => x.id === asked) ? (asked as Section) : 'vendors';
+  });
   const [kind, setKind] = useState<Kind>('all');
   const [listings, setListings] = useState<any[]>([]);
   const [settings, setSettings] = useState<any>({});
@@ -181,11 +188,9 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
 
   return (
     <div className="space-y-4">
-      {/* Hub sections: one level down from the main bar, so plain tabs with a green underline */}
-      {/* Three tabs on the first line, Lost & Found on its own line below, so nothing is squeezed on a phone */}
-      <div role="tablist" className="grid grid-cols-3 border-b border-slate-200 dark:border-slate-800">
-        {HUB_SECTIONS.map((x, i) => {
-          const Icon = SECTION_ICON[x.id as Section];
+      {/* Hub sections: plain text tabs, no background and no border. The active one has a green underline. */}
+      <div role="tablist" className="flex items-stretch justify-between">
+        {HUB_SECTIONS.map((x) => {
           const on = section === x.id;
           return (
             <button
@@ -194,30 +199,35 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
               role="tab"
               aria-selected={on}
               onClick={() => setSection(x.id as Section)}
-              className={`relative h-11 flex items-center justify-center gap-1.5 px-1 text-[13px] font-bold cursor-pointer transition-colors ${i === 3 ? 'col-span-3 border-t border-slate-100 dark:border-slate-800' : ''} ${
-                on ? 'text-[#0e9f55]' : 'text-slate-500 dark:text-slate-400'
+              className={`relative h-11 flex-1 px-0.5 whitespace-nowrap text-[13px] font-bold cursor-pointer bg-transparent border-0 transition-colors ${
+                on ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
-              <Icon className="w-4 h-4 shrink-0" />
-              <span className="truncate">{x.label}</span>
-              <span className={`absolute left-3 right-3 -bottom-px h-[3px] rounded-full ${on ? 'bg-[#0e9f55]' : 'bg-transparent'}`} />
+              {x.label}
+              <span className={`absolute left-1.5 right-1.5 bottom-0 h-[3px] rounded-full ${on ? 'bg-[#0e9f55]' : 'bg-transparent'}`} />
             </button>
           );
         })}
       </div>
 
-      <Guide key={section} section={section} />
+      {/* Every section: a small green label and a title */}
+      <div>
+        <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#0b8044] dark:text-emerald-400">{SECTION_HEAD[section].label}</p>
+        <h2 className="text-2xl font-black leading-tight text-slate-900 dark:text-white">{SECTION_HEAD[section].title}</h2>
+      </div>
 
-      {section === 'games' ? (
-        <Gaming session={session} />
+      {section === 'vendors' ? (
+        <ShopHub kind="vendor" startHostel={startHostel} onOpen={(shop: Shop) => onOpenShop(shop.id)} />
       ) : (
         <>
-          {/* Section header */}
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-black text-slate-900 dark:text-white">{SECTION_HEAD[section].title}</h2>
-              <p className="text-xs text-slate-500">{SECTION_HEAD[section].sub}</p>
-            </div>
+          {section === 'services' && <ShopHub kind="service" startHostel={startHostel} onOpen={(shop: Shop) => onOpenShop(shop.id)} />}
+          {/* Quick posts (charging, water, one-off services, Buy & Sell, Lost & Found): the existing post board */}
+          <div className="flex items-center justify-between gap-3">
+            {section === 'services' ? (
+              <p className="text-xs text-slate-500">Quick posts: phone charging, water and one-off services.</p>
+            ) : (
+              <span />
+            )}
             {!posting && (
               <button
                 type="button"
@@ -328,6 +338,8 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore })
           )}
         </>
       )}
+
+      <Guide key={section} section={section} />
 
       {/* The Hub brings students in; the store is where Roomly earns */}
       <button

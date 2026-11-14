@@ -43,11 +43,11 @@ export const HUB_TYPES = [
   { id: 'lost', label: 'Lost', hint: 'You lost something: phone, power bank, ID card, bag' },
   { id: 'found', label: 'Found', hint: 'You found something: say where to collect it' },
 ];
-/** Hostel Hub has four sections. Each listing type lives in one of them. */
+/** Hostel Hub has four sections. Each listing type lives in one of them. Games has its own page (opened from Home). */
 export const HUB_SECTIONS = [
-  { id: 'games', label: 'Games', types: [] },
-  { id: 'buysell', label: 'Buy & Sell', types: ['item', 'rent', 'wanted'] },
+  { id: 'vendors', label: 'Vendors', types: [] },
   { id: 'services', label: 'Services', types: ['service', 'charging', 'water'] },
+  { id: 'buysell', label: 'Buy & Sell', types: ['item', 'rent', 'wanted'] },
   { id: 'lostfound', label: 'Lost & Found', types: ['lost', 'found'] },
 ];
 /** These never expire; the poster confirms every 30 days that they are still available */
@@ -99,6 +99,8 @@ const DAY = 86400000;
 const hubApp = getApps().find((a) => a.name === 'roomly-hub') || initializeApp(app.options, 'roomly-hub');
 const hubAuth = getAuth(hubApp);
 const hubDb = getFirestore(hubApp);
+/** Shared with shops.js so vendor orders are written by the same anonymous phone id */
+export { hubDb };
 
 let signingIn = null;
 /** This phone's Hub id (signs in anonymously the first time) */
@@ -868,4 +870,44 @@ export function computeBoard(game, gamers, matches, tournaments, nowMs = Date.no
       y.pts - x.pts || (scored ? y.gd - x.gd : 0) || y.w - x.w || x.p - y.p || String(x.name).localeCompare(String(y.name))
   );
   return list.map((r, i) => ({ ...r, rank: i + 1, crown: i === 0 && r.pts > 0 }));
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Home: who holds each crown (one read per 5 minutes per phone)       */
+/* ------------------------------------------------------------------ */
+
+const LEADERS_KEY = 'roomly_league_leaders';
+const once = (subscribe) =>
+  new Promise((resolve) => {
+    let unsub = () => {};
+    let done = false;
+    unsub = subscribe((rows) => {
+      if (done) return;
+      done = true;
+      resolve(rows);
+      window.setTimeout(() => unsub(), 0);
+    });
+  });
+
+/** { efootball: { name, pts } | null, ... } for every game */
+export async function fetchLeaders() {
+  try {
+    const raw = sessionStorage.getItem(LEADERS_KEY);
+    if (raw) {
+      const v = JSON.parse(raw);
+      if (v && Date.now() - v.at < 5 * 60000) return v.leaders;
+    }
+  } catch {}
+  const [gamers, matches, tournaments] = await Promise.all([once(subscribeGamers), once(subscribeAllMatches), once(subscribeTournaments)]);
+  const now = Date.now();
+  const leaders = {};
+  GAMES.forEach((g) => {
+    const top = computeBoard(g.id, gamers, matches, tournaments, now).find((r) => r.crown);
+    leaders[g.id] = top ? { name: top.name, pts: top.pts } : null;
+  });
+  try {
+    sessionStorage.setItem(LEADERS_KEY, JSON.stringify({ at: now, leaders }));
+  } catch {}
+  return leaders;
 }

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, Package, ChevronRight } from 'lucide-react';
+import { ShopOrderHistory } from './ShopOrderHistory';
 import { OrderRecord, locationText, isActiveOrder, stageLabel, orderStageOf } from '../types';
 
 interface OrderHistoryModalProps {
@@ -10,11 +11,13 @@ interface OrderHistoryModalProps {
   loading: boolean;
   signedIn?: boolean;
   onSelect: (order: OrderRecord) => void;
+  /** Reorder from a Hostel Hub vendor or service */
+  onOpenShop?: (shopId: string, prefill?: Record<string, number>) => void;
 }
 
 
 /** Active Orders & History: any active order and its status first, then earlier orders, newest first. */
-export const OrderHistoryModal: React.FC<OrderHistoryModalProps> = ({ isOpen, onClose, orders, loading, signedIn = true, onSelect }) => {
+export const OrderHistoryModal: React.FC<OrderHistoryModalProps> = ({ isOpen, onClose, orders, loading, signedIn = true, onSelect, onOpenShop }) => {
   // Re-check every 20 seconds so an order leaves Active once its 15-minute gate countdown ends
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -106,6 +109,8 @@ export const OrderHistoryModal: React.FC<OrderHistoryModalProps> = ({ isOpen, on
               ))}
             </div>
           )}
+
+          {onOpenShop && <ShopOrderHistory onOpen={onOpenShop} />}
         </div>
       </div>
     </div>
