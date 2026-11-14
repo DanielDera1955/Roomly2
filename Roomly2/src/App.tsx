@@ -1470,6 +1470,15 @@ export default function App() {
               onOpenShop={(id: string) => setShopOpen({ id })}
               onListBusiness={(k: 'vendor' | 'service') => setListOpen(k)}
               onManageShop={editToken ? () => setEditOpen(true) : undefined}
+              onVendorLink={(t: string) => {
+                try {
+                  localStorage.setItem('roomly_vendor_edit', t);
+                } catch {
+                  /* ignore */
+                }
+                setEditToken(t);
+                setEditOpen(true);
+              }}
               onGoStore={() => {
                 setSelectedTab('store');
                 window.scrollTo({ top: 0, behavior: 'smooth' });

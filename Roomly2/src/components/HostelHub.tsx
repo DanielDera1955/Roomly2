@@ -43,6 +43,7 @@ interface Props {
   /** Open the "List your business" form */
   onListBusiness: (kind: 'vendor' | 'service') => void;
   onManageShop?: () => void;
+  onVendorLink?: (token: string) => void;
   /** The student's saved hostel, so Vendors and Services open on their side */
   startHostel?: string;
 }
@@ -143,7 +144,7 @@ const Guide: React.FC<{ section: Section }> = ({ section }) => {
 };
 
 /** Hostel Hub: Vendors, Services, Buy & Sell, Lost & Found. Opens on Vendors, unless a post link asked for another section. */
-export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore, onOpenShop, onListBusiness, onManageShop, startHostel }) => {
+export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore, onOpenShop, onListBusiness, onManageShop, onVendorLink, startHostel }) => {
   const [section, setSection] = useState<Section>(() => {
     const asked = takeHubSection();
     return HUB_SECTIONS.some((x) => x.id === asked) ? (asked as Section) : 'vendors';
@@ -218,6 +219,8 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore, o
         <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#0b8044] dark:text-emerald-400">{SECTION_HEAD[section].label}</p>
         <h2 className="text-2xl font-black leading-tight text-slate-900 dark:text-white">{SECTION_HEAD[section].title}</h2>
       </div>
+
+      {!onManageShop && onVendorLink && (section === 'vendors' || section === 'services') && <VendorLinkBox onSave={onVendorLink} />}
 
       {onManageShop && (section === 'vendors' || section === 'services') && (
         <button
@@ -944,6 +947,47 @@ const MyListings: React.FC<{ productNames: string[] }> = ({ productNames }) => {
           </div>
         );
       })}
+    </div>
+  );
+};
+
+
+// For a vendor whose phone has not saved the edit link yet (for example it was opened in another browser): paste it once
+const VendorLinkBox: React.FC<{ onSave: (token: string) => void }> = ({ onSave }) => {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState('');
+  const [bad, setBad] = useState(false);
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="text-xs font-bold text-[#0b8044] dark:text-emerald-400 underline underline-offset-2 cursor-pointer self-start">
+        Already a vendor? Open your shop
+      </button>
+    );
+  }
+  const submit = () => {
+    const m = value.match(/[a-f0-9]{64}/);
+    if (!m) {
+      setBad(true);
+      return;
+    }
+    onSave(m[0]);
+  };
+  return (
+    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-3 space-y-2">
+      <p className="text-xs text-slate-500">Paste the edit link Roomly sent you. It is saved on this phone so you only do this once.</p>
+      <input
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value);
+          setBad(false);
+        }}
+        placeholder="Paste your edit link"
+        className="w-full h-11 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-sm text-slate-900 dark:text-white outline-none"
+      />
+      {bad && <p className="text-xs text-red-500">That does not look like a full edit link.</p>}
+      <button type="button" onClick={submit} className="w-full h-11 rounded-xl bg-[#0b8044] text-white text-sm font-extrabold cursor-pointer">
+        Open my shop
+      </button>
     </div>
   );
 };
