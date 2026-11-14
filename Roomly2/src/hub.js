@@ -531,13 +531,15 @@ export async function registerGamer(input) {
     batch.update(ref, profile);
   } else {
     // Taking the profile over on this phone: the rules check the PIN
-    batch.set(doc(hubDb, 'gamerClaims', `${gid}_${uid}`), { gid, uid, pinHash: await pinHashOf(phone, pin), atMs: Date.now() });
-    batch.update(ref, { ...profile, ownerUid: uid });
+    // A fresh one-time claim id each time, so a phone can take its profile back as often as it needs to
+    const nonce = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, '0')).join('');
+    batch.set(doc(hubDb, 'gamerClaims', `${gid}_${nonce}`), { gid, uid, nonce, pinHash: await pinHashOf(phone, pin), atMs: Date.now() });
+    batch.update(ref, { ...profile, ownerUid: uid, claimNonce: nonce });
   }
   try {
     await batch.commit();
   } catch (e) {
-    if (snap.exists() && snap.data().ownerUid !== uid) throw new Error('This number is already registered. Use the same PIN you registered with.');
+    if (snap.exists() && snap.data().ownerUid !== uid) throw new Error('This number is already registered. Use the exact PIN you first registered the player profile with.');
     throw new Error('Could not save. Check your connection and try again.');
   }
   ensureCustomerProfile(phone, pin, name, school === 'caritas' ? input.hostel : '');

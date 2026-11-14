@@ -521,7 +521,15 @@ service cloud.firestore {
         || (anyUser() && request.resource.data.ownerUid == request.auth.uid
             && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['banned'])
             && existsAfter(/databases/$(database)/documents/gamerClaims/$(gid + '_' + request.auth.uid))
-            && !exists(/databases/$(database)/documents/gamerClaims/$(gid + '_' + request.auth.uid)));
+            && !exists(/databases/$(database)/documents/gamerClaims/$(gid + '_' + request.auth.uid)))
+        // Same, with a fresh one-time claim id each time, so a phone can take its profile back as often as needed
+        || (anyUser() && request.resource.data.ownerUid == request.auth.uid
+            && request.resource.data.get('claimNonce', '') is string
+            && request.resource.data.get('claimNonce', '').size() >= 16
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['banned'])
+            && existsAfter(/databases/$(database)/documents/gamerClaims/$(gid + '_' + request.resource.data.claimNonce))
+            && !exists(/databases/$(database)/documents/gamerClaims/$(gid + '_' + request.resource.data.claimNonce))
+            && getAfter(/databases/$(database)/documents/gamerClaims/$(gid + '_' + request.resource.data.claimNonce)).data.uid == request.auth.uid);
       allow delete: if isAdmin();
     }
 
@@ -541,7 +549,10 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow create: if anyUser()
         && request.resource.data.uid == request.auth.uid
-        && id == request.resource.data.gid + '_' + request.auth.uid
+        && (id == request.resource.data.gid + '_' + request.auth.uid
+            || (request.resource.data.get('nonce', '') is string
+                && request.resource.data.get('nonce', '').size() >= 16
+                && id == request.resource.data.gid + '_' + request.resource.data.nonce))
         && request.resource.data.pinHash == get(/databases/$(database)/documents/gamerSecret/$(request.resource.data.gid)).data.pinHash;
       allow update: if false;
       allow delete: if isAdmin();
