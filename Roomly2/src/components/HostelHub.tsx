@@ -42,6 +42,7 @@ interface Props {
   onOpenShop: (shopId: string) => void;
   /** Open the "List your business" form */
   onListBusiness: (kind: 'vendor' | 'service') => void;
+  onManageShop?: () => void;
   /** The student's saved hostel, so Vendors and Services open on their side */
   startHostel?: string;
 }
@@ -142,7 +143,7 @@ const Guide: React.FC<{ section: Section }> = ({ section }) => {
 };
 
 /** Hostel Hub: Vendors, Services, Buy & Sell, Lost & Found. Opens on Vendors, unless a post link asked for another section. */
-export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore, onOpenShop, onListBusiness, startHostel }) => {
+export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore, onOpenShop, onListBusiness, onManageShop, startHostel }) => {
   const [section, setSection] = useState<Section>(() => {
     const asked = takeHubSection();
     return HUB_SECTIONS.some((x) => x.id === asked) ? (asked as Section) : 'vendors';
@@ -217,6 +218,16 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore, o
         <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#0b8044] dark:text-emerald-400">{SECTION_HEAD[section].label}</p>
         <h2 className="text-2xl font-black leading-tight text-slate-900 dark:text-white">{SECTION_HEAD[section].title}</h2>
       </div>
+
+      {onManageShop && (section === 'vendors' || section === 'services') && (
+        <button
+          type="button"
+          onClick={onManageShop}
+          className="w-full h-12 rounded-2xl bg-[#0b8044] text-white text-sm font-extrabold cursor-pointer active:scale-[0.99]"
+        >
+          Manage my shop
+        </button>
+      )}
 
       {section === 'vendors' ? (
         <ShopHub kind="vendor" startHostel={startHostel} onOpen={(shop: Shop) => onOpenShop(shop.id)} onList={() => onListBusiness('vendor')} />

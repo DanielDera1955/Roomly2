@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Camera, Loader2, Plus, X, Check } from 'lucide-react';
+import { ArrowLeft, Camera, Loader2, Plus, X, Check } from 'lucide-react';
 import { uploadProductImage } from '../api.js';
 import { vendorEditApi, shopTitle, shopLink } from '../shops.js';
 
@@ -34,7 +34,7 @@ const Toggle: React.FC<{ on: boolean; onChange: (v: boolean) => void; text: stri
  * The private page a vendor opens from their edit link (?edit=TOKEN). It talks only to /api/vendor-edit,
  * which finds the one listing that belongs to this link. Edits go live as soon as they are saved.
  */
-export const VendorEditor: React.FC<{ token: string }> = ({ token }) => {
+export const VendorEditor: React.FC<{ token: string; onClose: () => void; onForget: () => void }> = ({ token, onClose, onForget }) => {
   const [shop, setShop] = useState<any>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'denied'>('loading');
   const [items, setItems] = useState<EditItem[]>([]);
@@ -102,7 +102,7 @@ export const VendorEditor: React.FC<{ token: string }> = ({ token }) => {
 
   if (state === 'loading') {
     return (
-      <Page>
+      <Page onClose={onClose}>
         <div className="py-24 flex justify-center text-slate-400">
           <Loader2 className="w-6 h-6 animate-spin" />
         </div>
@@ -111,10 +111,13 @@ export const VendorEditor: React.FC<{ token: string }> = ({ token }) => {
   }
   if (state === 'denied') {
     return (
-      <Page>
+      <Page onClose={onClose}>
         <div className="py-24 px-6 text-center">
           <p className="text-base font-black text-slate-900 dark:text-white">This link is not valid</p>
           <p className="mt-2 text-sm text-slate-500">Check that you opened the whole link, or ask Roomly to send you a new one.</p>
+          <button type="button" onClick={onForget} className="mt-5 h-11 px-5 rounded-xl bg-slate-100 dark:bg-slate-800 text-sm font-bold text-slate-800 dark:text-slate-100 cursor-pointer">
+            Remove this saved link
+          </button>
         </div>
       </Page>
     );
@@ -122,8 +125,8 @@ export const VendorEditor: React.FC<{ token: string }> = ({ token }) => {
 
   const isService = shop.kind === 'service';
   return (
-    <Page>
-      <div className="px-4 pt-5 pb-32 space-y-4">
+    <Page onClose={onClose}>
+      <div className="px-4 pt-2 pb-32 space-y-4">
         <div>
           <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#0b8044] dark:text-emerald-400">Edit your page</p>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white">{shopTitle(shop)}</h1>
@@ -245,8 +248,29 @@ export const VendorEditor: React.FC<{ token: string }> = ({ token }) => {
   );
 };
 
-const Page: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="fixed inset-0 z-[70] overflow-y-auto bg-slate-50 dark:bg-slate-950">
-    <div className="max-w-[480px] mx-auto min-h-full relative">{children}</div>
-  </div>
-);
+const Page: React.FC<{ children: React.ReactNode; onClose: () => void }> = ({ children, onClose }) => {
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+  return (
+    <div className="fixed inset-0 z-[70] overflow-y-auto bg-slate-50 dark:bg-slate-950">
+      <div className="max-w-[480px] mx-auto min-h-full relative">
+        <div className="px-4 pt-4">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Back to Roomly"
+            className="h-11 pl-3 pr-4 rounded-full flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 text-sm font-bold text-slate-900 dark:text-white cursor-pointer"
+          >
+            <ArrowLeft className="w-5 h-5" /> Roomly
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+};

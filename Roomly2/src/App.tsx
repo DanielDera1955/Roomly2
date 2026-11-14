@@ -180,14 +180,33 @@ export default function App() {
   });
   // "List your business" form
   const [listOpen, setListOpen] = useState<'vendor' | 'service' | null>(null);
-  // A vendor's private edit link (?edit=TOKEN) opens their edit page
-  const editToken = useMemo(() => {
+  // A vendor's private edit link (?edit=TOKEN): the first time it is opened, the link is saved on this phone and removed
+  // from the address bar. After that the vendor uses "Manage my shop" in Hostel Hub, inside the main app like everyone else.
+  const [arrivedByLink] = useState<boolean>(() => {
     try {
-      return new URLSearchParams(window.location.search).get('edit') || '';
+      return /^[a-f0-9]{64}$/.test(new URLSearchParams(window.location.search).get('edit') || '');
+    } catch {
+      return false;
+    }
+  });
+  const [editToken, setEditToken] = useState<string>(() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const t = q.get('edit') || '';
+      if (/^[a-f0-9]{64}$/.test(t)) {
+        localStorage.setItem('roomly_vendor_edit', t);
+        q.delete('edit');
+        const rest = q.toString();
+        window.history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : ''));
+      }
+      const saved = localStorage.getItem('roomly_vendor_edit') || '';
+      return /^[a-f0-9]{64}$/.test(saved) ? saved : '';
     } catch {
       return '';
     }
-  }, []);
+  });
+  // Opens straight away only when the vendor just arrived by their link
+  const [editOpen, setEditOpen] = useState<boolean>(arrivedByLink);
   // Header "Sign in" popup for guests (returning students on a new phone)
   const [signInOpen, setSignInOpen] = useState(false);
   const [sourceMode, setSourceMode] = useState<'inside' | 'outside'>(lastShop.side);
@@ -1450,6 +1469,7 @@ export default function App() {
               startHostel={customer?.building || ''}
               onOpenShop={(id: string) => setShopOpen({ id })}
               onListBusiness={(k: 'vendor' | 'service') => setListOpen(k)}
+              onManageShop={editToken ? () => setEditOpen(true) : undefined}
               onGoStore={() => {
                 setSelectedTab('store');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1688,7 +1708,21 @@ export default function App() {
         {listOpen && <ListBusiness startKind={listOpen} startHostel={customer?.building || ''} onClose={() => setListOpen(null)} />}
 
         {/* A vendor's private edit page */}
-        {editToken && <VendorEditor token={editToken} />}
+        {editOpen && editToken && (
+          <VendorEditor
+            token={editToken}
+            onClose={() => setEditOpen(false)}
+            onForget={() => {
+              try {
+                localStorage.removeItem('roomly_vendor_edit');
+              } catch {
+                /* ignore */
+              }
+              setEditToken('');
+              setEditOpen(false);
+            }}
+          />
+        )}
 
         {shopOpen && <ShopFlow key={shopOpen.id} shopId={shopOpen.id} prefill={shopOpen.prefill} customer={customer} onClose={() => setShopOpen(null)} />}
 
