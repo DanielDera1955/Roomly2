@@ -72,7 +72,7 @@ export function isOpenNow(target: QuickTarget, now: Date = new Date(), storeOpen
  */
 export type CardStatus = { pill: string; tone: 'open' | 'late' | 'next' | 'info'; lines: string[] };
 export function shortStatus(id: QuickTarget, now: Date = new Date(), storeOpensAtMs = 0): CardStatus {
-  if (id === 'hub') return { pill: '', tone: 'info', lines: ['Vendors · Services · Buy and Sell · Lost and Found'] };
+  if (id === 'hub') return { pill: '', tone: 'info', lines: ['Vendors · Services · Buy & Sell · Lost & Found'] };
   const t = (min: number) => timeLabelFull(min);
   const dayOf = (date: string) => {
     const w = dayWord(date, now).replace(/^on /, '');

@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { Clock, Store, UtensilsCrossed } from 'lucide-react';
 import { getNextBatch, getOutsideChoices, storeGraceOpen, storeRunLeftToday, batchCloseDate, foodBatchAvailable } from '../api.js';
 import {
   SwitchSide,
@@ -44,11 +43,10 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
 
   const side: SwitchSide = mode === 'inside' ? 'inside' : tab === 'food' ? 'food' : 'store';
   const now = new Date();
-  const Icon = side === 'inside' ? Clock : side === 'food' ? UtensilsCrossed : Store;
   const label = side === 'inside' ? 'Room delivery' : side === 'food' ? 'Cooked Food' : 'Outside Store Items';
 
   // Which section the student is in, named the way the home cards name it
-  const section = side === 'inside' ? 'Canteen Items' : side === 'food' ? 'Outside Food' : 'Outside Items';
+  const section = side === 'inside' ? 'School Canteen Items' : side === 'food' ? 'Outside school foods' : 'Outside school store items';
   type Tag = 'OPEN NOW' | 'NEXT' | 'CLOSED' | string;
   type Row = { name: string; orderEnd: string; arrive: string; tag: Tag; fee?: string; room?: boolean };
 
@@ -167,7 +165,6 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
       <div className="relative z-10 space-y-2">
         <div className="flex items-center justify-between gap-2">
           <p className="min-w-0 text-[11px] font-bold uppercase tracking-wider text-emerald-200 flex items-center gap-1.5">
-            <Icon className="w-3.5 h-3.5 shrink-0" />
             <span>You're in: {section}</span>
           </p>
           <span className="shrink-0 px-2 py-0.5 rounded-full bg-white/15 text-[10px] font-bold text-white whitespace-nowrap">{badge}</span>

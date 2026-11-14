@@ -214,6 +214,9 @@ const GamesHome: React.FC<{
             </p>
           </div>
         </div>
+        {!me && (
+          <p className="mt-2 text-[11px] text-emerald-50/80">Registered before on another phone or browser? Tap Register and use the same number and PIN to get your profile back.</p>
+        )}
         <p className="mt-3 text-[11px] text-emerald-50/90">
           {isOpen
             ? me && myBest

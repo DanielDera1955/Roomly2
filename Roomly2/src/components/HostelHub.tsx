@@ -215,10 +215,7 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore, o
       </div>
 
       {/* Every section: a small green label and a title */}
-      <div>
-        <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#0b8044] dark:text-emerald-400">{SECTION_HEAD[section].label}</p>
-        <h2 className="text-2xl font-black leading-tight text-slate-900 dark:text-white">{SECTION_HEAD[section].title}</h2>
-      </div>
+      <h2 className="text-lg font-semibold leading-snug tracking-tight text-slate-900 dark:text-white">{SECTION_HEAD[section].title}</h2>
 
       {!onManageShop && onVendorLink && (section === 'vendors' || section === 'services') && <VendorLinkBox onSave={onVendorLink} />}
 
