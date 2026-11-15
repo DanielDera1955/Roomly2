@@ -25,7 +25,7 @@ import {
   writeBatch,
   increment,
 } from 'firebase/firestore';
-import { app, db } from './firebase.ts';
+import { app, db, auth as staffAuth } from './firebase.ts';
 import { uploadProductImage, getCustomerByPhone, normalizePhone, isValidNigerianPhone, isValidPin, ensureCustomerProfile, isBannedFromRoomly, BANNED_MESSAGE } from './api.js';
 import { DEFAULT_GAMES_OPEN_MS, DEFAULT_OUTSIDE_STORE_OPEN_MS } from './config.ts';
 
@@ -442,6 +442,78 @@ export async function adminUnbanPhone(phone) {
 }
 export function adminSubscribeBans(cb) {
   return onSnapshot(collection(db, 'hubBans'), (snap) => cb(snap.docs.map((d) => d.data())), () => cb([]));
+}
+
+/** Admin: manage a listing posted for someone: done (sold, found, back with owner), still available, or renew */
+export async function adminUpdateListing(id, action, days = 7) {
+  const now = Date.now();
+  const patch = { updatedAtMs: now };
+  if (action === 'sold') patch.status = 'sold';
+  else if (action === 'confirm') {
+    patch.status = 'active';
+    patch.confirmedAtMs = now;
+  } else if (action === 'renew') {
+    patch.status = 'active';
+    patch.expiresAtMs = now + (EXPIRY_DAYS.includes(Number(days)) ? Number(days) : 7) * DAY;
+  } else return;
+  await updateDoc(doc(db, 'hubListings', id), patch);
+}
+
+/**
+ * Admin: post a Hub listing for someone who agreed to be listed (no PIN needed).
+ * The listing belongs to the admin login, so the admin edits, marks it sold or removes it for them.
+ * input: { type, title, price, price2, note, days, photoFile, name, phone, hostel, consent }
+ */
+export async function adminCreateListing(input) {
+  const type = input.type;
+  if (!HUB_TYPES.some((t) => t.id === type)) throw new Error('Choose a section.');
+  const title = String(input.title || '').trim().slice(0, 60);
+  if (title.length < 2) throw new Error('Add a short title.');
+  const blocked = blockedReason(type, title, []);
+  if (blocked) throw new Error(blocked);
+  const name = String(input.name || '').trim().slice(0, 40);
+  if (!name) throw new Error('Add their name.');
+  if (!input.hostel) throw new Error('Choose the hostel.');
+  if (!input.consent) throw new Error('Tick that this person agreed to be listed.');
+  if (type !== 'wanted' && type !== 'lost' && type !== 'found' && !input.photoFile) throw new Error('Add a photo.');
+  const phone = normalizePhone(input.phone);
+  if (!isValidNigerianPhone(phone)) throw new Error('Enter a valid 11-digit phone number.');
+  // Checked directly (not isBannedFromRoomly) so the admin's own browser is never flagged as banned
+  if ((await getDoc(doc(db, 'hubBans', phone))).exists()) throw new Error('This number is banned from Roomly.');
+  const uid = staffAuth.currentUser?.uid;
+  if (!uid) throw new Error('Sign in as admin first.');
+
+  const photo = input.photoFile ? await uploadProductImage(input.photoFile) : '';
+  const now = Date.now();
+  const days = EXPIRY_DAYS.includes(Number(input.days)) ? Number(input.days) : 7;
+  const ref = doc(collection(db, 'hubListings'));
+  const listing = {
+    type,
+    title,
+    price: Math.max(0, Math.round(Number(input.price) || 0)),
+    price2: Math.max(0, Math.round(Number(input.price2) || 0)),
+    note: String(input.note || '').trim().slice(0, 300),
+    photo,
+    isPhone: false,
+    ownerUid: uid,
+    name,
+    phone,
+    hostel: String(input.hostel).slice(0, 30),
+    createdAtMs: now,
+    updatedAtMs: now,
+    confirmedAtMs: now,
+    expiresAtMs: LONG_LIVED.includes(type) ? 0 : now + days * DAY,
+    status: 'active',
+    chargingNow: false,
+    reportCount: 0,
+    contacts: 0,
+    hidden: false,
+    stolenFlag: false,
+    postedByAdmin: true,
+    consentAtMs: now,
+  };
+  await setDoc(ref, listing);
+  return { id: ref.id, ...listing };
 }
 
 /* ------------------------------------------------------------------ */

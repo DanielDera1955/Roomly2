@@ -9,6 +9,10 @@ import {
   adminSubscribeReports,
   adminRestoreListing,
   adminRemoveListing,
+  adminCreateListing,
+  adminUpdateListing,
+  LONG_LIVED,
+  EXPIRY_DAYS,
   adminBanPhone,
   adminUnbanPhone,
   adminBanAnyPhone,
@@ -35,6 +39,7 @@ import {
   schoolKey,
   addSchool,
 } from '../hub.js';
+import { HOSTELS } from '../config';
 
 const card = 'p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-3';
 const input =
@@ -86,6 +91,8 @@ export const AdminHub: React.FC = () => {
         </p>
       </div>
 
+      <PostForSomeone listings={listings} />
+
       <HubSettings settings={settings} />
 
       {/* Reported */}
@@ -122,6 +129,168 @@ export const AdminHub: React.FC = () => {
       <ResetPlayer />
       <Schools settings={settings} />
       <AdminTournaments />
+    </div>
+  );
+};
+
+const PRICE_LABELS: Record<string, [string, string?]> = {
+  service: ['Lowest price (₦)', 'Highest price (₦, optional)'],
+  item: ['Price (₦)'],
+  wanted: ['Budget (₦, optional)'],
+  rent: ['Price per day (₦)'],
+  charging: ['Charge to 50% (₦)', 'Charge to 100% (₦)'],
+  water: ['Price per bucket (₦)'],
+  lost: ['Reward (₦, optional)'],
+  found: ['Collection fee (₦, optional)'],
+};
+
+/** Post a Hub listing for someone who agreed, with their number. Listings posted this way are managed here. */
+const PostForSomeone: React.FC<{ listings: any[] }> = ({ listings }) => {
+  const [open, setOpen] = useState(false);
+  const [type, setType] = useState('service');
+  const [title, setTitle] = useState('');
+  const [price, setPrice] = useState('');
+  const [price2, setPrice2] = useState('');
+  const [note, setNote] = useState('');
+  const [days, setDays] = useState(7);
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [hostel, setHostel] = useState('');
+  const [consent, setConsent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [ok, setOk] = useState('');
+
+  const now = Date.now();
+  const mine = listings.filter((l) => l.postedByAdmin && l.status === 'active');
+  const [label1, label2] = PRICE_LABELS[type] || ['Price (₦)'];
+  const longLived = LONG_LIVED.includes(type);
+  const photoNeeded = type !== 'wanted' && type !== 'lost' && type !== 'found';
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setOk('');
+    setBusy(true);
+    try {
+      await adminCreateListing({ type, title, price, price2, note, days, photoFile: photo, name, phone, hostel, consent });
+      setOk(`Posted for ${name}.`);
+      // Keep the type and hostel for the next one
+      setTitle('');
+      setPrice('');
+      setPrice2('');
+      setNote('');
+      setPhoto(null);
+      setName('');
+      setPhone('');
+      setConsent(false);
+    } catch (err: any) {
+      setError(err?.message || 'Could not post. Try again.');
+    }
+    setBusy(false);
+  };
+  const act = async (fn: () => Promise<void>) => {
+    try {
+      await fn();
+    } catch (err: any) {
+      window.alert(err?.message || 'Could not do that.');
+    }
+  };
+
+  return (
+    <div className={card}>
+      <div className="flex items-center justify-between">
+        <p className={h}>Post for someone ({mine.length} up)</p>
+        <button type="button" onClick={() => setOpen(!open)} className={`${btn} bg-[#0e9f55] text-white`}>
+          {open ? 'Close' : 'New post'}
+        </button>
+      </div>
+      {open && (
+        <form onSubmit={submit} className="space-y-2.5">
+          <select value={type} onChange={(e) => setType(e.target.value)} className={input}>
+            {HUB_TYPES.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={60} className={input} placeholder="Title (what it is)" />
+          <div className="grid grid-cols-2 gap-2">
+            <input value={price} onChange={(e) => setPrice(e.target.value.replace(/\D/g, ''))} inputMode="numeric" className={input} placeholder={label1} />
+            {label2 && <input value={price2} onChange={(e) => setPrice2(e.target.value.replace(/\D/g, ''))} inputMode="numeric" className={input} placeholder={label2} />}
+          </div>
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} rows={2} className={input} placeholder="Details (optional)" />
+          {!longLived && (
+            <select value={days} onChange={(e) => setDays(Number(e.target.value))} className={input}>
+              {EXPIRY_DAYS.map((d: number) => (
+                <option key={d} value={d}>
+                  Stays up {d} {d === 1 ? 'day' : 'days'}
+                </option>
+              ))}
+            </select>
+          )}
+          <div>
+            <p className="text-[11px] font-bold text-slate-500 mb-1">Photo{photoNeeded ? '' : ' (optional)'}</p>
+            <input type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files?.[0] || null)} className="text-xs" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} className={input} placeholder="Their name" />
+            <select value={hostel} onChange={(e) => setHostel(e.target.value)} className={input}>
+              <option value="">Hostel</option>
+              {HOSTELS.map((x: string) => (
+                <option key={x} value={x}>
+                  {x}
+                </option>
+              ))}
+              <option value="Lodge">Lodge</option>
+            </select>
+            <input value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))} inputMode="numeric" maxLength={11} className={input} placeholder="Their phone number" />
+          </div>
+          <label className="flex items-start gap-2 text-xs text-slate-700 dark:text-slate-200">
+            <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5" />
+            This person agreed to be listed with their number.
+          </label>
+          {error && <p className="text-[11px] font-semibold text-rose-600">{error}</p>}
+          {ok && <p className="text-[11px] font-semibold text-[#0e9f55]">{ok}</p>}
+          <button type="submit" disabled={busy} className={`${btn} bg-[#0e9f55] text-white`}>
+            {busy ? 'Posting...' : 'Post listing'}
+          </button>
+        </form>
+      )}
+      {mine.length > 0 && (
+        <div className="space-y-2 pt-1">
+          {mine.map((l) => (
+            <div key={l.id} className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-1.5">
+              <p className="text-xs font-bold text-slate-900 dark:text-white">
+                {l.title} <span className="font-normal text-slate-500">· {l.name} · {l.phone}</span>
+              </p>
+              <p className="text-[10px] text-slate-500">
+                {HUB_TYPES.find((t) => t.id === l.type)?.label} · {isLive(l, now, true) ? 'Showing' : 'Expired, renew to show again'} · {timeAgo(l.createdAtMs)}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {LONG_LIVED.includes(l.type) ? (
+                  <button type="button" onClick={() => act(() => adminUpdateListing(l.id, 'confirm'))} className={`${btn} bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200`}>
+                    Still available
+                  </button>
+                ) : (
+                  <>
+                    <button type="button" onClick={() => act(() => adminUpdateListing(l.id, 'renew', 7))} className={`${btn} bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200`}>
+                      Renew 7 days
+                    </button>
+                    <button type="button" onClick={() => window.confirm('Mark this done?') && act(() => adminUpdateListing(l.id, 'sold'))} className={`${btn} bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200`}>
+                      Done
+                    </button>
+                  </>
+                )}
+                <button type="button" onClick={() => window.confirm('Remove this listing?') && act(() => adminRemoveListing(l.id))} className={`${btn} bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300`}>
+                  Remove
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

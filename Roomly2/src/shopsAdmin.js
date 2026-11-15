@@ -2,9 +2,10 @@
  * Hostel Hub shops: admin side. These use the staff login (the main app), never a student's anonymous phone id,
  * so only the admin can read applications, vendor phone numbers and edit links.
  */
-import { collection, doc, onSnapshot, writeBatch, updateDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, writeBatch, updateDoc } from 'firebase/firestore';
 import { db } from './firebase.ts';
 import { editLink, getShopStats } from './shops.js';
+import { uploadProductImage, normalizePhone, isValidNigerianPhone } from './api.js';
 
 const byNewest = (a, b) => Number(b.createdAtMs || 0) - Number(a.createdAtMs || 0);
 
@@ -102,4 +103,68 @@ export async function resetEditLink(shopId, oldToken) {
   batch.set(doc(db, 'shopAdmin', shopId), { token, keyHash, createdAtMs: Date.now() });
   await batch.commit();
   return editLink(token);
+}
+
+/**
+ * Admin: create a vendor or service listing directly, for a person who agreed to be listed (no application needed).
+ * Same result as approving an application: a live shop, the number in its own private document, and a private edit link.
+ * input: { kind: 'vendor' | 'service', name, hostel, room, showRoom, phone, items: [{ name, price, priceFrom }], photoFile, consent }
+ * Returns { id, link }.
+ */
+export async function createShopDirect(input) {
+  const kind = input.kind === 'service' ? 'service' : 'vendor';
+  const name = String(input.name || '').trim().slice(0, 60);
+  if (name.length < 2) throw new Error('Add the vendor\'s name.');
+  if (!input.hostel) throw new Error('Choose the hostel.');
+  if (!input.consent) throw new Error('Tick that this person agreed to be listed.');
+  const phone = normalizePhone(input.phone);
+  if (!isValidNigerianPhone(phone)) throw new Error('Enter a valid 11-digit WhatsApp number.');
+  // Checked directly (not isBannedFromRoomly) so the admin's own browser is never flagged as banned
+  if ((await getDoc(doc(db, 'hubBans', phone))).exists()) throw new Error('This number is banned from Roomly.');
+  const rows = Array.isArray(input.items) ? input.items : [];
+  const noPrice = rows.find((i) => i && String(i.name || '').trim() && !(Number(i.price) > 0));
+  if (noPrice) throw new Error(`"${String(noPrice.name).trim()}" needs a price, for example: ${String(noPrice.name).trim()} 1500`);
+  const items = rows
+    .map((i) => ({
+      id: Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => b.toString(16).padStart(2, '0')).join(''),
+      name: String(i && i.name ? i.name : '').trim().slice(0, 60),
+      price: Math.max(0, Math.min(10000000, Math.round(Number(i && i.price) || 0))),
+      priceFrom: Boolean(i && i.priceFrom),
+      soldOut: false,
+      photo: '',
+    }))
+    .filter((i) => i.name && i.price > 0);
+  if (items.length < 1) throw new Error('Add at least one item with a price.');
+  if (items.length > 30) throw new Error('Add at most 30 items. The vendor can add more from their edit link.');
+  if (!input.photoFile) throw new Error('Add a photo.');
+  const photo = await uploadProductImage(input.photoFile);
+
+  const id = doc(collection(db, 'shops')).id;
+  const token = newToken();
+  const keyHash = await sha256(token);
+  const now = Date.now();
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'shops', id), {
+    kind,
+    status: 'live',
+    name,
+    hostel: String(input.hostel).slice(0, 30),
+    room: String(input.room || '').trim().slice(0, 20),
+    showRoom: Boolean(input.showRoom),
+    photo,
+    cover: photo,
+    deliveryOn: false,
+    deliveryFee: 0,
+    items,
+    createdAtMs: now,
+    approvedAtMs: now,
+    lastEditedAtMs: 0,
+    addedByAdmin: true,
+    consentAtMs: now,
+  });
+  batch.set(doc(db, 'shopContacts', id), { phone });
+  batch.set(doc(db, 'shopEditKeys', keyHash), { shopId: id, active: true, createdAtMs: now });
+  batch.set(doc(db, 'shopAdmin', id), { token, keyHash, createdAtMs: now });
+  await batch.commit();
+  return { id, link: editLink(token) };
 }

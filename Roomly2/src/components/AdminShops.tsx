@@ -9,8 +9,10 @@ import {
   setShopStatus,
   resetEditLink,
   getAdminShopStats,
+  createShopDirect,
 } from '../shopsAdmin.js';
 import { editLink, lagosDay, naira, shopTitle, hostelLabel } from '../shops.js';
+import { HOSTELS } from '../config';
 
 const card = 'bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-4';
 const btn = 'h-9 px-3.5 rounded-xl text-xs font-bold cursor-pointer disabled:opacity-50';
@@ -48,6 +50,128 @@ const CopyButton: React.FC<{ link: string; label?: string }> = ({ link, label = 
   );
 };
 
+
+const field =
+  'w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none';
+
+/** One item per line: "Fried rice 1500" or "Barbing from 1000" */
+function parseItems(text: string) {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const m = line.match(/^(.*?)[\s:,-]*(from\s+)?₦?\s*([\d,]+)\s*$/i);
+      if (!m) return { name: line, price: 0, priceFrom: false };
+      return { name: m[1].trim(), price: Number(m[3].replace(/,/g, '')), priceFrom: Boolean(m[2]) };
+    });
+}
+
+/** Admin: create a vendor or service listing for a person who agreed, without an application */
+const CreateShopForm: React.FC<{ onCreated: (id: string, link: string, name: string) => void }> = ({ onCreated }) => {
+  const [open, setOpen] = useState(false);
+  const [kind, setKind] = useState<'vendor' | 'service'>('vendor');
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [hostel, setHostel] = useState('');
+  const [room, setRoom] = useState('');
+  const [showRoom, setShowRoom] = useState(true);
+  const [itemsText, setItemsText] = useState('');
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [consent, setConsent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setBusy(true);
+    try {
+      const res = await createShopDirect({ kind, name, phone, hostel, room, showRoom, items: parseItems(itemsText), photoFile: photo, consent });
+      onCreated(res.id, res.link, name);
+      // Keep the type and hostel for the next one
+      setName('');
+      setPhone('');
+      setRoom('');
+      setItemsText('');
+      setPhoto(null);
+      setConsent(false);
+    } catch (err: any) {
+      setError(err?.message || 'Could not create it. Try again.');
+    }
+    setBusy(false);
+  };
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className={`${btn} bg-[#0e9f55] text-white`}>
+        Create vendor or service
+      </button>
+    );
+  }
+  return (
+    <form onSubmit={submit} className={`${card} space-y-3`}>
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">Create vendor or service</h3>
+        <button type="button" onClick={() => setOpen(false)} className="text-xs font-bold text-slate-400 cursor-pointer">
+          Close
+        </button>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {(['vendor', 'service'] as const).map((k) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setKind(k)}
+            className={`h-9 rounded-xl text-xs font-bold cursor-pointer ${kind === k ? 'bg-[#0e9f55] text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200'}`}
+          >
+            {k === 'vendor' ? 'Vendor (items)' : 'Service'}
+          </button>
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <input value={name} onChange={(e) => setName(e.target.value)} className={field} placeholder="Their name" />
+        <input value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))} inputMode="numeric" maxLength={11} className={field} placeholder="WhatsApp number" />
+        <select value={hostel} onChange={(e) => setHostel(e.target.value)} className={field}>
+          <option value="">Hostel</option>
+          {HOSTELS.map((h: string) => (
+            <option key={h} value={h}>
+              {h}
+            </option>
+          ))}
+        </select>
+        <input value={room} onChange={(e) => setRoom(e.target.value)} maxLength={20} className={field} placeholder="Room (optional)" />
+      </div>
+      <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+        <input type="checkbox" checked={showRoom} onChange={(e) => setShowRoom(e.target.checked)} />
+        Show the room number on the listing
+      </label>
+      <div>
+        <p className="text-[11px] font-bold text-slate-500 mb-1">{kind === 'service' ? 'Services, one per line with the price' : 'Items, one per line with the price'}</p>
+        <textarea
+          value={itemsText}
+          onChange={(e) => setItemsText(e.target.value)}
+          rows={5}
+          className={field}
+          placeholder={kind === 'service' ? 'Low cut 500\nBraids from 3000' : 'Fried rice 1500\nBoiled eggs 200'}
+        />
+      </div>
+      <div>
+        <p className="text-[11px] font-bold text-slate-500 mb-1">Photo</p>
+        <input type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files?.[0] || null)} className="text-xs" />
+      </div>
+      <label className="flex items-start gap-2 text-xs text-slate-700 dark:text-slate-200">
+        <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5" />
+        This person agreed to be listed on Roomly.
+      </label>
+      {error && <p className="text-[11px] font-semibold text-rose-600">{error}</p>}
+      <button type="submit" disabled={busy} className={`${btn} bg-[#0e9f55] text-white`}>
+        {busy ? 'Creating...' : 'Create listing'}
+      </button>
+    </form>
+  );
+};
+
 /** Admin > Applications: new vendor and service applications, and every live listing */
 export const AdminShops: React.FC = () => {
   const [apps, setApps] = useState<any[]>([]);
@@ -80,6 +204,8 @@ export const AdminShops: React.FC = () => {
   return (
     <div className="space-y-4">
       <h2 className="text-base font-extrabold text-slate-900 dark:text-white">Hostel Hub vendors and services</h2>
+
+      <CreateShopForm onCreated={(id, link, name) => setFresh((f) => ({ ...f, [id]: link }))} />
 
       <div className="space-y-3">
         <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-500">New applications ({pending.length})</h3>
@@ -127,7 +253,7 @@ export const AdminShops: React.FC = () => {
         ))}
         {Object.entries(fresh).map(([id, link]) => (
           <div key={id} className="rounded-2xl p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 space-y-2">
-            <p className="text-xs font-bold text-emerald-900 dark:text-emerald-200">Approved. Send this private edit link to the vendor on WhatsApp. Do not post it anywhere.</p>
+            <p className="text-xs font-bold text-emerald-900 dark:text-emerald-200">Done. Send this private edit link to the vendor on WhatsApp. Do not post it anywhere.</p>
             <CopyButton link={link} label="Copy edit link" />
           </div>
         ))}

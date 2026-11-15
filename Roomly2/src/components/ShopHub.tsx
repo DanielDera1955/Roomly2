@@ -63,6 +63,7 @@ export const ShopCard: React.FC<{ shop: Shop; onOpen: () => void; top?: boolean 
             <MapPin className="w-3.5 h-3.5 shrink-0" />
             <span className="truncate">{placeLine(shop)}</span>
           </p>
+          {(shop as any).addedByAdmin && !(shop as any).lastEditedAtMs && <p className="mt-1 text-[10px] font-bold text-slate-400">Added by Roomly</p>}
           {tag && (
             <span
               className={`inline-block mt-1.5 px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wide ${

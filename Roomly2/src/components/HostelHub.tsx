@@ -440,6 +440,7 @@ const ListingCard: React.FC<{ l: any; nowMs: number; mine?: boolean; productName
           <p className="text-[11px] text-slate-500 mt-0.5">
             {l.name} · {l.hostel}
           </p>
+          {l.postedByAdmin && <p className="text-[10px] font-bold text-slate-400 mt-0.5">Posted by Roomly</p>}
         </div>
       </div>
       {l.type === 'charging' && l.chargingNow && (
