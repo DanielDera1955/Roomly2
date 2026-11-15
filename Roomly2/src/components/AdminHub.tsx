@@ -11,6 +11,7 @@ import {
   adminRemoveListing,
   adminCreateListing,
   adminUpdateListing,
+  adminListingLink,
   LONG_LIVED,
   EXPIRY_DAYS,
   adminBanPhone,
@@ -40,6 +41,7 @@ import {
   addSchool,
 } from '../hub.js';
 import { HOSTELS } from '../config';
+import { subscribeShopTokens } from '../shopsAdmin.js';
 
 const card = 'p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-3';
 const input =
@@ -161,6 +163,17 @@ const PostForSomeone: React.FC<{ listings: any[] }> = ({ listings }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
+  const [tokens, setTokens] = useState<Record<string, string>>({});
+  const [link, setLink] = useState('');
+  useEffect(() => subscribeShopTokens(setTokens), []);
+  const copyLink = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      window.alert('Link copied. Send it to them on WhatsApp.');
+    } catch {
+      window.prompt('Copy this link:', url);
+    }
+  };
 
   const now = Date.now();
   const mine = listings.filter((l) => l.postedByAdmin && l.status === 'active');
@@ -174,8 +187,9 @@ const PostForSomeone: React.FC<{ listings: any[] }> = ({ listings }) => {
     setOk('');
     setBusy(true);
     try {
-      await adminCreateListing({ type, title, price, price2, note, days, photoFile: photo, name, phone, hostel, consent });
-      setOk(`Posted for ${name}.`);
+      const res = await adminCreateListing({ type, title, price, price2, note, days, photoFile: photo, name, phone, hostel, consent });
+      setOk(`Posted for ${name}. Send them their private edit link below so they can update or close it themselves.`);
+      setLink(res.link);
       // Keep the type and hostel for the next one
       setTitle('');
       setPrice('');
@@ -253,6 +267,11 @@ const PostForSomeone: React.FC<{ listings: any[] }> = ({ listings }) => {
           </label>
           {error && <p className="text-[11px] font-semibold text-rose-600">{error}</p>}
           {ok && <p className="text-[11px] font-semibold text-[#0e9f55]">{ok}</p>}
+          {link && (
+            <button type="button" onClick={() => copyLink(link)} className={`${btn} bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100`}>
+              Copy their edit link
+            </button>
+          )}
           <button type="submit" disabled={busy} className={`${btn} bg-[#0e9f55] text-white`}>
             {busy ? 'Posting...' : 'Post listing'}
           </button>
@@ -269,6 +288,13 @@ const PostForSomeone: React.FC<{ listings: any[] }> = ({ listings }) => {
                 {HUB_TYPES.find((t) => t.id === l.type)?.label} · {isLive(l, now, true) ? 'Showing' : 'Expired, renew to show again'} · {timeAgo(l.createdAtMs)}
               </p>
               <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => act(async () => copyLink(tokens[l.id] ? `${window.location.origin}/?edit=${tokens[l.id]}` : await adminListingLink(l.id)))}
+                  className={`${btn} bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200`}
+                >
+                  {tokens[l.id] ? 'Copy edit link' : 'Make edit link'}
+                </button>
                 {LONG_LIVED.includes(l.type) ? (
                   <button type="button" onClick={() => act(() => adminUpdateListing(l.id, 'confirm'))} className={`${btn} bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200`}>
                     Still available

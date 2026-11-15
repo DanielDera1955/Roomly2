@@ -10,8 +10,9 @@ import {
   resetEditLink,
   getAdminShopStats,
   createShopDirect,
+  confirmShop,
 } from '../shopsAdmin.js';
-import { editLink, lagosDay, naira, shopTitle, hostelLabel } from '../shops.js';
+import { editLink, lagosDay, naira, shopTitle, hostelLabel, isShopStale, shopFreshAtMs, daysSince, SHOP_CONFIRM_DAYS } from '../shops.js';
 import { HOSTELS } from '../config';
 
 const card = 'bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-4';
@@ -260,7 +261,10 @@ export const AdminShops: React.FC = () => {
       </div>
 
       <div className="space-y-3">
-        <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Listings ({shops.length})</h3>
+        <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+          Listings ({shops.length}
+          {shops.filter((x) => x.status === 'live' && isShopStale(x)).length > 0 ? `, ${shops.filter((x) => x.status === 'live' && isShopStale(x)).length} need confirming` : ''})
+        </h3>
         {shops.length === 0 && <p className="text-xs text-slate-400">No listings yet.</p>}
         {shops.map((s) => {
           const st = stats[s.id] || { visits: 0, orders: 0 };
@@ -278,6 +282,13 @@ export const AdminShops: React.FC = () => {
                   <p className="text-xs text-slate-500">
                     {hostelLabel(s.hostel)} · {s.kind === 'service' ? 'Service' : 'Vendor'} · {live ? 'Live' : 'Hidden'}
                   </p>
+                  {live && (
+                    <p className={`text-xs mt-0.5 font-semibold ${isShopStale(s) ? 'text-rose-600' : 'text-slate-500'}`}>
+                      {isShopStale(s)
+                        ? `Hidden from students: not confirmed for ${SHOP_CONFIRM_DAYS}+ days`
+                        : `Confirmed ${daysSince(shopFreshAtMs(s)) === 0 ? 'today' : `${daysSince(shopFreshAtMs(s))} days ago`}`}
+                    </p>
+                  )}
                   <p className="text-xs text-slate-500 mt-0.5">
                     Last 7 days: {st.visits} {st.visits === 1 ? 'visit' : 'visits'}, {st.orders} {st.orders === 1 ? 'order' : 'orders'} sent
                   </p>
@@ -292,6 +303,16 @@ export const AdminShops: React.FC = () => {
                 >
                   {live ? 'Hide listing' : 'Show listing'}
                 </button>
+                {live && (
+                  <button
+                    type="button"
+                    disabled={busy === s.id}
+                    onClick={() => run(s.id, () => confirmShop(s.id))}
+                    className={`${btn} bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200`}
+                  >
+                    Mark confirmed
+                  </button>
+                )}
                 {token && <CopyButton link={editLink(token)} />}
                 <button
                   type="button"

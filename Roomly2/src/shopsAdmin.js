@@ -79,6 +79,7 @@ export async function approveShopApplication(app) {
     items: (app.items || []).map((i) => ({ id: i.id, name: i.name, price: i.price, priceFrom: Boolean(i.priceFrom), soldOut: false, photo: '' })),
     createdAtMs: app.createdAtMs || now,
     approvedAtMs: now,
+    confirmedAtMs: now,
     lastEditedAtMs: 0,
   });
   batch.set(doc(db, 'shopContacts', app.id), { phone: app.phone });
@@ -88,6 +89,9 @@ export async function approveShopApplication(app) {
   await batch.commit();
   return editLink(token);
 }
+
+/** Admin: the vendor told you on WhatsApp they are still available */
+export const confirmShop = (id) => updateDoc(doc(db, 'shops', id), { confirmedAtMs: Date.now() });
 
 export const rejectShopApplication = (id) => updateDoc(doc(db, 'shopApplications', id), { status: 'rejected' });
 
@@ -158,6 +162,7 @@ export async function createShopDirect(input) {
     items,
     createdAtMs: now,
     approvedAtMs: now,
+    confirmedAtMs: now,
     lastEditedAtMs: 0,
     addedByAdmin: true,
     consentAtMs: now,

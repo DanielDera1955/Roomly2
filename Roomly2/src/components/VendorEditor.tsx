@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Camera, Loader2, Plus, X, Check } from 'lucide-react';
 import { uploadProductImage } from '../api.js';
-import { vendorEditApi, shopTitle, shopLink } from '../shops.js';
+import { vendorEditApi, shopTitle, shopLink, daysSince, shopFreshAtMs, SHOP_CONFIRM_DAYS } from '../shops.js';
+import { PostEditor } from './PostEditor';
 
 const input =
   'w-full h-11 px-3 text-sm bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0e9f55]/30';
@@ -36,7 +37,9 @@ const Toggle: React.FC<{ on: boolean; onChange: (v: boolean) => void; text: stri
  */
 export const VendorEditor: React.FC<{ token: string; onClose: () => void; onForget: () => void }> = ({ token, onClose, onForget }) => {
   const [shop, setShop] = useState<any>(null);
-  const [state, setState] = useState<'loading' | 'ready' | 'denied'>('loading');
+  const [state, setState] = useState<'loading' | 'ready' | 'denied' | 'post'>('loading');
+  const [post, setPost] = useState<any>(null);
+  const [confirmMsg, setConfirmMsg] = useState('');
   const [items, setItems] = useState<EditItem[]>([]);
   const [showRoom, setShowRoom] = useState(false);
   const [deliveryOn, setDeliveryOn] = useState(false);
@@ -61,6 +64,12 @@ export const VendorEditor: React.FC<{ token: string; onClose: () => void; onForg
   useEffect(() => {
     vendorEditApi(token, 'get')
       .then((d: any) => {
+        // The same private link opens a Hub post when the admin made one for this person
+        if (d.post) {
+          setPost(d.post);
+          setState('post');
+          return;
+        }
         load(d.shop);
         setState('ready');
       })
@@ -100,12 +109,32 @@ export const VendorEditor: React.FC<{ token: string; onClose: () => void; onForg
     setBusy(false);
   };
 
+  const confirmStillAvailable = async () => {
+    setBusy(true);
+    setConfirmMsg('');
+    try {
+      const d: any = await vendorEditApi(token, 'confirm');
+      setShop((x: any) => ({ ...x, confirmedAtMs: d.shop?.confirmedAtMs || Date.now() }));
+      setConfirmMsg('Thanks. Students will keep seeing your page.');
+    } catch (e: any) {
+      setConfirmMsg(e?.message || 'Could not confirm. Try again.');
+    }
+    setBusy(false);
+  };
+
   if (state === 'loading') {
     return (
       <Page onClose={onClose}>
         <div className="py-24 flex justify-center text-slate-400">
           <Loader2 className="w-6 h-6 animate-spin" />
         </div>
+      </Page>
+    );
+  }
+  if (state === 'post') {
+    return (
+      <Page onClose={onClose}>
+        <PostEditor token={token} initial={post} />
       </Page>
     );
   }
@@ -134,6 +163,20 @@ export const VendorEditor: React.FC<{ token: string; onClose: () => void; onForg
             Only you have this link. Keep it private. Students see your changes as soon as you save.
           </p>
           <p className="mt-1 text-xs text-slate-500 break-all">Your page: {shopLink(shop.id)}</p>
+        </div>
+
+        <div className={`${card} p-4 space-y-2`}>
+          <p className="text-sm font-black text-slate-900 dark:text-white">Are you still available?</p>
+          <p className="text-[11px] text-slate-500">
+            Last confirmed {(() => {
+              const d = daysSince(shopFreshAtMs(shop));
+              return d <= 0 ? 'today' : `${d} ${d === 1 ? 'day' : 'days'} ago`;
+            })()}. If you don't confirm or save changes for {SHOP_CONFIRM_DAYS} days, students stop seeing your page until you confirm again.
+          </p>
+          <button type="button" disabled={busy} onClick={confirmStillAvailable} className="h-10 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-800 dark:text-slate-100 cursor-pointer disabled:opacity-50">
+            Still available
+          </button>
+          {confirmMsg && <p className="text-[11px] font-semibold text-[#0e9f55]">{confirmMsg}</p>}
         </div>
 
         <div className={`${card} p-4 space-y-4`}>

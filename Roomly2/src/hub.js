@@ -444,6 +444,29 @@ export function adminSubscribeBans(cb) {
   return onSnapshot(collection(db, 'hubBans'), (snap) => cb(snap.docs.map((d) => d.data())), () => cb([]));
 }
 
+/** A random private token (256 bits) and its SHA-256 hash. Only the hash is used to look a link up. */
+async function newEditKey() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const token = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  const keyHash = Array.from(new Uint8Array(hashBuf), (b) => b.toString(16).padStart(2, '0')).join('');
+  return { token, keyHash };
+}
+
+/** Admin: make (or replace) the private edit link of a listing posted for someone. The old link stops working. */
+export async function adminListingLink(id, oldToken = '') {
+  const { token, keyHash } = await newEditKey();
+  const batch = writeBatch(db);
+  if (oldToken) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(oldToken));
+    batch.delete(doc(db, 'shopEditKeys', Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('')));
+  }
+  batch.set(doc(db, 'shopEditKeys', keyHash), { listingId: id, active: true, createdAtMs: Date.now() });
+  batch.set(doc(db, 'shopAdmin', id), { token, keyHash, createdAtMs: Date.now() });
+  await batch.commit();
+  return `${window.location.origin}/?edit=${token}`;
+}
+
 /** Admin: manage a listing posted for someone: done (sold, found, back with owner), still available, or renew */
 export async function adminUpdateListing(id, action, days = 7) {
   const now = Date.now();
@@ -461,7 +484,7 @@ export async function adminUpdateListing(id, action, days = 7) {
 
 /**
  * Admin: post a Hub listing for someone who agreed to be listed (no PIN needed).
- * The listing belongs to the admin login, so the admin edits, marks it sold or removes it for them.
+ * The listing belongs to the admin login. It also gets a private edit link the person can use to update or close it themselves.
  * input: { type, title, price, price2, note, days, photoFile, name, phone, hostel, consent }
  */
 export async function adminCreateListing(input) {
@@ -512,8 +535,14 @@ export async function adminCreateListing(input) {
     postedByAdmin: true,
     consentAtMs: now,
   };
-  await setDoc(ref, listing);
-  return { id: ref.id, ...listing };
+  // A private edit link for the person (same system as vendor shops): only a hash of the token is stored for lookups
+  const { token, keyHash } = await newEditKey();
+  const batch = writeBatch(db);
+  batch.set(ref, listing);
+  batch.set(doc(db, 'shopEditKeys', keyHash), { listingId: ref.id, active: true, createdAtMs: now });
+  batch.set(doc(db, 'shopAdmin', ref.id), { token, keyHash, createdAtMs: now });
+  await batch.commit();
+  return { id: ref.id, link: `${window.location.origin}/?edit=${token}`, ...listing };
 }
 
 /* ------------------------------------------------------------------ */

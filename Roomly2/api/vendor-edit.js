@@ -77,7 +77,79 @@ const view = (id, d) => ({
   deliveryOn: Boolean(d.deliveryOn),
   deliveryFee: Number(d.deliveryFee) || 0,
   items: Array.isArray(d.items) ? d.items : [],
+  confirmedAtMs: Number(d.confirmedAtMs) || 0,
+  lastEditedAtMs: Number(d.lastEditedAtMs) || 0,
+  approvedAtMs: Number(d.approvedAtMs) || Number(d.createdAtMs) || 0,
 });
+
+
+// ---------- Hub listings posted by the admin for someone (the same private link opens their post) ----------
+const DAY = 86400000;
+const LONG_LIVED = ['service', 'charging', 'water'];
+
+const viewPost = (id, d) => ({
+  id,
+  type: d.type,
+  title: d.title || '',
+  price: Number(d.price) || 0,
+  price2: Number(d.price2) || 0,
+  note: d.note || '',
+  photo: d.photo || '',
+  status: d.status,
+  chargingNow: Boolean(d.chargingNow),
+  name: d.name || '',
+  hostel: d.hostel || '',
+  expiresAtMs: Number(d.expiresAtMs) || 0,
+  confirmedAtMs: Number(d.confirmedAtMs) || 0,
+});
+
+async function handleListing(db, listingId, body) {
+  const ref = db.collection('hubListings').doc(String(listingId));
+  const snap = await ref.get();
+  // Removed by the admin or hidden after reports: the link stops working
+  if (!snap.exists || snap.data().status === 'removed' || snap.data().hidden) return json({ error: DENIED }, 403);
+  const l = snap.data();
+
+  if (body.action === 'get') return json({ post: viewPost(snap.id, l) });
+
+  if (body.action === 'save') {
+    const p = body.patch && typeof body.patch === 'object' ? body.patch : {};
+    const patch = {};
+    if ('title' in p) {
+      const t = str(p.title, 60);
+      if (t.length < 2) return json({ error: 'Add a short title.' }, 400);
+      patch.title = t;
+    }
+    if ('price' in p) patch.price = int(p.price, 0, 10000000);
+    if ('price2' in p) patch.price2 = int(p.price2, 0, 10000000);
+    if ('note' in p) patch.note = str(p.note, 300);
+    if ('photo' in p) patch.photo = photoUrl(p.photo);
+    if (!Object.keys(patch).length) return json({ error: 'Nothing to save.' }, 400);
+    patch.updatedAtMs = Date.now();
+    await ref.update(patch);
+    return json({ ok: true, post: viewPost(snap.id, { ...l, ...patch }) });
+  }
+
+  if (body.action === 'status') {
+    const a = body.patch && typeof body.patch === 'object' ? body.patch.action : '';
+    const now = Date.now();
+    const patch = { updatedAtMs: now };
+    if (a === 'sold') patch.status = 'sold';
+    else if (a === 'remove') patch.status = 'removed';
+    else if (a === 'confirm') {
+      patch.status = 'active';
+      patch.confirmedAtMs = now;
+    } else if (a === 'renew' && !LONG_LIVED.includes(l.type)) {
+      patch.status = 'active';
+      patch.expiresAtMs = now + 7 * DAY;
+    } else if ((a === 'chargingOn' || a === 'chargingOff') && l.type === 'charging') patch.chargingNow = a === 'chargingOn';
+    else return json({ error: 'Unknown request.' }, 400);
+    await ref.update(patch);
+    return json({ ok: true, post: viewPost(snap.id, { ...l, ...patch }) });
+  }
+
+  return json({ error: 'Unknown request.' }, 400);
+}
 
 export async function POST(request) {
   try {
@@ -88,7 +160,10 @@ export async function POST(request) {
 
     const db = adminDb();
     const key = await db.collection('shopEditKeys').doc(hashOf(token)).get();
-    if (!key.exists || key.data().active === false || !key.data().shopId) return json({ error: DENIED }, 403);
+    if (!key.exists || key.data().active === false) return json({ error: DENIED }, 403);
+    // A key made for a Hub listing opens that listing; a key made for a shop opens that shop
+    if (key.data().listingId) return await handleListing(db, key.data().listingId, body);
+    if (!key.data().shopId) return json({ error: DENIED }, 403);
 
     // The shop is decided by the stored key alone, never by anything the phone sends
     const ref = db.collection('shops').doc(String(key.data().shopId));
@@ -97,6 +172,12 @@ export async function POST(request) {
     const shop = snap.data();
 
     if (body.action === 'get') return json({ shop: view(snap.id, shop) });
+
+    // "Still available": tells Roomly this page is active, so students keep seeing it
+    if (body.action === 'confirm') {
+      await ref.update({ confirmedAtMs: Date.now() });
+      return json({ ok: true, shop: view(snap.id, { ...shop, confirmedAtMs: Date.now() }) });
+    }
 
     if (body.action === 'save') {
       let patch;

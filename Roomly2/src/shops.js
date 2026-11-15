@@ -57,6 +57,14 @@ const clean = (id, d) => ({
   items: (Array.isArray(d.items) ? d.items : []).filter((i) => i && i.name),
 });
 
+/** A vendor or service page stops showing to students if nobody confirmed or edited it for this many days */
+export const SHOP_CONFIRM_DAYS = 30;
+/** When the shop was last confirmed, edited or approved (ms) */
+export const shopFreshAtMs = (shop) =>
+  Math.max(Number(shop.confirmedAtMs) || 0, Number(shop.lastEditedAtMs) || 0, Number(shop.approvedAtMs) || 0, Number(shop.createdAtMs) || 0);
+export const daysSince = (ms) => Math.max(0, Math.floor((Date.now() - Number(ms || 0)) / DAY));
+export const isShopStale = (shop, nowMs = Date.now()) => nowMs - shopFreshAtMs(shop) > SHOP_CONFIRM_DAYS * DAY;
+
 /** All live shops of one kind ('vendor' or 'service'), newest first */
 export function subscribeShops(kind, cb) {
   return onSnapshot(
@@ -65,7 +73,7 @@ export function subscribeShops(kind, cb) {
       cb(
         snap.docs
           .map((d) => clean(d.id, d.data()))
-          .filter((s) => s.kind === kind)
+          .filter((s) => s.kind === kind && !isShopStale(s))
           .sort((a, b) => Number(b.approvedAtMs || b.createdAtMs || 0) - Number(a.approvedAtMs || a.createdAtMs || 0))
       ),
     (e) => {
