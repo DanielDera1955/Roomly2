@@ -17,6 +17,12 @@ const hashOf = (token) => crypto.createHash('sha256').update(token).digest('hex'
 const TOKEN_RE = /^[a-f0-9]{64}$/;
 const DENIED = 'This edit link is not valid. Ask Roomly for your link.';
 
+// Hostels, by side. A person can move to another hostel on the same side, never across.
+const BOYS_HOSTELS = ['JV', 'TA', 'New Hostel'];
+const GIRLS_HOSTELS = ['Emmanuel', 'London', 'St Mary'];
+const sideOf = (h) => (BOYS_HOSTELS.includes(h) ? BOYS_HOSTELS : GIRLS_HOSTELS.includes(h) ? GIRLS_HOSTELS : null);
+const cleanRoom = (v) => String(v == null ? '' : v).replace(/^\s*room\s*/i, '').trim().slice(0, 20);
+
 const str = (v, max) => String(v == null ? '' : v).trim().slice(0, max);
 const int = (v, min, max) => {
   const n = Math.round(Number(v));
@@ -69,6 +75,17 @@ function cleanPatch(patch, shop) {
   const p = patch && typeof patch === 'object' ? patch : {};
   if ('items' in p) out.items = cleanItems(p.items);
   if ('showRoom' in p) out.showRoom = Boolean(p.showRoom);
+  if ('room' in p) {
+    const room = cleanRoom(p.room);
+    if (room) out.room = room;
+    else if (shop.room) throw new Error('Add your room number.');
+  }
+  if ('hostel' in p && str(p.hostel, 30) !== String(shop.hostel || '')) {
+    const next = str(p.hostel, 30);
+    const side = sideOf(shop.hostel);
+    if (!side || !side.includes(next)) throw new Error('You can only move to another hostel on the same side.');
+    out.hostel = next;
+  }
   if ('photo' in p) out.photo = photoUrl(p.photo);
   if ('cover' in p) out.cover = photoUrl(p.cover);
   if (shop.kind === 'vendor') {
@@ -115,6 +132,8 @@ const viewPost = (id, d) => ({
   chargingNow: Boolean(d.chargingNow),
   name: d.name || '',
   hostel: d.hostel || '',
+  room: d.room || '',
+  showRoom: Boolean(d.showRoom),
   expiresAtMs: Number(d.expiresAtMs) || 0,
   confirmedAtMs: Number(d.confirmedAtMs) || 0,
 });
@@ -140,6 +159,16 @@ async function handleListing(db, listingId, body) {
     if ('price2' in p) patch.price2 = int(p.price2, 0, 10000000);
     if ('note' in p) patch.note = str(p.note, 300);
     if ('photo' in p) patch.photo = photoUrl(p.photo);
+    if ('room' in p) patch.room = cleanRoom(p.room);
+    if ('showRoom' in p) patch.showRoom = Boolean(p.showRoom);
+    if ('hostel' in p && str(p.hostel, 30) !== String(l.hostel || '')) {
+      // Same side only (boys stay with boys' hostels, girls with girls'); "Lodge" is open to everyone
+      const next = str(p.hostel, 30);
+      const side = sideOf(l.hostel);
+      const allowed = side ? [...side, 'Lodge'] : [...BOYS_HOSTELS, ...GIRLS_HOSTELS, 'Lodge'];
+      if (!allowed.includes(next)) return json({ error: 'You can only move to another hostel on the same side.' }, 400);
+      patch.hostel = next;
+    }
     if (!Object.keys(patch).length) return json({ error: 'Nothing to save.' }, 400);
     patch.updatedAtMs = Date.now();
     await ref.update(patch);

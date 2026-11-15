@@ -36,6 +36,16 @@ const cleanRoom = (r) => String(r || '').replace(/^\s*room\s*/i, '').trim();
 /** Pin line: "JV Hostel" or "JV Hostel · Room B12" (room only when the vendor chose to show it) */
 export const placeLine = (shop) => `${hostelLabel(shop.hostel)}${shop.showRoom && shop.room ? ` · Room ${cleanRoom(shop.room)}` : ''}`;
 
+/**
+ * Hostels a person can move to: the same side as now (boys or girls). Hub posts also allow "Lodge".
+ * A hostel we don't recognise can only stay as it is (shops) or move anywhere (posts).
+ */
+export const hostelChoices = (current, withLodge = false) => {
+  const side = GIRLS_HOSTELS.includes(current) ? GIRLS_HOSTELS : BOYS_HOSTELS.includes(current) ? BOYS_HOSTELS : null;
+  if (side) return withLodge ? [...side, 'Lodge'] : side;
+  return withLodge ? [...BOYS_HOSTELS, ...GIRLS_HOSTELS, 'Lodge'] : [current];
+};
+
 /** Price text: "₦700", "from ₦8,000" or "Negotiable" (price 0 means the price is agreed with the vendor) */
 export const priceText = (item) => (Number(item.price) > 0 ? `${item.priceFrom ? 'from ' : ''}${naira(item.price)}` : 'Negotiable');
 

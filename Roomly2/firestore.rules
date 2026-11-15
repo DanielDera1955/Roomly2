@@ -325,9 +325,16 @@ service cloud.firestore {
         || (anyUser() && request.auth.uid == resource.data.ownerUid
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'expiresAtMs', 'confirmedAtMs', 'chargingNow', 'updatedAtMs'])
             && request.resource.data.status in ['active', 'sold', 'removed'])
-        // The poster: edit the title, price, note and photo
+        // The poster: edit the title, price, note, photo, and where they live (hostel and room, same side only)
         || (anyUser() && request.auth.uid == resource.data.ownerUid
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'price', 'price2', 'note', 'photo', 'updatedAtMs'])
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'price', 'price2', 'note', 'photo', 'hostel', 'room', 'showRoom', 'updatedAtMs'])
+            && request.resource.data.get('room', '') is string && request.resource.data.get('room', '').size() <= 20
+            && request.resource.data.get('showRoom', false) is bool
+            && request.resource.data.get('hostel', '') is string && request.resource.data.get('hostel', '').size() <= 30
+            && (request.resource.data.get('hostel', '') == resource.data.get('hostel', '')
+                || request.resource.data.get('hostel', '') == 'Lodge'
+                || (resource.data.get('hostel', '') in ['JV', 'TA', 'New Hostel', 'Lodge'] && request.resource.data.get('hostel', '') in ['JV', 'TA', 'New Hostel'])
+                || (resource.data.get('hostel', '') in ['Emmanuel', 'London', 'St Mary', 'Lodge'] && request.resource.data.get('hostel', '') in ['Emmanuel', 'London', 'St Mary']))
             && request.resource.data.title is string
             && request.resource.data.title.size() >= 2 && request.resource.data.title.size() <= 60
             && request.resource.data.note is string && request.resource.data.note.size() <= 300

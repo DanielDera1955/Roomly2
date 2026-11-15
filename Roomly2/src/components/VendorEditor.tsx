@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Camera, Loader2, Plus, X, Check } from 'lucide-react';
 import { uploadProductImage } from '../api.js';
-import { vendorEditApi, shopTitle, shopLink, daysSince, shopFreshAtMs, SHOP_CONFIRM_DAYS } from '../shops.js';
+import { vendorEditApi, shopTitle, shopLink, daysSince, shopFreshAtMs, SHOP_CONFIRM_DAYS, hostelChoices } from '../shops.js';
 import { PostEditor } from './PostEditor';
 
 const input =
@@ -42,6 +42,8 @@ export const VendorEditor: React.FC<{ token: string; onClose: () => void; onForg
   const [confirmMsg, setConfirmMsg] = useState('');
   const [items, setItems] = useState<EditItem[]>([]);
   const [showRoom, setShowRoom] = useState(false);
+  const [hostel, setHostel] = useState('');
+  const [room, setRoom] = useState('');
   const [name, setName] = useState('');
   const [deliveryOn, setDeliveryOn] = useState(false);
   const [fee, setFee] = useState('');
@@ -56,6 +58,8 @@ export const VendorEditor: React.FC<{ token: string; onClose: () => void; onForg
     setShop(s);
     setItems((s.items || []).map((i: any) => ({ id: i.id, name: i.name, price: String(i.price ?? ''), priceFrom: Boolean(i.priceFrom), soldOut: Boolean(i.soldOut), photo: i.photo || '' })));
     setShowRoom(Boolean(s.showRoom));
+    setHostel(s.hostel || '');
+    setRoom(s.room || '');
     setName(s.name || '');
     setDeliveryOn(Boolean(s.deliveryOn));
     setFee(String(s.deliveryFee ?? 0));
@@ -99,6 +103,8 @@ export const VendorEditor: React.FC<{ token: string; onClose: () => void; onForg
       const d: any = await vendorEditApi(token, 'save', {
         items: items.map((i) => ({ id: i.id, name: i.name, price: Number(i.price) || 0, priceFrom: i.priceFrom, soldOut: i.soldOut, photo: i.photo })),
         showRoom,
+        hostel,
+        room,
         cover,
         photo,
         ...(name.trim() && name.trim() !== shop.name ? { name: name.trim() } : {}),
@@ -199,6 +205,23 @@ export const VendorEditor: React.FC<{ token: string; onClose: () => void; onForg
                 : `Students see "${shopTitle({ ...shop, name })}". You can change your name once every 7 days.`}
             </p>
           </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className={label}>Hostel</label>
+              <select className={input} value={hostel} onChange={(e) => setHostel(e.target.value)}>
+                {hostelChoices(shop.hostel).map((h: string) => (
+                  <option key={h} value={h}>
+                    {h}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={label}>Room number</label>
+              <input className={input} value={room} onChange={(e) => setRoom(e.target.value.slice(0, 20))} maxLength={20} placeholder="For example A26" />
+            </div>
+          </div>
+          <p className="-mt-1 text-[11px] text-slate-500">Moved rooms this semester? Change it here and it is live straight away.</p>
           <Toggle on={showRoom} onChange={setShowRoom} text="Show my room number" hint="Students will see your hostel and room." />
           {!isService && (
             <>

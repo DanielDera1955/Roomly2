@@ -27,7 +27,7 @@ import {
 } from '../hub.js';
 import { ShopHub } from './ShopHub';
 import type { Shop } from './ShopHub';
-import { sideOf } from '../shops.js';
+import { sideOf, hostelChoices } from '../shops.js';
 
 type Section = 'vendors' | 'buysell' | 'services' | 'lostfound';
 type Kind = 'all' | 'service' | 'charging' | 'water' | 'item' | 'rent' | 'wanted' | 'lost' | 'found';
@@ -439,6 +439,7 @@ const ListingCard: React.FC<{ l: any; nowMs: number; mine?: boolean; productName
           <p className="text-sm font-bold text-[#0e9f55] mt-0.5">{priceLabel(l)}</p>
           <p className="text-[11px] text-slate-500 mt-0.5">
             {l.name} · {l.hostel}
+            {l.showRoom && l.room ? ` · Room ${l.room}` : ''}
           </p>
           {l.postedByAdmin && <p className="text-[10px] font-bold text-slate-400 mt-0.5">Posted by Roomly</p>}
         </div>
@@ -595,11 +596,15 @@ const EditForm: React.FC<{ l: any; productNames: string[]; onDone: (saved: boole
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [label1, label2] = PRICE_FIELDS[l.type] || ['Price (₦)'];
+  const [hostel, setHostel] = useState(String(l.hostel || ''));
+  const [room, setRoom] = useState(String(l.room || ''));
+  const [showRoom, setShowRoom] = useState(Boolean(l.showRoom));
+  const hostels = Array.from(new Set([String(l.hostel || ''), ...hostelChoices(l.hostel, true)])).filter(Boolean);
   const save = async () => {
     setError('');
     setBusy(true);
     try {
-      await editMyListing(l, { title, price, price2, note, photoFile: photo, productNames });
+      await editMyListing(l, { title, price, price2, note, hostel, room, showRoom, photoFile: photo, productNames });
       onDone(true);
     } catch (e: any) {
       setError(e?.message || 'Could not save. Please try again.');
@@ -614,6 +619,20 @@ const EditForm: React.FC<{ l: any; productNames: string[]; onDone: (saved: boole
         <input value={price} onChange={(e) => setPrice(e.target.value.replace(/\D/g, ''))} inputMode="numeric" className={input} placeholder={label1} aria-label={label1} />
         {label2 && <input value={price2} onChange={(e) => setPrice2(e.target.value.replace(/\D/g, ''))} inputMode="numeric" className={input} placeholder={label2} aria-label={label2} />}
       </div>
+      <div className="grid grid-cols-2 gap-2">
+        <select value={hostel} onChange={(e) => setHostel(e.target.value)} className={input} aria-label="Hostel">
+          {hostels.map((h) => (
+            <option key={h} value={h}>
+              {h}
+            </option>
+          ))}
+        </select>
+        <input value={room} onChange={(e) => setRoom(e.target.value.slice(0, 20))} maxLength={20} className={input} placeholder="Room (optional)" aria-label="Room number" />
+      </div>
+      <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer">
+        <input type="checkbox" checked={showRoom} onChange={(e) => setShowRoom(e.target.checked)} className="accent-[#0e9f55]" />
+        Show my room on the post
+      </label>
       <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} rows={3} className={`${input} h-auto py-2`} placeholder="Note (optional)" />
       <label className="flex items-center gap-2 text-xs font-bold text-[#0e9f55] cursor-pointer">
         <Camera className="w-4 h-4" />
@@ -651,6 +670,8 @@ const PostForm: React.FC<{
   const [phone, setPhone] = useState(session.phone || '');
   const [pin, setPin] = useState(session.pin || '');
   const [hostel, setHostel] = useState('');
+  const [room, setRoom] = useState('');
+  const [showRoom, setShowRoom] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -675,6 +696,8 @@ const PostForm: React.FC<{
         phone,
         pin,
         hostel,
+        room,
+        showRoom,
         productNames,
       });
       onDone(true);
@@ -817,6 +840,13 @@ const PostForm: React.FC<{
             className={input}
             placeholder="Roomly PIN"
           />
+        </div>
+        <div className="grid grid-cols-2 gap-2 items-center">
+          <input value={room} onChange={(e) => setRoom(e.target.value.slice(0, 20))} maxLength={20} className={input} placeholder="Room (optional)" aria-label="Room number" />
+          <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer">
+            <input type="checkbox" checked={showRoom} onChange={(e) => setShowRoom(e.target.checked)} className="accent-[#0e9f55]" />
+            Show my room on the post
+          </label>
         </div>
         <p className="text-[10px] text-slate-400">New to Roomly? Choose a 4-digit PIN and use it at checkout too.</p>
       </div>

@@ -27,7 +27,7 @@ import {
 } from 'firebase/firestore';
 import { app, db, auth as staffAuth } from './firebase.ts';
 import { uploadProductImage, getCustomerByPhone, normalizePhone, isValidNigerianPhone, isValidPin, ensureCustomerProfile, isBannedFromRoomly, BANNED_MESSAGE } from './api.js';
-import { DEFAULT_GAMES_OPEN_MS, DEFAULT_OUTSIDE_STORE_OPEN_MS } from './config.ts';
+import { DEFAULT_GAMES_OPEN_MS, DEFAULT_OUTSIDE_STORE_OPEN_MS, BOYS_HOSTELS, GIRLS_HOSTELS } from './config.ts';
 
 /* ------------------------------------------------------------------ */
 /* Settings                                                            */
@@ -267,8 +267,15 @@ async function checkPoster(phone, pin) {
   return p;
 }
 
+const cleanRoom = (v) => String(v || '').replace(/^\s*room\s*/i, '').trim().slice(0, 20);
+/** Hostels a post can move to: the same side as now, plus "Lodge" (a hostel we don't recognise can move anywhere) */
+const postHostelChoices = (current) => {
+  const side = GIRLS_HOSTELS.includes(current) ? GIRLS_HOSTELS : BOYS_HOSTELS.includes(current) ? BOYS_HOSTELS : null;
+  return side ? [...side, 'Lodge'] : [...BOYS_HOSTELS, ...GIRLS_HOSTELS, 'Lodge'];
+};
+
 /**
- * input: { type, title, price, price2, note, days, photoFile, name, phone, pin, hostel, productNames }
+ * input: { type, title, price, price2, note, days, photoFile, name, phone, pin, hostel, room, showRoom, productNames }
  */
 export async function createListing(input) {
   const type = input.type;
@@ -307,6 +314,8 @@ export async function createListing(input) {
     name,
     phone,
     hostel: String(input.hostel).slice(0, 30),
+    room: cleanRoom(input.room),
+    showRoom: Boolean(cleanRoom(input.room)) && Boolean(input.showRoom),
     createdAtMs: now,
     updatedAtMs: now,
     confirmedAtMs: now,
@@ -362,6 +371,15 @@ export async function editMyListing(listing, input) {
     note: String(input.note || '').trim().slice(0, 300),
     updatedAtMs: Date.now(),
   };
+  // Room and hostel can change any time (students move every semester). Same side only; the rules check it too.
+  if ('room' in input) {
+    patch.room = cleanRoom(input.room);
+    patch.showRoom = Boolean(patch.room) && Boolean(input.showRoom);
+  }
+  if (input.hostel && input.hostel !== listing.hostel) {
+    if (!postHostelChoices(listing.hostel).includes(input.hostel)) throw new Error('You can only move to another hostel on the same side.');
+    patch.hostel = String(input.hostel).slice(0, 30);
+  }
   if (input.photoFile) patch.photo = await uploadProductImage(input.photoFile);
   await updateDoc(doc(hubDb, 'hubListings', listing.id), patch);
 }

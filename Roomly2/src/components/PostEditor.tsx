@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Camera, Check, Loader2 } from 'lucide-react';
 import { uploadProductImage } from '../api.js';
-import { vendorEditApi } from '../shops.js';
+import { vendorEditApi, hostelChoices } from '../shops.js';
 import { HUB_TYPES, LONG_LIVED, blockedReason } from '../hub.js';
 
 const input =
@@ -32,6 +32,10 @@ export const PostEditor: React.FC<{ token: string; initial: any }> = ({ token, i
   const [price2, setPrice2] = useState(String(initial.price2 || ''));
   const [note, setNote] = useState(initial.note || '');
   const [photo, setPhoto] = useState(initial.photo || '');
+  const [hostel, setHostel] = useState(initial.hostel || '');
+  const [room, setRoom] = useState(initial.room || '');
+  const [showRoom, setShowRoom] = useState(Boolean(initial.showRoom));
+  const hostels = Array.from(new Set([String(initial.hostel || ''), ...hostelChoices(initial.hostel, true)])).filter(Boolean);
   const [busy, setBusy] = useState('');
   const [uploading, setUploading] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -61,7 +65,7 @@ export const PostEditor: React.FC<{ token: string; initial: any }> = ({ token, i
       setMsg({ ok: false, text: blocked });
       return;
     }
-    return run('save', () => vendorEditApi(token, 'save', { title, price: Number(price) || 0, price2: Number(price2) || 0, note, photo }), 'Saved. Students see your changes now.');
+    return run('save', () => vendorEditApi(token, 'save', { title, price: Number(price) || 0, price2: Number(price2) || 0, note, photo, hostel, room, showRoom }), 'Saved. Students see your changes now.');
   };
   const status = (action: string, okText: string) => run(action, () => vendorEditApi(token, 'status', { action }), okText);
 
@@ -92,6 +96,26 @@ export const PostEditor: React.FC<{ token: string; initial: any }> = ({ token, i
             </div>
           )}
         </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className={label}>Hostel</label>
+            <select className={input} value={hostel} onChange={(e) => setHostel(e.target.value)}>
+              {hostels.map((h) => (
+                <option key={h} value={h}>
+                  {h}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={label}>Room (optional)</label>
+            <input className={input} value={room} onChange={(e) => setRoom(e.target.value.slice(0, 20))} maxLength={20} />
+          </div>
+        </div>
+        <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
+          <input type="checkbox" checked={showRoom} onChange={(e) => setShowRoom(e.target.checked)} className="accent-[#0e9f55]" />
+          Show my room on the post
+        </label>
         <div>
           <label className={label}>Details</label>
           <textarea className={`${input} h-24 py-2`} value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} />
