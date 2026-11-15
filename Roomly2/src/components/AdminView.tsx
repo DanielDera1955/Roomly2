@@ -38,6 +38,7 @@ import {
   MessageSquare,
 } from 'lucide-react';
 import { sellingPrice, isOutsideSource } from '../config';
+import { heardLabel } from '../tracking.js';
 import { OrderRecord, CategoryDefinition, DeliveryRunner, locationText, shortLocation, roomText } from '../types';
 import { Product, FoodExtraOption, PRESET_PRODUCT_IMAGES, StoreKey, STORE_LABEL, STORE_SOURCE, categoriesForStore, storeOfSource } from '../config';
 import { AdminHub } from './AdminHub';
@@ -69,6 +70,7 @@ import {
   getRunners,
   assignRunnerToOrder,
   getAllCustomers,
+  markCustomerContacted,
   waNumber,
   confirmPayment,
 } from '../api.js';
@@ -1686,12 +1688,38 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
             { id: 'none', label: 'Not ordered yet' },
           ];
           const count = (id: string) => customers.filter((c) => (c.group || 'none') === id).length;
+          // Not contacted yet first, then the newest activity
           const shown = customers
             .filter((c) => (c.group || 'none') === custList)
-            .sort((a, b) => String(b.lastOrderAt || b.cart?.at || b.updatedAt || '').localeCompare(String(a.lastOrderAt || a.cart?.at || a.updatedAt || '')));
+            .sort(
+              (a, b) =>
+                Number(Boolean(a.contactedAt)) - Number(Boolean(b.contactedAt)) ||
+                String(b.lastOrderAt || b.cart?.at || b.updatedAt || '').localeCompare(String(a.lastOrderAt || a.cart?.at || a.updatedAt || ''))
+            );
+          const toContact = shown.filter((c) => !c.contactedAt).length;
+          const listLabel = (id: string) => lists.find((l) => l.id === id)?.label || '';
+          const shortDate = (iso: string) => {
+            const d = new Date(iso);
+            return Number.isFinite(d.getTime()) ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
+          };
+          const heardText = (c: any) => {
+            if (!c.heardFrom) return '';
+            const label = heardLabel(c.heardFrom);
+            return c.heardName ? `${label} (${c.heardName})` : label;
+          };
+          // Saved on the student's profile; the list updates at once and stays as it was if the save fails
+          const setContacted = async (c: any, on: boolean) => {
+            const before = { contactedAt: c.contactedAt, contactedList: c.contactedList };
+            const after = on ? { contactedAt: new Date().toISOString(), contactedList: c.group || 'none' } : { contactedAt: null, contactedList: null };
+            setCustomers((prev) => prev.map((x) => (x.phone === c.phone ? { ...x, ...after } : x)));
+            const ok = await markCustomerContacted(c._id, c.group || 'none', on);
+            if (!ok) setCustomers((prev) => prev.map((x) => (x.phone === c.phone ? { ...x, ...before } : x)));
+          };
           const firstName = (n: string) => String(n || '').trim().split(/\s+/)[0] || 'there';
           const waText = (c: any) =>
-            c.group === 'started'
+            c.group === 'ordered'
+              ? `Hi ${firstName(c.name)}, this is Roomly Caritas. Thanks for ordering with us. How was it? Tell me anything we should do better. If it went well, please tell a roommate about Roomly.`
+              : c.group === 'started'
               ? `Hi ${firstName(c.name)}, this is Roomly Caritas. I noticed you started an order but didn't finish. Did anything go wrong? I can help you complete it.`
               : `Hi ${firstName(c.name)}, this is Roomly Caritas. Thanks for signing up. Food and items from Oye come to the school gate, and canteen items to your room at night. Need anything today?`;
           return (
@@ -1717,6 +1745,11 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                   ? "Checked out without paying, or left items in their cart (signed-in students only, counted from today)."
                   : 'Have an account (checkout or Games) but never started an order.'}
               </p>
+              {shown.length > 0 && (
+                <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200">
+                  {toContact === 0 ? 'Everyone in this list has been contacted.' : `${toContact} of ${shown.length} not contacted yet. They show first.`}
+                </p>
+              )}
 
               {shown.length === 0 && (
                 <p className="text-xs text-slate-500 dark:text-slate-400 py-6 text-center">No students in this list yet.</p>
@@ -1740,6 +1773,24 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                       Phone: <span className="font-mono text-slate-700 dark:text-slate-300">{c.phone}</span>
                     </p>
                     <p className="text-[11px] text-slate-500">Room: {locationText(c)}</p>
+                    {heardText(c) && <p className="text-[11px] text-slate-500">Heard from: {heardText(c)}</p>}
+                    {c.contactedAt && (
+                      <p className="text-[11px] mt-0.5">
+                        <span className="font-bold px-1.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
+                          Contacted · {shortDate(c.contactedAt)}
+                        </span>
+                        {c.contactedList && c.contactedList !== (c.group || 'none') && (
+                          <span className="ml-1.5 font-bold text-amber-700 dark:text-amber-400">
+                            while in "{listLabel(c.contactedList)}". Follow-up due.
+                          </span>
+                        )}
+                      </p>
+                    )}
+                    {c.contactedAt && (
+                      <button type="button" onClick={() => setContacted(c, false)} className="mt-1 mr-3 text-[10px] font-bold text-slate-500 hover:underline cursor-pointer">
+                        Mark as not contacted
+                      </button>
+                    )}
                     {c.tag === 'Items in cart' && c.cart && (
                       <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
                         Cart: {(c.cart.items || []).join(', ')} · ₦{Number(c.cart.total || 0).toLocaleString()}
@@ -1760,23 +1811,25 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                   </div>
 
                   <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
-                    {custList === 'ordered' ? (
+                    {custList === 'ordered' && (
                       <>
                         <span className="text-xs font-mono font-bold text-slate-900 dark:text-white">
                           {c.doneCount || 0} {c.doneCount === 1 ? 'order' : 'orders'}
                         </span>
                         <span className="block text-[10px] text-[#0e9f55]">{c.deliveredOrdersCount || 0} delivered</span>
                       </>
-                    ) : (
-                      <a
-                        href={`https://wa.me/${waNumber(c.phone)}?text=${encodeURIComponent(waText(c))}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-3 py-1.5 rounded-xl bg-[#0e9f55] text-white text-[11px] font-bold"
-                      >
-                        WhatsApp
-                      </a>
                     )}
+                    <a
+                      href={`https://wa.me/${waNumber(c.phone)}?text=${encodeURIComponent(waText(c))}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={() => setContacted(c, true)}
+                      className={`px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap ${
+                        c.contactedAt ? 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-200' : 'bg-[#0e9f55] text-white'
+                      }`}
+                    >
+                      {c.contactedAt ? 'Message again' : 'WhatsApp'}
+                    </a>
                   </div>
                 </div>
               ))}

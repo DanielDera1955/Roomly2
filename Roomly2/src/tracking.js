@@ -12,15 +12,19 @@ const HEARD_NAME_KEY = 'roomly_heard_name';
 export const HEARD_OPTIONS = [
   { id: 'whatsapp', label: 'WhatsApp group' },
   { id: 'friend', label: 'A friend' },
-  { id: 'courserep', label: 'Course rep' },
+  { id: 'students', label: 'Saw other students talking about it' },
   { id: 'runner', label: 'A Roomly runner' },
-  { id: 'games', label: 'Roomly Games' },
-  { id: 'hallrep', label: 'Hall rep' },
-  { id: 'poster', label: 'Poster' },
-  { id: 'other', label: 'Other' },
+  { id: 'other', label: 'Other source' },
 ];
-/** Options where we ask who it was (so friends, course reps and runners can be credited later) */
-export const HEARD_ASK_NAME = ['friend', 'courserep', 'runner'];
+/** Options where we ask who it was (so friends and runners can be credited later) */
+export const HEARD_ASK_NAME = ['friend', 'runner'];
+/** Options that were offered before and may still be saved on older orders */
+const HEARD_OLD_LABELS = { courserep: 'Course rep', games: 'Roomly Games', hallrep: 'Hall rep', poster: 'Poster' };
+/** The label for a saved answer, including answers from options that are no longer offered */
+export const heardLabel = (id) => {
+  const hit = HEARD_OPTIONS.find((h) => h.id === id);
+  return hit ? hit.label : HEARD_OLD_LABELS[id] || String(id || '');
+};
 
 const clean = (v) =>
   String(v || '')

@@ -139,15 +139,21 @@ export const BEHIND_EVERY_ORDER: { count: number; label: string }[] = [
   { count: 5, label: 'Keke riders' },
 ];
 
-/** Outside delivery to the school gate: ₦800 normal price */
-export const OUTSIDE_DELIVERY_FEE = 800;
-/** Launch price for outside delivery, until the end of 30 November 2026. After that it goes back to ₦800 by itself. */
+/** Outside delivery to the school gate: ₦1,000 normal price (shown crossed out while the discount is on) */
+export const OUTSIDE_DELIVERY_FEE = 1000;
+/** Discounted price for outside delivery while OUTSIDE_DISCOUNT_ON is true */
 export const OUTSIDE_LAUNCH_FEE = 500;
-export const OUTSIDE_LAUNCH_UNTIL_MS = Date.parse('2026-12-01T00:00:00+01:00');
-export const outsideLaunchOn = (nowMs: number = Date.now()) => nowMs < OUTSIDE_LAUNCH_UNTIL_MS;
+/**
+ * The delivery discount switch. It has no end date: it stays on until this is set to false by hand.
+ * true  = outside delivery ₦500 (₦1,000 crossed out), late food delivery ₦1,000.
+ * false = outside delivery ₦1,000, late food delivery ₦1,200.
+ */
+export const OUTSIDE_DISCOUNT_ON = true;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export const outsideLaunchOn = (_nowMs: number = Date.now()) => OUTSIDE_DISCOUNT_ON;
 /** What an outside order pays for delivery right now */
 export const outsideDeliveryFee = (nowMs: number = Date.now()) => (outsideLaunchOn(nowMs) ? OUTSIDE_LAUNCH_FEE : OUTSIDE_DELIVERY_FEE);
-/** Late food delivery fee right now (₦1,000 until 30 Nov, then ₦1,200) */
+/** Late food delivery fee right now (₦1,000 while the discount is on, ₦1,200 once it is switched off) */
 export const lateFoodFee = (nowMs: number = Date.now()) => (outsideLaunchOn(nowMs) ? LATE_FOOD_FEE_LAUNCH : LATE_FOOD_FEE);
 
 // ---------- Three carts (Phase 4) ----------
@@ -450,7 +456,7 @@ export const DAY_FOOD_LATE_ORDER_BY_MIN = T(14, 30);
 export const DAY_FOOD_LATE_ARRIVE_BY_MIN = T(15, 30);
 export const OUTSIDE_FOOD_LATE_ORDER_BY_MIN = T(19);
 export const OUTSIDE_FOOD_LATE_ARRIVE_BY_MIN = T(20);
-/** Late food delivery: ₦1,000 during the launch price, ₦1,200 after */
+/** Late food delivery: ₦1,000 while the delivery discount is on, ₦1,200 after it is switched off */
 export const LATE_FOOD_FEE_LAUNCH = 1000;
 export const LATE_FOOD_FEE = 1200;
 /** Minutes after midnight when a food batch's late orders close */

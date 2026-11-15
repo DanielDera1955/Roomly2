@@ -301,6 +301,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   // PIN matched a saved profile (any length), or a new student created 4 digits
   const pinMatched = Boolean(customer && !customer.wrongPin && isValidPin(pin));
   const pinOk = signedIn || pinMatched || (!customer && /^\d{4}$/.test(pin));
+  // Has this number completed a checkout before? An account alone (Games sign-up) does not count
+  const hasOrderedBefore = Boolean(customer && (customer.wrongPin || (customer.orderIds || []).length > 0 || customer.lastOrder));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -755,8 +757,9 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                 </div>
               )}
 
-              {/* First order only, optional: helps Roomly know which promotion works */}
-              {!signedIn && !pinMatched && isPhoneValid && !needsExistingPin && (
+              {/* First order only, optional: helps Roomly know which promotion works.
+                  A first-time customer is anyone who has not completed a checkout yet, even with an account (e.g. from Games) */}
+              {isPhoneValid && !hasOrderedBefore && (
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     How did you hear about Roomly? <span className="font-normal text-slate-400">(optional)</span>
@@ -1294,7 +1297,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               </span>
             </div>
             {cart !== 'inside' && !isExpress && !lateFood && outsideLaunchOn() && (
-              <p className="-mt-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">Launch price until 30 Nov</p>
+              <p className="-mt-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">Discounted price</p>
             )}
             {lateFood && (
               <p className="-mt-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">

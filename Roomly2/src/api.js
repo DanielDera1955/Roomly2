@@ -1952,17 +1952,41 @@ export async function saveCustomerCart(phone, pin, items) {
   }
 }
 
+/**
+ * Admin Customers tab: remember that this student was messaged on WhatsApp, and which list they were in then
+ * ('ordered' | 'started' | 'none'). on = false clears it. Saved on their profile so it shows on every device.
+ * @returns {Promise<boolean>} true when saved
+ */
+export async function markCustomerContacted(id, list, on = true) {
+  if (!id) return false;
+  try {
+    await setDoc(
+      doc(db, 'customers', String(id)),
+      on ? { contactedAt: new Date().toISOString(), contactedList: String(list || 'none') } : { contactedAt: null, contactedList: null },
+      { merge: true }
+    );
+    return true;
+  } catch (e) {
+    console.error('Contacted mark not saved', e);
+    return false;
+  }
+}
+
 /** @returns {Promise<any>} */
 export async function getAllCustomers() {
   try {
     const [snap, orders] = await Promise.all([getDocs(collection(db, 'customers')), getOrders()]);
     const byPhone = {};
     snap.docs.forEach((d) => {
-      const c = d.data();
+      const c = { ...d.data(), _id: d.id };
       if (!byPhone[c.phone] || (c.updatedAt || '') > (byPhone[c.phone].updatedAt || '')) byPhone[c.phone] = c;
     });
     return Object.values(byPhone).map((c) => {
       const mine = orders.filter((o) => o.phone === c.phone);
+      // What they answered to "How did you hear about Roomly?" at their first checkout (saved on their orders)
+      const heardOrder = mine
+        .filter((o) => o.heardFrom)
+        .sort((a, b) => String(a.createdAt || a.timestamp || '').localeCompare(String(b.createdAt || b.timestamp || '')))[0];
       const delivered = mine.filter((o) => o.status === 'Delivered');
       // Which customer list they belong to (admin Customers tab)
       const stages = mine.map((o) => orderStageOf(o));
@@ -1982,7 +2006,7 @@ export async function getAllCustomers() {
         tag = 'Items in cart';
       }
       const lastAt = mine.map((o) => o.createdAt || o.timestamp || '').sort().pop() || '';
-      return { ...c, ordersCount: mine.length, deliveredOrdersCount: delivered.length, doneCount, group, tag, lastOrderAt: lastAt, isReturning: mine.length > 0 };
+      return { ...c, ordersCount: mine.length, deliveredOrdersCount: delivered.length, doneCount, group, tag, lastOrderAt: lastAt, isReturning: mine.length > 0, heardFrom: heardOrder ? heardOrder.heardFrom : '', heardName: heardOrder ? heardOrder.heardName || '' : '' };
     });
   } catch (e) {
     console.error(e);
@@ -2403,6 +2427,9 @@ export async function createOrder(orderPayload) {
       ...savedLoc,
       orderIds: [orderId, ...(existingProfile?.orderIds || [])].slice(0, 40),
       updatedAt: createdAtIso,
+      // Admin's "Contacted" mark survives a new order
+      contactedAt: existingProfile?.contactedAt || undefined,
+      contactedList: existingProfile?.contactedList || undefined,
     })
   );
   batch.set(

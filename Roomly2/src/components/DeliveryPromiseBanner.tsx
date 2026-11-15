@@ -9,10 +9,19 @@ import {
   outsideArriveByFor,
   INSIDE_ORDER_BY_MIN,
   INSIDE_ARRIVE_BY_MIN,
+  INSIDE_EVENING_START_MIN,
+  OUTSIDE_STORE_GRACE_END_MIN,
   slotsForDay,
   foodLateOrderByMin,
   lateFoodFee,
 } from '../config';
+
+/**
+ * The arrival range starts this many minutes after a batch is sent: the earliest an order is likely to arrive
+ * (the trip from Oye to the gate, or the canteen to the room). The promise is still the "no later than" time.
+ */
+const ARRIVE_LEAD_MIN = 15;
+const fromOf = (sentMin: number) => timeLabelFull(sentMin + ARRIVE_LEAD_MIN);
 
 interface DeliveryPromiseBannerProps {
   mode: 'inside' | 'outside';
@@ -48,7 +57,7 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
   // Which section the student is in, named the way the home cards name it
   const section = side === 'inside' ? 'School Canteen Items' : side === 'food' ? 'Outside school foods' : 'Outside school store items';
   type Tag = 'OPEN NOW' | 'NEXT' | 'CLOSED' | string;
-  type Row = { name: string; orderEnd: string; arrive: string; tag: Tag; fee?: string; room?: boolean };
+  type Row = { name: string; orderEnd: string; from: string; arrive: string; tag: Tag; fee?: string; room?: boolean };
 
   let badge = '';
   let headline = '';
@@ -60,19 +69,20 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
     const { next, note } = getNextBatch('inside', now);
     const orderBy = timeLabelFull(INSIDE_ORDER_BY_MIN);
     const arrive = timeLabelFull(INSIDE_ARRIVE_BY_MIN);
+    const from = fromOf(INSIDE_EVENING_START_MIN);
     badge = 'To your room';
     if (now.getTime() < INSIDE_LAUNCH_MS) {
       headline = `Starting ${openDateText(INSIDE_LAUNCH_MS)}`;
       notes = ['Delivery to your room starts then. You can add items to your cart now.'];
     } else if (!next) {
       headline = 'Closed right now';
-      rows = [{ name: 'Night batch', room: true, orderEnd: orderBy, arrive, tag: 'CLOSED' }];
+      rows = [{ name: 'Night batch', room: true, orderEnd: orderBy, from, arrive, tag: 'CLOSED' }];
       if (note) notes = [note];
     } else {
       const today = next.batch.dayLabel === 'Today';
       const when = next.batch.dayLabel.toLowerCase();
       headline = today ? 'Taking orders now' : `Closed for today. Order now for ${when}`;
-      rows = [{ name: 'Night batch', room: true, orderEnd: orderBy, arrive, tag: today ? 'OPEN NOW' : when.toUpperCase() }];
+      rows = [{ name: 'Night batch', room: true, orderEnd: orderBy, from, arrive, tag: today ? 'OPEN NOW' : when.toUpperCase() }];
       if (next.unconfirmed) notes.push('No runner has confirmed this batch yet. You pay once a runner confirms.');
       if (note) notes.push(note);
     }
@@ -109,7 +119,8 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
           else if (o.id === b.id) tag = 'OPEN NOW';
           else if (now.getTime() >= batchCloseDate(o, side).getTime()) tag = 'CLOSED';
           else tag = 'NEXT';
-          return [{ name: nameOf(o.id), orderEnd: timeLabelFull(end), arrive: gateOf(o.id), tag }];
+          // The store run can leave as late as the end of the late-order window, so the range starts from there
+          return [{ name: nameOf(o.id), orderEnd: timeLabelFull(end), from: fromOf(side === 'store' ? OUTSIDE_STORE_GRACE_END_MIN : end), arrive: gateOf(o.id), tag }];
         }
         // Food: each batch has a normal window and a late window (higher delivery fee)
         const lateEnd = foodLateOrderByMin(o.id);
@@ -126,10 +137,11 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
           return 'NEXT';
         };
         const mainOpen = now.getTime() < o.orderBy.getTime();
-        const main: Row = { name: nameOf(o.id), orderEnd: timeLabelFull(end), arrive: gateOf(o.id), tag: tagFor(o.orderBy, mainOpen) };
+        const main: Row = { name: nameOf(o.id), orderEnd: timeLabelFull(end), from: fromOf(end), arrive: gateOf(o.id), tag: tagFor(o.orderBy, mainOpen) };
         const late: Row = {
           name: `Late ${nameOf(o.id).toLowerCase()}`,
           orderEnd: timeLabelFull(lateEnd),
+          from: fromOf(lateEnd),
           arrive: timeLabelFull(outsideArriveByFor(o.id, true)),
           tag: tagFor(lateClose, !mainOpen),
           fee: `Late delivery ₦${lateFoodFee().toLocaleString()}`,
@@ -182,8 +194,9 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
                   </span>
                   <span className={`shrink-0 px-1.5 py-0.5 rounded-md text-[9px] font-black tracking-wide ${tagClass(r.tag)}`}>{r.tag}</span>
                 </div>
-                <p className="mt-0.5 pl-3.5 text-[11px] text-emerald-50/90">
-                  Order before {r.orderEnd} · {r.room ? 'In your room' : 'At the gate'} before {r.arrive}
+                <p className="mt-0.5 pl-3.5 text-[11px] text-emerald-50/90">Order before {r.orderEnd}</p>
+                <p className="pl-3.5 text-[11px] text-emerald-50/90">
+                  {r.room ? 'In your room' : 'At the gate'} from {r.from}, no later than {r.arrive}
                 </p>
                 {r.fee && <p className="pl-3.5 text-[10.5px] font-bold text-amber-200">{r.fee}</p>}
               </div>
