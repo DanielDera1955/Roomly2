@@ -90,6 +90,32 @@ export async function approveShopApplication(app) {
   return editLink(token);
 }
 
+/** Name changes are kept as a short history on the shop: { from, to, atMs, by: 'vendor' | 'admin' } */
+const withHistory = (shop, from, to, by) => [...(Array.isArray(shop.nameHistory) ? shop.nameHistory.slice(-9) : []), { from, to, atMs: Date.now(), by }];
+
+/** Admin: change a shop's name straight away (no limit) */
+export async function adminRenameShop(shop, newName) {
+  const name = String(newName || '').trim().slice(0, 60);
+  if (name.length < 2) throw new Error('The name must be at least 2 letters.');
+  if (name === shop.name) return;
+  await updateDoc(doc(db, 'shops', shop.id), { name, nameHistory: withHistory(shop, shop.name, name, 'admin') });
+}
+
+/** Admin: put the name from before the last change back, and lock the name so the vendor can't change it again */
+export async function adminRevertShopName(shop) {
+  const history = Array.isArray(shop.nameHistory) ? shop.nameHistory : [];
+  const last = history[history.length - 1];
+  if (!last || !last.from) throw new Error('There is no earlier name to go back to.');
+  await updateDoc(doc(db, 'shops', shop.id), {
+    name: last.from,
+    nameLocked: true,
+    nameHistory: withHistory(shop, shop.name, last.from, 'admin'),
+  });
+}
+
+/** Admin: stop (or allow again) the vendor changing their own name */
+export const setShopNameLock = (id, locked) => updateDoc(doc(db, 'shops', id), { nameLocked: Boolean(locked) });
+
 /** Admin: the vendor told you on WhatsApp they are still available */
 export const confirmShop = (id) => updateDoc(doc(db, 'shops', id), { confirmedAtMs: Date.now() });
 

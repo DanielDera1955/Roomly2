@@ -11,6 +11,9 @@ import {
   getAdminShopStats,
   createShopDirect,
   confirmShop,
+  adminRenameShop,
+  adminRevertShopName,
+  setShopNameLock,
 } from '../shopsAdmin.js';
 import { editLink, lagosDay, naira, shopTitle, hostelLabel, isShopStale, shopFreshAtMs, daysSince, SHOP_CONFIRM_DAYS } from '../shops.js';
 import { HOSTELS } from '../config';
@@ -289,6 +292,16 @@ export const AdminShops: React.FC = () => {
                         : `Confirmed ${daysSince(shopFreshAtMs(s)) === 0 ? 'today' : `${daysSince(shopFreshAtMs(s))} days ago`}`}
                     </p>
                   )}
+                  {(() => {
+                    const hist: any[] = Array.isArray(s.nameHistory) ? s.nameHistory : [];
+                    const last = hist[hist.length - 1];
+                    if (!last) return null;
+                    return (
+                      <p className={`text-xs mt-0.5 font-semibold ${last.by === 'vendor' ? 'text-amber-600' : 'text-slate-500'}`}>
+                        Name changed by {last.by === 'vendor' ? 'the vendor' : 'you'} on {new Date(Number(last.atMs)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}, was "{last.from}"
+                      </p>
+                    );
+                  })()}
                   <p className="text-xs text-slate-500 mt-0.5">
                     Last 7 days: {st.visits} {st.visits === 1 ? 'visit' : 'visits'}, {st.orders} {st.orders === 1 ? 'order' : 'orders'} sent
                   </p>
@@ -302,6 +315,35 @@ export const AdminShops: React.FC = () => {
                   className={`${btn} ${live ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300' : 'bg-[#0e9f55] text-white'}`}
                 >
                   {live ? 'Hide listing' : 'Show listing'}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy === s.id}
+                  onClick={() => {
+                    const n = window.prompt('New name for this listing:', s.name);
+                    if (n && n.trim()) run(s.id, () => adminRenameShop(s, n));
+                  }}
+                  className={`${btn} bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200`}
+                >
+                  Rename
+                </button>
+                {Array.isArray(s.nameHistory) && s.nameHistory.length > 0 && s.nameHistory[s.nameHistory.length - 1].by === 'vendor' && (
+                  <button
+                    type="button"
+                    disabled={busy === s.id}
+                    onClick={() => window.confirm('Put the old name back and lock the name?') && run(s.id, () => adminRevertShopName(s))}
+                    className={`${btn} bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300`}
+                  >
+                    Revert name and lock
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={busy === s.id}
+                  onClick={() => run(s.id, () => setShopNameLock(s.id, !s.nameLocked))}
+                  className={`${btn} bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200`}
+                >
+                  {s.nameLocked ? 'Unlock name' : 'Lock name'}
                 </button>
                 {live && (
                   <button

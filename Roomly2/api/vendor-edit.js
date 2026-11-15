@@ -28,6 +28,20 @@ const photoUrl = (v) => {
   return /^https:\/\/[^\s]+$/i.test(s) ? s : '';
 };
 
+// ---------- Name changes ----------
+const NAME_COOLDOWN_DAYS = 7;
+const BLOCKED_NAME_WORDS = ['roomly', 'admin', 'official', 'support'];
+const firstWord = (name) => String(name || '').trim().split(/\s+/)[0].toLowerCase();
+
+/** Returns an error message, or '' when the name is fine */
+function nameProblem(name) {
+  if (name.length < 2) return 'Your name must be at least 2 letters.';
+  if (!/[a-z]/i.test(name)) return 'Your name must have letters in it.';
+  const flat = name.toLowerCase().replace(/[^a-z]/g, '');
+  if (BLOCKED_NAME_WORDS.some((w) => flat.includes(w))) return 'That name can\'t be used. Choose your own name.';
+  return '';
+}
+
 function cleanItems(list) {
   if (!Array.isArray(list)) throw new Error('Items must be a list.');
   if (list.length > 60) throw new Error('You can list up to 60 items.');
@@ -77,6 +91,8 @@ const view = (id, d) => ({
   deliveryOn: Boolean(d.deliveryOn),
   deliveryFee: Number(d.deliveryFee) || 0,
   items: Array.isArray(d.items) ? d.items : [],
+  nameLocked: Boolean(d.nameLocked),
+  lastNameChangeAtMs: Number(d.lastNameChangeAtMs) || 0,
   confirmedAtMs: Number(d.confirmedAtMs) || 0,
   lastEditedAtMs: Number(d.lastEditedAtMs) || 0,
   approvedAtMs: Number(d.approvedAtMs) || Number(d.createdAtMs) || 0,
@@ -185,6 +201,28 @@ export async function POST(request) {
         patch = cleanPatch(body.patch, shop);
       } catch (e) {
         return json({ error: e.message || 'Could not save that.' }, 400);
+      }
+      // Renaming: only when the name really changes, with checks so nobody can pass as someone else
+      const wantsName = body.patch && typeof body.patch === 'object' && typeof body.patch.name === 'string' ? str(body.patch.name, 60) : '';
+      if (wantsName && wantsName !== shop.name) {
+        const now = Date.now();
+        if (shop.nameLocked) return json({ error: 'Roomly has locked your name. Contact Roomly to change it.' }, 400);
+        const last = Number(shop.lastNameChangeAtMs) || 0;
+        if (last && now - last < NAME_COOLDOWN_DAYS * 86400000) {
+          const left = Math.ceil((NAME_COOLDOWN_DAYS * 86400000 - (now - last)) / 86400000);
+          return json({ error: `You can change your name once every ${NAME_COOLDOWN_DAYS} days. Try again in ${left} ${left === 1 ? 'day' : 'days'}.` }, 400);
+        }
+        const problem = nameProblem(wantsName);
+        if (problem) return json({ error: problem }, 400);
+        // The first name is what students see ("Kene's Items"), so it must not match another live shop of the same kind
+        const others = await db.collection('shops').where('kind', '==', shop.kind).where('status', '==', 'live').get();
+        const taken = others.docs.some((d) => d.id !== snap.id && firstWord(d.data().name) === firstWord(wantsName));
+        if (taken) return json({ error: 'Another vendor already uses that name. Add your surname or choose a different name.' }, 400);
+        const history = Array.isArray(shop.nameHistory) ? shop.nameHistory.slice(-9) : [];
+        history.push({ from: shop.name || '', to: wantsName, atMs: now, by: 'vendor' });
+        patch.name = wantsName;
+        patch.nameHistory = history;
+        patch.lastNameChangeAtMs = now;
       }
       if (!Object.keys(patch).length) return json({ error: 'Nothing to save.' }, 400);
       await ref.update({ ...patch, lastEditedAtMs: Date.now() });

@@ -42,6 +42,7 @@ export const VendorEditor: React.FC<{ token: string; onClose: () => void; onForg
   const [confirmMsg, setConfirmMsg] = useState('');
   const [items, setItems] = useState<EditItem[]>([]);
   const [showRoom, setShowRoom] = useState(false);
+  const [name, setName] = useState('');
   const [deliveryOn, setDeliveryOn] = useState(false);
   const [fee, setFee] = useState('');
   const [cover, setCover] = useState('');
@@ -55,6 +56,7 @@ export const VendorEditor: React.FC<{ token: string; onClose: () => void; onForg
     setShop(s);
     setItems((s.items || []).map((i: any) => ({ id: i.id, name: i.name, price: String(i.price ?? ''), priceFrom: Boolean(i.priceFrom), soldOut: Boolean(i.soldOut), photo: i.photo || '' })));
     setShowRoom(Boolean(s.showRoom));
+    setName(s.name || '');
     setDeliveryOn(Boolean(s.deliveryOn));
     setFee(String(s.deliveryFee ?? 0));
     setCover(s.cover || '');
@@ -99,6 +101,7 @@ export const VendorEditor: React.FC<{ token: string; onClose: () => void; onForg
         showRoom,
         cover,
         photo,
+        ...(name.trim() && name.trim() !== shop.name ? { name: name.trim() } : {}),
         ...(isVendor ? { deliveryOn, deliveryFee: Number(fee) || 0 } : {}),
       });
       load(d.shop);
@@ -180,6 +183,22 @@ export const VendorEditor: React.FC<{ token: string; onClose: () => void; onForg
         </div>
 
         <div className={`${card} p-4 space-y-4`}>
+          <div>
+            <label className={label}>Your name</label>
+            <input
+              className={input}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={60}
+              disabled={Boolean(shop.nameLocked)}
+              placeholder="Your name"
+            />
+            <p className="mt-1 text-[11px] text-slate-500">
+              {shop.nameLocked
+                ? 'Roomly has locked your name. Contact Roomly to change it.'
+                : `Students see "${shopTitle({ ...shop, name })}". You can change your name once every 7 days.`}
+            </p>
+          </div>
           <Toggle on={showRoom} onChange={setShowRoom} text="Show my room number" hint="Students will see your hostel and room." />
           {!isService && (
             <>
