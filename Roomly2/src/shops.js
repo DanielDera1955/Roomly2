@@ -36,8 +36,8 @@ const cleanRoom = (r) => String(r || '').replace(/^\s*room\s*/i, '').trim();
 /** Pin line: "JV Hostel" or "JV Hostel · Room B12" (room only when the vendor chose to show it) */
 export const placeLine = (shop) => `${hostelLabel(shop.hostel)}${shop.showRoom && shop.room ? ` · Room ${cleanRoom(shop.room)}` : ''}`;
 
-/** Price text: "₦700" or "from ₦8,000" */
-export const priceText = (item) => `${item.priceFrom ? 'from ' : ''}${naira(item.price)}`;
+/** Price text: "₦700", "from ₦8,000" or "Negotiable" (price 0 means the price is agreed with the vendor) */
+export const priceText = (item) => (Number(item.price) > 0 ? `${item.priceFrom ? 'from ' : ''}${naira(item.price)}` : 'Negotiable');
 
 /** Tag on a card: a tag set on the listing wins, otherwise "New" for the first few days */
 export function shopTag(shop, nowMs = Date.now()) {
@@ -195,7 +195,7 @@ export function buildRequestMessage({ shop, service, when, loc }) {
   const vendor = firstName(shop.name);
   const lines = [`Hello ${vendor}, I want to request a service from you on Roomly.`];
   if (loc.name) lines.push(`My name is ${loc.name}.`);
-  lines.push('', `Service: ${service.name} (${priceText(service)}${service.priceFrom ? ', please confirm the price' : ''})`);
+  lines.push('', `Service: ${service.name} (${priceText(service)}${service.priceFrom || !(Number(service.price) > 0) ? ', please confirm the price' : ''})`);
   lines.push(`When: ${when}`);
   if (sameSide(shop, loc.hostel)) lines.push(`Where: ${hostelLabel(loc.hostel)}, Room ${loc.room}`);
   else lines.push(`Customer is in ${loc.hostel} (${sideLabel(sideOf(loc.hostel))}). Please agree where to meet.`);
@@ -388,7 +388,7 @@ export async function submitShopApplication(input) {
   if (await isBannedFromRoomly(phone)) throw new Error(BANNED_MESSAGE);
   const items = (input.items || [])
     .map((i, n) => ({ id: `i${n + 1}`, name: String(i.name || '').trim().slice(0, 60), price: Math.max(0, Math.round(Number(i.price) || 0)), priceFrom: Boolean(i.priceFrom) }))
-    .filter((i) => i.name && i.price > 0);
+    .filter((i) => i.name && (i.price > 0 || kind === 'service'));
   if (!items.length) throw new Error(kind === 'service' ? 'Add at least one service with its price.' : 'Add at least one item with its price.');
   const photos = (input.photos || []).filter((u) => typeof u === 'string' && u).slice(0, 3);
   if (!photos.length) throw new Error('Add at least one photo.');

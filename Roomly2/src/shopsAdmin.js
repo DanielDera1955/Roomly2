@@ -152,7 +152,8 @@ export async function createShopDirect(input) {
   // Checked directly (not isBannedFromRoomly) so the admin's own browser is never flagged as banned
   if ((await getDoc(doc(db, 'hubBans', phone))).exists()) throw new Error('This number is banned from Roomly.');
   const rows = Array.isArray(input.items) ? input.items : [];
-  const noPrice = rows.find((i) => i && String(i.name || '').trim() && !(Number(i.price) > 0));
+  // Services may be negotiable (price 0); vendor items still need a price
+  const noPrice = kind === 'service' ? null : rows.find((i) => i && String(i.name || '').trim() && !(Number(i.price) > 0));
   if (noPrice) throw new Error(`"${String(noPrice.name).trim()}" needs a price, for example: ${String(noPrice.name).trim()} 1500`);
   const items = rows
     .map((i) => ({
@@ -163,7 +164,7 @@ export async function createShopDirect(input) {
       soldOut: false,
       photo: '',
     }))
-    .filter((i) => i.name && i.price > 0);
+    .filter((i) => i.name && (i.price > 0 || kind === 'service'));
   if (items.length < 1) throw new Error('Add at least one item with a price.');
   if (items.length > 30) throw new Error('Add at most 30 items. The vendor can add more from their edit link.');
   if (!input.photoFile) throw new Error('Add a photo.');

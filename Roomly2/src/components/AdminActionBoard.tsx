@@ -23,7 +23,7 @@ import {
 import { slotsForDay, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, foodLateOrderByMin } from '../config';
 import { playChime } from '../sound';
 import { subscribeShopApplications, subscribeShopReports, dismissShopReport } from '../shopsAdmin.js';
-import { OrderRecord } from '../types';
+import { OrderRecord, operatorReportsOf } from '../types';
 
 /**
  * Admin: two tabs.
@@ -247,6 +247,37 @@ export const AdminActionBoard: React.FC = () => {
     });
   });
   if (!waiting.length) items.push({ id: 'pay-ok', level: 'green', title: 'Payments: nothing waiting for confirmation' });
+
+  // ---------- 2b. Operators report: only your tap tells the student ----------
+  let opReports = 0;
+  orders.forEach((o: any) => {
+    if ((o.cart !== 'food' && o.cart !== 'store') || o.status === 'Cancelled') return;
+    const rep = operatorReportsOf(o, o.cart);
+    if (rep.payment) {
+      opReports++;
+      items.push({
+        id: `oppay-${o.id}`,
+        level: 'amber',
+        title: `${rep.payment.by} says ${o.name}'s payment arrived`,
+        detail: `Reported at ${clock(ms(rep.payment.at))}. The student still sees "payment sent" until you confirm.`,
+        todo: 'Open the order in Orders and confirm the money, so the student moves to Packaging.',
+        contacts: studentContact(o),
+      });
+    }
+    if (rep.sent) {
+      opReports++;
+      const at = ms(rep.sent.at);
+      items.push({
+        id: `opsent-${o.id}`,
+        level: nowMs - at >= 10 * MIN ? 'red' : 'amber',
+        title: `${rep.sent.by} says ${o.name}'s order is delivered (${mins(nowMs - at)} ago)`,
+        detail: `Reported at ${clock(at)}. The student's 15-minute gate countdown has not started.`,
+        todo: 'Open the order in Orders and tap Sent to gate, so the student sees it on its way.',
+        contacts: studentContact(o),
+      });
+    }
+  });
+  if (!opReports) items.push({ id: 'op-reports-ok', level: 'green', title: 'Operator reports: nothing waiting for you' });
 
   // ---------- 3. Product requests: every open request, as soon as it comes in ----------
   let reqWaiting = 0;

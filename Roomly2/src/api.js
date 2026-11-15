@@ -2852,9 +2852,24 @@ export function subscribeOperatorOrders(kind, cb) {
 async function updatePartStatus__raw(orderId, kind, status, who = 'Operator') {
   const field = kind === 'food' ? 'foodStatus' : 'storeStatus';
   const label = kind === 'food' ? 'Food' : 'Store';
+  // Only the admin's tap changes what the student sees. An operator's tap is saved as a report in the order's history.
+  const adminActs = who === 'Roomly' || getCurrentStaff()?.role === 'admin';
   try {
     let wasSent = false;
+    let reportOnly = false;
     const updated = await patchOrder(orderId, (o) => {
+      if (!adminActs) {
+        reportOnly = true;
+        if (o[field] === 'sent' || o.history.some((h) => h.report && h.report.kind === kind && h.report.status === status)) return;
+        o.history.push({
+          status: o.status,
+          timestamp: new Date().toISOString(),
+          note: status === 'sent' ? `${who} reports the ${label.toLowerCase()} order is delivered. Waiting for Roomly to confirm.` : `${who} reports the ${label.toLowerCase()} items are packed`,
+          updatedBy: who,
+          report: { kind, status },
+        });
+        return;
+      }
       wasSent = o[field] === 'sent';
       o[field] = status;
       // An outside cart is finished once it reaches the school gate
@@ -2873,7 +2888,7 @@ async function updatePartStatus__raw(orderId, kind, status, who = 'Operator') {
       });
     });
     // A completed order goes into this operator's small daily summary (counted once)
-    if (updated && status === 'sent' && !wasSent) {
+    if (updated && status === 'sent' && !wasSent && !reportOnly) {
       recordOperatorDelivery(updated, kind).catch((e) => console.error('Daily summary not saved:', e));
       if (kind === 'store') markStoreRunLeft(updated).catch(() => {});
     }
@@ -3834,6 +3849,12 @@ async function operatorConfirmPayment__raw(orderId) {
     return await patchOrder(orderId, (o) => {
       if (o.paymentStatus !== 'payment_sent') return;
       const now = new Date().toISOString();
+      // An operator's tap is a report only: the student sees "Confirmed & Packaging" once the admin confirms
+      if (staff?.role !== 'admin') {
+        if (o.history.some((h) => h.report && h.report.kind === 'payment')) return;
+        o.history.push({ status: o.status, timestamp: now, note: `${who} reports the payment arrived. Waiting for Roomly to confirm.`, updatedBy: who, report: { kind: 'payment', status: 'received' } });
+        return;
+      }
       o.paymentStatus = 'payment_confirmed';
       o.paymentConfirmedAt = now;
       o.paymentConfirmedBy = who;
@@ -4704,7 +4725,7 @@ export async function setupStoreCategories() {
 }
 export async function operatorConfirmPayment(orderId) {
   const o = await operatorConfirmPayment__raw(orderId);
-  if (o) logActivity('order', `confirmed payment on ${orderLabel(o)} (${naira(o.totalAmount)})`, orderId);
+  if (o) logActivity('order', `${getCurrentStaff()?.role === 'admin' ? 'confirmed' : 'reported'} payment on ${orderLabel(o)} (${naira(o.totalAmount)})`, orderId);
   return o;
 }
 export async function markPaymentNotReceived(orderId, who = '') {
@@ -4714,7 +4735,8 @@ export async function markPaymentNotReceived(orderId, who = '') {
 }
 export async function updatePartStatus(orderId, kind, status, who = 'Operator') {
   const o = await updatePartStatus__raw(orderId, kind, status, who);
-  if (o) logActivity('order', status === 'sent' ? `tapped Order delivered on ${orderLabel(o)}` : `marked ${orderLabel(o)} as ${status}`, orderId);
+  const byAdmin = who === 'Roomly' || getCurrentStaff()?.role === 'admin';
+  if (o) logActivity('order', status === 'sent' ? `${byAdmin ? 'tapped' : 'reported'} Order delivered on ${orderLabel(o)}` : `marked ${orderLabel(o)} as ${status}`, orderId);
   return o;
 }
 export async function confirmPayment(orderId, confirmedBy = 'Runner / Admin', txAt = '') {

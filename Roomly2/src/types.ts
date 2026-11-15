@@ -49,6 +49,8 @@ export interface OrderStatusHistory {
   timestamp: string;
   note?: string;
   updatedBy?: string;
+  /** An operator's tap, saved as a report: only the admin's tap changes what the student sees */
+  report?: { kind: string; status: string };
 }
 
 export type PaymentStatus = 'unpaid' | 'payment_sent' | 'payment_confirmed' | 'pay_on_delivery';
@@ -265,6 +267,25 @@ export function orderStageOf(o: OrderRecord, now: number = Date.now()): OrderSta
   if (o.status === 'Packing' || o.paymentStatus === 'payment_confirmed') return 'packaging';
   if (o.paymentStatus === 'payment_sent' || o.paymentStatus === 'pay_on_delivery') return 'received';
   return 'unpaid';
+}
+
+/**
+ * What an operator has reported that the admin has not acted on yet:
+ * payment = "the money arrived", sent = "the order is delivered". Cleared as soon as the admin confirms it.
+ */
+export function operatorReportsOf(o: OrderRecord, kind: 'food' | 'store') {
+  let payment: { at: string; by: string } | null = null;
+  let sent: { at: string; by: string } | null = null;
+  for (const h of o.history || []) {
+    const r = h.report;
+    if (!r) continue;
+    if (r.kind === 'payment') payment = { at: h.timestamp, by: h.updatedBy || 'Operator' };
+    else if (r.kind === kind && r.status === 'sent') sent = { at: h.timestamp, by: h.updatedBy || 'Operator' };
+  }
+  const part = kind === 'food' ? o.foodStatus : o.storeStatus;
+  if (o.paymentStatus === 'payment_confirmed') payment = null;
+  if (part === 'sent' || o.status === 'Delivered' || o.status === 'Cancelled') sent = null;
+  return { payment, sent };
 }
 
 /** Still shown under Active Orders (outside orders stay there during the 15-minute gate countdown) */

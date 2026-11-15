@@ -245,7 +245,7 @@ export const VendorEditor: React.FC<{ token: string; onClose: () => void; onForg
             <div key={it.id || i} className={`${card} p-3 space-y-2.5`}>
               <div className="flex gap-2">
                 <input className={`${rowInput} flex-1 min-w-0`} value={it.name} onChange={(e) => setItem(i, { name: e.target.value })} placeholder={isService ? 'Service' : 'Item'} maxLength={60} />
-                <input className={`${rowInput} w-24 shrink-0`} inputMode="numeric" value={it.price} onChange={(e) => setItem(i, { price: e.target.value.replace(/\D/g, '') })} placeholder="Price" />
+                <input className={`${rowInput} w-24 shrink-0`} inputMode="numeric" value={it.price} onChange={(e) => setItem(i, { price: e.target.value.replace(/\D/g, '') })} placeholder={isService ? 'Negotiable' : 'Price'} />
               </div>
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-3">

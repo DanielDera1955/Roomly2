@@ -28,7 +28,7 @@ import { ProductRequestsPanel } from './ProductRequestsPanel';
 import { MyRatingsPanel } from './FeedbackPanels';
 import { OperatorGuide } from './OperatorGuide';
 import { AttentionCard, jumpTo } from './AttentionCard';
-import { OrderRecord, partLabel, shortLocation } from '../types';
+import { OrderRecord, partLabel, shortLocation, operatorReportsOf } from '../types';
 import { OUT_OF_STOCK_LABEL, outOfStockExcept, dayWord, longDayLabel, outsideArriveByFor, timeLabelFull } from '../config';
 import { playChime } from '../sound';
 import { SoundToggle } from './SoundToggle';
@@ -310,7 +310,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
     .filter((o) => stageOf(o) === filter)
     .sort((a, b) => (filter === 'completed' ? 0 : String(a.deliveryDate || '').localeCompare(String(b.deliveryDate || ''))));
   const confirmPaid = async (o: OrderRecord) => {
-    const msg = `Confirm that ₦${(o.totalAmount || 0).toLocaleString()} from ${o.name} reached your account?\n\nItems ₦${(o.subtotal || 0).toLocaleString()} + delivery ₦${(o.deliveryFee || 0).toLocaleString()}.\n\nThe student will see "Confirmed & Packaging".`;
+    const msg = `Confirm that ₦${(o.totalAmount || 0).toLocaleString()} from ${o.name} reached your account?\n\nItems ₦${(o.subtotal || 0).toLocaleString()} + delivery ₦${(o.deliveryFee || 0).toLocaleString()}.\n\n${isAdmin ? 'The student will see "Confirmed & Packaging".' : 'Roomly then confirms it for the student.'}`;
     if (!window.confirm(msg)) return;
     setBusy(o.id);
     const res = await operatorConfirmPayment(o.id);
@@ -526,6 +526,8 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
           const items = mine(o);
           const total = items.reduce((sum, i) => sum + (i.totalPrice || 0), 0);
           const st = statusOf(o);
+          // An operator's taps are reports: the student only sees a change once Roomly confirms it
+          const rep = isAdmin ? { payment: null, sent: null } : operatorReportsOf(o, kind === 'food' ? 'food' : 'store');
           const isOpen = !!open[o.id];
           return (
             <div key={o.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-4 space-y-3">
@@ -543,7 +545,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                       </span>
                     ) : (
                       <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-full ${pill(st)}`}>
-                        {st === 'sent' ? 'Delivered' : o.paymentStatus !== 'payment_confirmed' ? 'Check payment' : 'Packaging'}
+                        {st === 'sent' ? 'Delivered' : rep.sent ? 'Waiting for Roomly' : o.paymentStatus !== 'payment_confirmed' ? (rep.payment ? 'Waiting for Roomly' : 'Check payment') : 'Packaging'}
                       </span>
                     )}
                   </div>
@@ -678,16 +680,22 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                       <p className="text-[11px] text-slate-500">
                         {o.paymentNotReceived
                           ? `Marked not paid by ${o.paymentNotReceived.by}. If the ₦${(o.totalAmount || 0).toLocaleString()} arrives later, confirm it below and the order moves to Packaging.`
-                          : `The student says they paid ₦${(o.totalAmount || 0).toLocaleString()} (items + delivery) into your account. Check it, then confirm. The student sees "Confirmed & Packaging". Never pack before you see the money.`}
+                          : `The student says they paid ₦${(o.totalAmount || 0).toLocaleString()} (items + delivery) into your account. Check it, then confirm.${isAdmin ? ' The student sees "Confirmed & Packaging".' : ' Roomly then confirms it for the student.'} Never pack before you see the money.`}
                       </p>
-                      <button
-                        type="button"
-                        disabled={busy === o.id}
-                        onClick={() => confirmPaid(o)}
-                        className="w-full py-2.5 rounded-xl text-xs font-bold bg-amber-500 text-white disabled:opacity-40 cursor-pointer"
-                      >
-                        Confirm payment (₦{(o.totalAmount || 0).toLocaleString()} received)
-                      </button>
+                      {rep.payment ? (
+                        <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                          You told Roomly the money arrived. Roomly confirms it next, then the student sees "Confirmed &amp; Packaging".
+                        </p>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={busy === o.id}
+                          onClick={() => confirmPaid(o)}
+                          className="w-full py-2.5 rounded-xl text-xs font-bold bg-amber-500 text-white disabled:opacity-40 cursor-pointer"
+                        >
+                          Confirm payment (₦{(o.totalAmount || 0).toLocaleString()} received)
+                        </button>
+                      )}
                       {!o.paymentNotReceived && (
                         <button
                           type="button"
@@ -704,13 +712,16 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                   <PackagePhoto o={o} canEdit={isAdmin || st !== 'sent'} />
                   <button
                     type="button"
-                    disabled={busy === o.id || st === 'sent'}
+                    disabled={busy === o.id || st === 'sent' || Boolean(rep.sent)}
                     onClick={() => {
-                      if (window.confirm(`Mark ${o.name}'s order as delivered? The student sees it will be at the school gate in under 15 minutes, so only tap this as it leaves.`)) setStatus(o, 'sent');
+                      const ask = isAdmin
+                        ? `Mark ${o.name}'s order as delivered? The student sees it will be at the school gate in under 15 minutes, so only tap this as it leaves.`
+                        : `Tell Roomly ${o.name}'s order has left? Roomly confirms it, then the student sees it will be at the school gate in under 15 minutes. Only tap this as it leaves.`;
+                      if (window.confirm(ask)) setStatus(o, 'sent');
                     }}
                     className="w-full py-3 rounded-xl text-sm font-bold bg-[#0e9f55] text-white disabled:opacity-40 cursor-pointer"
                   >
-                    {st === 'sent' ? 'Delivered' : 'Order delivered'}
+                    {st === 'sent' ? 'Delivered' : rep.sent ? 'Sent, waiting for Roomly to confirm' : 'Order delivered'}
                   </button>
                   </>
                   )}
@@ -731,7 +742,7 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
                     <Phone className="w-3.5 h-3.5" />
                     <span>Call {o.name}</span>
                   </a>
-                  <p className="text-[11px] text-slate-400 text-center">Status now: {st === 'sent' ? 'Delivered (the student sees the 15-minute countdown)' : o.paymentStatus === 'payment_confirmed' ? 'Confirmed & Packaging' : 'Waiting for you to confirm payment'}</p>
+                  <p className="text-[11px] text-slate-400 text-center">Status now: {st === 'sent' ? 'Delivered (the student sees the 15-minute countdown)' : rep.sent ? 'You reported it delivered. The student sees it once Roomly confirms.' : o.paymentStatus === 'payment_confirmed' ? 'Confirmed & Packaging' : 'Waiting for you to confirm payment'}</p>
                 </div>
               )}
             </div>

@@ -650,7 +650,7 @@ const RequestScreen: React.FC<{
         <div className={`${card} p-4`}>
           <p className="text-base font-black text-slate-900 dark:text-white">{service.name}</p>
           <p className="mt-0.5 text-base font-black text-[#0e9f55]">{priceText(service)}</p>
-          {service.priceFrom && <p className="mt-1 text-xs text-slate-500">Price confirmed by {vendor}</p>}
+          {(service.priceFrom || !(service.price > 0)) && <p className="mt-1 text-xs text-slate-500">{service.price > 0 ? `Price confirmed by ${vendor}` : `Price agreed with ${vendor}`}</p>}
         </div>
 
         <div>

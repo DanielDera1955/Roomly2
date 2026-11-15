@@ -30,7 +30,7 @@ export const ShopOrderHistory: React.FC<{ onOpen: (shopId: string, prefill?: Rec
               <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">{summary}</p>
               <p className="text-[11px] text-slate-400">
                 {new Date(o.createdAtMs).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                {isOrder ? ` · ${naira(o.total)}` : o.priceFrom ? ` · from ${naira(o.price)}` : ` · ${naira(o.price)}`}
+                {isOrder ? ` · ${naira(o.total)}` : !(o.price > 0) ? ' · Negotiable' : o.priceFrom ? ` · from ${naira(o.price)}` : ` · ${naira(o.price)}`}
               </p>
             </div>
             <button

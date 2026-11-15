@@ -164,7 +164,7 @@ export const ListBusiness: React.FC<{ startKind?: 'vendor' | 'service'; startHos
                 {rows.map((r, i) => (
                   <div key={i} className="flex gap-2 items-center">
                     <input className={`${rowInput} flex-1 min-w-0`} value={r.name} onChange={(e) => setRow(i, { name: e.target.value })} placeholder={isService ? 'Service' : 'Item'} maxLength={60} />
-                    <input className={`${rowInput} w-24 shrink-0`} inputMode="numeric" value={r.price} onChange={(e) => setRow(i, { price: e.target.value.replace(/\D/g, '') })} placeholder="Price" />
+                    <input className={`${rowInput} w-24 shrink-0`} inputMode="numeric" value={r.price} onChange={(e) => setRow(i, { price: e.target.value.replace(/\D/g, '') })} placeholder={isService ? 'Negotiable' : 'Price'} />
                     {isService && (
                       <label className="shrink-0 flex items-center gap-1 text-[11px] text-slate-600 dark:text-slate-300 cursor-pointer">
                         <input type="checkbox" checked={r.priceFrom} onChange={(e) => setRow(i, { priceFrom: e.target.checked })} className="accent-[#0e9f55]" />

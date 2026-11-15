@@ -64,9 +64,11 @@ function parseItems(text: string) {
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
-    .map((line) => {
+    .map((raw) => {
+      // "Sandals, Negotiable" (or no price at all) saves as price 0, shown as Negotiable on services
+      const line = raw.replace(/[\s:,-]*\(?negotiable\)?\s*$/i, '').trim();
       const m = line.match(/^(.*?)[\s:,-]*(from\s+)?₦?\s*([\d,]+)\s*$/i);
-      if (!m) return { name: line, price: 0, priceFrom: false };
+      if (!m) return { name: line.replace(/[\s:,-]+$/, ''), price: 0, priceFrom: false };
       return { name: m[1].trim(), price: Number(m[3].replace(/,/g, '')), priceFrom: Boolean(m[2]) };
     });
 }
@@ -226,7 +228,7 @@ export const AdminShops: React.FC = () => {
                   {hostelLabel(a.hostel)}, room {a.room} · WhatsApp {a.phone}
                 </p>
                 <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
-                  {(a.items || []).map((i: any) => `${i.name} ${i.priceFrom ? 'from ' : ''}${naira(i.price)}`).join(', ')}
+                  {(a.items || []).map((i: any) => `${i.name} ${i.price > 0 ? `${i.priceFrom ? 'from ' : ''}${naira(i.price)}` : 'Negotiable'}`).join(', ')}
                 </p>
               </div>
             </div>
