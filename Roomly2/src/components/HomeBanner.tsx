@@ -15,11 +15,18 @@ const SHOOT_PAIR_CLEAR_S = 3;
 const SHOOT_CROSS_S = 1.05;
 /** From one star appearing to the next appearing: the crossing plus the clear gap */
 const SHOOT_EVERY_S = SHOOT_CROSS_S + SHOOT_CLEAR_S;
-/** Where each star starts (left, top) and the angle it falls at. The stars take these paths in turn. */
-const SHOOT_PATHS: Array<[string, number, number]> = [
-  ['-22%', 6, 14],
-  ['8%', -8, 22],
-  ['-22%', 44, 9],
+/**
+ * The lines the stars take, in turn: where each starts (left, top), the angle it falls at, how long its streak is
+ * and how far it travels (px). All fall the same general way, left to right, like a real meteor shower, but from
+ * spread-out points and at clearly different angles. A shorter distance in the same time reads as a slower, shorter star.
+ * None of them crosses the moon in the top-right corner.
+ */
+const SHOOT_PATHS: Array<[string, number, number, number, number]> = [
+  ['-22%', 6, 14, 72, 560],
+  ['10%', -10, 26, 56, 420],
+  ['-22%', 52, 7, 84, 600],
+  ['34%', -8, 32, 44, 300],
+  ['-5%', 24, 18, 64, 480],
 ];
 /** The share of one full cycle (all paths) that a single crossing takes, as a percentage */
 const SHOOT_PCT = (SHOOT_CROSS_S / (SHOOT_PATHS.length * SHOOT_EVERY_S)) * 100;
@@ -190,10 +197,10 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
           0% { opacity: 0; transform: rotate(var(--rb-a)) translateX(0); }
           ${(SHOOT_PCT * 0.12).toFixed(3)}% { opacity: 1; }
           ${(SHOOT_PCT * 0.8).toFixed(3)}% { opacity: 1; }
-          ${SHOOT_PCT.toFixed(3)}%, 100% { opacity: 0; transform: rotate(var(--rb-a)) translateX(560px); }
+          ${SHOOT_PCT.toFixed(3)}%, 100% { opacity: 0; transform: rotate(var(--rb-a)) translateX(var(--rb-d)); }
         }
         .rb-shoot {
-          position: absolute; width: 72px; height: 2px; border-radius: 2px; opacity: 0;
+          position: absolute; height: 2px; border-radius: 2px; opacity: 0;
           transform-origin: left center;
           background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.55) 60%, #fff 100%);
           filter: drop-shadow(0 0 3px rgba(255,255,255,.9));
@@ -204,7 +211,7 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
           0% { opacity: 0; transform: rotate(var(--rb-a)) translateX(0); }
           12% { opacity: 1; }
           80% { opacity: 1; }
-          100% { opacity: 0; transform: rotate(var(--rb-a)) translateX(560px); }
+          100% { opacity: 0; transform: rotate(var(--rb-a)) translateX(var(--rb-d)); }
         }
         .rb-shoot.rb-shoot-once { animation: rb-shoot-once ${SHOOT_CROSS_S}s linear 1 both; }
         @media (prefers-reduced-motion: reduce) {
@@ -250,18 +257,18 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
         )}
       </div>
       )}
-      {/* Night sky only: a quick opening pair of shooting stars, then one after every SHOOT_CLEAR_S seconds of clear sky, on three paths taken in turn, behind the text */}
+      {/* Night sky only: a quick opening pair of shooting stars, then one after every SHOOT_CLEAR_S seconds of clear sky, on five lines taken in turn, behind the text */}
       {!plain && !morning && !afternoon && (
         <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
           {/* Opening pair: paths 0 and 1, once */}
           {[SHOOT_FIRST_S, SHOOT_SECOND_S].map((delay, i) => {
-            const [left, top, angle] = SHOOT_PATHS[i];
-            return <span key={`once-${i}`} className="rb-shoot rb-shoot-once" style={{ left, top, ['--rb-a' as any]: `${angle}deg`, animationDelay: `${delay}s` }} />;
+            const [left, top, angle, length, travel] = SHOOT_PATHS[i];
+            return <span key={`once-${i}`} className="rb-shoot rb-shoot-once" style={{ left, top, width: length, ['--rb-a' as any]: `${angle}deg`, ['--rb-d' as any]: `${travel}px`, animationDelay: `${delay}s` }} />;
           })}
           {/* Then the repeating stars, starting on path 2 so the third star takes a new line */}
           {SHOOT_PATHS.map((_, i) => {
-            const [left, top, angle] = SHOOT_PATHS[(i + 2) % SHOOT_PATHS.length];
-            return <span key={`loop-${i}`} className="rb-shoot" style={{ left, top, ['--rb-a' as any]: `${angle}deg`, animationDelay: `${SHOOT_LOOP_FROM_S + i * SHOOT_EVERY_S}s` }} />;
+            const [left, top, angle, length, travel] = SHOOT_PATHS[(i + 2) % SHOOT_PATHS.length];
+            return <span key={`loop-${i}`} className="rb-shoot" style={{ left, top, width: length, ['--rb-a' as any]: `${angle}deg`, ['--rb-d' as any]: `${travel}px`, animationDelay: `${SHOOT_LOOP_FROM_S + i * SHOOT_EVERY_S}s` }} />;
           })}
         </div>
       )}
