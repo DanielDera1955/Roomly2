@@ -6,11 +6,15 @@ import { paymentState } from '../api.js';
 
 type DayPart = 'Good morning' | 'Good afternoon' | 'Good evening';
 
-/** Night sky shooting star: seconds between stars, and how long after the page opens the first one appears */
-const SHOOT_EVERY_S = 10;
+/** Night sky shooting star: seconds of clear sky between one star disappearing and the next appearing, and how long after the page opens the first one appears */
+const SHOOT_CLEAR_S = 10;
 const SHOOT_FIRST_S = 2.5;
+/** The opening pair: clear sky between the first star and the second, shorter than the usual gap. Happens once each time the header loads. */
+const SHOOT_PAIR_CLEAR_S = 3;
 /** How long one star takes to cross the sky, in seconds (stays the same whatever the gap between stars) */
 const SHOOT_CROSS_S = 1.05;
+/** From one star appearing to the next appearing: the crossing plus the clear gap */
+const SHOOT_EVERY_S = SHOOT_CROSS_S + SHOOT_CLEAR_S;
 /** Where each star starts (left, top) and the angle it falls at. The stars take these paths in turn. */
 const SHOOT_PATHS: Array<[string, number, number]> = [
   ['-22%', 6, 14],
@@ -19,6 +23,9 @@ const SHOOT_PATHS: Array<[string, number, number]> = [
 ];
 /** The share of one full cycle (all paths) that a single crossing takes, as a percentage */
 const SHOOT_PCT = (SHOOT_CROSS_S / (SHOOT_PATHS.length * SHOOT_EVERY_S)) * 100;
+/** When the second star of the opening pair appears, and when the regular, repeating stars begin after it */
+const SHOOT_SECOND_S = SHOOT_FIRST_S + SHOOT_CROSS_S + SHOOT_PAIR_CLEAR_S;
+const SHOOT_LOOP_FROM_S = SHOOT_SECOND_S + SHOOT_EVERY_S;
 
 const isOutsideOrder = (o: OrderRecord) => o.cart === 'store' || o.cart === 'food';
 /** Inside: to the hostel (or the spot the student typed). Outside: to the school gate. */
@@ -192,6 +199,14 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
           filter: drop-shadow(0 0 3px rgba(255,255,255,.9));
           animation: rb-shoot ${SHOOT_PATHS.length * SHOOT_EVERY_S}s linear infinite both;
         }
+        /* The opening pair: each of these two crosses once and never repeats */
+        @keyframes rb-shoot-once {
+          0% { opacity: 0; transform: rotate(var(--rb-a)) translateX(0); }
+          12% { opacity: 1; }
+          80% { opacity: 1; }
+          100% { opacity: 0; transform: rotate(var(--rb-a)) translateX(560px); }
+        }
+        .rb-shoot.rb-shoot-once { animation: rb-shoot-once ${SHOOT_CROSS_S}s linear 1 both; }
         @media (prefers-reduced-motion: reduce) {
           .rb-drift, .rb-drift-slow, .rb-glow, .rb-twinkle, .rb-bob, .rb-shoot { animation: none !important; }
         }
@@ -235,16 +250,19 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
         )}
       </div>
       )}
-      {/* Night sky only: one shooting star every SHOOT_EVERY_S seconds, on three paths taken in turn, behind the text */}
+      {/* Night sky only: a quick opening pair of shooting stars, then one after every SHOOT_CLEAR_S seconds of clear sky, on three paths taken in turn, behind the text */}
       {!plain && !morning && !afternoon && (
         <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
-          {SHOOT_PATHS.map(([left, top, angle], i) => (
-            <span
-              key={i}
-              className="rb-shoot"
-              style={{ left, top, ['--rb-a' as any]: `${angle}deg`, animationDelay: `${SHOOT_FIRST_S + i * SHOOT_EVERY_S}s` }}
-            />
-          ))}
+          {/* Opening pair: paths 0 and 1, once */}
+          {[SHOOT_FIRST_S, SHOOT_SECOND_S].map((delay, i) => {
+            const [left, top, angle] = SHOOT_PATHS[i];
+            return <span key={`once-${i}`} className="rb-shoot rb-shoot-once" style={{ left, top, ['--rb-a' as any]: `${angle}deg`, animationDelay: `${delay}s` }} />;
+          })}
+          {/* Then the repeating stars, starting on path 2 so the third star takes a new line */}
+          {SHOOT_PATHS.map((_, i) => {
+            const [left, top, angle] = SHOOT_PATHS[(i + 2) % SHOOT_PATHS.length];
+            return <span key={`loop-${i}`} className="rb-shoot" style={{ left, top, ['--rb-a' as any]: `${angle}deg`, animationDelay: `${SHOOT_LOOP_FROM_S + i * SHOOT_EVERY_S}s` }} />;
+          })}
         </div>
       )}
       {!plain && <div className="absolute -left-8 -right-8 -bottom-12 h-20 rounded-[50%] bg-[#0e9f55]/55" />}
