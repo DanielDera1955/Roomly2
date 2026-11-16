@@ -7,14 +7,18 @@ import { paymentState } from '../api.js';
 type DayPart = 'Good morning' | 'Good afternoon' | 'Good evening';
 
 /** Night sky shooting star: seconds between stars, and how long after the page opens the first one appears */
-const SHOOT_EVERY_S = 5;
-const SHOOT_FIRST_S = 3;
+const SHOOT_EVERY_S = 10;
+const SHOOT_FIRST_S = 2.5;
+/** How long one star takes to cross the sky, in seconds (stays the same whatever the gap between stars) */
+const SHOOT_CROSS_S = 1.05;
 /** Where each star starts (left, top) and the angle it falls at. The stars take these paths in turn. */
 const SHOOT_PATHS: Array<[string, number, number]> = [
   ['-22%', 6, 14],
   ['8%', -8, 22],
   ['-22%', 44, 9],
 ];
+/** The share of one full cycle (all paths) that a single crossing takes, as a percentage */
+const SHOOT_PCT = (SHOOT_CROSS_S / (SHOOT_PATHS.length * SHOOT_EVERY_S)) * 100;
 
 const isOutsideOrder = (o: OrderRecord) => o.cart === 'store' || o.cart === 'food';
 /** Inside: to the hostel (or the spot the student typed). Outside: to the school gate. */
@@ -177,9 +181,9 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
         /* Shooting star: crosses the night sky in about a second, then stays hidden for the rest of its cycle */
         @keyframes rb-shoot {
           0% { opacity: 0; transform: rotate(var(--rb-a)) translateX(0); }
-          0.8% { opacity: 1; }
-          5.5% { opacity: 1; }
-          7%, 100% { opacity: 0; transform: rotate(var(--rb-a)) translateX(560px); }
+          ${(SHOOT_PCT * 0.12).toFixed(3)}% { opacity: 1; }
+          ${(SHOOT_PCT * 0.8).toFixed(3)}% { opacity: 1; }
+          ${SHOOT_PCT.toFixed(3)}%, 100% { opacity: 0; transform: rotate(var(--rb-a)) translateX(560px); }
         }
         .rb-shoot {
           position: absolute; width: 72px; height: 2px; border-radius: 2px; opacity: 0;
