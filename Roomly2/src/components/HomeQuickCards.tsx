@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { RotateCcw, ChevronDown, ChevronRight, Users, UtensilsCrossed, ShoppingBasket, Store, Crown, Wrench, Tag, Search, Gamepad2, Trophy } from 'lucide-react';
 import { GAMES, fetchLeaders, isRegisteredGamer, restoreGamerFromLogin } from '../hub.js';
 import { getNextBatch, getOutsideChoices, storeGraceOpen, storeRunLeftToday } from '../api.js';
@@ -268,13 +268,109 @@ export const HomeQuickCards: React.FC<{
   );
 };
 
+/** A game's own icon for the crown row (public/images/games/<id>.webp); the crown shows when a game has none */
+const CrownRowIcon: React.FC<{ game: string }> = ({ game }) => {
+  const [failed, setFailed] = useState(false);
+  if (failed)
+    return (
+      <span className="w-6 h-6 shrink-0 rounded-md flex items-center justify-center bg-white/20 text-white/80">
+        <Crown className="w-3 h-3" />
+      </span>
+    );
+  return <img src={`/images/games/${game}.webp`} alt="" loading="lazy" onError={() => setFailed(true)} className="w-6 h-6 shrink-0 rounded-md object-cover bg-white/20" />;
+};
+
+/** Pixels per second the crown row drifts by itself, and how long it waits after a touch before drifting again */
+const CROWN_ROW_SPEED = 22;
+const CROWN_ROW_RESUME_MS = 3000;
+/**
+ * Makes a sideways row drift slowly by itself in an endless loop. The row must hold its tiles twice
+ * (setSize tiles, then the same again) so the loop has no visible jump. A touch, drag or wheel stops the drift;
+ * it starts again a few seconds after the student lets go. It rests while off screen, while the tab is hidden,
+ * and stays still for people who have switched animations off on their phone.
+ */
+function useSlowDrift(setSize: number) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof window === 'undefined') return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    let raf = 0;
+    let last = 0;
+    let pos = el.scrollLeft;
+    // Far in the past, so the row starts drifting at once instead of waiting as if it had just been touched
+    let touchedAt = -1e9;
+    let holding = false;
+    let visible = true;
+    // Width of one full set of tiles: where the second copy starts
+    const loopWidth = () => {
+      const a = el.children[0] as HTMLElement | undefined;
+      const b = el.children[setSize] as HTMLElement | undefined;
+      return a && b ? b.offsetLeft - a.offsetLeft : 0;
+    };
+    const touch = () => {
+      touchedAt = performance.now();
+    };
+    const down = () => {
+      holding = true;
+      touch();
+    };
+    const up = () => {
+      holding = false;
+      touch();
+    };
+    const step = (t: number) => {
+      raf = requestAnimationFrame(step);
+      const dt = last ? Math.min(64, t - last) : 0;
+      last = t;
+      const w = loopWidth();
+      if (!w || !visible || document.hidden) return;
+      const resting = holding || t - touchedAt < CROWN_ROW_RESUME_MS;
+      if (resting) {
+        // The student is in control: follow their position, and keep the loop endless in both directions
+        pos = el.scrollLeft;
+        if (pos >= w) el.scrollLeft = pos = pos - w;
+        else if (pos <= 0 && !holding) el.scrollLeft = pos = pos + w;
+        return;
+      }
+      pos += (CROWN_ROW_SPEED * dt) / 1000;
+      if (pos >= w) pos -= w;
+      el.scrollLeft = pos;
+    };
+    const io = typeof IntersectionObserver !== 'undefined' ? new IntersectionObserver(([e]) => (visible = e.isIntersecting)) : null;
+    io?.observe(el);
+    el.addEventListener('touchstart', down, { passive: true });
+    el.addEventListener('touchmove', touch, { passive: true });
+    el.addEventListener('touchend', up, { passive: true });
+    el.addEventListener('touchcancel', up, { passive: true });
+    el.addEventListener('mousedown', down);
+    window.addEventListener('mouseup', up);
+    el.addEventListener('wheel', touch, { passive: true });
+    raf = requestAnimationFrame(step);
+    return () => {
+      cancelAnimationFrame(raf);
+      io?.disconnect();
+      el.removeEventListener('touchstart', down);
+      el.removeEventListener('touchmove', touch);
+      el.removeEventListener('touchend', up);
+      el.removeEventListener('touchcancel', up);
+      el.removeEventListener('mousedown', down);
+      window.removeEventListener('mouseup', up);
+      el.removeEventListener('wheel', touch);
+    };
+  }, [setSize]);
+  return ref;
+}
+
 /**
  * The fifth card: Roomly Hostel League. Only the button (Join, or Play once registered) opens the Games page; a game tile opens that game.
- * One row of game tiles shows who holds each crown. The next tile is left half visible so students know to swipe.
+ * One row of game tiles shows who holds each crown. The row drifts slowly by itself (useSlowDrift) and can still be swiped either way.
  */
 const HostelLeagueCard: React.FC<{ onOpen: (game?: string) => void; session?: { phone?: string; pin?: string } }> = ({ onOpen, session }) => {
   const [leaders, setLeaders] = useState<Record<string, { name: string; pts: number } | null> | null>(null);
   const [member, setMember] = useState(false);
+  // One set = every game plus the "Full table" tile; the row shows the set twice so it can loop
+  const rowRef = useSlowDrift(GAMES.length + 1);
   useEffect(() => {
     let live = true;
     const check = () => isRegisteredGamer().then((m: boolean) => live && setMember(m));
@@ -313,42 +409,51 @@ const HostelLeagueCard: React.FC<{ onOpen: (game?: string) => void; session?: { 
       <p className="relative mt-3.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-100/90">
         <Crown className="w-3.5 h-3.5" /> Who holds each crown right now
       </p>
-      {/* Tiles run off the right edge of the card on purpose */}
-      <div className="relative mt-2 -mr-4 flex gap-2.5 overflow-x-auto no-scrollbar pr-4">
-        {GAMES.map((g: { id: string; label: string }) => {
-          const l = leaders ? leaders[g.id] : null;
-          return (
+      {/* Tiles run off the right edge of the card on purpose. Shown twice so the slow drift loops without a jump */}
+      <div ref={rowRef} className="relative mt-2 -mr-4 flex gap-2.5 overflow-x-auto no-scrollbar pr-4">
+        {[0, 1].map((copy) => (
+          <React.Fragment key={copy}>
+            {GAMES.map((g: { id: string; label: string }) => {
+              const l = leaders ? leaders[g.id] : null;
+              return (
+                <button
+                  key={`${copy}-${g.id}`}
+                  type="button"
+                  onClick={() => onOpen(g.id)}
+                  aria-hidden={copy === 1 || undefined}
+                  tabIndex={copy === 1 ? -1 : undefined}
+                  className="shrink-0 w-[132px] text-left rounded-2xl px-3 py-2.5 bg-white/12 backdrop-blur-sm border border-white/20 cursor-pointer active:scale-[0.97] transition-transform"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <CrownRowIcon game={g.id} />
+                    <span className="text-sm font-semibold truncate">{g.label}</span>
+                  </span>
+                  <span className="mt-1 flex items-center gap-1 text-[11px] text-emerald-50/85">
+                    {l && <Crown className="w-3 h-3 shrink-0 text-amber-300" />}
+                    <span className="truncate">{leaders === null ? ' ' : l ? `${l.name}, ${l.pts} pts` : 'No crown yet'}</span>
+                  </span>
+                </button>
+              );
+            })}
             <button
-              key={g.id}
               type="button"
-              onClick={() => onOpen(g.id)}
-              className="shrink-0 w-[124px] text-left rounded-2xl px-3 py-2.5 bg-white/12 backdrop-blur-sm border border-white/20 cursor-pointer active:scale-[0.97] transition-transform"
+              onClick={() => onOpen()}
+              aria-hidden={copy === 1 || undefined}
+              tabIndex={copy === 1 ? -1 : undefined}
+              className="shrink-0 w-[132px] text-left rounded-2xl px-3 py-2.5 bg-white/12 backdrop-blur-sm border border-white/20 cursor-pointer active:scale-[0.97] transition-transform"
             >
               <span className="flex items-center gap-1.5">
-                <span className={`w-5 h-5 rounded-full flex items-center justify-center ${l ? 'bg-amber-300 text-amber-900' : 'bg-white/20 text-white/80'}`}>
-                  <Crown className="w-3 h-3" />
+                <span className="w-6 h-6 rounded-md flex items-center justify-center bg-white/20 text-white/80">
+                  <Trophy className="w-3 h-3" />
                 </span>
-                <span className="text-sm font-semibold">{g.label}</span>
+                <span className="text-sm font-semibold">Full table</span>
               </span>
-              <span className="mt-1 block text-[11px] text-emerald-50/85 truncate">{leaders === null ? ' ' : l ? `${l.name}, ${l.pts} pts` : 'No crown yet'}</span>
+              <span className="mt-1 flex items-center gap-1 text-[11px] text-emerald-50/85">
+                See all <ChevronRight className="w-3 h-3" />
+              </span>
             </button>
-          );
-        })}
-        <button
-          type="button"
-          onClick={() => onOpen()}
-          className="shrink-0 w-[124px] text-left rounded-2xl px-3 py-2.5 bg-white/12 backdrop-blur-sm border border-white/20 cursor-pointer active:scale-[0.97] transition-transform"
-        >
-          <span className="flex items-center gap-1.5">
-            <span className="w-5 h-5 rounded-full flex items-center justify-center bg-white/20 text-white/80">
-              <Trophy className="w-3 h-3" />
-            </span>
-            <span className="text-sm font-semibold">Full table</span>
-          </span>
-          <span className="mt-1 flex items-center gap-1 text-[11px] text-emerald-50/85">
-            See all <ChevronRight className="w-3 h-3" />
-          </span>
-        </button>
+          </React.Fragment>
+        ))}
       </div>
     </div>
   );

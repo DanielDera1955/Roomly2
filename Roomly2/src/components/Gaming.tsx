@@ -265,9 +265,7 @@ const GamesHome: React.FC<{
           return (
             <button key={g.id} type="button" onClick={() => onPick(g.id)} className={`${card} p-3.5 text-left cursor-pointer hover:border-[#0e9f55]/50 transition-colors`}>
               <div className="flex items-start justify-between">
-                <span className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-[#0e9f55] flex items-center justify-center">
-                  <Gamepad2 className="w-4.5 h-4.5" />
-                </span>
+                <GameIcon game={g.id} />
                 <ChevronRight className="w-4 h-4 text-slate-300" />
               </div>
               <p className="mt-3 text-sm font-black text-slate-900 dark:text-white">{g.label}</p>
@@ -276,16 +274,30 @@ const GamesHome: React.FC<{
                 <span className="truncate">{leader ? `${leader.name} leads${leader.origin !== 'Caritas' ? ` (${leader.origin})` : ''}` : 'No leader yet'}</span>
               </p>
               <div className="mt-3 flex items-center justify-between text-[10px]">
-                <span className="text-slate-400">{b.length} players</span>
+                <span className="text-slate-400">{playersText(b.length)}</span>
                 <span className="font-bold text-[#0e9f55]">{isOpen ? `${ready} ready now` : ''}</span>
               </div>
             </button>
           );
         })}
       </div>
+      <p className="text-center text-[10px] text-slate-400">Roomly is not affiliated with or endorsed by the makers of these games.</p>
     </>
   );
 };
+
+/** The game's own icon (public/images/games/<id>.webp). A game without one shows the gamepad instead. */
+const GameIcon: React.FC<{ game: string; className?: string }> = ({ game, className = 'w-11 h-11 rounded-xl' }) => {
+  const [failed, setFailed] = useState(false);
+  if (failed)
+    return (
+      <span className={`${className} shrink-0 bg-emerald-50 dark:bg-emerald-950/50 text-[#0e9f55] flex items-center justify-center`}>
+        <Gamepad2 className="w-1/2 h-1/2" />
+      </span>
+    );
+  return <img src={`/images/games/${game}.webp`} alt="" loading="lazy" onError={() => setFailed(true)} className={`${className} shrink-0 object-cover bg-slate-200 dark:bg-slate-800`} />;
+};
+const playersText = (n: number) => `${n} ${n === 1 ? 'player' : 'players'}`;
 
 /* ================================================================== */
 /* Game page                                                           */
@@ -327,6 +339,7 @@ const GamePage: React.FC<{
         <button type="button" onClick={onBack} aria-label="Back to games" className="w-10 h-10 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 cursor-pointer">
           <ArrowLeft className="w-4 h-4" />
         </button>
+        <GameIcon game={game} className="w-10 h-10 rounded-xl" />
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#0e9f55]">Best in Caritas</p>
           <h2 className="text-xl font-black text-slate-900 dark:text-white leading-tight">{gameLabel(game)}</h2>
@@ -698,7 +711,7 @@ const LeagueTable: React.FC<{ game: string; board: any[]; meId?: string }> = ({ 
     <div className="p-3">
       <div className="flex items-center justify-between px-1 mb-2">
         <p className="text-sm font-black text-slate-900 dark:text-white">League table</p>
-        <span className="text-[11px] text-slate-400">{board.length} players</span>
+        <span className="text-[11px] text-slate-400">{playersText(board.length)}</span>
       </div>
       <div className={`grid ${cols} gap-1 px-1 py-1.5 border-b border-slate-100 dark:border-slate-800`}>
         <span className={head}>#</span>
