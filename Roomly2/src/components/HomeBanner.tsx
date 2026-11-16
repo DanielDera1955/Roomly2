@@ -6,6 +6,16 @@ import { paymentState } from '../api.js';
 
 type DayPart = 'Good morning' | 'Good afternoon' | 'Good evening';
 
+/** Night sky shooting star: seconds between stars, and how long after the page opens the first one appears */
+const SHOOT_EVERY_S = 5;
+const SHOOT_FIRST_S = 3;
+/** Where each star starts (left, top) and the angle it falls at. The stars take these paths in turn. */
+const SHOOT_PATHS: Array<[string, number, number]> = [
+  ['-22%', 6, 14],
+  ['8%', -8, 22],
+  ['-22%', 44, 9],
+];
+
 const isOutsideOrder = (o: OrderRecord) => o.cart === 'store' || o.cart === 'food';
 /** Inside: to the hostel (or the spot the student typed). Outside: to the school gate. */
 const wayLabel = (o: OrderRecord) => (isOutsideOrder(o) ? 'On its way to the gate' : o.area === 'Custom' ? `On the way to ${o.building}` : 'On the way to the hostel');
@@ -164,8 +174,22 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
         .rb-glow { animation: rb-glow 5s ease-in-out infinite; }
         .rb-twinkle { animation: rb-twinkle 3s ease-in-out infinite; }
         .rb-bob { animation: rb-bob 1.1s ease-in-out infinite; }
+        /* Shooting star: crosses the night sky in about a second, then stays hidden for the rest of its cycle */
+        @keyframes rb-shoot {
+          0% { opacity: 0; transform: rotate(var(--rb-a)) translateX(0); }
+          0.8% { opacity: 1; }
+          5.5% { opacity: 1; }
+          7%, 100% { opacity: 0; transform: rotate(var(--rb-a)) translateX(560px); }
+        }
+        .rb-shoot {
+          position: absolute; width: 72px; height: 2px; border-radius: 2px; opacity: 0;
+          transform-origin: left center;
+          background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.55) 60%, #fff 100%);
+          filter: drop-shadow(0 0 3px rgba(255,255,255,.9));
+          animation: rb-shoot ${SHOOT_PATHS.length * SHOOT_EVERY_S}s linear infinite both;
+        }
         @media (prefers-reduced-motion: reduce) {
-          .rb-drift, .rb-drift-slow, .rb-glow, .rb-twinkle, .rb-bob { animation: none !important; }
+          .rb-drift, .rb-drift-slow, .rb-glow, .rb-twinkle, .rb-bob, .rb-shoot { animation: none !important; }
         }
       `}</style>
 
@@ -206,6 +230,18 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
           </>
         )}
       </div>
+      )}
+      {/* Night sky only: one shooting star every SHOOT_EVERY_S seconds, on three paths taken in turn, behind the text */}
+      {!plain && !morning && !afternoon && (
+        <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+          {SHOOT_PATHS.map(([left, top, angle], i) => (
+            <span
+              key={i}
+              className="rb-shoot"
+              style={{ left, top, ['--rb-a' as any]: `${angle}deg`, animationDelay: `${SHOOT_FIRST_S + i * SHOOT_EVERY_S}s` }}
+            />
+          ))}
+        </div>
       )}
       {!plain && <div className="absolute -left-8 -right-8 -bottom-12 h-20 rounded-[50%] bg-[#0e9f55]/55" />}
       {!plain && <div className="absolute left-[120px] -right-16 -bottom-14 h-20 rounded-[50%] bg-[#0b8044]/50" />}
