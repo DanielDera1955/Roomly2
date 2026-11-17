@@ -17,8 +17,11 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
 }) => {
   if (!product) return null;
 
+  // An item with no plate price but with extras (e.g. Fried Chicken with its sizes) is "extras only":
+  // no plate stepper, the student just picks sizes and quantities.
+  const extrasOnlyItem = !(product.price > 0) && (product.extras || []).some((e) => !e.off);
   // plates can be 0 for students who only want to buy chicken/beef/sides!
-  const [plates, setPlates] = useState<number>(1);
+  const [plates, setPlates] = useState<number>(extrasOnlyItem ? 0 : 1);
   const [extraQuantities, setExtraQuantities] = useState<Record<string, number>>({});
   const [specialNote, setSpecialNote] = useState<string>('');
   const [choiceId, setChoiceId] = useState<string>('');
@@ -71,7 +74,9 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
     // Build custom title and id
     const isProteinOnly = plates === 0;
     const itemName = isProteinOnly
-      ? `Extras only, ${product.name} (${selectedExtrasList.map((e) => `${e.quantity}x ${e.name}`).join(', ')})`
+      ? extrasOnlyItem
+        ? `${product.name}: ${selectedExtrasList.map((e) => `${e.quantity}x ${e.name}`).join(', ')}`
+        : `Extras only, ${product.name} (${selectedExtrasList.map((e) => `${e.quantity}x ${e.name}`).join(', ')})`
       : `${product.name}${chosen ? ` with ${chosen.name}` : ''} (${plates} ${plates === 1 ? 'plate' : 'plates'})`;
     // The choice goes in as a line of its own (one per plate) so the cart and the vendor can see it
     const cartExtras = [
@@ -124,7 +129,9 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
                 {product.name}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                ₦{product.price.toLocaleString()} per plate{canZeroPlate ? ' · Extras can be ordered alone' : ''}
+                {extrasOnlyItem
+                  ? 'Choose your size and how many'
+                  : `₦${product.price.toLocaleString()} per plate${canZeroPlate ? ' · Extras can be ordered alone' : ''}`}
               </p>
             </div>
           </div>
@@ -166,6 +173,7 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
           )}
 
           {/* Plates Stepper (Zero plate enabled!) */}
+          {!extrasOnlyItem && (
           <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 space-y-2">
             <div className="flex items-center justify-between">
               <div>
@@ -208,6 +216,7 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
               </p>
             )}
           </div>
+          )}
 
           {/* Pick one (e.g. Swallow), added per plate */}
           {choices.length > 0 && plates > 0 && (
@@ -245,7 +254,7 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                Add Protein & Extras (Pick any quantity)
+                {extrasOnlyItem ? 'Choose your size (pick any quantity)' : 'Add Protein & Extras (Pick any quantity)'}
               </h3>
               {Object.keys(extraQuantities).length > 0 && (
                 <button
@@ -275,7 +284,7 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
                     <div>
                       <span className="text-sm font-semibold block">{extra.name}</span>
                       <span className="text-xs font-mono font-bold text-[#0e9f55]">
-                        +₦{extra.price.toLocaleString()} each
+                        {extrasOnlyItem ? '' : '+'}₦{extra.price.toLocaleString()} each
                       </span>
                     </div>
 
@@ -340,9 +349,13 @@ export const FoodCustomizerSheet: React.FC<FoodCustomizerSheetProps> = ({
               {!isValidOrder
                 ? choiceMissing
                   ? `Pick your ${choiceTitle.toLowerCase()}`
+                  : extrasOnlyItem
+                  ? 'Select a size'
                   : 'Select plates or extras'
                 : plates === 0
-                ? 'Add extras only to cart'
+                ? extrasOnlyItem
+                  ? 'Add to cart'
+                  : 'Add extras only to cart'
                 : `Add to cart (${plates} ${plates === 1 ? 'plate' : 'plates'})`}
             </span>
             <span className="font-mono text-base">₦{totalPrice.toLocaleString()}</span>

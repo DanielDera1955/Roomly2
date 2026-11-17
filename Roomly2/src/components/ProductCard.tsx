@@ -25,6 +25,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   lockedLabel,
 }) => {
   const [imageError, setImageError] = useState(false);
+  // Items with no plate price (e.g. Fried Chicken sold by size) show "from" the cheapest size
+  const extraPrices: number[] = ((product as any).extras || []).filter((e: any) => !e.off && e.price > 0).map((e: any) => e.price);
+  const lowestExtraPrice = extraPrices.length ? Math.min(...extraPrices) : 0;
 
   const handleCardClick = () => {
     if (product.isFood && onOpenFoodCustomizer) {
@@ -109,7 +112,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           {product.isFood && ((product as any).extras?.length || (product as any).choices?.length) ? (
             <span className="font-extrabold text-sm text-slate-900 dark:text-white tabular-nums">
               <span className="text-[10px] font-semibold text-slate-400 mr-0.5">from</span>
-              <span className="font-mono">₦{product.price.toLocaleString()}</span>
+              <span className="font-mono">
+                ₦{(product.price > 0 ? product.price : lowestExtraPrice).toLocaleString()}
+              </span>
             </span>
           ) : (
             <span className="font-extrabold text-sm text-slate-900 dark:text-white font-mono tabular-nums">
