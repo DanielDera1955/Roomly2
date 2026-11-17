@@ -920,14 +920,28 @@ export default function App() {
   // Search first; otherwise the chosen category and filter
   const filteredProducts = useMemo(() => {
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      return sideProducts.filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.category.toLowerCase().includes(q) ||
-          p.subcategory.toLowerCase().includes(q) ||
-          (p.description && p.description.toLowerCase().includes(q))
-      );
+      const q = searchQuery.trim().toLowerCase();
+      // A word that STARTS with what was typed ("oil" finds Power Oil, not Toiletries or Boiled)
+      const wordStart = new RegExp('(^|[^a-z0-9])' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      // 0 = a word in the name starts with it, 1 = the name contains it, 2 = a word in the category or description starts with it
+      const scoreOf = (p: Product) => {
+        const name = String(p.name || '').toLowerCase();
+        if (wordStart.test(name)) return 0;
+        if (name.includes(q)) return 1;
+        if (
+          wordStart.test(String(p.category || '').toLowerCase()) ||
+          wordStart.test(String(p.subcategory || '').toLowerCase()) ||
+          (p.description && wordStart.test(p.description.toLowerCase()))
+        ) {
+          return 2;
+        }
+        return -1;
+      };
+      return sideProducts
+        .map((p, i) => ({ p, i, s: scoreOf(p) }))
+        .filter((x) => x.s >= 0)
+        .sort((a, b) => a.s - b.s || a.i - b.i)
+        .map((x) => x.p);
     }
     if (selectedTab === 'Request' || selectedTab === 'hub') return [];
     let list = sideProducts.filter((p) => shopGroupOf(p) === selectedTab);

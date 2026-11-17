@@ -279,7 +279,17 @@ export const OperatorPortal: React.FC<OperatorPortalProps> = ({ onBack }) => {
       seen.current = ids;
       // Each order goes to the operator the student chose; older orders without one show to everyone
       const me = getMyUid();
-      setOrders(isAdmin ? list : list.filter((o) => !o.operatorId || o.operatorId === me));
+      // A cancelled order, or one refunded in full, leaves this list unless it was already sent.
+      // A partly refunded order stays until Roomly marks it sent.
+      const closedUnsent = (o: OrderRecord) => {
+        const sent = (kind === 'food' ? o.foodStatus : o.storeStatus) === 'sent';
+        if (sent) return false;
+        const total = Number(o.totalAmount) || 0;
+        const refunded = ((o as any).refunds || []).reduce((t: number, r: any) => t + (Number(r.amount) || 0), 0);
+        return o.status === 'Cancelled' || (total > 0 && refunded >= total);
+      };
+      const open = list.filter((o) => !closedUnsent(o));
+      setOrders(isAdmin ? open : open.filter((o) => !o.operatorId || o.operatorId === me));
       setLoading(false);
     });
   }, [kind]);
