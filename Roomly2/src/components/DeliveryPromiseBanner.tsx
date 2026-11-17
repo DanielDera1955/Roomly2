@@ -9,7 +9,6 @@ import {
   outsideArriveByFor,
   INSIDE_ORDER_BY_MIN,
   INSIDE_ARRIVE_BY_MIN,
-  INSIDE_EVENING_START_MIN,
   OUTSIDE_STORE_GRACE_END_MIN,
   slotsForDay,
   foodLateOrderByMin,
@@ -22,6 +21,8 @@ import {
  */
 const ARRIVE_LEAD_MIN = 15;
 const fromOf = (sentMin: number) => timeLabelFull(sentMin + ARRIVE_LEAD_MIN);
+/** Canteen to room: earliest likely arrival, 9:15pm (orders close at 8:50pm, promise stays 9:30pm) */
+const INSIDE_ARRIVE_FROM_MIN = 21 * 60 + 15;
 
 interface DeliveryPromiseBannerProps {
   mode: 'inside' | 'outside';
@@ -69,7 +70,8 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
     const { next, note } = getNextBatch('inside', now);
     const orderBy = timeLabelFull(INSIDE_ORDER_BY_MIN);
     const arrive = timeLabelFull(INSIDE_ARRIVE_BY_MIN);
-    const from = fromOf(INSIDE_EVENING_START_MIN);
+    // Orders close at 8:50pm, so the room range starts at 9:15pm (not 15 minutes after the 8:30pm batch start)
+    const from = timeLabelFull(INSIDE_ARRIVE_FROM_MIN);
     badge = 'To your room';
     if (now.getTime() < INSIDE_LAUNCH_MS) {
       headline = `Starting ${openDateText(INSIDE_LAUNCH_MS)}`;
