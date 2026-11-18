@@ -33,8 +33,7 @@ export const GAME_RULES: { title: string; lines: string[] }[] = [
   {
     title: 'Challenges',
     lines: [
-      'After you join a season you can be challenged in each game you play. You can switch this off for a game. If you joined a reward week, it stays on for that week.',
-      'Only players on a game table can see the other players\' WhatsApp button. Tapping Challenge opens WhatsApp with a message and is recorded. There is no limit on challenges.',
+      'Once you have joined and accepted the rules, any league player can challenge you at any time in the games you play. Tap a player on the table, then Schedule 1v1, to open WhatsApp with a message. Other league players can message you on WhatsApp this way, and every tap is recorded.',
       'Use Report if someone behaves badly. Use "Hide me from this player" so they can no longer challenge you.',
     ],
   },
@@ -144,23 +143,32 @@ export async function acceptRules(join: any, season: Season, me: any) {
   await syncOpen(me, season, { ...join, rulesVersion: RULES_VERSION }, null);
 }
 
-/** Is this player open to challenges in this game? On by default after joining; a reward-week join keeps it on. */
-export function isChallengeable(join: any, game: string, rewardJoined = false): boolean {
-  // Added by Roomly but the rules are not accepted yet: on the table, not open to challenges
-  if (!join || Number(join.rulesVersion || 0) < 1) return false;
-  if (rewardJoined) return true;
-  return !(join.off && join.off[game]);
+/** Anyone in the league who has accepted the rules can be challenged. (Added by Roomly but not accepted yet: on the table, not challengeable.) */
+export function isChallengeable(join: any, _game?: string, _rewardJoined = false): boolean {
+  return Boolean(join && Number(join.rulesVersion || 0) >= 1);
 }
 
+const CONTACT_DAYS = 400;
 /** Other players read a phone number only while this is in the future (see the gamerContact rule) */
 async function syncOpen(me: any, season: Season, join: any, week: any | null) {
-  const games: string[] = me.games || [];
-  const anyOn = games.some((g) => isChallengeable(join, g, Boolean(week && week.game === g)));
-  const until = Math.max(anyOn ? Number(season.endMs) : 0, week ? Number(week.endMs) : 0);
+  // A league member's number can be opened for a long time ahead, so postponing a league or starting the next one never breaks challenges
+  const until = isChallengeable(join) ? Date.now() + CONTACT_DAYS * 86400000 : Math.max(0, week ? Number(week.endMs) : 0);
   await updateDoc(doc(hubDb, 'gamerContact', me.id), { readyUntil: until, atMs: Date.now() }).catch(() => {});
 }
 
-/** Switch "challengeable" on or off for one game */
+/** Renew a league member's contact date when they open Games (at most once a day per browser) */
+export async function refreshContact(me: any, season: Season, join: any) {
+  if (!me || !isChallengeable(join)) return;
+  const key = `roomly_contact_${me.id}`;
+  try {
+    if (Date.now() - Number(localStorage.getItem(key) || 0) < 86400000) return;
+    localStorage.setItem(key, String(Date.now()));
+  } catch {}
+  await hubUid();
+  await syncOpen(me, season, join, null);
+}
+
+/** Switch "challengeable" on or off for one game (no longer used by the app) */
 export async function setChallengeable(season: Season, join: any, me: any, game: string, on: boolean, week: any | null = null) {
   await hubUid();
   const off = { ...(join.off || {}) };
@@ -286,7 +294,7 @@ export function leagueRulesFor(game: string): string[] {
       : 'The winner enters the result with their kills, damage and a screenshot of the final result.',
     'League matches only count in the league table. Between the same two players, at most 4 count per week (2 home and 2 away). Extra matches do not count.',
     'Your opponent confirms the result or reports it within 24 hours. If nobody answers for 5 hours it shows as recorded.',
-    'Tap Challenge on a player to message them on WhatsApp. Use Report if someone behaves badly.',
+    'Tap a player on the table, then Schedule 1v1, to message them on WhatsApp. Use Report if someone behaves badly.',
   ];
 }
 /** The short version shown open on the game page: the main league rules for one game */

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Trophy, Crown, Loader2, Users, MessageCircle, X, Search, Flag, EyeOff, BookOpen, Check, ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-react';
 import { gameLabel, isScored } from '../hub.js';
-import { weekPhase } from '../boardCore.js';
+import { weekPhase, lagosWeek, contestOf, matchCounts, winnerOf, MAX_PAIR_LEAGUE_WEEK, MAX_PAIR_REWARD_WEEK } from '../boardCore.js';
 import {
   GAME_RULES,
   RULES_VERSION,
@@ -515,33 +515,20 @@ export const ChallengeTable: React.FC<{
   title: string;
   note?: string;
   emptyText?: string;
-}> = ({ game, rows, me, season, join, hiddenFromMe, rewardRunning, isOpen, title, note, emptyText }) => {
+  matches?: any[];
+}> = ({ game, rows, me, season, join, hiddenFromMe, rewardRunning, isOpen, title, note, emptyText, matches = [] }) => {
   const [q, setQ] = useState('');
   const [limit, setLimit] = useState(30);
-  const [menu, setMenu] = useState('');
-  const [reporting, setReporting] = useState<any | null>(null);
-  const [busyId, setBusyId] = useState('');
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [picked, setPicked] = useState<any | null>(null);
   const scored = isScored(game);
-  // Football: P W D L GF. The other games have no draws or goals: P W L Kills.
+  // The first columns stay on screen: rank, name, points. The other stats scroll sideways.
   const stats: { k: string; h: string }[] = scored
     ? [{ k: 'p', h: 'P' }, { k: 'w', h: 'W' }, { k: 'd', h: 'D' }, { k: 'l', h: 'L' }, { k: 'gf', h: 'GF' }]
     : [{ k: 'p', h: 'P' }, { k: 'w', h: 'W' }, { k: 'l', h: 'L' }, { k: 'kills', h: 'K' }];
-  const cols = `28px minmax(0,1fr) ${stats.map(() => '22px').join(' ')} 30px 84px`;
   const member = Boolean(me && season && (me.games || []).includes(game) && rulesAccepted(join));
   const needle = q.trim().toLowerCase();
   const list = useMemo(() => rows.filter((r) => !needle || String(r.name).toLowerCase().includes(needle)), [rows, needle]);
-
-  const challenge = async (r: any) => {
-    if (!season) return;
-    setBusyId(r.id);
-    try {
-      go(await tapChallenge(game, me, r, season.id, rewardRunning));
-    } catch (e: any) {
-      window.alert(e?.message || 'Could not open WhatsApp.');
-    }
-    setBusyId('');
-  };
+  const nameW = 'w-[44vw] max-w-[190px] min-w-[120px]';
 
   return (
     <div className={`${card} p-3`}>
@@ -557,101 +544,207 @@ export const ChallengeTable: React.FC<{
         </div>
       )}
       {list.length === 0 ? (
-        <p className="p-4 text-center text-xs text-slate-400">{q ? 'Nobody matches that name.' : emptyText || 'No players yet. Register for this game to be the first on the table.'}</p>
+        <p className="p-4 text-center text-xs text-slate-400">{q ? 'Nobody matches that name.' : emptyText || 'No players yet. Join this game to be the first on the table.'}</p>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-100 dark:border-slate-800">
-          {/* Header */}
-          <div className="grid items-center gap-x-1 px-2 py-2 bg-slate-50 dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800 text-[10px] font-black uppercase tracking-wide text-slate-400" style={{ gridTemplateColumns: cols }}>
-            <span className="text-center">#</span>
-            <span>Player</span>
-            {stats.map((c) => (
-              <span key={c.k} className="text-center">{c.h}</span>
-            ))}
-            <span className="text-center">Pts</span>
-            <span />
-          </div>
-          {list.slice(0, limit).map((r, idx) => {
-            const self = Boolean(me && r.id === me.id);
-            const canTap = member && !self && r.ready && isOpen && !hiddenFromMe.has(r.id);
-            const medal = r.rank === 1 ? 'bg-amber-400 text-amber-950' : r.rank === 2 ? 'bg-slate-300 text-slate-800' : r.rank === 3 ? 'bg-orange-300 text-orange-950' : '';
-            return (
-              <div key={r.id} className={`border-b last:border-b-0 border-slate-100 dark:border-slate-800 ${self ? 'bg-emerald-50 dark:bg-emerald-950/40' : idx % 2 ? 'bg-slate-50/60 dark:bg-slate-900/40' : ''}`}>
-                <div className="grid items-center gap-x-1 px-2 py-2" style={{ gridTemplateColumns: cols }}>
-                  <span className="flex items-center justify-center">
-                    <span className={`w-6 h-6 rounded-full text-[11px] font-black flex items-center justify-center ${medal || 'text-slate-500'}`}>{r.rank}</span>
-                  </span>
-                  <div className="min-w-0">
-                    <p className={`text-[13px] leading-tight truncate flex items-center gap-1 ${self ? 'font-black text-slate-900 dark:text-white' : 'font-semibold text-slate-800 dark:text-slate-200'}`}>
-                      {r.crown && <Crown className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
-                      <span className="truncate">{r.name}</span>
-                      {self && <span className="shrink-0 px-1 rounded bg-[#0e9f55] text-white text-[8px] font-black">YOU</span>}
-                    </p>
-                    <p className="text-[10px] text-slate-400 truncate">
-                      {r.tag ? `${r.tag} · ` : ''}
-                      {ago(r.lastActiveMs)}
-                    </p>
+        <div className="overflow-x-auto rounded-xl border border-slate-100 dark:border-slate-800">
+          <div className="min-w-max">
+            {/* Header */}
+            <div className="flex items-stretch bg-slate-50 dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800 text-[10px] font-black uppercase tracking-wide text-slate-400">
+              <div className="sticky left-0 z-10 flex items-center bg-slate-50 dark:bg-slate-950">
+                <span className="w-8 py-2 text-center">#</span>
+                <span className={`${nameW} py-2`}>Player</span>
+                <span className="w-10 py-2 text-center text-slate-500">Pts</span>
+              </div>
+              {stats.map((c) => (
+                <span key={c.k} className="w-10 py-2 text-center">{c.h}</span>
+              ))}
+            </div>
+            {list.slice(0, limit).map((r, idx) => {
+              const self = Boolean(me && r.id === me.id);
+              const bg = self ? 'bg-emerald-50 dark:bg-emerald-950' : idx % 2 ? 'bg-slate-50 dark:bg-slate-900' : 'bg-white dark:bg-slate-900';
+              const medal = r.rank === 1 ? 'bg-amber-400 text-amber-950' : r.rank === 2 ? 'bg-slate-300 text-slate-800' : r.rank === 3 ? 'bg-orange-300 text-orange-950' : 'text-slate-500';
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => !self && setPicked(r)}
+                  className={`w-full flex items-stretch text-left border-b last:border-b-0 border-slate-100 dark:border-slate-800 ${bg} ${self ? 'cursor-default' : 'cursor-pointer'}`}
+                >
+                  <div className={`sticky left-0 z-10 flex items-center ${bg}`}>
+                    <span className="w-8 py-2.5 flex items-center justify-center">
+                      <span className={`w-6 h-6 rounded-full text-[11px] font-black flex items-center justify-center ${medal}`}>{r.rank}</span>
+                    </span>
+                    <div className={`${nameW} py-2 pr-2 min-w-0`}>
+                      <p className={`text-[13px] leading-tight flex items-center gap-1 ${self ? 'font-black text-slate-900 dark:text-white' : 'font-semibold text-slate-800 dark:text-slate-200'}`}>
+                        {r.crown && <Crown className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
+                        <span className="truncate">{r.name}</span>
+                        {self && <span className="shrink-0 px-1 rounded bg-[#0e9f55] text-white text-[8px] font-black">YOU</span>}
+                      </p>
+                      <p className="text-[10px] text-slate-400 truncate">
+                        {r.tag ? `${r.tag} · ` : ''}
+                        {ago(r.lastActiveMs)}
+                      </p>
+                    </div>
+                    <span className="w-10 text-center text-sm font-black text-[#0e9f55] tabular-nums">{r.pts}</span>
                   </div>
                   {stats.map((c) => (
-                    <span key={c.k} className="text-center text-xs tabular-nums text-slate-600 dark:text-slate-300">{r[c.k] || 0}</span>
+                    <span key={c.k} className="w-10 flex items-center justify-center text-xs tabular-nums text-slate-600 dark:text-slate-300">{r[c.k] || 0}</span>
                   ))}
-                  <span className="text-center text-sm font-black text-[#0e9f55] tabular-nums">{r.pts}</span>
-                  <div className="flex items-center justify-end gap-0.5">
-                    {canTap ? (
-                      <button
-                        type="button"
-                        disabled={busyId === r.id}
-                        onClick={() => challenge(r)}
-                        className="h-7 px-2 rounded-lg bg-[#0e9f55] text-white text-[10px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-60"
-                      >
-                        <MessageCircle className="w-3 h-3" /> Challenge
-                      </button>
-                    ) : member && !self ? (
-                      <span className="h-7 px-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 text-[10px] font-bold flex items-center gap-1">
-                        <MessageCircle className="w-3 h-3" /> Locked
-                      </span>
-                    ) : null}
-                    {member && !self && (
-                      <button type="button" onClick={() => setMenu(menu === r.id ? '' : r.id)} aria-label="More" className="w-5 h-7 text-slate-400 flex items-center justify-center cursor-pointer">
-                        <MoreHorizontal className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-                {menu === r.id && (
-                  <div className="px-3 pb-2 flex gap-4">
-                    <button type="button" onClick={() => { setMenu(''); setReporting(r); }} className="text-[11px] font-semibold text-slate-500 flex items-center gap-1 cursor-pointer">
-                      <Flag className="w-3 h-3" /> Report
-                    </button>
-                    <button
-                      type="button"
-                      disabled={hidden.has(r.id)}
-                      onClick={async () => {
-                        if (!window.confirm(`Hide you from ${r.name}? They will no longer be able to challenge you.`)) return;
-                        try {
-                          await hideFromPlayer(me, r);
-                          setHidden(new Set([...hidden, r.id]));
-                        } catch (e: any) {
-                          window.alert(e?.message || 'Could not save.');
-                        }
-                      }}
-                      className="text-[11px] font-semibold text-slate-500 flex items-center gap-1 cursor-pointer disabled:opacity-60"
-                    >
-                      <EyeOff className="w-3 h-3" /> {hidden.has(r.id) ? 'Hidden from them' : 'Hide me from this player'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
+      {list.length > 0 && <p className="mt-2 px-1 text-[10px] text-slate-400">Swipe the table sideways for more stats. Tap a player to see their matches and schedule a 1v1.</p>}
       {list.length > limit && (
         <button type="button" onClick={() => setLimit(limit + 30)} className="mt-2 w-full h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer">
           Show more players
         </button>
       )}
-      {reporting && <ReportSheet game={game} me={me} target={reporting} onClose={() => setReporting(null)} />}
+      {picked && (
+        <PlayerSheet
+          game={game}
+          row={picked}
+          me={me}
+          season={season}
+          member={member}
+          isOpen={isOpen}
+          hidden={hiddenFromMe.has(picked.id)}
+          rewardRunning={rewardRunning}
+          matches={matches}
+          stats={stats}
+          onClose={() => setPicked(null)}
+        />
+      )}
     </div>
+  );
+};
+
+/** A player's matches in this contest, and the button to schedule a 1v1 with them */
+const PlayerSheet: React.FC<{
+  game: string;
+  row: any;
+  me: any;
+  season: Season | null;
+  member: boolean;
+  isOpen: boolean;
+  hidden: boolean;
+  rewardRunning: boolean;
+  matches: any[];
+  stats: { k: string; h: string }[];
+  onClose: () => void;
+}> = ({ game, row, me, season, member, isOpen, hidden, rewardRunning, matches, stats, onClose }) => {
+  const [busy, setBusy] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const [hid, setHid] = useState(false);
+  const scored = isScored(game);
+  const contest = rewardRunning ? 'reward' : 'league';
+  const cap = rewardRunning ? MAX_PAIR_REWARD_WEEK : MAX_PAIR_LEAGUE_WEEK;
+  const mine = matches.filter((m) => matchCounts(m) && contestOf(m) === contest && (m.aUid === row.id || m.bUid === row.id)).sort((a, b) => Number(b.loggedAtMs || 0) - Number(a.loggedAtMs || 0));
+  const thisWeek = lagosWeek(Date.now());
+  const vsMe = me
+    ? mine.filter((m) => (m.aUid === me.id || m.bUid === me.id) && lagosWeek(Number(m.loggedAtMs || 0)) === thisWeek).length
+    : 0;
+  const canTap = member && row.ready !== false && isOpen && !hidden;
+  const reason = !me ? 'Join this game to schedule a 1v1.' : !member ? 'Join this game and accept the rules to schedule a 1v1.' : row.ready === false ? `${row.name} has not accepted the rules yet.` : !isOpen ? 'Challenges open when the league starts.' : hidden ? `${row.name} is not available to challenge.` : '';
+  const outcome = (m: any) => {
+    const w = winnerOf(m);
+    return !w ? 'D' : w === row.id ? 'W' : 'L';
+  };
+  const opp = (m: any) => (m.aUid === row.id ? m.bName : m.aName);
+  const score = (m: any) => (scored ? (m.aUid === row.id ? `${m.scoreA}-${m.scoreB}` : `${m.scoreB}-${m.scoreA}`) : '');
+  const dayOf = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  return (
+    <Modal title={row.name} onClose={onClose}>
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-950">
+          <p className="text-[10px] text-slate-500">Rank</p>
+          <p className="text-base font-black text-slate-900 dark:text-white">#{row.rank}</p>
+        </div>
+        <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-950">
+          <p className="text-[10px] text-slate-500">Points</p>
+          <p className="text-base font-black text-[#0e9f55]">{row.pts}</p>
+        </div>
+        <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-950">
+          <p className="text-[10px] text-slate-500">Played</p>
+          <p className="text-base font-black text-slate-900 dark:text-white">{row.p}</p>
+        </div>
+      </div>
+      <p className="text-[11px] text-slate-500">{stats.filter((c) => c.k !== 'p').map((c) => `${c.h} ${row[c.k] || 0}`).join(' · ')}</p>
+
+      <div>
+        <p className="text-sm font-black text-slate-900 dark:text-white mb-1.5">Logged matches</p>
+        {mine.length === 0 ? (
+          <p className="text-xs text-slate-400">No matches logged yet.</p>
+        ) : (
+          <div className="rounded-xl border border-slate-100 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
+            {mine.slice(0, 10).map((m) => {
+              const o = outcome(m);
+              return (
+                <div key={m.id} className="flex items-center gap-2.5 px-3 py-2">
+                  <span className={`w-6 h-6 rounded-full text-[11px] font-black flex items-center justify-center ${o === 'W' ? 'bg-emerald-100 text-emerald-700' : o === 'L' ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-600'}`}>{o}</span>
+                  <span className="min-w-0 flex-1 text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">vs {opp(m)}</span>
+                  <span className="text-xs font-black tabular-nums text-slate-700 dark:text-slate-200">{score(m)}</span>
+                  <span className="text-[10px] text-slate-400 w-12 text-right">{dayOf(Number(m.loggedAtMs || 0))}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {member && (
+        <p className="text-[11px] text-slate-500">
+          You vs {row.name} this week: {vsMe} of {cap} matches count.
+        </p>
+      )}
+      {canTap ? (
+        <button
+          type="button"
+          disabled={busy || !season}
+          onClick={async () => {
+            if (!season) return;
+            setBusy(true);
+            try {
+              go(await tapChallenge(game, me, row, season.id, rewardRunning));
+            } catch (e: any) {
+              window.alert(e?.message || 'Could not open WhatsApp.');
+            }
+            setBusy(false);
+          }}
+          className="w-full h-12 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+        >
+          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageCircle className="w-4 h-4" />} Schedule 1v1
+        </button>
+      ) : (
+        <p className="p-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-500">{reason}</p>
+      )}
+      {member && (
+        <div className="flex gap-4 pt-1">
+          <button type="button" onClick={() => setReporting(true)} className="text-[11px] font-semibold text-slate-500 flex items-center gap-1 cursor-pointer">
+            <Flag className="w-3 h-3" /> Report
+          </button>
+          <button
+            type="button"
+            disabled={hid || hidden}
+            onClick={async () => {
+              if (!window.confirm(`Hide you from ${row.name}? They will no longer be able to challenge you.`)) return;
+              try {
+                await hideFromPlayer(me, row);
+                setHid(true);
+              } catch (e: any) {
+                window.alert(e?.message || 'Could not save.');
+              }
+            }}
+            className="text-[11px] font-semibold text-slate-500 flex items-center gap-1 cursor-pointer disabled:opacity-60"
+          >
+            <EyeOff className="w-3 h-3" /> {hid ? 'Hidden from them' : 'Hide me from this player'}
+          </button>
+        </div>
+      )}
+      {reporting && <ReportSheet game={game} me={me} target={row} onClose={() => setReporting(false)} />}
+    </Modal>
   );
 };
 

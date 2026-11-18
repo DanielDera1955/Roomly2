@@ -50,6 +50,7 @@ import {
   rulesAccepted,
   setChallengeable,
   tapChallenge,
+  refreshContact,
   joinSeason,
   pairContext,
   leagueRulesFor,
@@ -161,6 +162,9 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
   useEffect(() => subscribeSeasonMatches(season?.id || '', setMatches), [season?.id]);
   useEffect(() => subscribeHiddenFromMe(me?.id || '', setHiddenFromMe), [me?.id]);
   const myJoin = me ? joins.find((j) => j.gid === me.id) || null : null;
+  useEffect(() => {
+    if (me && target && myJoin) refreshContact(me, target, myJoin).catch(() => {});
+  }, [me?.id, target?.id, myJoin?.rulesVersion]);
 
   /** The tables: players who joined the season and play the game. "ready" here means open to challenges. */
   const boards = useMemo(() => {
@@ -684,29 +688,9 @@ const GamePage: React.FC<{
                     ? 'You wear the crown.'
                     : `You: #${myRow.rank} with ${myRow.pts} pts${champ ? `, ${Math.max(0, champ.pts - myRow.pts)} behind the crown` : ''}`
                   : 'You are registered. Your place appears after your first match.'
-                : 'Free to join. Your WhatsApp number stays private.'}
+                : 'Free to join. Other league players can message you on WhatsApp to challenge you.'}
             </p>
             <p className="text-[11px] text-emerald-50/90">{playersText(registered, 'registered')} in {gameLabel(game)}</p>
-            {plays && accepted && season && isOpen && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={async () => {
-                  setBusy(true);
-                  try {
-                    await setChallengeable(season, join, me, game, !isChallengeable(join, game, rewardJoined), week);
-                  } catch (e: any) {
-                    window.alert(e?.message || 'Could not save.');
-                  }
-                  setBusy(false);
-                }}
-                className="w-full flex items-center justify-between gap-3 text-left cursor-pointer disabled:opacity-60"
-                aria-pressed={isChallengeable(join, game, rewardJoined)}
-              >
-                <span className="text-xs font-bold">Open to challenges</span>
-                <Switch on={isChallengeable(join, game, rewardJoined)} />
-              </button>
-            )}
             <div className="grid grid-cols-2 gap-2">
               <button type="button" onClick={onRegister} className="h-10 rounded-xl bg-white text-[#0e9f55] text-xs font-bold flex items-center justify-center gap-1 cursor-pointer">
                 {plays ? 'Edit profile' : <><Plus className="w-3.5 h-3.5" /> Join {gameLabel(game)} League</>}
@@ -785,6 +769,7 @@ const GamePage: React.FC<{
           hiddenFromMe={hiddenFromMe}
           rewardRunning={false}
           isOpen={isOpen}
+          matches={matches}
           title={season ? `${season.name} Standing` : 'League standing'}
           note="The first player here is the official Best in Caritas for this game. Only matches logged in the league count."
         />
@@ -798,6 +783,7 @@ const GamePage: React.FC<{
           hiddenFromMe={hiddenFromMe}
           rewardRunning
           isOpen={isOpen}
+          matches={matches}
           title="Weekly reward table"
           note="Counts only matches entered this week, from zero. Only players who joined the week are listed."
           emptyText="Nobody has joined this week's reward yet."
@@ -1061,7 +1047,7 @@ const RegisterSheet: React.FC<{ me: any; season: Season | null; session: { name?
 
   return (
     <Sheet title={me ? 'Your player profile' : 'Join the Roomly Caritas League'} onClose={onClose}>
-      <p className="text-xs text-slate-500">One profile for the games you play, tied to your Roomly account. Your WhatsApp number stays private.</p>
+      <p className="text-xs text-slate-500">One profile for the games you play, tied to your Roomly account. Joining the league lets other league players message you on WhatsApp to challenge you.</p>
       <div>
         <label className={label}>Gamer name</label>
         <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} className={input} placeholder="e.g. Tobi" />
