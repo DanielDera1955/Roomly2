@@ -42,7 +42,7 @@ import {
 } from '../hub.js';
 import { HOSTELS } from '../config';
 import { AdminGames } from './AdminGames';
-import { subscribeSeasons, adminCreateSeason, adminUpdateSeasonDates, type Season } from '../season';
+import { subscribeSeasons, adminCreateSeason, adminUpdateSeasonDates, adminRenameSeason, adminEndSeasonNow, SEMESTER_NAMES, type Season } from '../season';
 import { subscribeShopTokens } from '../shopsAdmin.js';
 
 const card = 'p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-3';
@@ -335,7 +335,7 @@ const toLocal = (ms: number) => {
 /** Admin: create seasons and change their dates */
 const SeasonAdmin: React.FC = () => {
   const [list, setList] = useState<Season[]>([]);
-  const [name, setName] = useState('');
+  const [name, setName] = useState(SEMESTER_NAMES[0]);
   const [year, setYear] = useState('');
   const [auto, setAuto] = useState(true);
   const [start, setStart] = useState('');
@@ -346,7 +346,7 @@ const SeasonAdmin: React.FC = () => {
     setBusy(true);
     try {
       await adminCreateSeason(name, new Date(start).getTime(), new Date(end).getTime(), year, auto);
-      setName('');
+      setName(SEMESTER_NAMES[0]);
       setYear('');
       setStart('');
       setEnd('');
@@ -358,10 +358,34 @@ const SeasonAdmin: React.FC = () => {
   return (
     <div className={card}>
       <p className={h}>Seasons</p>
-      <p className="text-[11px] text-slate-500">Start at 12:00AM Monday so reward weeks line up. Only one season should run at a time.</p>
+      <p className="text-[11px] text-slate-500">Start at 12:00AM Monday so reward weeks line up. The end date is only expected: change it any time while school is still on. Only one semester should run at a time.</p>
       {list.map((s) => (
         <div key={s.id} className="py-2 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
-          <p className="text-xs font-bold text-slate-900 dark:text-white">{s.name}{s.session ? ` (${s.session})` : ''}</p>
+          <div className="flex items-center gap-2">
+            <select
+              value={SEMESTER_NAMES.includes(s.name) ? s.name : ''}
+              onChange={async (e) => {
+                try {
+                  await adminRenameSeason(s.id, e.target.value);
+                } catch (er: any) {
+                  window.alert(er?.message || 'Could not rename.');
+                }
+              }}
+              className={input}
+            >
+              {!SEMESTER_NAMES.includes(s.name) && <option value="">{s.name} (rename)</option>}
+              {SEMESTER_NAMES.map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+            {s.session && <span className="text-[11px] text-slate-500 shrink-0">{s.session}</span>}
+          </div>
+          {Number(s.endMs) > Date.now() && Number(s.endMs) - Date.now() < 3 * 86400000 && Number(s.startMs) < Date.now() && (
+            <p className="text-[11px] font-semibold text-amber-600">
+              Closes in {Math.max(1, Math.ceil((Number(s.endMs) - Date.now()) / 86400000))} day(s). Extend the end date if school is still on.
+            </p>
+          )}
+          <p className="text-[10px] text-slate-500">Start, then expected end</p>
           <div className="flex gap-2">
             <input type="datetime-local" defaultValue={toLocal(Number(s.startMs))} id={`ss-${s.id}`} className={input} />
             <input type="datetime-local" defaultValue={toLocal(Number(s.endMs))} id={`se-${s.id}`} className={input} />
@@ -381,15 +405,36 @@ const SeasonAdmin: React.FC = () => {
               Save
             </button>
           </div>
+          {Number(s.startMs) < Date.now() && Number(s.endMs) > Date.now() && (
+            <button
+              type="button"
+              onClick={async () => {
+                if (!window.confirm('End this semester now? Champions are recorded and the table is archived. This cannot be undone.')) return;
+                try {
+                  await adminEndSeasonNow(s.id, Number(s.startMs));
+                } catch (er: any) {
+                  window.alert(er?.message || 'Could not end.');
+                }
+              }}
+              className={`${btn} bg-rose-600 text-white`}
+            >
+              End semester now
+            </button>
+          )}
         </div>
       ))}
       <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
-        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} className={input} placeholder="First Semester League" />
+        <select value={name} onChange={(e) => setName(e.target.value)} className={input}>
+          {SEMESTER_NAMES.map((n) => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </select>
         <input value={year} onChange={(e) => setYear(e.target.value)} maxLength={20} className={input} placeholder="Year, for example 2026/2027" />
         <div className="flex gap-2">
           <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} className={input} />
           <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} className={input} />
         </div>
+        <p className="text-[10px] text-slate-500">Start date, then expected end date (you can change it later).</p>
         <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer">
           <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="h-4 w-4 accent-[#0e9f55]" />
           Players join automatically (the first season). Off means they tap Join and tick the rules.

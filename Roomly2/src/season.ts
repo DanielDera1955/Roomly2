@@ -357,6 +357,17 @@ export async function adminUpdateSeasonDates(id: string, startMs: number, endMs:
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) throw new Error('The end date must be after the start date.');
   await updateDoc(doc(db, 'seasons', id), { startMs, endMs });
 }
+export const SEMESTER_NAMES = ['1st Semester League', '2nd Semester League'];
+export async function adminRenameSeason(id: string, name: string) {
+  if (!SEMESTER_NAMES.includes(name)) throw new Error('Pick a semester name.');
+  await updateDoc(doc(db, 'seasons', id), { name });
+}
+/** Close the semester right now; the daily job then crowns champions and archives it */
+export async function adminEndSeasonNow(id: string, startMs: number) {
+  const now = Date.now();
+  if (now <= startMs) throw new Error('This semester has not started yet.');
+  await updateDoc(doc(db, 'seasons', id), { endMs: now });
+}
 
 /** Players on a table: joined the season and play the game */
 export function tablePlayers(gamers: any[], joins: any[], game: string) {

@@ -145,7 +145,7 @@ export const SeasonRulesCard: React.FC<{
                 <>
                   <p className="text-lg font-black text-slate-900 dark:text-white leading-tight">{target.name}</p>
                   <p className="text-[11px] text-slate-500">
-                    {season ? `Ends ${dayText(target.endMs)}` : `Starts ${dayText(target.startMs)}`} · <Users className="inline w-3 h-3 -mt-0.5" /> {joinsCount} {joinsCount === 1 ? 'player' : 'players'}
+                    {season ? `Ends around ${dayText(target.endMs)}` : `Starts ${dayText(target.startMs)}`} · <Users className="inline w-3 h-3 -mt-0.5" /> {joinsCount} {joinsCount === 1 ? 'player' : 'players'}
                   </p>
                 </>
               ) : (
