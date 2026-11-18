@@ -8,6 +8,8 @@
  * Needs: Firebase console > Authentication > Sign-in method > Anonymous switched ON.
  */
 import { getRef, getHeardFrom } from './tracking.js';
+import { matchCounts as coreMatchCounts, canDispute as coreCanDispute, computeRows, AUTO_CONFIRM_HOURS, DISPUTE_HOURS } from './boardCore.js';
+import { uploadProof } from './proof.js';
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
 import {
@@ -84,9 +86,8 @@ export const READY_CHOICES = [
 ];
 /** League points, like a football table. Tournament places add a bonus. */
 export const POINTS = { win: 3, draw: 1, loss: 0, podium: [10, 6, 3] };
-/** A logged result counts by itself after 24 hours; the opponent can dispute for 3 days */
-export const AUTO_CONFIRM_HOURS = 24;
-export const DISPUTE_HOURS = 72;
+/** A result counts at once; after 5 hours with no answer it shows as recorded; reports are allowed for 24 hours */
+export { AUTO_CONFIRM_HOURS, DISPUTE_HOURS } from './boardCore.js';
 /** You can log a result only against someone you contacted (or who contacted you) through Roomly in this time */
 export const CONTACT_VALID_DAYS = 3;
 
@@ -577,14 +578,14 @@ export const isScored = (game) => SCORED_GAMES.includes(game);
 export const gameLabel = (id) => GAMES.find((g) => g.id === id)?.label || id;
 export const playsGame = (g, game) => Boolean(g && !g.banned && g.ownerUid && (g.games || []).includes(game));
 export const readyFor = (g, game, nowMs = Date.now()) => playsGame(g, game) && Number(g.ready?.[game] || 0) > nowMs;
-const appLink = (params) => `${window.location.origin}/?${new URLSearchParams(params).toString()}`;
+export const appLink = (params) => `${window.location.origin}/?${new URLSearchParams(params).toString()}`;
 export const waShare = (text) => `https://wa.me/?text=${encodeURIComponent(text)}`;
-const waTo = (phone, text) => `https://wa.me/234${String(phone).replace(/\D/g, '').replace(/^0/, '')}?text=${encodeURIComponent(text)}`;
+export const waTo = (phone, text) => `https://wa.me/234${String(phone).replace(/\D/g, '').replace(/^0/, '')}?text=${encodeURIComponent(text)}`;
 async function sha(text) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
-const gamerIdOf = (phone) => sha('roomly-gamer:' + phone);
+export const gamerIdOf = (phone) => sha('roomly-gamer:' + phone);
 const pinHashOf = (phone, pin) => sha('roomly-gamer-pin:' + phone + ':' + pin);
 
 /** Players (only real registrations, newest first) */
@@ -736,19 +737,25 @@ export function subscribeAllMatches(cb) {
 }
 
 /**
- * Log a result. myScore / theirScore: goals for football games, or 1 and 0 (who won) for the others.
+ * Log a result. Only the winner enters it (either player for a draw).
+ * myScore / theirScore: goals for football games, or 1 and 0 for the others.
+ * extra: { seasonId, kills, damage, homeUid }. A screenshot is required.
  * Returns the WhatsApp link asking the opponent to confirm.
- * @param {string} game @param {any} me @param {any} opp @param {number} myScore @param {number} theirScore @param {File | null} [proofFile]
+ * @param {string} game @param {any} me @param {any} opp @param {number} myScore @param {number} theirScore @param {File | null} proofFile @param {{seasonId: string, kills?: number, damage?: number, homeUid?: string}} extra
  */
-export async function logResult(game, me, opp, myScore, theirScore, proofFile = null) {
+export async function logResult(game, me, opp, myScore, theirScore, proofFile, extra) {
   await hubUid();
   const a = Math.max(0, Math.min(99, Math.round(Number(myScore) || 0)));
   const b = Math.max(0, Math.min(99, Math.round(Number(theirScore) || 0)));
+  if (a < b) throw new Error(`Only the winner logs a result. Ask ${opp.name} to log it.`);
   if (!isScored(game) && a === b) throw new Error('Pick who won.');
-  const proof = proofFile ? await uploadProductImage(proofFile) : '';
+  if (!extra || !extra.seasonId) throw new Error('No season is running.');
+  if (!proofFile) throw new Error('Add a screenshot of the final score.');
+  const proof = await uploadProof(proofFile, extra.seasonId);
   const ref = doc(collection(hubDb, 'matches'));
-  await setDoc(ref, {
+  const data = {
     v: 2,
+    seasonId: extra.seasonId,
     game,
     aUid: me.id,
     bUid: opp.id,
@@ -762,21 +769,29 @@ export async function logResult(game, me, opp, myScore, theirScore, proofFile = 
     proofA: proof,
     proofB: '',
     disputeNote: '',
-  });
-  const result = isScored(game) ? `${me.name} ${a}-${b} ${opp.name}` : `${a > b ? me.name : opp.name} won`;
+    homeUid: extra.homeUid || '',
+  };
+  if (!isScored(game)) {
+    data.kills = Math.max(0, Math.min(999, Math.round(Number(extra.kills) || 0)));
+    data.damage = Math.max(0, Math.min(99999, Math.round(Number(extra.damage) || 0)));
+  }
+  await setDoc(ref, data);
+  updateDoc(doc(hubDb, 'gamers', me.id), { lastActiveMs: Date.now() }).catch(() => {});
+  const result = isScored(game) ? `${me.name} ${a}-${b} ${opp.name}` : a > b ? `${me.name} won` : `${me.name} and ${opp.name} drew`;
   return waShare(
     `${opp.name}, I logged our ${gameLabel(game)} match on Roomly Caritas: ${result}. ` +
-      `Confirm it here: ${appLink({ match: ref.id })} (it counts by itself after ${AUTO_CONFIRM_HOURS} hours).`
+      `Confirm it here: ${appLink({ match: ref.id })} (it already counts, and shows as recorded after ${AUTO_CONFIRM_HOURS} hours).`
   );
 }
 export async function confirmMatch(m) {
   await hubUid();
   await updateDoc(doc(hubDb, 'matches', m.id), { status: 'confirmed', confirmedAtMs: Date.now() });
+  updateDoc(doc(hubDb, 'gamers', m.bUid), { lastActiveMs: Date.now() }).catch(() => {});
 }
 /** @param {any} m @param {string} note @param {File | null} [proofFile] */
 export async function disputeMatch(m, note, proofFile = null) {
   await hubUid();
-  const proof = proofFile ? await uploadProductImage(proofFile) : '';
+  const proof = proofFile ? await uploadProof(proofFile, m.seasonId || 'season') : '';
   await updateDoc(doc(hubDb, 'matches', m.id), { status: 'disputed', disputeNote: String(note || '').slice(0, 200), proofB: proof });
 }
 export async function cancelMatch(m) {
@@ -785,15 +800,14 @@ export async function cancelMatch(m) {
 }
 export async function addMatchProof(m, meId, file) {
   await hubUid();
-  const url = await uploadProductImage(file);
+  const url = await uploadProof(file, m.seasonId || 'season');
   await updateDoc(doc(hubDb, 'matches', m.id), { [meId === m.aUid ? 'proofA' : 'proofB']: url });
 }
-export function matchCounts(m, nowMs = Date.now()) {
-  if (m.status === 'confirmed') return true;
-  return m.status === 'pending' && nowMs - Number(m.loggedAtMs || 0) >= AUTO_CONFIRM_HOURS * HOUR;
+/** Points count at once (a reported match is out until Roomly decides) */
+export function matchCounts(m) {
+  return coreMatchCounts(m);
 }
-export const canDispute = (m, nowMs = Date.now()) =>
-  (m.status === 'pending' || m.status === 'confirmed') && nowMs - Number(m.loggedAtMs || 0) < DISPUTE_HOURS * HOUR;
+export const canDispute = (m, nowMs = Date.now()) => coreCanDispute(m, nowMs);
 /** "Tobi 3-1 Kene" or "Tobi beat Kene" */
 export const resultText = (m) =>
   isScored(m.game)
@@ -1027,13 +1041,26 @@ export async function fetchLeaders() {
       if (v && Date.now() - v.at < 5 * 60000) return v.leaders;
     }
   } catch {}
-  const [gamers, matches, tournaments] = await Promise.all([once(subscribeGamers), once(subscribeAllMatches), once(subscribeTournaments)]);
+  await hubUid();
   const now = Date.now();
   const leaders = {};
-  GAMES.forEach((g) => {
-    const top = computeBoard(g.id, gamers, matches, tournaments, now).find((r) => r.crown);
-    leaders[g.id] = top ? { name: top.name, pts: top.pts } : null;
-  });
+  GAMES.forEach((g) => (leaders[g.id] = null));
+  try {
+    const seasons = (await getDocs(collection(hubDb, 'seasons'))).docs.map((d) => ({ id: d.id, ...d.data() }));
+    const season = seasons.find((x) => Number(x.startMs) <= now && now < Number(x.endMs));
+    if (season) {
+      const [gamers, matches, joinsSnap] = await Promise.all([
+        once(subscribeGamers),
+        once(subscribeAllMatches),
+        getDocs(query(collection(hubDb, 'seasonJoins'), where('seasonId', '==', season.id))),
+      ]);
+      const joined = new Set(joinsSnap.docs.map((d) => d.data().gid));
+      GAMES.forEach((g) => {
+        const top = computeRows(g.id, gamers, matches, { seasonId: season.id, joined }).find((r) => r.crown);
+        leaders[g.id] = top ? { name: top.name, pts: top.pts } : null;
+      });
+    }
+  } catch {}
   try {
     sessionStorage.setItem(LEADERS_KEY, JSON.stringify({ at: now, leaders }));
   } catch {}

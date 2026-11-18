@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { OrderRecord, orderStageOf, isActiveOrder, GATE_COUNTDOWN_MS } from '../types';
 import { Announcement, arrivalDeadlineMs, arrivalText, countdownText } from '../config';
 import { paymentState } from '../api.js';
+import { CreditsPill } from './CreditsPill';
 
 type DayPart = 'Good morning' | 'Good afternoon' | 'Good evening';
 
@@ -60,6 +61,9 @@ interface HomeBannerProps {
   announcement: Announcement | null;
   onOpenOrder: (o: OrderRecord) => void;
   onOpenOrders: () => void;
+  /** Signed-in phone, for the Credits pill */
+  phone?: string;
+  onOpenGames?: () => void;
   onAnnouncementAction: (a: Announcement) => void;
   onDismissAnnouncement: () => void;
   /** Not signed in yet: greet them and show what Roomly is */
@@ -80,6 +84,8 @@ interface HomeBannerProps {
  * Animation is CSS only and stops for people who ask their phone for reduced motion.
  */
 export const HomeBanner: React.FC<HomeBannerProps> = ({
+  phone,
+  onOpenGames,
   dayPart,
   name,
   isNew,
@@ -423,6 +429,8 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
               ) : (
                 <span />
               )}
+              <span className="shrink-0 inline-flex items-center gap-2">
+              {!isGuest && phone ? <CreditsPill phone={phone} onOpenGames={onOpenGames} /> : null}
               <button
                 type="button"
                 onClick={isGuest ? onStart : onOpenOrders}
@@ -430,6 +438,7 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
               >
                 {isGuest ? 'Start ordering ›' : 'My orders ›'}
               </button>
+              </span>
             </div>
           </div>
         )}

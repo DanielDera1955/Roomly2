@@ -41,6 +41,7 @@ import {
   addSchool,
 } from '../hub.js';
 import { HOSTELS } from '../config';
+import { subscribeSeasons, adminCreateSeason, adminUpdateSeasonDates, type Season } from '../season';
 import { subscribeShopTokens } from '../shopsAdmin.js';
 
 const card = 'p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-3';
@@ -329,6 +330,68 @@ const toLocal = (ms: number) => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
+/** Admin: create seasons and change their dates */
+const SeasonAdmin: React.FC = () => {
+  const [list, setList] = useState<Season[]>([]);
+  const [name, setName] = useState('');
+  const [start, setStart] = useState('');
+  const [end, setEnd] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => subscribeSeasons(setList), []);
+  const create = async () => {
+    setBusy(true);
+    try {
+      await adminCreateSeason(name, new Date(start).getTime(), new Date(end).getTime());
+      setName('');
+      setStart('');
+      setEnd('');
+    } catch (e: any) {
+      window.alert(e?.message || 'Could not create the season.');
+    }
+    setBusy(false);
+  };
+  return (
+    <div className={card}>
+      <p className={h}>Seasons</p>
+      <p className="text-[11px] text-slate-500">Start at 12:00AM Monday so reward weeks line up. Only one season should run at a time.</p>
+      {list.map((s) => (
+        <div key={s.id} className="py-2 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
+          <p className="text-xs font-bold text-slate-900 dark:text-white">{s.name}</p>
+          <div className="flex gap-2">
+            <input type="datetime-local" defaultValue={toLocal(Number(s.startMs))} id={`ss-${s.id}`} className={input} />
+            <input type="datetime-local" defaultValue={toLocal(Number(s.endMs))} id={`se-${s.id}`} className={input} />
+            <button
+              type="button"
+              onClick={async () => {
+                const a = (document.getElementById(`ss-${s.id}`) as HTMLInputElement).value;
+                const b = (document.getElementById(`se-${s.id}`) as HTMLInputElement).value;
+                try {
+                  await adminUpdateSeasonDates(s.id, new Date(a).getTime(), new Date(b).getTime());
+                } catch (e: any) {
+                  window.alert(e?.message || 'Could not save.');
+                }
+              }}
+              className={`${btn} bg-slate-900 text-white dark:bg-white dark:text-slate-900 shrink-0`}
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      ))}
+      <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
+        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} className={input} placeholder="Season name, for example Season 1" />
+        <div className="flex gap-2">
+          <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} className={input} />
+          <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} className={input} />
+        </div>
+        <button type="button" disabled={busy || !name || !start || !end} onClick={create} className={`${btn} bg-[#0e9f55] text-white disabled:opacity-50`}>
+          Create season
+        </button>
+      </div>
+    </div>
+  );
+};
+
 /** Admin: when challenges open, and when outside store items can be ordered */
 const LaunchDates: React.FC<{ settings: any }> = ({ settings }) => {
   const games = gamesOpensAt(settings);
@@ -424,6 +487,7 @@ const HubSettings: React.FC<{ settings: any }> = ({ settings }) => {
   return (
     <>
     <LaunchDates settings={settings} />
+    <SeasonAdmin />
     <div className={card}>
       <p className={h}>Switches and accounts</p>
       <div className="flex items-center justify-between gap-2">

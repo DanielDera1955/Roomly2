@@ -1329,6 +1329,8 @@ export default function App() {
                   setIsTrackerOpen(true);
                 }}
                 onOpenOrders={handleOpenHistory}
+                phone={signedInCustomer ? phone : ''}
+                onOpenGames={() => setGamesOpen({})}
                 onAnnouncementAction={handleAnnouncementAction}
                 onDismissAnnouncement={handleDismissAnnouncement}
               />

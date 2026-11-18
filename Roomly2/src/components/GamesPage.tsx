@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { Gaming } from './Gaming';
+import { CreditsPill } from './CreditsPill';
 
 /** Games and the Roomly Hostel League: its own page, opened from the Home card (no longer a Hostel Hub tab) */
 export const GamesPage: React.FC<{
@@ -27,7 +28,8 @@ export const GamesPage: React.FC<{
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h1 className="text-xl font-black text-slate-900 dark:text-white">Games</h1>
+          <h1 className="text-xl font-black text-slate-900 dark:text-white flex-1">Games</h1>
+          {session.phone && session.pin ? <CreditsPill phone={session.phone} inGames /> : null}
         </div>
         <Gaming session={session} initialGame={initialGame} />
       </div>

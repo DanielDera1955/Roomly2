@@ -609,12 +609,26 @@ service cloud.firestore {
         && request.resource.data.loggedAtMs > request.time.toMillis() - 600000
         && request.resource.data.loggedAtMs < request.time.toMillis() + 600000
         && gamesOpen()
+        // Seasons: the match belongs to the running season and both players joined it
+        && request.resource.data.seasonId is string
+        && exists(/databases/$(database)/documents/seasons/$(request.resource.data.seasonId))
+        && get(/databases/$(database)/documents/seasons/$(request.resource.data.seasonId)).data.startMs <= request.time.toMillis()
+        && request.time.toMillis() < get(/databases/$(database)/documents/seasons/$(request.resource.data.seasonId)).data.endMs
+        && exists(/databases/$(database)/documents/seasonJoins/$(request.resource.data.seasonId + '_' + request.resource.data.aUid))
+        && exists(/databases/$(database)/documents/seasonJoins/$(request.resource.data.seasonId + '_' + request.resource.data.bUid))
+        // Only the winner enters the result (either player for a draw, football games only), with a screenshot
+        && request.resource.data.scoreA >= request.resource.data.scoreB
+        && (request.resource.data.scoreA > request.resource.data.scoreB || request.resource.data.game in ['efootball', 'fifa', 'dls'])
+        && request.resource.data.proofA is string
+        && request.resource.data.proofA.matches('https://res[.]cloudinary[.]com/.*')
+        && request.resource.data.get('kills', 0) is int && request.resource.data.get('kills', 0) >= 0 && request.resource.data.get('kills', 0) <= 999
+        && request.resource.data.get('damage', 0) is int && request.resource.data.get('damage', 0) >= 0 && request.resource.data.get('damage', 0) <= 99999
         && (contact(request.resource.data.aUid, request.resource.data.bUid) || contact(request.resource.data.bUid, request.resource.data.aUid));
       allow update: if isAdmin()
         || (ownsGamer(resource.data.bUid) && resource.data.status == 'pending'
             && changed().hasOnly(['status', 'confirmedAtMs']) && request.resource.data.status == 'confirmed')
         || (ownsGamer(resource.data.bUid) && resource.data.status in ['pending', 'confirmed']
-            && request.time.toMillis() < resource.data.loggedAtMs + 259200000
+            && request.time.toMillis() < resource.data.loggedAtMs + 86400000
             && changed().hasOnly(['status', 'disputeNote', 'proofB']) && request.resource.data.status == 'disputed')
         || (ownsGamer(resource.data.aUid) && resource.data.status == 'pending'
             && changed().hasOnly(['status']) && request.resource.data.status == 'cancelled')
@@ -622,6 +636,100 @@ service cloud.firestore {
             && ((ownsGamer(resource.data.aUid) && changed().hasOnly(['proofA']))
                 || (ownsGamer(resource.data.bUid) && changed().hasOnly(['proofB']))));
       allow delete: if isAdmin();
+    }
+
+    // ---------- Games seasons ----------
+    // The admin creates a season. A player joins once (id = seasonId_playerId) and can switch challenges off per game.
+    match /seasons/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /seasonJoins/{id} {
+      allow read: if true;
+      allow create: if ownsGamer(request.resource.data.gid)
+        && gamerOk(request.resource.data.gid)
+        && id == request.resource.data.seasonId + '_' + request.resource.data.gid
+        && exists(/databases/$(database)/documents/seasons/$(request.resource.data.seasonId))
+        && request.time.toMillis() < get(/databases/$(database)/documents/seasons/$(request.resource.data.seasonId)).data.endMs;
+      allow update: if isAdmin()
+        || (ownsGamer(resource.data.gid)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['off']));
+      allow delete: if isAdmin();
+    }
+
+    // Reward weeks are created by the daily server job (or the admin). Players only join them.
+    match /rewardWeeks/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /rewardJoins/{id} {
+      allow read: if true;
+      allow create: if ownsGamer(request.resource.data.gid)
+        && gamerOk(request.resource.data.gid)
+        && id == request.resource.data.weekKey + '_' + request.resource.data.gid
+        && exists(/databases/$(database)/documents/rewardWeeks/$(request.resource.data.weekKey))
+        && request.resource.data.game == get(/databases/$(database)/documents/rewardWeeks/$(request.resource.data.weekKey)).data.game
+        && request.resource.data.seasonId == get(/databases/$(database)/documents/rewardWeeks/$(request.resource.data.weekKey)).data.seasonId
+        && request.time.toMillis() < get(/databases/$(database)/documents/rewardWeeks/$(request.resource.data.weekKey)).data.endMs
+        && exists(/databases/$(database)/documents/seasonJoins/$(request.resource.data.seasonId + '_' + request.resource.data.gid))
+        && request.resource.data.game in get(/databases/$(database)/documents/gamers/$(request.resource.data.gid)).data.games
+        && get(/databases/$(database)/documents/gamers/$(request.resource.data.gid)).data.get('rewardBlocked', {}).get(request.resource.data.game, false) == false;
+      allow update, delete: if isAdmin();
+    }
+
+    // Every Challenge tap (who, whom, game, when). Only the admin reads the log.
+    match /challengeTaps/{id} {
+      allow read: if isAdmin();
+      allow create: if ownsGamer(request.resource.data.from)
+        && gamerOk(request.resource.data.from)
+        && gamerOk(request.resource.data.to)
+        && request.resource.data.game in ['efootball', 'fifa', 'dls', 'freefire', 'codm']
+        && request.resource.data.atMs > request.time.toMillis() - 600000
+        && request.resource.data.atMs < request.time.toMillis() + 600000
+        && gamesOpen();
+      allow update, delete: if isAdmin();
+    }
+    // Player reports (harassment, fake results). Only the admin reads them.
+    match /gameReports/{id} {
+      allow read: if isAdmin();
+      allow create: if ownsGamer(request.resource.data.from)
+        && request.resource.data.note is string && request.resource.data.note.size() <= 300;
+      allow update, delete: if isAdmin();
+    }
+    // "Hide me from this player": id = hiderId_blockedId
+    match /gamerHides/{id} {
+      allow read: if anyUser() || isAdmin();
+      allow create: if ownsGamer(request.resource.data.hider)
+        && id == request.resource.data.hider + '_' + request.resource.data.blocked;
+      allow delete: if ownsGamer(resource.data.hider) || isAdmin();
+      allow update: if false;
+    }
+
+    // Credits: created only by the daily server job. A student reads their own through creditIndex/{hash of phone}.
+    // At checkout a credit can go from active to used in the same save as the order that uses it,
+    // and an unpaid order gives it back once the day it was placed has ended. Roomly (admin) can change anything.
+    match /creditIndex/{pk} {
+      allow get: if true;
+      allow list, write: if false;
+    }
+    match /credits/{id} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create, delete: if false;
+      allow update: if isAdmin()
+        || (resource.data.status == 'active'
+            && request.resource.data.status == 'used'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'usedOrderId', 'usedAtMs', 'releaseAfterMs'])
+            && request.time.toMillis() >= resource.data.validFromMs
+            && request.time.toMillis() < resource.data.expiresAtMs
+            && existsAfter(/databases/$(database)/documents/orders/$(request.resource.data.usedOrderId))
+            && getAfter(/databases/$(database)/documents/orders/$(request.resource.data.usedOrderId)).data.get('creditId', '') == id)
+        || (resource.data.status == 'used'
+            && request.resource.data.status == 'active'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'usedOrderId', 'usedAtMs', 'releaseAfterMs'])
+            && resource.data.get('releaseAfterMs', 0) > 0
+            && request.time.toMillis() >= resource.data.get('releaseAfterMs', 0)
+            && get(/databases/$(database)/documents/orders/$(resource.data.usedOrderId)).data.paymentStatus == 'unpaid');
     }
 
     // Tournaments: only the admin creates and runs them. Entry id = player id.
@@ -660,7 +768,19 @@ service cloud.firestore {
         && !exists(/databases/$(database)/documents/hubBans/$(request.resource.data.phone))
         && request.resource.data.paymentStatus == 'unpaid'
         && request.resource.data.deliveryFee in [300, 390, 400, 500, 800, 1000, 1200, 1500]
-        && request.resource.data.totalAmount == request.resource.data.subtotal + request.resource.data.deliveryFee
+        && request.resource.data.totalAmount == request.resource.data.subtotal + request.resource.data.deliveryFee - request.resource.data.get('creditApplied', 0)
+        // A Games credit: Outside Food and Canteen Items only, a fixed amount off the items, one credit per order
+        && ((request.resource.data.get('creditId', '') == '' && request.resource.data.get('creditApplied', 0) == 0)
+            || (request.resource.data.get('creditId', '') != ''
+                && request.resource.data.get('cart', '') in ['inside', 'food']
+                && request.resource.data.creditApplied > 0
+                && existsAfter(/databases/$(database)/documents/credits/$(request.resource.data.creditId))
+                && getAfter(/databases/$(database)/documents/credits/$(request.resource.data.creditId)).data.status == 'used'
+                && getAfter(/databases/$(database)/documents/credits/$(request.resource.data.creditId)).data.usedOrderId == orderId
+                && ((getAfter(/databases/$(database)/documents/credits/$(request.resource.data.creditId)).data.value <= request.resource.data.subtotal
+                     && request.resource.data.creditApplied == getAfter(/databases/$(database)/documents/credits/$(request.resource.data.creditId)).data.value)
+                    || (getAfter(/databases/$(database)/documents/credits/$(request.resource.data.creditId)).data.value > request.resource.data.subtotal
+                        && request.resource.data.creditApplied == request.resource.data.subtotal))))
         && request.resource.data.items.size() <= 60
         // Express (₦1,200, inside only) starts as a request waiting for a runner, with no account attached yet
         && (request.resource.data.get('express', null) == null

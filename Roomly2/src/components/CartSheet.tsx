@@ -18,6 +18,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { CartItem, CustomerProfile, DeliveryBatchId } from '../types';
+import { getMyCredits, usableCredit, timeLeft, type Credit } from '../credits';
 import { HOSTELS, BOYS_HOSTELS, GIRLS_HOSTELS, GIRLS_SIDE_OPEN, GIRLS_SOON_MSG, HOSTEL_FLOORS, hostelSideOf, splitFloorRoom, DELIVERY_FEES, deliveryFeeFor, isBagOfWater, CartKind, CART_LABEL, OUT_OF_STOCK_LABEL, OutOfStockChoice, slotsForDay, cartOf, EXPRESS_FEE, EXPRESS_REFUND, EXPRESS_MINUTES, dayWord, longDayLabel, outsideDeliveryText, outsideBannerFor, outsideArriveByFor, timeLabel, timeLabelFull, OUTSIDE_DELIVERY_FEE, outsideLaunchOn, requestReplyInfo, arrivalText, OUTSIDE_STORE_GRACE_END_MIN, isLateFoodOpen, lateFoodFee } from '../config';
 import { getNextBatch, getOutsideChoices, getExpressRunners, paystackFor, collectsAsRoomly, storeGraceOpen } from '../api.js';
 import { isValidNigerianPhone, isValidPin, normalizePhone } from '../api.js';
@@ -88,6 +89,8 @@ interface CartSheetProps {
     lateBatch?: boolean;
     /** Express run: ₦1,200 instead of the normal delivery fee */
     express?: boolean;
+    /** A Games credit used on this order (fixed amount off the items) */
+    credit?: { id: string; value: number };
   }) => void | Promise<void>;
 }
 
@@ -293,6 +296,21 @@ export const CartSheet: React.FC<CartSheetProps> = ({
   void dayStart;
   const [lateAccepted, setLateAccepted] = useState(false);
   useEffect(() => setLateAccepted(false), [selectedBatch?.key]);
+  // Games credit: a fixed amount off the items on Outside Food and Canteen Items (never delivery)
+  const [credits, setCredits] = useState<Credit[]>([]);
+  const [useCredit, setUseCredit] = useState(true);
+  useEffect(() => {
+    if (!isValidNigerianPhone(phone)) return;
+    let live = true;
+    getMyCredits(phone).then((l) => live && setCredits(l));
+    return () => {
+      live = false;
+    };
+  }, [phone]);
+  const creditEligible = (cart === 'inside' || cart === 'food') && !isExpress && collectsAsRoomly(cart);
+  const credit = creditEligible ? usableCredit(credits) : null;
+  const creditApplied = credit && useCredit ? Math.min(credit.value, itemTotal) : 0;
+  const payTotal = grandTotal - creditApplied;
 
   const hasCustomRequest = Boolean(customRequest && customRequest.trim().length > 0);
   const isPhoneValid = isValidNigerianPhone(phone);
@@ -411,7 +429,8 @@ export const CartSheet: React.FC<CartSheetProps> = ({
         paymentMethod: 'pay_now',
         subtotal: itemTotal,
         deliveryFee,
-        totalAmount: grandTotal,
+        totalAmount: payTotal,
+        credit: creditApplied > 0 && credit ? { id: credit.id, value: credit.value } : undefined,
         cart,
         operatorId: cart !== 'inside' ? chosenOp?.uid : undefined,
         operatorName: cart !== 'inside' ? chosenOp?.name : undefined,
@@ -1314,10 +1333,27 @@ export const CartSheet: React.FC<CartSheetProps> = ({
                 </ul>
               </div>
             )}
+            {credit && (
+              <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-900 p-2.5">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input type="checkbox" checked={useCredit} onChange={(e) => setUseCredit(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#0e9f55]" />
+                  <span className="text-[11px] leading-snug text-emerald-900 dark:text-emerald-200">
+                    <span className="block font-bold">Use my Games credit: ₦{credit.value.toLocaleString()} off your items</span>
+                    <span className="block">Runs out in {timeLeft(credit.expiresAtMs - Date.now())}. Not used on delivery.{itemTotal < credit.value ? ` Add ₦${(credit.value - itemTotal).toLocaleString()} more items to use all of it, the rest is lost.` : ''}</span>
+                  </span>
+                </label>
+              </div>
+            )}
+            {creditApplied > 0 && (
+              <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                <span>Games credit</span>
+                <span className="font-mono tabular-nums text-[#0e9f55]">-₦{creditApplied.toLocaleString()}</span>
+              </div>
+            )}
             <div className="flex justify-between text-sm font-extrabold text-slate-900 dark:text-white pt-2 border-t border-slate-200 dark:border-slate-800">
               <span>Total to Pay</span>
               <span className="font-mono text-[#0e9f55] text-base tabular-nums">
-                ₦{grandTotal.toLocaleString()}
+                ₦{payTotal.toLocaleString()}
               </span>
             </div>
           </div>
@@ -1407,7 +1443,7 @@ export const CartSheet: React.FC<CartSheetProps> = ({
               className="w-full h-12 bg-[#0e9f55] hover:bg-[#0b8044] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold flex items-center justify-between px-5 shadow-lg shadow-[#0e9f55]/20 active:scale-[0.98] transition-all cursor-pointer"
             >
               <span>{submitting ? 'Placing Order...' : 'Confirm & Place Order'}</span>
-              <span className="font-mono text-base">₦{grandTotal.toLocaleString()}</span>
+              <span className="font-mono text-base">₦{payTotal.toLocaleString()}</span>
             </button>
             <p className="text-[10px] text-center text-slate-400 mt-2">
               {girlsClosed

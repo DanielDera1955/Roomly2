@@ -91,7 +91,7 @@ async function sha256(text) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
-const phoneKey = (phone) => sha256('roomly-phone:' + normalizePhone(phone));
+export const phoneKey = (phone) => sha256('roomly-phone:' + normalizePhone(phone));
 const profileKey = (phone, pin) => sha256('roomly-profile:' + normalizePhone(phone) + ':' + pin);
 
 export function isValidNigerianPhone(phone) {
@@ -529,6 +529,33 @@ export async function recordRefund(orderId, amount, reason, cancel = false, meta
     }
   });
   if (updated) logActivity('money', `refunded ${naira(amt)} on ${orderLabel(updated)}${cancel ? ' and cancelled it' : ''}`, orderId);
+  // A Games credit order refunded because it was late or failed: give the credit back with a fresh 24 hours
+  if (updated && updated.creditId && !updated.creditRestoredAt && (cancel || /late|fail|not deliver|never/i.test(`${category} ${reason}`))) {
+    try {
+      const cref = doc(db, 'credits', updated.creditId);
+      const cs = await getDoc(cref);
+      if (cs.exists() && cs.data().status === 'used') {
+        const nowMs = Date.now();
+        await updateDoc(cref, {
+          status: 'active',
+          validFromMs: nowMs,
+          expiresAtMs: nowMs + 24 * 3600000,
+          usedOrderId: '',
+          usedAtMs: 0,
+          releaseAfterMs: 0,
+          restoredAtMs: nowMs,
+          restoreCount: (Number(cs.data().restoreCount) || 0) + 1,
+        });
+        await patchOrder(orderId, (o) => {
+          o.creditRestoredAt = at;
+          o.history.push({ status: o.status, timestamp: at, note: 'The Games credit on this order was restored for 24 hours.', updatedBy: 'Roomly' });
+        });
+        logActivity('money', `restored the Games credit on ${orderLabel(updated)}`, orderId);
+      }
+    } catch (e) {
+      console.error('Could not restore the credit', e);
+    }
+  }
   return updated;
 }
 /** "08012345678" -> "2348012345678" for WhatsApp links */
@@ -2296,7 +2323,26 @@ export async function createOrder(orderPayload) {
     if (lateFood && !foodLateAvailable(opt)) throw new Error('Late orders for this batch have closed. Please refresh the page and choose the next batch.');
   }
   const deliveryFee = isExpress ? EXPRESS_FEE : deliveryFeeFor(subtotal, hasOutside, (orderPayload.items || []).some((i) => isBagOfWater(i.name)), lateFood);
-  const totalAmount = subtotal + deliveryFee;
+  // A Games credit: a fixed amount off the items (never the delivery), only on Outside Food and Canteen Items.
+  // The credit is marked used in the same save as the order; the security rules check it again.
+  let creditApplied = 0;
+  let creditRef = null;
+  let creditValue = 0;
+  const askedCredit = orderPayload.credit && orderPayload.credit.id ? String(orderPayload.credit.id) : '';
+  if (askedCredit) {
+    if (!['inside', 'food'].includes(cart) || isExpress || !collectsAsRoomly(cart)) throw new Error('A credit works on Outside Food and Canteen Items only.');
+    creditRef = doc(db, 'credits', askedCredit);
+    const cs = await getDoc(creditRef);
+    const cd = cs.exists() ? cs.data() : null;
+    const nowMs = Date.now();
+    if (!cd || cd.pk !== pk || cd.status !== 'active' || nowMs < Number(cd.validFromMs) || nowMs >= Number(cd.expiresAtMs)) {
+      throw new Error('This credit is no longer available. Remove it and place your order again.');
+    }
+    creditValue = Number(cd.value) || 0;
+    creditApplied = Math.min(creditValue, subtotal);
+    if (creditApplied <= 0) throw new Error('Add items to your cart to use this credit.');
+  }
+  const totalAmount = subtotal + deliveryFee - creditApplied;
 
   // Everyone pays first (pay on delivery has been removed)
   const paymentMethod = 'pay_now';
@@ -2387,6 +2433,7 @@ export async function createOrder(orderPayload) {
     subtotal,
     deliveryFee,
     totalAmount,
+    ...(creditRef ? { creditId: creditRef.id, creditApplied, creditValue } : {}),
     status: 'Received',
     createdAt: createdAtIso,
     estimatedDeliveryTime: batchMeta?.timeWindow || 'Next delivery batch',
@@ -2412,6 +2459,11 @@ export async function createOrder(orderPayload) {
 
   const batch = writeBatch(db);
   batch.set(doc(db, 'orders', orderId), slim(newOrder));
+  if (creditRef) {
+    // If the order is never paid, the credit goes back after the day the order was placed (see getMyCredits)
+    const lagosNextMidnight = (Math.floor((now.getTime() + 3600000) / 86400000) + 1) * 86400000 - 3600000;
+    batch.update(creditRef, { status: 'used', usedOrderId: orderId, usedAtMs: now.getTime(), releaseAfterMs: lagosNextMidnight });
+  }
   // A one-off custom delivery spot must not overwrite the saved room
   const savedLoc =
     orderPayload.isCustomLocation && existingProfile

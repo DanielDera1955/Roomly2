@@ -3,20 +3,15 @@ import { Trophy, Crown, Camera, Loader2, Users, Calendar, MessageCircle, Gamepad
 import { HOSTELS } from '../config';
 import {
   GAMES,
-  READY_CHOICES,
-  AUTO_CONFIRM_HOURS,
   isScored,
   gameLabel,
   playsGame,
-  readyFor,
   knownHubUid,
   hubUid,
   restoreGamerFromLogin,
   myGamer,
   subscribeGamers,
   registerGamer,
-  setReady,
-  challengeOnWhatsApp,
   getRecentOpponents,
   subscribeAllMatches,
   logResult,
@@ -24,7 +19,6 @@ import {
   disputeMatch,
   cancelMatch,
   addMatchProof,
-  matchCounts,
   resultText,
   winnerOf,
   shareWinLink,
@@ -39,8 +33,26 @@ import {
   joinTournament,
   markEntryPaid,
   leaveTournament,
-  computeBoard,
 } from '../hub.js';
+import { computeRows, matchCounts, matchRecorded, canDispute, weekPhase, lagosDay, DISPUTE_HOURS, AUTO_CONFIRM_HOURS, rewardConfigFor } from '../boardCore.js';
+import {
+  subscribeSeasons,
+  currentSeason,
+  upcomingSeason,
+  subscribeSeasonJoins,
+  subscribeRewardWeeks,
+  subscribeRewardJoins,
+  subscribeGamesConfig,
+  subscribeHiddenFromMe,
+  activeWeekFor,
+  queuedWeek,
+  isChallengeable,
+  setChallengeable,
+  tapChallenge,
+  pairContext,
+  type Season,
+} from '../season';
+import { SeasonCard, RewardCard, ChallengeList, RulesSheet } from './SeasonGames';
 
 const card = 'bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800';
 const input =
@@ -90,6 +102,13 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
   const [settings, setSettings] = useState<any>({});
   const [registering, setRegistering] = useState(false);
   const [nowMs, setNowMs] = useState(Date.now());
+  const [seasons, setSeasons] = useState<Season[]>([]);
+  const [joins, setJoins] = useState<any[]>([]);
+  const [weeks, setWeeks] = useState<any[]>([]);
+  const [rewardJoins, setRewardJoins] = useState<any[]>([]);
+  const [config, setConfig] = useState<any>({});
+  const [hiddenFromMe, setHiddenFromMe] = useState<Set<string>>(new Set());
+  const [joinPrompt, setJoinPrompt] = useState(false);
 
   useEffect(() => {
     knownHubUid().then(setUid);
@@ -109,6 +128,8 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
   useEffect(() => subscribeAllMatches(setMatches), []);
   useEffect(() => subscribeTournaments(setTournaments), []);
   useEffect(() => subscribeHubSettings(setSettings), []);
+  useEffect(() => subscribeSeasons(setSeasons), []);
+  useEffect(() => subscribeGamesConfig(setConfig), []);
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 30000);
     return () => window.clearInterval(id);
@@ -123,13 +144,57 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
   const me = myGamer(gamers, uid);
   const opensAt = gamesOpensAt(settings);
   const isOpen = nowMs >= opensAt;
+  const season = currentSeason(seasons, nowMs);
+  const upcoming = upcomingSeason(seasons, nowMs);
+  const target = season || upcoming;
+  useEffect(() => subscribeSeasonJoins(target?.id || '', setJoins), [target?.id]);
+  useEffect(() => subscribeRewardWeeks(season?.id || '', setWeeks), [season?.id]);
+  useEffect(() => subscribeRewardJoins(season?.id || '', setRewardJoins), [season?.id]);
+  useEffect(() => subscribeHiddenFromMe(me?.id || '', setHiddenFromMe), [me?.id]);
+  const myJoin = me ? joins.find((j) => j.gid === me.id) || null : null;
+
+  /** The tables: players who joined the season and play the game. "ready" here means open to challenges. */
   const boards = useMemo(() => {
     const out: Record<string, any[]> = {};
-    GAMES.forEach((g) => (out[g.id] = computeBoard(g.id, gamers, matches, tournaments, nowMs)));
+    const joinById = new Map(joins.map((j) => [j.gid, j]));
+    const joined = new Set(joins.map((j) => j.gid));
+    GAMES.forEach((g: { id: string }) => {
+      if (!season) {
+        out[g.id] = [];
+        return;
+      }
+      const w = activeWeekFor(weeks, g.id, nowMs);
+      const rj = new Set(rewardJoins.filter((x) => w && x.weekKey === w.id).map((x) => x.gid));
+      out[g.id] = computeRows(g.id, gamers, matches, { seasonId: season.id, joined }).map((r: any) => ({
+        ...r,
+        ready: isChallengeable(joinById.get(r.id), g.id, rj.has(r.id)),
+      }));
+    });
     return out;
-  }, [gamers, matches, tournaments, nowMs]);
+  }, [gamers, matches, season?.id, joins, weeks, rewardJoins, nowMs]);
+
+  /** The reward tables: only matches inside the running week, from zero, only players who joined that week */
+  const rewardBoards = useMemo(() => {
+    const out: Record<string, any[]> = {};
+    GAMES.forEach((g: { id: string }) => {
+      const w = activeWeekFor(weeks, g.id, nowMs);
+      if (!season || !w) {
+        out[g.id] = [];
+        return;
+      }
+      const rj = new Set(rewardJoins.filter((x) => x.weekKey === w.id).map((x) => x.gid));
+      out[g.id] = computeRows(g.id, gamers, matches, { seasonId: season.id, joined: rj, fromMs: Number(w.startMs), toMs: Number(w.endMs) });
+    });
+    return out;
+  }, [gamers, matches, season?.id, weeks, rewardJoins, nowMs]);
 
   const openRegister = () => setRegistering(true);
+
+  const gameMatches = (g: string) => matches.filter((m) => m.game === g && season && m.seasonId === season.id);
+  const rewardJoinedFor = (g: string) => {
+    const w = activeWeekFor(weeks, g, nowMs);
+    return Boolean(w && me && rewardJoins.some((x) => x.weekKey === w.id && x.gid === me.id));
+  };
 
   return (
     <div className="space-y-4">
@@ -138,7 +203,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
           game={game}
           me={me}
           board={boards[game]}
-          matches={matches.filter((m) => m.game === game)}
+          matches={gameMatches(game)}
           tournaments={tournaments.filter((t) => t.game === game && t.status !== 'cancelled')}
           isOpen={isOpen}
           opensAt={opensAt}
@@ -147,6 +212,15 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
           onFocusDone={() => setFocusMatch('')}
           onBack={() => setGame('')}
           onRegister={openRegister}
+          season={season}
+          join={myJoin}
+          week={activeWeekFor(weeks, game, nowMs)}
+          otherWeek={queuedWeek(weeks, nowMs)}
+          rewardRows={rewardBoards[game] || []}
+          rewardJoined={rewardJoinedFor(game)}
+          config={rewardConfigFor(config, game)}
+          hiddenFromMe={hiddenFromMe}
+          onJoinPrompt={() => setJoinPrompt(true)}
         />
       ) : (
         <GamesHome
@@ -159,6 +233,13 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
           nowMs={nowMs}
           onPick={setGame}
           onRegister={openRegister}
+          season={season}
+          upcoming={upcoming}
+          seasons={seasons}
+          join={myJoin}
+          joinsCount={joins.length}
+          weeks={weeks}
+          rewardJoins={rewardJoins}
         />
       )}
       {registering && (
@@ -173,6 +254,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
           }}
         />
       )}
+      {joinPrompt && <RulesSheet onClose={() => setJoinPrompt(false)} />}
     </div>
   );
 };
@@ -192,7 +274,14 @@ const GamesHome: React.FC<{
   nowMs: number;
   onPick: (g: string) => void;
   onRegister: () => void;
-}> = ({ me, isCustomer = false, gamers, boards, isOpen, opensAt, nowMs, onPick, onRegister }) => {
+  season: Season | null;
+  upcoming: Season | null;
+  seasons: Season[];
+  join: any;
+  joinsCount: number;
+  weeks: any[];
+  rewardJoins: any[];
+}> = ({ me, isCustomer = false, gamers, boards, isOpen, opensAt, nowMs, onPick, onRegister, season, upcoming, seasons, join, joinsCount, weeks, rewardJoins }) => {
   const registered = gamers.filter((g) => !g.banned).length;
   const myBest = me
     ? GAMES.filter((g) => playsGame(me, g.id))
@@ -229,7 +318,7 @@ const GamesHome: React.FC<{
           {isOpen
             ? me && myBest
               ? `You're #${myBest.row.rank} in ${myBest.g.label}. Keep climbing.`
-              : 'Register, go Ready to play and start climbing the table.'
+              : 'Register, join the season and start climbing the table.'
             : `Registration week. Challenges open ${openDay(opensAt)}. Get your profile ready before then.`}
         </p>
         <div className="mt-4 grid grid-cols-2 gap-2">
@@ -246,14 +335,17 @@ const GamesHome: React.FC<{
         </div>
       </div>
 
-      {/* My settings: ready to be challenged, per game, and edit profile */}
-      {me && <MyStatusCard me={me} isOpen={isOpen} opensAt={opensAt} nowMs={nowMs} onEdit={onRegister} />}
+      {/* Season league: join, rules and the Hall of fame */}
+      <SeasonCard season={season} upcoming={upcoming} seasons={seasons} me={me} join={join} joinsCount={joinsCount} nowMs={nowMs} onRegister={onRegister} />
+
+      {/* My settings: open to challenges, per game, and edit profile */}
+      {me && <MyStatusCard me={me} season={season} join={join} weeks={weeks} rewardJoins={rewardJoins} isOpen={isOpen} opensAt={opensAt} nowMs={nowMs} onEdit={onRegister} />}
 
       {/* Game cards */}
       <div className="flex items-end justify-between">
         <div>
           <h3 className="text-base font-black text-slate-900 dark:text-white">Choose your game</h3>
-          <p className="text-[11px] text-slate-500">See the leader and who is ready now.</p>
+          <p className="text-[11px] text-slate-500">See the leader and who you can challenge.</p>
         </div>
         <span className="text-[11px] text-slate-400">{GAMES.length} games</span>
       </div>
@@ -275,7 +367,7 @@ const GamesHome: React.FC<{
               </p>
               <div className="mt-3 flex items-center justify-between text-[10px]">
                 <span className="text-slate-400">{playersText(b.length)}</span>
-                <span className="font-bold text-[#0e9f55]">{isOpen ? `${ready} ready now` : ''}</span>
+                <span className="font-bold text-[#0e9f55]">{isOpen && ready > 0 ? `${ready} open to challenge` : ''}</span>
               </div>
             </button>
           );
@@ -316,21 +408,35 @@ const GamePage: React.FC<{
   onFocusDone: () => void;
   onBack: () => void;
   onRegister: () => void;
-}> = ({ game, me, board, matches, tournaments, isOpen, opensAt, nowMs, focusMatch, onFocusDone, onBack, onRegister }) => {
-  const [tab, setTab] = useState<'table' | 'tournaments'>('table');
+  season: Season | null;
+  join: any;
+  week: any | null;
+  otherWeek: any | null;
+  rewardRows: any[];
+  rewardJoined: boolean;
+  config: { minPlayers: number; minPoints: number; creditValue: number };
+  hiddenFromMe: Set<string>;
+  onJoinPrompt: () => void;
+}> = ({ game, me, board, matches, tournaments, isOpen, opensAt, nowMs, focusMatch, onFocusDone, onBack, onRegister, season, join, week, otherWeek, rewardRows, rewardJoined, config, hiddenFromMe, onJoinPrompt }) => {
+  const [tab, setTab] = useState<'table' | 'reward' | 'tournaments'>('table');
   const [logging, setLogging] = useState(false);
   const plays = playsGame(me, game);
+  const joined = Boolean(join);
   const myRow = me ? board.find((r) => r.id === me.id) : null;
   const champ = board.find((r) => r.crown);
-  const ready = board.filter((r) => r.ready && r.id !== me?.id);
+  const rewardRunning = Boolean(week && weekPhase(week, nowMs) === 'running');
   const toConfirm = me
-    ? matches.filter((m) => m.bUid === me.id && m.status === 'pending').sort((a) => (a.id === focusMatch ? -1 : 0))
+    ? matches.filter((m) => m.bUid === me.id && m.status === 'pending' && canDispute(m, nowMs)).sort((a) => (a.id === focusMatch ? -1 : 0))
     : [];
-  const mineOpen = me ? matches.filter((m) => (m.aUid === me.id || m.bUid === me.id) && (m.status === 'disputed' || (m.aUid === me.id && m.status === 'pending' && !matchCounts(m, nowMs)))) : [];
+  const mineOpen = me
+    ? matches.filter((m) => (m.aUid === me.id || m.bUid === me.id) && (m.status === 'disputed' || (m.aUid === me.id && m.status === 'pending' && !matchRecorded(m, nowMs))))
+    : [];
   const recent = matches
-    .filter((m) => matchCounts(m, nowMs))
+    .filter((m) => matchCounts(m))
     .sort((a, b) => (b.loggedAtMs || 0) - (a.loggedAtMs || 0))
     .slice(0, 8);
+  const tabs: ('table' | 'reward' | 'tournaments')[] = rewardRunning ? ['table', 'reward', 'tournaments'] : ['table', 'tournaments'];
+  const tabLabel = (t: string) => (t === 'table' ? 'General' : t === 'reward' ? 'Reward week' : `Tournaments${tournaments.length ? ` (${tournaments.length})` : ''}`);
 
   return (
     <>
@@ -345,6 +451,21 @@ const GamePage: React.FC<{
           <h2 className="text-xl font-black text-slate-900 dark:text-white leading-tight">{gameLabel(game)}</h2>
         </div>
       </div>
+
+      {/* The reward: the plate and who is winning it right now */}
+      <RewardCard
+        game={game}
+        week={week}
+        otherWeek={otherWeek}
+        rewardRows={rewardRows}
+        config={config}
+        me={me}
+        season={season}
+        join={join}
+        rewardJoined={rewardJoined}
+        tableCount={board.length}
+        nowMs={nowMs}
+      />
 
       {/* Registration week */}
       {!isOpen && (
@@ -384,11 +505,11 @@ const GamePage: React.FC<{
             <div className="mt-4">
               {champ.id === me?.id ? (
                 <span className="inline-flex h-10 items-center px-4 rounded-xl bg-white/15 text-sm font-bold">That's you. Defend it.</span>
-              ) : champ.ready && isOpen && plays ? (
-                <ChallengeButton game={game} me={me} row={champ} myRank={myRow?.rank} big />
+              ) : champ.ready && isOpen && plays && joined && !hiddenFromMe.has(champ.id) ? (
+                <ChallengeButton game={game} me={me} row={champ} season={season} rewardRunning={rewardRunning} />
               ) : (
                 <span className="inline-flex h-10 items-center gap-1.5 px-4 rounded-xl bg-white/15 text-sm font-bold text-emerald-50/90">
-                  <MessageCircle className="w-4 h-4" /> {!isOpen ? `Opens ${openDay(opensAt)}` : 'Not ready now'}
+                  <MessageCircle className="w-4 h-4" /> {!isOpen ? `Opens ${openDay(opensAt)}` : !joined ? 'Join the season to challenge' : 'Not open to challenges'}
                 </span>
               )}
             </div>
@@ -396,7 +517,7 @@ const GamePage: React.FC<{
         ) : (
           <>
             <h3 className="mt-1 text-xl font-black">No champion yet</h3>
-            <p className="text-xs text-emerald-50/90 mt-1">{isOpen ? 'Win the first matches and the crown is yours.' : `The race starts ${openDay(opensAt)}.`}</p>
+            <p className="text-xs text-emerald-50/90 mt-1">{!season ? 'The race starts when a season begins.' : isOpen ? 'Win the first matches and the crown is yours.' : `The race starts ${openDay(opensAt)}.`}</p>
           </>
         )}
 
@@ -426,81 +547,64 @@ const GamePage: React.FC<{
         </div>
       </div>
 
-      {/* My profile: ready to play and my stats */}
-      {plays && <MyProfileCard me={me} row={myRow} game={game} isOpen={isOpen} opensAt={opensAt} nowMs={nowMs} onEdit={onRegister} />}
+      {/* My profile: open to challenges and my stats */}
+      {plays && <MyProfileCard me={me} row={myRow} game={game} season={season} join={join} week={week} rewardJoined={rewardJoined} isOpen={isOpen} opensAt={opensAt} onEdit={onRegister} />}
 
-      {/* Ready to play now */}
-      {isOpen && (
-        <div className="space-y-2">
-          <div className="flex items-end justify-between">
-            <div>
-              <h3 className="text-sm font-black text-slate-900 dark:text-white">Ready to play now</h3>
-              <p className="text-[11px] text-slate-500">Challenge anyone in Caritas.</p>
-            </div>
-            <span className="text-[11px] font-bold text-[#0e9f55]">{ready.length} ready</span>
-          </div>
-          {ready.length === 0 ? (
-            <div className={`${card} p-4 text-center text-xs text-slate-400`}>Nobody is ready yet. Switch yours on so others can find you.</div>
-          ) : (
-            <div className="flex gap-2.5 overflow-x-auto no-scrollbar -mx-3 px-3 pb-1 snap-x">
-              {ready.map((r) => (
-                <div key={r.id} className={`${card} p-3 w-36 shrink-0 snap-start`}>
-                  <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{r.name}</p>
-                  <p className="text-[10px] text-slate-500 truncate">
-                    {r.pts} pts · {r.tag || r.hostel}
-                  </p>
-                  {r.freeNote && <p className="text-[10px] text-slate-400 truncate mt-0.5">{r.freeNote}</p>}
-                  <div className="mt-2.5">
-                    {plays ? (
-                      <ChallengeButton game={game} me={me} row={r} myRank={myRow?.rank} />
-                    ) : (
-                      <button type="button" onClick={onRegister} className="w-full h-9 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-[#0e9f55] text-xs font-bold cursor-pointer">
-                        Register
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {/* Players to challenge */}
+      <ChallengeList
+        game={game}
+        me={me}
+        season={season}
+        join={join}
+        board={board}
+        hiddenFromMe={hiddenFromMe}
+        rewardRunning={rewardRunning}
+        isOpen={isOpen}
+        onJoinPrompt={onJoinPrompt}
+        onRegister={onRegister}
+      />
 
       {/* Log a result */}
       {plays && (
         <button
           type="button"
-          disabled={!isOpen}
+          disabled={!isOpen || !joined || !season}
           onClick={() => setLogging(true)}
           className="w-full h-12 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-default"
         >
-          {isOpen ? <Plus className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-          {isOpen ? 'Log a match result' : `Results open ${openDay(opensAt)}`}
+          {isOpen && joined ? <Plus className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+          {!isOpen ? `Results open ${openDay(opensAt)}` : !joined ? 'Join the season to log results' : 'I won: log my result'}
         </button>
       )}
 
-      {/* Table / Tournaments */}
+      {/* General / Reward week / Tournaments */}
       <div className={`${card} overflow-hidden`}>
-        <div className="grid grid-cols-2 gap-1 p-1 border-b border-slate-100 dark:border-slate-800">
-          {(['table', 'tournaments'] as const).map((t) => (
+        <div className={`grid ${tabs.length === 3 ? 'grid-cols-3' : 'grid-cols-2'} gap-1 p-1 border-b border-slate-100 dark:border-slate-800`}>
+          {tabs.map((t) => (
             <button
               key={t}
               type="button"
               onClick={() => setTab(t)}
               className={`h-10 rounded-xl text-sm font-bold cursor-pointer ${tab === t ? 'bg-emerald-50 dark:bg-emerald-950/50 text-[#0e9f55]' : 'text-slate-500'}`}
             >
-              {t === 'table' ? 'Table' : `Tournaments${tournaments.length ? ` (${tournaments.length})` : ''}`}
+              {tabLabel(t)}
             </button>
           ))}
         </div>
-        {tab === 'table' ? <LeagueTable game={game} board={board} meId={me?.id} /> : <Tournaments list={tournaments} me={me} onRegister={onRegister} />}
+        {tab === 'tournaments' ? (
+          <Tournaments list={tournaments} me={me} onRegister={onRegister} />
+        ) : tab === 'reward' && rewardRunning ? (
+          <LeagueTable game={game} board={rewardRows} meId={me?.id} title="Reward week table" note="Counts only matches entered this week. Starts from zero." />
+        ) : (
+          <LeagueTable game={game} board={board} meId={me?.id} title={season ? `${season.name} table` : 'League table'} />
+        )}
       </div>
 
       {/* Recent results */}
       <div className="space-y-2">
         <div className="flex items-end justify-between">
           <h3 className="text-sm font-black text-slate-900 dark:text-white">Recent results</h3>
-          <span className="text-[11px] text-slate-400">Confirmed matches</span>
+          <span className="text-[11px] text-slate-400">Counting matches</span>
         </div>
         {recent.length === 0 ? (
           <div className={`${card} p-4 text-center text-xs text-slate-400`}>No results yet.</div>
@@ -511,11 +615,14 @@ const GamePage: React.FC<{
               return (
                 <div key={m.id} className="flex items-center gap-3 p-3">
                   <span className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
-                    <Check className="w-4 h-4 text-slate-400" />
+                    <Check className={`w-4 h-4 ${matchRecorded(m, nowMs) ? 'text-[#0e9f55]' : 'text-slate-400'}`} />
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{resultText(m)}</p>
-                    <p className="text-[11px] text-slate-400">{ago(m.loggedAtMs)}</p>
+                    <p className="text-[11px] text-slate-400">
+                      {ago(m.loggedAtMs)}
+                      {matchRecorded(m, nowMs) ? ' · recorded' : ''}
+                    </p>
                   </div>
                   {iWon && (
                     <button
@@ -533,7 +640,7 @@ const GamePage: React.FC<{
         )}
       </div>
 
-      {logging && <LogResultSheet game={game} me={me} board={board} onClose={() => setLogging(false)} />}
+      {logging && season && <LogResultSheet game={game} me={me} board={board} matches={matches} season={season} onClose={() => setLogging(false)} />}
     </>
   );
 };
@@ -541,21 +648,26 @@ const GamePage: React.FC<{
 /* ------------------------------------------------------------------ */
 
 /** On the Games home: one place for a player's profile and a Ready switch for each game they play */
-const MyStatusCard: React.FC<{ me: any; isOpen: boolean; opensAt: number; nowMs: number; onEdit: () => void }> = ({ me, isOpen, opensAt, nowMs, onEdit }) => {
-  const [choice, setChoice] = useState('1w');
+const Switch: React.FC<{ on: boolean }> = ({ on }) => (
+  <span className={`w-11 h-6 rounded-full p-0.5 transition-colors ${on ? 'bg-[#0e9f55]' : 'bg-slate-300 dark:bg-slate-700'}`}>
+    <span className={`block w-5 h-5 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-5' : ''}`} />
+  </span>
+);
+
+const MyStatusCard: React.FC<{ me: any; season: Season | null; join: any; weeks: any[]; rewardJoins: any[]; isOpen: boolean; opensAt: number; nowMs: number; onEdit: () => void }> = ({ me, season, join, weeks, rewardJoins, isOpen, opensAt, nowMs, onEdit }) => {
   const [busy, setBusy] = useState('');
   const mine = GAMES.filter((g: { id: string }) => playsGame(me, g.id));
   if (mine.length === 0) return null;
   const toggle = async (game: string, on: boolean) => {
+    if (!season || !join) return;
     setBusy(game);
     try {
-      await setReady(me, game, on ? null : choice);
+      await setChallengeable(season, join, me, game, !on, activeWeekFor(weeks, game, nowMs));
     } catch (e: any) {
       window.alert(e?.message || 'Could not save.');
     }
     setBusy('');
   };
-  const anyOff = mine.some((g: { id: string }) => !readyFor(me, g.id, nowMs));
   return (
     <div className={`${card} p-4`}>
       <div className="flex items-center gap-3">
@@ -571,62 +683,58 @@ const MyStatusCard: React.FC<{ me: any; isOpen: boolean; opensAt: number; nowMs:
         </button>
       </div>
       <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2.5">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-xs font-bold text-slate-900 dark:text-white">Ready to be challenged</p>
-          {!isOpen ? (
-            <span className="text-[11px] text-slate-400">Switches work from {openDay(opensAt)}</span>
-          ) : anyOff ? (
-            <select value={choice} onChange={(e) => setChoice(e.target.value)} className="h-8 px-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white">
-              {READY_CHOICES.map((c: { id: string; label: string }) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          ) : null}
-        </div>
-        {mine.map((g: { id: string; label: string }) => {
-          const on = readyFor(me, g.id, nowMs);
-          return (
-            <button
-              key={g.id}
-              type="button"
-              disabled={busy === g.id || !isOpen}
-              onClick={() => toggle(g.id, on)}
-              aria-pressed={on}
-              className="w-full flex items-center justify-between gap-3 cursor-pointer disabled:opacity-50 disabled:cursor-default"
-            >
-              <span className="text-sm font-semibold text-slate-900 dark:text-white">{g.label}</span>
-              <span className="flex items-center gap-2.5">
-                {on && <span className="text-[11px] text-slate-500">Until {new Date(Number(me.ready?.[g.id])).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</span>}
-                <span className={`w-11 h-6 rounded-full p-0.5 transition-colors ${on ? 'bg-[#0e9f55]' : 'bg-slate-300 dark:bg-slate-700'}`}>
-                  <span className={`block w-5 h-5 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-5' : ''}`} />
+        <p className="text-xs font-bold text-slate-900 dark:text-white">Open to challenges</p>
+        {!join ? (
+          <p className="text-[11px] text-slate-400">Join the season to appear on the tables and get challenged.</p>
+        ) : !isOpen ? (
+          <p className="text-[11px] text-slate-400">Switches work from {openDay(opensAt)}</p>
+        ) : (
+          mine.map((g: { id: string; label: string }) => {
+            const w = activeWeekFor(weeks, g.id, nowMs);
+            const rj = Boolean(w && rewardJoins.some((x) => x.weekKey === w.id && x.gid === me.id));
+            const on = isChallengeable(join, g.id, rj);
+            return (
+              <button
+                key={g.id}
+                type="button"
+                disabled={busy === g.id || rj}
+                onClick={() => toggle(g.id, on)}
+                aria-pressed={on}
+                className="w-full flex items-center justify-between gap-3 cursor-pointer disabled:opacity-60 disabled:cursor-default"
+              >
+                <span className="text-sm font-semibold text-slate-900 dark:text-white">{g.label}</span>
+                <span className="flex items-center gap-2.5">
+                  {rj && <span className="text-[11px] text-slate-500">On during reward week</span>}
+                  <Switch on={on} />
                 </span>
-              </span>
-            </button>
-          );
-        })}
+              </button>
+            );
+          })
+        )}
       </div>
     </div>
   );
 };
 
-const MyProfileCard: React.FC<{ me: any; row: any; game: string; isOpen: boolean; opensAt: number; nowMs: number; onEdit: () => void }> = ({
+const MyProfileCard: React.FC<{ me: any; row: any; game: string; season: Season | null; join: any; week: any | null; rewardJoined: boolean; isOpen: boolean; opensAt: number; onEdit: () => void }> = ({
   me,
   row,
   game,
+  season,
+  join,
+  week,
+  rewardJoined,
   isOpen,
   opensAt,
-  nowMs,
   onEdit,
 }) => {
-  const [choice, setChoice] = useState('1w');
   const [busy, setBusy] = useState(false);
-  const on = readyFor(me, game, nowMs);
+  const on = isChallengeable(join, game, rewardJoined);
   const toggle = async () => {
+    if (!season || !join) return;
     setBusy(true);
     try {
-      await setReady(me, game, on ? null : choice);
+      await setChallengeable(season, join, me, game, !on, week);
     } catch (e: any) {
       window.alert(e?.message || 'Could not save.');
     }
@@ -646,71 +754,58 @@ const MyProfileCard: React.FC<{ me: any; row: any; game: string; isOpen: boolean
               · {me.school === 'guest' ? 'Guest' : me.school === 'other' ? me.schoolName || 'Other school' : me.hostel}
             </span>
           </p>
-          <p className="text-[11px] text-slate-500">
-            {row ? `${row.pts} pts · #${row.rank} in ${gameLabel(game)}` : ''}
-          </p>
+          <p className="text-[11px] text-slate-500">{row ? `${row.pts} pts · #${row.rank} in ${gameLabel(game)}` : ''}</p>
         </div>
         <button type="button" onClick={onEdit} className="text-xs font-bold text-[#0e9f55] cursor-pointer">
           Edit
         </button>
       </div>
       <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
-        <button type="button" disabled={busy || !isOpen} onClick={toggle} className="flex items-center gap-2.5 cursor-pointer disabled:opacity-50 disabled:cursor-default" aria-pressed={on}>
-          <span className="text-sm font-bold text-slate-900 dark:text-white">Ready to play</span>
-          <span className={`w-11 h-6 rounded-full p-0.5 transition-colors ${on ? 'bg-[#0e9f55]' : 'bg-slate-300 dark:bg-slate-700'}`}>
-            <span className={`block w-5 h-5 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-5' : ''}`} />
-          </span>
+        <button type="button" disabled={busy || !isOpen || !join || rewardJoined} onClick={toggle} className="flex items-center gap-2.5 cursor-pointer disabled:opacity-60 disabled:cursor-default" aria-pressed={on}>
+          <span className="text-sm font-bold text-slate-900 dark:text-white">Open to challenges</span>
+          <Switch on={on} />
         </button>
         {!isOpen ? (
           <span className="text-[11px] text-slate-400">From {openDay(opensAt)}</span>
-        ) : on ? (
-          <span className="text-[11px] text-slate-500">Until {new Date(Number(me.ready?.[game])).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</span>
-        ) : (
-          <select value={choice} onChange={(e) => setChoice(e.target.value)} className="h-10 px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-900 dark:text-white">
-            {READY_CHOICES.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        )}
+        ) : !join ? (
+          <span className="text-[11px] text-slate-400">Join the season first</span>
+        ) : rewardJoined ? (
+          <span className="text-[11px] text-slate-500">On during reward week</span>
+        ) : null}
       </div>
     </div>
   );
 };
 
-const ChallengeButton: React.FC<{ game: string; me: any; row: any; myRank?: number; big?: boolean }> = ({ game, me, row, myRank, big }) => {
+const ChallengeButton: React.FC<{ game: string; me: any; row: any; season: Season | null; rewardRunning: boolean }> = ({ game, me, row, season, rewardRunning }) => {
   const [busy, setBusy] = useState(false);
   const click = async () => {
+    if (!season) return;
     setBusy(true);
     try {
-      go(await challengeOnWhatsApp(game, me, row, myRank));
+      go(await tapChallenge(game, me, row, season.id, rewardRunning));
     } catch (e: any) {
       window.alert(e?.message || 'Could not open WhatsApp.');
     }
     setBusy(false);
   };
-  return big ? (
+  return (
     <button type="button" disabled={busy} onClick={click} className="inline-flex h-10 items-center gap-1.5 px-4 rounded-xl bg-white text-[#0e9f55] text-sm font-bold cursor-pointer">
       <MessageCircle className="w-4 h-4" /> Challenge
-    </button>
-  ) : (
-    <button type="button" disabled={busy} onClick={click} className="w-full h-9 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-[#0e9f55] text-xs font-bold cursor-pointer">
-      Challenge
     </button>
   );
 };
 
-const LeagueTable: React.FC<{ game: string; board: any[]; meId?: string }> = ({ game, board, meId }) => {
+const LeagueTable: React.FC<{ game: string; board: any[]; meId?: string; title?: string; note?: string }> = ({ game, board, meId, title = 'League table', note }) => {
   const scored = isScored(game);
-  if (!board.length) return <p className="p-5 text-center text-xs text-slate-400">No players yet. Register and be the first on the table.</p>;
+  if (!board.length) return <p className="p-5 text-center text-xs text-slate-400">No players yet. Join the season and be the first on the table.</p>;
   const head = 'text-[10px] font-bold text-slate-400 text-center';
   const cell = 'text-xs text-slate-700 dark:text-slate-300 text-center tabular-nums';
   const cols = scored ? 'grid-cols-[22px_1fr_22px_22px_22px_22px_32px_30px]' : 'grid-cols-[22px_1fr_26px_26px_26px_32px]';
   return (
     <div className="p-3">
       <div className="flex items-center justify-between px-1 mb-2">
-        <p className="text-sm font-black text-slate-900 dark:text-white">League table</p>
+        <p className="text-sm font-black text-slate-900 dark:text-white">{title}</p>
         <span className="text-[11px] text-slate-400">{playersText(board.length)}</span>
       </div>
       <div className={`grid ${cols} gap-1 px-1 py-1.5 border-b border-slate-100 dark:border-slate-800`}>
@@ -741,7 +836,7 @@ const LeagueTable: React.FC<{ game: string; board: any[]; meId?: string }> = ({ 
               </span>
             )}
             {r.titles > 0 && <Trophy className="w-3 h-3 text-amber-500 shrink-0" />}
-            {r.ready && <span className="w-1.5 h-1.5 rounded-full bg-[#0e9f55] shrink-0" title="Ready to play" />}
+            {r.ready && <span className="w-1.5 h-1.5 rounded-full bg-[#0e9f55] shrink-0" title="Open to challenges" />}
           </span>
           <span className={cell}>{r.p}</span>
           <span className={cell}>{r.w}</span>
@@ -751,6 +846,7 @@ const LeagueTable: React.FC<{ game: string; board: any[]; meId?: string }> = ({ 
           <span className="text-xs font-black text-[#0e9f55] text-center tabular-nums">{r.pts}</span>
         </div>
       ))}
+      {note && <p className="mt-2 px-1 text-[10px] text-slate-400">{note}</p>}
       <p className="mt-2 px-1 text-[10px] text-slate-400 flex items-center gap-1">
         <Crown className="w-3 h-3 text-amber-500" /> #1 wears the Best in Caritas crown, whatever their school. Win 3, draw 1, loss 0.
       </p>
@@ -807,7 +903,7 @@ const ConfirmCard: React.FC<{ m: any; highlight: boolean; onDone: () => void; no
   return (
     <div className={`p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border ${highlight ? 'border-[#0e9f55]' : 'border-emerald-200 dark:border-emerald-900'} space-y-3`}>
       <div>
-        <p className="text-[11px] text-slate-500">{m.aName} logged a result. {hoursLeft > 0 ? `It counts by itself in ${hoursLeft}h.` : 'It already counts. You can still say it is wrong.'}</p>
+        <p className="text-[11px] text-slate-500">{m.aName} logged a result. It already counts. {hoursLeft > 0 ? `It shows as recorded in ${hoursLeft}h.` : 'It is recorded.'} Report it within {DISPUTE_HOURS} hours if it is wrong.</p>
         <p className="text-base font-black text-slate-900 dark:text-white">{resultText(m)}</p>
       </div>
       {disputing ? (
@@ -850,7 +946,7 @@ const MyOpenResult: React.FC<{ m: any; me: any; nowMs: number }> = ({ m, me }) =
       <p className="text-[11px] text-slate-500">
         {m.status === 'disputed'
           ? 'Disputed. Roomly will check the screenshots and decide.'
-          : `Waiting for ${m.bName} to confirm. Counts by itself after ${AUTO_CONFIRM_HOURS} hours.`}
+          : `Counts now. ${m.bName} can confirm it, or it shows as recorded after ${AUTO_CONFIRM_HOURS} hours.`}
       </p>
       {m.status === 'pending' && iLogged && (
         <button
@@ -1080,41 +1176,56 @@ const RegisterSheet: React.FC<{ me: any; session: { name?: string; phone?: strin
   );
 };
 
-const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; onClose: () => void }> = ({ game, me, board, onClose }) => {
+const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; matches: any[]; season: Season; onClose: () => void }> = ({ game, me, board, matches, season, onClose }) => {
   const [opps, setOpps] = useState<any[] | null>(null);
   const [opp, setOpp] = useState('');
   const [mine, setMine] = useState('');
   const [theirs, setTheirs] = useState('');
-  const [winner, setWinner] = useState<'me' | 'them' | ''>('');
+  const [kills, setKills] = useState('');
+  const [damage, setDamage] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [ctx, setCtx] = useState<{ challengerId: string } | null>(null);
   const scored = isScored(game);
 
   useEffect(() => {
     getRecentOpponents(me, game)
-      .then((ids) => setOpps(board.filter((r) => ids.includes(r.id))))
+      .then((ids: string[]) => setOpps(board.filter((r) => ids.includes(r.id))))
       .catch(() => setOpps([]));
   }, [game]);
+  useEffect(() => {
+    setCtx(null);
+    if (opp) pairContext(me, opp, game).then(setCtx).catch(() => setCtx(null));
+  }, [opp]);
+
+  const today = lagosDay(Date.now());
+  const playedToday = opp
+    ? matches.filter((m) => matchCounts(m) && ((m.aUid === me.id && m.bUid === opp) || (m.aUid === opp && m.bUid === me.id)) && lagosDay(m.loggedAtMs || 0) === today).length
+    : 0;
+  const o = board.find((r) => r.id === opp);
 
   const submit = async () => {
     setError('');
-    const o = board.find((r) => r.id === opp);
     if (!o) return setError('Pick your opponent.');
-    let a = 0;
+    if (playedToday >= 2) return setError('You have already logged 2 matches against this player today.');
+    let a = 1;
     let b = 0;
     if (scored) {
       if (mine === '' || theirs === '') return setError('Enter both scores.');
       a = Number(mine);
       b = Number(theirs);
-    } else {
-      if (!winner) return setError('Pick who won.');
-      a = winner === 'me' ? 1 : 0;
-      b = winner === 'me' ? 0 : 1;
+      if (a < b) return setError('Only the winner logs the result. Ask your opponent to log it.');
     }
+    if (!file) return setError('Add a screenshot of the final score.');
     setBusy(true);
     try {
-      const link = await logResult(game, me, o, a, b, file);
+      const link = await logResult(game, me, o, a, b, file, {
+        seasonId: season.id,
+        kills: scored ? 0 : Number(kills) || 0,
+        damage: scored ? 0 : Number(damage) || 0,
+        homeUid: ctx?.challengerId === me.id ? o.id : me.id,
+      });
       onClose();
       go(link);
     } catch (e: any) {
@@ -1124,63 +1235,63 @@ const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; onClose: (
   };
 
   return (
-    <Sheet title={`Log a ${gameLabel(game)} result`} onClose={onClose}>
+    <Sheet title={`Log a ${gameLabel(game)} win`} onClose={onClose}>
       {opps === null ? (
         <p className="text-sm text-slate-400">Loading...</p>
       ) : opps.length === 0 ? (
-        <p className="text-sm text-slate-500">
-          You can log a result against players you challenged on WhatsApp through Roomly (or who challenged you) in the last 3 days.
-        </p>
+        <p className="text-sm text-slate-500">You can log a result against players you challenged through Roomly (or who challenged you) in the last 3 days.</p>
       ) : (
         <>
+          <p className="text-[11px] text-slate-500">Only the winner logs the result. A screenshot of the final score is required.</p>
           <div>
             <label className={label}>Opponent</label>
             <select value={opp} onChange={(e) => setOpp(e.target.value)} className={input}>
               <option value="">Choose your opponent</option>
-              {opps.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name} ({o.school === 'guest' ? 'Guest' : o.school === 'other' ? o.schoolName || 'Other school' : o.hostel})
+              {opps.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name} ({x.school === 'guest' ? 'Guest' : x.school === 'other' ? x.schoolName || 'Other school' : x.hostel})
                 </option>
               ))}
             </select>
           </div>
           {scored ? (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className={label}>Your goals</label>
-                <input value={mine} onChange={(e) => setMine(e.target.value.replace(/\D/g, '').slice(0, 2))} inputMode="numeric" className={`${input} text-center text-lg font-black`} placeholder="0" />
+            <>
+              {o && ctx && <p className="text-[11px] text-slate-500">Home team: {ctx.challengerId === me.id ? o.name : 'you'} (the player who was challenged).</p>}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={label}>Your goals</label>
+                  <input value={mine} onChange={(e) => setMine(e.target.value.replace(/\D/g, '').slice(0, 2))} inputMode="numeric" className={`${input} text-center text-lg font-black`} placeholder="0" />
+                </div>
+                <div>
+                  <label className={label}>Their goals</label>
+                  <input value={theirs} onChange={(e) => setTheirs(e.target.value.replace(/\D/g, '').slice(0, 2))} inputMode="numeric" className={`${input} text-center text-lg font-black`} placeholder="0" />
+                </div>
               </div>
-              <div>
-                <label className={label}>Their goals</label>
-                <input value={theirs} onChange={(e) => setTheirs(e.target.value.replace(/\D/g, '').slice(0, 2))} inputMode="numeric" className={`${input} text-center text-lg font-black`} placeholder="0" />
-              </div>
-            </div>
+            </>
           ) : (
             <div className="grid grid-cols-2 gap-3">
-              {(['me', 'them'] as const).map((w) => (
-                <button
-                  key={w}
-                  type="button"
-                  onClick={() => setWinner(w)}
-                  className={`h-12 rounded-xl text-sm font-bold border cursor-pointer ${
-                    winner === w ? 'bg-[#0e9f55] border-[#0e9f55] text-white' : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
-                  }`}
-                >
-                  {w === 'me' ? 'I won' : 'They won'}
-                </button>
-              ))}
+              <div>
+                <label className={label}>Your kills</label>
+                <input value={kills} onChange={(e) => setKills(e.target.value.replace(/\D/g, '').slice(0, 3))} inputMode="numeric" className={`${input} text-center text-lg font-black`} placeholder="0" />
+              </div>
+              <div>
+                <label className={label}>Your damage</label>
+                <input value={damage} onChange={(e) => setDamage(e.target.value.replace(/\D/g, '').slice(0, 5))} inputMode="numeric" className={`${input} text-center text-lg font-black`} placeholder="0" />
+              </div>
+              <p className="col-span-2 text-[11px] text-slate-500">You are logging that you won this match.</p>
             </div>
           )}
+          {playedToday >= 2 && <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">You already played this person twice today. A third match will not be accepted.</p>}
           <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300 cursor-pointer">
             <Camera className="w-4 h-4 text-[#0e9f55]" />
-            <span>{file ? file.name : 'Screenshot of the final score (optional)'}</span>
+            <span>{file ? file.name : 'Screenshot of the final score (required)'}</span>
             <input type="file" accept="image/*" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} />
           </label>
           {error && <p className="text-xs font-semibold text-rose-600">{error}</p>}
           <button type="button" disabled={busy} onClick={submit} className="w-full h-12 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60">
             {busy && <Loader2 className="w-4 h-4 animate-spin" />} Save and send on WhatsApp
           </button>
-          <p className="text-[11px] text-slate-400 text-center">Your opponent confirms it. No answer in {AUTO_CONFIRM_HOURS} hours and it counts.</p>
+          <p className="text-[11px] text-slate-400 text-center">It counts now. Your opponent can report it within {DISPUTE_HOURS} hours.</p>
         </>
       )}
     </Sheet>
