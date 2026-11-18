@@ -8,6 +8,7 @@ import {
   REPORT_REASONS_GAMES,
   joinSeason,
   acceptRules,
+  leagueMainRulesFor,
   rulesAccepted,
   registerReward,
   leagueRulesFor,
@@ -354,10 +355,26 @@ export const RewardIntro: React.FC<{ cfg: RewardCfg; game?: string; showImage?: 
 
 /** Register once for a game's reward contest: its rules, one tick */
 export const RewardRegisterSheet: React.FC<{ game: string; cfg: RewardCfg; me: any; season: Season; join: any; week: any | null; acceptedGame?: string; onClose: () => void }> = ({ game, cfg, me, season, join, week, acceptedGame = '', onClose }) => {
-  const [ticked, setTicked] = useState(Boolean(acceptedGame));
+  // A player who has not accepted the league rules yet (added by Roomly, or no join) accepts both in one tick
+  const needLeague = !rulesAccepted(join);
+  const skipTick = Boolean(acceptedGame) && !needLeague;
+  const [ticked, setTicked] = useState(skipTick);
   const [busy, setBusy] = useState(false);
   return (
     <Modal title={`Join the ${gameLabel(game)} reward contest`} onClose={onClose}>
+      {needLeague && (
+        <>
+          <p className="text-sm font-black text-slate-900 dark:text-white">League rules</p>
+          <ul className="space-y-1.5">
+            {leagueMainRulesFor(game).map((l: string, i: number) => (
+              <li key={i} className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                {l}
+              </li>
+            ))}
+          </ul>
+          <p className="text-sm font-black text-slate-900 dark:text-white">Reward contest rules</p>
+        </>
+      )}
       <ul className="space-y-1.5">
         {rewardRulesFor(game, cfg).map((l, i) => (
           <li key={i} className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
@@ -365,14 +382,16 @@ export const RewardRegisterSheet: React.FC<{ game: string; cfg: RewardCfg; me: a
           </li>
         ))}
       </ul>
-      {acceptedGame ? (
+      {skipTick ? (
         <p className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 text-xs font-semibold text-slate-700 dark:text-slate-200">
           You accepted the reward contest rules on {gameLabel(acceptedGame)}. They apply here too.
         </p>
       ) : (
         <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-950 cursor-pointer">
           <input type="checkbox" checked={ticked} onChange={(e) => setTicked(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#0e9f55]" />
-          <span className="text-xs font-semibold text-slate-800 dark:text-slate-100">I have read and accept the {gameLabel(game)} reward contest rules.</span>
+          <span className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+            {needLeague ? `I have read and accept the league rules and the ${gameLabel(game)} reward contest rules.` : `I have read and accept the ${gameLabel(game)} reward contest rules.`}
+          </span>
         </label>
       )}
       <button
@@ -381,7 +400,13 @@ export const RewardRegisterSheet: React.FC<{ game: string; cfg: RewardCfg; me: a
         onClick={async () => {
           setBusy(true);
           try {
-            await registerReward(season, me, join, game, week);
+            let j = join;
+            if (needLeague) {
+              if (join) await acceptRules(join, season, me);
+              else await joinSeason(season, me);
+              j = { ...(join || { off: {} }), rulesVersion: RULES_VERSION };
+            }
+            await registerReward(season, me, j, game, week);
             onClose();
           } catch (e: any) {
             window.alert(e?.message || 'Could not join.');
@@ -390,7 +415,7 @@ export const RewardRegisterSheet: React.FC<{ game: string; cfg: RewardCfg; me: a
         }}
         className="w-full h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
       >
-        {busy && <Loader2 className="w-4 h-4 animate-spin" />} Join the reward contest
+        {busy && <Loader2 className="w-4 h-4 animate-spin" />} {needLeague ? 'Join the league and reward contest' : 'Join the reward contest'}
       </button>
     </Modal>
   );
@@ -410,10 +435,12 @@ export const RewardCard: React.FC<{
   rewardJoined: boolean;
   /** A game where this player already accepted the current reward rules ('' if none) */
   acceptedGame?: string;
+  /** Opens the full registration form for a player with no profile yet */
+  onNewPlayer?: () => void;
   /** Players registered for this game's reward contest */
   tableCount: number;
   nowMs: number;
-}> = ({ game, week, otherWeek, rewardRows, config, me, season, join, rewardJoined, acceptedGame = '', tableCount, nowMs }) => {
+}> = ({ game, week, otherWeek, rewardRows, config, me, season, join, rewardJoined, acceptedGame = '', onNewPlayer, tableCount, nowMs }) => {
   const [sheet, setSheet] = useState(false);
   const phase = weekPhase(week, nowMs);
   const minPoints = week ? Number(week.minPoints) : config.minPoints;
@@ -421,7 +448,7 @@ export const RewardCard: React.FC<{
   const closed = phase === 'closed' || phase === 'issued' || phase === 'none';
   const plays = Boolean(me && (me.games || []).includes(game));
   const blocked = Boolean(me && me.rewardBlocked && me.rewardBlocked[game]);
-  const canRegister = Boolean(season && me && plays && rulesAccepted(join) && !rewardJoined && !blocked);
+  const canRegister = Boolean(season && me && plays && !rewardJoined && !blocked);
   const cfg = week ? { minPlayers: Number(week.minPlayers) || config.minPlayers, minPoints, creditValue: Number(week.creditValue) || config.creditValue } : config;
   return (
     <div className={`${card} overflow-hidden`}>
@@ -486,14 +513,17 @@ export const RewardCard: React.FC<{
                   <Check className="w-3.5 h-3.5" /> You are registered for the {gameLabel(game)} reward contest.
                 </p>
               ) : !me ? (
-                <p className="text-[11px] text-slate-500">Join the league first to join the reward contest.</p>
+                <p className="text-[11px] text-slate-500">New here? Fill in your player details once, accept the rules, and you are in the league and the reward contest.</p>
               ) : !plays ? (
                 <p className="text-[11px] text-slate-500">Join {gameLabel(game)} League to join its reward contest.</p>
-              ) : !rulesAccepted(join) ? (
-                <p className="text-[11px] text-amber-700 dark:text-amber-300 font-semibold">Accept the league rules first to join the reward contest.</p>
               ) : blocked ? (
                 <p className="text-[11px] text-slate-500">You cannot join this reward contest. Roomly can tell you why.</p>
               ) : null}
+              {!me && season && onNewPlayer && (
+                <button type="button" onClick={onNewPlayer} className="w-full h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer">
+                  Join the reward contest
+                </button>
+              )}
               {canRegister && (
                 <button type="button" onClick={() => setSheet(true)} className="w-full h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer">
                   Join the reward contest

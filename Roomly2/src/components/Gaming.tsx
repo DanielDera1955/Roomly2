@@ -53,6 +53,7 @@ import {
   tapChallenge,
   refreshContact,
   joinSeason,
+  registerReward,
   pairContext,
   leagueRulesFor,
   leagueMainRulesFor,
@@ -204,7 +205,15 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
     return out;
   }, [gamers, matches, season?.id, weeks, rewardJoins, adjusts, nowMs]);
 
-  const openRegister = () => setRegistering(true);
+  const [regGame, setRegGame] = useState('');
+  const openRegister = () => {
+    setRegGame('');
+    setRegistering(true);
+  };
+  const openRewardRegister = (g: string) => {
+    setRegGame(g);
+    setRegistering(true);
+  };
 
   /** Registered players (profiles), per game and overall. The tables list those who joined the season. */
   const counts: Counts = useMemo(() => {
@@ -251,6 +260,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
           onFocusDone={() => setFocusMatch('')}
           onBack={() => setGame('')}
           onRegister={openRegister}
+          onRewardRegister={openRewardRegister}
           season={season}
           join={myJoin}
           week={activeWeekFor(weeks, game, nowMs)}
@@ -296,6 +306,8 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
           season={target}
           session={session}
           schools={schoolsList(settings)}
+          rewardGame={regGame}
+          rewardCfg={regGame ? rewardConfigFor(config, regGame) : null}
           onClose={() => setRegistering(false)}
           onSaved={() => {
             knownHubUid().then(setUid);
@@ -599,6 +611,7 @@ const GamePage: React.FC<{
   onFocusDone: () => void;
   onBack: () => void;
   onRegister: () => void;
+  onRewardRegister: (g: string) => void;
   season: Season | null;
   join: any;
   week: any | null;
@@ -612,7 +625,7 @@ const GamePage: React.FC<{
   onMode: (m: 'best' | 'reward') => void;
   registered: number;
   acceptedCount: number;
-}> = ({ game, me, board, matches, tournaments, isOpen, opensAt, nowMs, focusMatch, onFocusDone, onBack, onRegister, season, join, week, otherWeek, rewardRows, rewardJoined, acceptedGame, config, hiddenFromMe, mode, onMode, registered, acceptedCount }) => {
+}> = ({ game, me, board, matches, tournaments, isOpen, opensAt, nowMs, focusMatch, onFocusDone, onBack, onRegister, onRewardRegister, season, join, week, otherWeek, rewardRows, rewardJoined, acceptedGame, config, hiddenFromMe, mode, onMode, registered, acceptedCount }) => {
   const [logging, setLogging] = useState(false);
   const [busy, setBusy] = useState(false);
   const plays = playsGame(me, game);
@@ -724,6 +737,7 @@ const GamePage: React.FC<{
           join={join}
           rewardJoined={rewardJoined}
           acceptedGame={acceptedGame}
+          onNewPlayer={() => onRewardRegister(game)}
           tableCount={acceptedCount}
           nowMs={nowMs}
         />
@@ -1004,11 +1018,13 @@ const Sheet: React.FC<{ title: string; onClose: () => void; children: React.Reac
   </div>
 );
 
-const RegisterSheet: React.FC<{ me: any; season: Season | null; session: { name?: string; phone?: string; pin?: string }; schools: string[]; onClose: () => void; onSaved: () => void }> = ({
+const RegisterSheet: React.FC<{ me: any; season: Season | null; session: { name?: string; phone?: string; pin?: string }; schools: string[]; rewardGame?: string; rewardCfg?: { minPlayers: number; minPoints: number; creditValue: number } | null; onClose: () => void; onSaved: () => void }> = ({
   me,
   season,
   session,
   schools,
+  rewardGame = '',
+  rewardCfg = null,
   onClose,
   onSaved,
 }) => {
@@ -1028,7 +1044,7 @@ const RegisterSheet: React.FC<{ me: any; season: Season | null; session: { name?
     }
   });
   const [pin, setPin] = useState(session.pin || '');
-  const [games, setGames] = useState<string[]>(me?.games || []);
+  const [games, setGames] = useState<string[]>(me?.games || (rewardGame ? [rewardGame] : []));
   const [ids, setIds] = useState<Record<string, string>>(me?.ids || {});
   const [freeNote, setFreeNote] = useState(me?.freeNote || '');
   const [busy, setBusy] = useState(false);
@@ -1040,10 +1056,15 @@ const RegisterSheet: React.FC<{ me: any; season: Season | null; session: { name?
     setError('');
     try {
       const auto = Boolean(season && season.autoJoin !== false);
-      if (!me && auto && !rulesRead) throw new Error('Tick the box to say you have read the game rules.');
+      if (!me && auto && !rulesRead) throw new Error(rewardGame ? 'Tick the box to accept the rules.' : 'Tick the box to say you have read the game rules.');
       const created = await registerGamer({ name, school, schoolName: canonicalSchool(schoolName, schools), hostel, phone, pin, games, ids, freeNote });
       // A new player goes straight onto the season tables (the rules tick is stored with the join)
-      if (!me && auto && season) await joinSeason(season, created).catch(() => {});
+      if (!me && auto && season) {
+        await joinSeason(season, created).catch(() => {});
+        if (rewardGame && (created.games || games).includes(rewardGame)) {
+          await registerReward(season, created, { off: {}, rulesVersion: RULES_VERSION }, rewardGame, null).catch(() => {});
+        }
+      }
       onSaved();
     } catch (e: any) {
       setError(e?.message || 'Could not save.');
@@ -1179,12 +1200,21 @@ const RegisterSheet: React.FC<{ me: any; season: Season | null; session: { name?
         <label className={label}>When are you usually free? (optional)</label>
         <input value={freeNote} onChange={(e) => setFreeNote(e.target.value)} maxLength={60} className={input} placeholder="e.g. Evenings after 8pm" />
       </div>
+      {rewardGame && rewardCfg && !me && (
+        <ul className="space-y-1.5 list-disc pl-5 marker:text-[#0e9f55]">
+          {rewardRulesFor(rewardGame, rewardCfg).map((l, i) => (
+            <li key={i} className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+              {l}
+            </li>
+          ))}
+        </ul>
+      )}
       {error && <p className="text-xs font-semibold text-rose-600">{error}</p>}
       {!me && season && season.autoJoin !== false && (
         <label className="flex items-start gap-2 cursor-pointer">
           <input type="checkbox" checked={rulesRead} onChange={(e) => setRulesRead(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#0e9f55]" />
           <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-            I have read the <button type="button" onClick={() => setRulesOpen(true)} className="underline text-[#0e9f55]">game rules</button> and agree to follow them. This puts me on the {season.name} table.
+            I have read the <button type="button" onClick={() => setRulesOpen(true)} className="underline text-[#0e9f55]">game rules</button>{rewardGame ? <> and the {gameLabel(rewardGame)} reward contest rules below</> : null} and agree to follow them. This puts me on the {season.name} table{rewardGame ? <> and in the {gameLabel(rewardGame)} reward contest</> : null}.
           </span>
         </label>
       )}
