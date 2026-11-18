@@ -338,10 +338,12 @@ export const RewardIntro: React.FC<{ cfg: RewardCfg; game?: string; showImage?: 
       <MainRulesDropdown
         title="Main Rule"
         lines={[
-          `The first game to reach ${cfg.minPlayers} registered players starts the week.`,
-          `To be paid, a top 3 player must have at least ${cfg.minPoints} points. Each win is 3 points, a draw is 1 and a loss is 0.`,
-          "You can only take part after you register for that game's reward contest and tick to accept its rules.",
-          'Reward matches only count here. At most 2 matches count per week between the same two players, one home and one away.',
+          'One game runs the reward each week. The first game to reach ' + cfg.minPlayers + ' registered players goes first, and the next game starts the week after.',
+          'The top 3 players of the week each win the ' + naira(cfg.creditValue) + ' food credit.',
+          'The top 3 must end the week with at least ' + cfg.minPoints + ' points to be paid. A win is 3 points, a draw is 1 and a loss is 0.',
+          "To take part, register for that game's reward contest and tick to accept its rules.",
+          'Reward matches only count in the reward table. League matches only count in the Best in Caritas league table for that game.',
+          'You can only play the same player twice per week, once at home and one away.',
         ]}
         className="pt-3 border-t border-slate-100 dark:border-slate-800"
       />
