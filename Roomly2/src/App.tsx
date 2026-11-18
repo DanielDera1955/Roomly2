@@ -60,6 +60,7 @@ import { FloatingCartBar } from './components/FloatingCartBar';
 import { CartSheet } from './components/CartSheet';
 import { OrderTrackerModal } from './components/OrderTrackerModal';
 import { InstallBanner } from './components/InstallPrompt';
+import { NotifyBanner } from './components/NotifyBanner';
 import { OrderHistoryModal } from './components/OrderHistoryModal';
 import { RunnerPortal } from './components/RunnerPortal';
 import { AdminView } from './components/AdminView';
@@ -1440,6 +1441,7 @@ export default function App() {
           )}
 
           {!searchQuery && <InstallBanner variant="home" />}
+          {!searchQuery && <NotifyBanner />}
 
           {!searchQuery && (
             <FeaturedRow

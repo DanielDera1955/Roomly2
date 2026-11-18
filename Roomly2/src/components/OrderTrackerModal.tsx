@@ -1,3 +1,4 @@
+import { NotifyBanner } from './NotifyBanner';
 import React, { useState, useEffect } from 'react';
 import { NoPhoto } from './NoPhoto';
 import { OrderChat } from './OrderChat';
@@ -396,6 +397,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
         {/* Content Body */}
         <div className="overflow-y-auto p-5 space-y-4 flex-1">
           {currentOrder && <InstallBanner variant="order" />}
+          {currentOrder && <NotifyBanner />}
           {/* Active Order Card */}
           {currentOrder ? (
             <div className="space-y-4">
