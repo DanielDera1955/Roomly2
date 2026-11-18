@@ -14,7 +14,7 @@ import {
   query,
   where,
 } from 'firebase/firestore';
-import { hubDb, hubUid, gameLabel, waTo } from './hub.js';
+import { hubDb, hubUid, gameLabel, waTo, isScored } from './hub.js';
 import { db } from './firebase.ts';
 import { rewardConfigFor, weekPhase, lagosDay } from './boardCore.js';
 
@@ -56,8 +56,8 @@ export const GAME_RULES: { title: string; lines: string[] }[] = [
   {
     title: 'Reward weeks',
     lines: [
-      'When enough players have joined a game table, a reward week starts the next Monday at 12:00AM and runs Monday to Sunday. Roomly sets the minimum number of players and points for each game. A change applies from the next reward week.',
-      'Tap Join this week\'s reward to take part. You can join late. The reward table counts only matches entered in that week, starting from zero. The general table is not affected.',
+      'Reward weeks go one game at a time. When enough players have registered for a game\'s reward contest, its week starts the next Monday at 12:00AM and runs Monday to Sunday. Roomly sets the minimum number of players and points for each game. A change applies from the next reward week.',
+      'Tap Join the reward contest on a game and tick its rules to register once for the semester. You can register late. The reward table counts only matches entered in that week, starting from zero. The general table is not affected.',
       'The table closes at 12:00AM when the week ends. After that no result can be entered and the ranking is decided.',
     ],
   },
@@ -227,7 +227,7 @@ export function subscribeRewardJoins(seasonId: string, cb: (list: any[]) => void
     return () => {};
   }
   return onSnapshot(
-    query(collection(hubDb, 'rewardJoins'), where('seasonId', '==', seasonId)),
+    query(collection(hubDb, 'rewardRegs'), where('seasonId', '==', seasonId)),
     (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
     () => cb([])
   );
@@ -247,18 +247,18 @@ export function activeWeekFor(weeks: any[], game: string, nowMs = Date.now()) {
 export const queuedWeek = (weeks: any[], nowMs = Date.now()) =>
   [...weeks].filter((w) => ['running', 'scheduled'].includes(weekPhase(w, nowMs))).sort((a, b) => a.startMs - b.startMs)[0] || null;
 
-/** "Join this week's reward": one tap, late joiners allowed until the table closes */
-export async function joinRewardWeek(week: any, me: any, season: Season, join: any) {
+/** Register once for a game's reward contest (after reading its reward rules). Counts toward the players needed to start a week. */
+export async function registerReward(season: Season, me: any, join: any, game: string, week: any | null = null) {
   const uid = await hubUid();
-  if (Date.now() >= Number(week.endMs)) throw new Error('This reward week has closed.');
-  if (me.rewardBlocked && me.rewardBlocked[week.game]) throw new Error('You cannot join this reward week. Roomly can tell you why.');
-  await setDoc(doc(hubDb, 'rewardJoins', `${week.id}_${me.id}`), {
-    weekKey: week.id,
-    seasonId: week.seasonId,
-    game: week.game,
+  if (!rulesAccepted(join)) throw new Error('Accept the league rules first.');
+  if (me.rewardBlocked && me.rewardBlocked[game]) throw new Error('You cannot join this reward contest. Roomly can tell you why.');
+  await setDoc(doc(hubDb, 'rewardRegs', `${season.id}_${me.id}_${game}`), {
+    seasonId: season.id,
+    game,
     gid: me.id,
     ownerUid: uid,
     name: me.name,
+    rulesVersion: RULES_VERSION,
     atMs: Date.now(),
   });
   await syncOpen(me, season, join, week);
@@ -267,6 +267,40 @@ export async function joinRewardWeek(week: any, me: any, season: Season, join: a
 
 /** Shown on the reward card: what the settings say for this game */
 export const rewardConfig = (config: any, game: string) => rewardConfigFor(config, game);
+
+/* ------------------------------ rules for one game ------------------------------ */
+
+const naira = (n: number) => `₦${Math.round(n || 0).toLocaleString()}`;
+/** League rules for one game only */
+export function leagueRulesFor(game: string): string[] {
+  const label = gameLabel(game);
+  const scored = isScored(game);
+  return [
+    `The ${label} table ranks players by points: a win is 3${scored ? ', a draw is 1' : ''} and a loss is 0.`,
+    scored
+      ? 'Players on the same points are ranked by wins, then goals scored, then kills, then whoever reached their points first.'
+      : 'Players on the same points are ranked by wins, then damage, then kills, then whoever reached their points first.',
+    scored
+      ? 'The winner enters the result with the score and a screenshot of the final score. A draw can be entered by either player.'
+      : 'The winner enters the result with their kills, damage and a screenshot of the final result.',
+    'You can enter at most 2 matches between the same two players on the same day. Extra matches do not count.',
+    'Your opponent confirms the result or reports it within 24 hours. If nobody answers for 5 hours it shows as recorded.',
+    'Tap Challenge on a player to message them on WhatsApp. Use Report if someone behaves badly.',
+  ];
+}
+/** Reward contest rules for one game only (or the general version when no game is given) */
+export function rewardRulesFor(game: string | null, cfg: { minPlayers: number; minPoints: number; creditValue: number }): string[] {
+  const label = game ? gameLabel(game) : 'a game';
+  return [
+    `Reward weeks go one game at a time. The first game to reach ${cfg.minPlayers} registered players starts the week.`,
+    `Join the reward contest and tick the rules to register once for the semester. Only registered players count toward the ${cfg.minPlayers} and appear on the reward table.`,
+    `The week runs Monday to Sunday and the table closes at 12:00AM. Only matches entered in that week count, starting from zero.`,
+    `Points: a win is 3, a draw is 1 and a loss is 0. Ties are broken by wins, then ${game && !isScored(game) ? 'damage' : 'goals or damage'}, then kills, then whoever reached the points first.`,
+    `The top 3 players with at least ${cfg.minPoints} points each win a ${naira(cfg.creditValue)} food credit for ${label}. A player below ${cfg.minPoints} points gets nothing and the credit is not passed down.`,
+    'Credits are issued the morning after the week closes, open at the next 12:00AM and last 24 hours. A credit works on Outside Food and Canteen Items, not on delivery.',
+    'Roomly settles disputes. A fake screenshot removes the points and blocks the player from the next reward week of that game.',
+  ];
+}
 
 /* ------------------------------ challenge, report, hide ------------------------------ */
 

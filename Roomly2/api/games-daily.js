@@ -16,6 +16,8 @@ import {
   nextMondayStart,
   weekKeyOf,
   playsGame,
+  qualifiedAtMs,
+  rewardSlots,
   GAME_IDS,
   WEEK_MS,
   CREDIT_HOURS,
@@ -42,18 +44,16 @@ export default async function handler(req, res) {
     for (const season of seasons) {
       const matches = rows(await db.collection('matches').where('seasonId', '==', season.id).get());
       const joins = rows(await db.collection('seasonJoins').where('seasonId', '==', season.id).get());
-      const rewardJoins = rows(await db.collection('rewardJoins').where('seasonId', '==', season.id).get());
+      const rewardJoins = rows(await db.collection('rewardRegs').where('seasonId', '==', season.id).get());
       const weeks = rows(await db.collection('rewardWeeks').where('seasonId', '==', season.id).get());
       const adjusts = rows(await db.collection('pointAdjust').where('seasonId', '==', season.id).get());
       const seasonJoined = new Set(joins.map((j) => j.gid));
-      // Only players who accepted the rules count toward the 20 needed to start a reward week
-      const accepted = new Set(joins.filter((j) => Number(j.rulesVersion || 0) >= 1).map((j) => j.gid));
 
       /* 1. Issue credits for weeks that have closed */
       for (const week of weeks) {
         if (week.status === 'issued' || week.status === 'none' || now < Number(week.endMs)) continue;
         try {
-          const joined = new Set(rewardJoins.filter((j) => j.weekKey === week.id).map((j) => j.gid));
+          const joined = new Set(rewardJoins.filter((j) => j.game === week.game).map((j) => j.gid));
           const opts = { seasonId: season.id, joined, fromMs: Number(week.startMs), toMs: Number(week.endMs), adjusts, weekKey: week.id };
           const table = computeRows(week.game, gamers, matches, opts);
           const winners = rewardWinners(table, Number(week.minPoints)).filter((r) => {
@@ -111,50 +111,51 @@ export default async function handler(req, res) {
         }
       }
 
-      /* 2. Schedule the next reward week while the season runs */
-      if (now < Number(season.endMs) && !weeks.some((w) => Number(w.startMs) > now)) {
+      /* 2. Schedule the next reward week(s) while the season runs. Roomly allows 1 or 2 games per week. */
+      if (now < Number(season.endMs)) {
         try {
-          const lastEnd = weeks.reduce((m, w) => Math.max(m, Number(w.endMs)), 0);
-          const startMs = Math.max(nextMondayStart(now), lastEnd);
-          if (startMs + WEEK_MS <= Number(season.endMs)) {
-            const qualified = [];
-            for (const game of GAME_IDS) {
-              const cfg = rewardConfigFor(config, game);
-              const count = gamers.filter((g) => accepted.has(g.id) && playsGame(g, game)).length;
-              const qref = db.doc(`gameQueue/${season.id}_${game}`);
-              if (count >= cfg.minPlayers) {
-                let q = await qref.get();
-                if (!q.exists) {
-                  await qref.set({ qualifiedAtMs: now });
-                  q = await qref.get();
-                }
+          const slots = rewardSlots(config);
+          const upcoming = weeks.filter((w) => Number(w.startMs) > now);
+          const open = slots - upcoming.length;
+          if (open > 0) {
+            const lastEnd = weeks.filter((w) => Number(w.startMs) <= now).reduce((m, w) => Math.max(m, Number(w.endMs)), 0);
+            const startMs = upcoming.length ? Math.min(...upcoming.map((w) => Number(w.startMs))) : Math.max(nextMondayStart(now), lastEnd);
+            if (startMs + WEEK_MS <= Number(season.endMs)) {
+              const taken = new Set(upcoming.map((w) => w.game));
+              const qualified = [];
+              for (const game of GAME_IDS) {
+                if (taken.has(game)) continue;
+                const cfg = rewardConfigFor(config, game);
+                const at = qualifiedAtMs(rewardJoins, gamers, game, cfg.minPlayers);
+                if (!at) continue;
                 const lastGameEnd = weeks.filter((w) => w.game === game).reduce((m, w) => Math.max(m, Number(w.endMs)), 0);
-                qualified.push({ game, cfg, lastGameEnd, qualifiedAtMs: Number(q.data().qualifiedAtMs) });
-              } else {
-                await qref.delete().catch(() => {});
+                qualified.push({ game, cfg, lastGameEnd, at });
               }
-            }
-            // Tables queue: the one that has waited longest goes first
-            qualified.sort((a, b) => a.lastGameEnd - b.lastGameEnd || a.qualifiedAtMs - b.qualifiedAtMs);
-            const next = qualified[0];
-            if (next) {
-              const id = weekKeyOf(season.id, next.game, startMs);
-              await db.doc(`rewardWeeks/${id}`).create({
-                seasonId: season.id,
-                game: next.game,
-                startMs,
-                endMs: startMs + WEEK_MS,
-                minPlayers: next.cfg.minPlayers,
-                minPoints: next.cfg.minPoints,
-                creditValue: next.cfg.creditValue,
-                status: 'scheduled',
-                createdAtMs: now,
-              });
-              out.scheduled.push(id);
+              // The game that has waited longest goes first; among new games, the one that filled first
+              qualified.sort((a, b) => a.lastGameEnd - b.lastGameEnd || a.at - b.at);
+              for (const next of qualified.slice(0, open)) {
+                const id = weekKeyOf(season.id, next.game, startMs);
+                try {
+                  await db.doc(`rewardWeeks/${id}`).create({
+                    seasonId: season.id,
+                    game: next.game,
+                    startMs,
+                    endMs: startMs + WEEK_MS,
+                    minPlayers: next.cfg.minPlayers,
+                    minPoints: next.cfg.minPoints,
+                    creditValue: next.cfg.creditValue,
+                    status: 'scheduled',
+                    createdAtMs: now,
+                  });
+                  out.scheduled.push(id);
+                } catch (e) {
+                  if (!(e && (e.code === 6 || /already exists/i.test(String(e.message))))) throw e;
+                }
+              }
             }
           }
         } catch (e) {
-          if (!(e && (e.code === 6 || /already exists/i.test(String(e.message))))) out.errors.push(`schedule ${season.id}: ${e.message}`);
+          out.errors.push(`schedule ${season.id}: ${e.message}`);
         }
       }
 

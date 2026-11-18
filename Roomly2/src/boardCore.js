@@ -195,3 +195,19 @@ export function creditState(c, nowMs = Date.now()) {
   if (nowMs >= Number(c.expiresAtMs || 0)) return 'expired';
   return 'active';
 }
+
+/** Players registered for a game's reward contest (valid players only), oldest registration first */
+export function rewardRegsFor(regs, gamers, game) {
+  const ok = new Set((gamers || []).filter((g) => playsGame(g, game)).map((g) => g.id));
+  return (regs || [])
+    .filter((r) => r.game === game && ok.has(r.gid))
+    .sort((a, b) => Number(a.atMs || 0) - Number(b.atMs || 0));
+}
+/** The exact moment the game reached its minimum players (the Nth registration), or 0 if it has not */
+export function qualifiedAtMs(regs, gamers, game, minPlayers) {
+  const list = rewardRegsFor(regs, gamers, game);
+  const n = Math.max(1, Number(minPlayers) || 1);
+  return list.length >= n ? Number(list[n - 1].atMs || 0) : 0;
+}
+/** How many reward weeks can run at once (Roomly sets 1 or 2) */
+export const rewardSlots = (config) => (Number(config && config.slots) === 2 ? 2 : 1);

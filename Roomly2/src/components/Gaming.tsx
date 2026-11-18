@@ -33,7 +33,7 @@ import {
   markEntryPaid,
   leaveTournament,
 } from '../hub.js';
-import { computeRows, matchCounts, matchRecorded, canDispute, weekPhase, lagosDay, DISPUTE_HOURS, AUTO_CONFIRM_HOURS, rewardConfigFor } from '../boardCore.js';
+import { computeRows, matchCounts, matchRecorded, canDispute, weekPhase, lagosDay, DISPUTE_HOURS, AUTO_CONFIRM_HOURS, rewardConfigFor, rewardRegsFor, qualifiedAtMs } from '../boardCore.js';
 import {
   subscribeSeasons,
   currentSeason,
@@ -53,9 +53,11 @@ import {
   tapChallenge,
   joinSeason,
   pairContext,
+  leagueRulesFor,
+  rewardRulesFor,
   type Season,
 } from '../season';
-import { SeasonRulesCard, RewardCard, ChallengeTable, AnnouncementsCard, RulesSheet } from './SeasonGames';
+import { SeasonRulesCard, RewardCard, RewardIntro, GameRulesToggle, ChallengeTable, AnnouncementsCard, RulesSheet } from './SeasonGames';
 import { HistoryButton } from './GamesHistory';
 
 const card = 'bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800';
@@ -170,7 +172,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
         return;
       }
       const w = activeWeekFor(weeks, g.id, nowMs);
-      const rj = new Set(rewardJoins.filter((x) => w && x.weekKey === w.id).map((x) => x.gid));
+      const rj = new Set(rewardJoins.filter((x) => x.game === g.id).map((x) => x.gid));
       out[g.id] = computeRows(g.id, gamers, matches, { seasonId: season.id, joined, adjusts }).map((r: any) => ({
         ...r,
         ready: isChallengeable(joinById.get(r.id), g.id, rj.has(r.id)),
@@ -189,7 +191,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
         out[g.id] = [];
         return;
       }
-      const rj = new Set(rewardJoins.filter((x) => x.weekKey === w.id).map((x) => x.gid));
+      const rj = new Set(rewardJoins.filter((x) => x.game === g.id).map((x) => x.gid));
       out[g.id] = computeRows(g.id, gamers, matches, { seasonId: season.id, joined: rj, fromMs: Number(w.startMs), toMs: Number(w.endMs), adjusts, weekKey: w.id });
     });
     return out;
@@ -203,19 +205,23 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
     GAMES.forEach((g: { id: string }) => (byGame[g.id] = gamers.filter((x) => playsGame(x, g.id)).length));
     return { all: gamers.filter((x) => GAMES.some((g: { id: string }) => playsGame(x, g.id))).length, byGame };
   }, [gamers]);
-  /** Players who accepted the rules, per game (these count toward the players needed to start a reward week) */
+  /** Players registered for each game's reward contest (these count toward the players needed to start a reward week) */
   const acceptedCount = useMemo(() => {
-    const ok = new Set(joins.filter((j) => rulesAccepted(j)).map((j) => j.gid));
     const out: Record<string, number> = {};
-    GAMES.forEach((g: { id: string }) => (out[g.id] = gamers.filter((x) => ok.has(x.id) && playsGame(x, g.id)).length));
+    GAMES.forEach((g: { id: string }) => (out[g.id] = rewardRegsFor(rewardJoins, gamers, g.id).length));
     return out;
-  }, [gamers, joins]);
+  }, [gamers, rewardJoins]);
+  /** The exact moment each game reached its minimum registered players (decides the order of reward weeks) */
+  const qualAt = useMemo(() => {
+    const out: Record<string, number> = {};
+    GAMES.forEach((g: { id: string }) => (out[g.id] = qualifiedAtMs(rewardJoins, gamers, g.id, rewardConfigFor(config, g.id).minPlayers)));
+    return out;
+  }, [rewardJoins, gamers, config]);
   const acceptedAll = joins.filter((j) => rulesAccepted(j)).length;
 
   const gameMatches = (g: string) => matches.filter((m) => m.game === g && season && m.seasonId === season.id);
   const rewardJoinedFor = (g: string) => {
-    const w = activeWeekFor(weeks, g, nowMs);
-    return Boolean(w && me && rewardJoins.some((x) => x.weekKey === w.id && x.gid === me.id));
+    return Boolean(me && rewardJoins.some((x) => x.game === g && x.gid === me.id));
   };
 
   return (
@@ -269,6 +275,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
           rewardBoards={rewardBoards}
           counts={counts}
           acceptedCount={acceptedCount}
+          qualAt={qualAt}
         />
       )}
       {registering && (
@@ -343,7 +350,8 @@ const GamesHome: React.FC<{
   rewardBoards: Record<string, any[]>;
   counts: Counts;
   acceptedCount: Record<string, number>;
-}> = ({ me, isCustomer = false, boards, isOpen, opensAt, nowMs, onPick, onRegister, season, upcoming, join, joinsCount, weeks, rewardJoins, config, mode, onMode, rewardBoards, counts, acceptedCount }) => {
+  qualAt: Record<string, number>;
+}> = ({ me, isCustomer = false, boards, isOpen, opensAt, nowMs, onPick, onRegister, season, upcoming, join, joinsCount, weeks, rewardJoins, config, mode, onMode, rewardBoards, counts, acceptedCount, qualAt }) => {
   const myGames = me ? GAMES.filter((g: { id: string }) => playsGame(me, g.id)) : [];
   const hasAccount = myGames.length > 0;
   const myBest = hasAccount
@@ -356,12 +364,30 @@ const GamesHome: React.FC<{
     ? myGames
         .map((g: { id: string; label: string }) => {
           const w = activeWeekFor(weeks, g.id, nowMs);
-          const row = w && weekPhase(w, nowMs) === 'running' && rewardJoins.some((x) => x.weekKey === w.id && x.gid === me.id) ? (rewardBoards[g.id] || []).find((r) => r.id === me.id) : null;
+          const row = w && weekPhase(w, nowMs) === 'running' && rewardJoins.some((x) => x.game === g.id && x.gid === me.id) ? (rewardBoards[g.id] || []).find((r) => r.id === me.id) : null;
           return { g, row, min: w ? Number(w.minPoints) : 0 };
         })
         .filter((x: any) => x.row)
         .sort((a: any, b: any) => a.row.rank - b.row.rank)[0]
     : null;
+
+  /** Reward tab order: running, next, then games that are full in the order they filled, then the rest by players */
+  const rewardOrder = useMemo(() => {
+    const items = GAMES.map((g: { id: string; label: string }) => {
+      const cfg = rewardConfigFor(config, g.id);
+      const week = activeWeekFor(weeks, g.id, nowMs);
+      const ph = week ? weekPhase(week, nowMs) : '';
+      const at = qualAt[g.id] || 0;
+      const lastEnd = weeks.filter((w) => w.game === g.id).reduce((m, w) => Math.max(m, Number(w.endMs)), 0);
+      return { g, week: ph === 'running' || ph === 'scheduled' ? week : null, ph, qualified: Boolean(at), at, lastEnd, count: acceptedCount[g.id] || 0, waitPos: 0 };
+    });
+    const running = items.filter((x) => x.ph === 'running').sort((a, b) => Number(a.week.startMs) - Number(b.week.startMs));
+    const next = items.filter((x) => x.ph === 'scheduled').sort((a, b) => Number(a.week.startMs) - Number(b.week.startMs));
+    const waiting = items.filter((x) => !x.week && x.qualified).sort((a, b) => a.lastEnd - b.lastEnd || a.at - b.at);
+    waiting.forEach((x, i) => (x.waitPos = next.length + running.length + i + 1));
+    const filling = items.filter((x) => !x.week && !x.qualified).sort((a, b) => b.count - a.count);
+    return [...running, ...next, ...waiting, ...filling];
+  }, [config, weeks, qualAt, nowMs, acceptedCount]);
 
   return (
     <>
@@ -446,7 +472,8 @@ const GamesHome: React.FC<{
               const mine = me && playsGame(me, g.id) ? b.find((r) => r.id === me.id) : null;
               const plays = Boolean(me && playsGame(me, g.id));
               return (
-                <button key={g.id} type="button" onClick={() => onPick(g.id)} className={`${card} p-3.5 text-left cursor-pointer hover:border-[#0e9f55]/50 transition-colors`}>
+                <div key={g.id} className={`${card} p-3.5 hover:border-[#0e9f55]/50 transition-colors`}>
+                  <button type="button" onClick={() => onPick(g.id)} className="w-full text-left cursor-pointer">
                   <div className="flex items-start justify-between">
                     <GameIcon game={g.id} />
                     <ChevronRight className="w-4 h-4 text-slate-300" />
@@ -461,6 +488,8 @@ const GamesHome: React.FC<{
                   )}
                   <p className="mt-2 text-[10px] text-slate-400">{playersText(counts.byGame[g.id] || 0, 'registered')}</p>
                 </button>
+                  <GameRulesToggle title="Rules" lines={leagueRulesFor(g.id)} className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800" />
+                </div>
               );
             })}
           </div>
@@ -470,59 +499,66 @@ const GamesHome: React.FC<{
       {mode === 'reward' && (
         <>
           <div className={`${card} overflow-hidden`}>
-            <div className="relative h-28 bg-slate-200 dark:bg-slate-800">
-              <img src="/images/reward-plate.webp" alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
-              <div className="absolute left-3 bottom-3">
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-200">Weekly reward</p>
-                <p className="text-base font-black text-white leading-tight">Top 3 each win a food credit</p>
-              </div>
-              <span className="absolute right-3 bottom-3 text-[10px] font-semibold text-white/80">Example plate</span>
-            </div>
+            <RewardIntro cfg={rewardConfigFor(config, 'dls')} />
           </div>
-          <div className="flex items-end justify-between">
-            <div>
-              <h3 className="text-base font-black text-slate-900 dark:text-white">Reward weeks by game</h3>
-              <p className="text-[11px] text-slate-500">Games take turns. A game starts once enough players join it.</p>
-            </div>
+          <div>
+            <h3 className="text-base font-black text-slate-900 dark:text-white">Reward weeks by game</h3>
+            <p className="text-[11px] text-slate-500">Games take turns. The first game to reach {rewardConfigFor(config, 'dls').minPlayers} registered players goes first. Tap a game to open it.</p>
           </div>
           <div className="grid grid-cols-1 gap-3">
-            {GAMES.map((g) => {
+            {rewardOrder.map((it, idx) => {
+              const g = it.g;
               const cfg = rewardConfigFor(config, g.id);
-              const w = activeWeekFor(weeks, g.id, nowMs);
+              const w = it.week;
               const ph = w ? weekPhase(w, nowMs) : '';
               const count = acceptedCount[g.id] || 0;
               const top = (rewardBoards[g.id] || [])[0];
-              const joinedN = w ? rewardJoins.filter((x) => x.weekKey === w.id).length : 0;
+              const joinedN = count;
+              const tag = ph === 'running' ? 'This week' : ph === 'scheduled' ? 'Next week' : it.qualified ? `Waiting, ${ordinal(it.waitPos)} in line` : 'Filling up';
+              const tagCls =
+                ph === 'running'
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                  : ph === 'scheduled'
+                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                  : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300';
               return (
-                <button key={g.id} type="button" onClick={() => onPick(g.id)} className={`${card} p-3.5 text-left cursor-pointer hover:border-[#0e9f55]/50 transition-colors`}>
-                  <div className="flex items-center gap-3">
-                    <GameIcon game={g.id} />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-black text-slate-900 dark:text-white">{g.label}</p>
-                      {ph === 'running' ? (
-                        <>
-                          <p className="text-[11px] font-bold text-[#0e9f55]">Reward week is on. Closes in {countdown(Number(w.endMs) - nowMs)}</p>
-                          <p className="text-[11px] text-slate-500 truncate">
-                            {top && top.pts > 0 ? `${top.name} leads with ${top.pts} pts` : 'No points yet'} · {joinedN} joined
-                          </p>
-                        </>
-                      ) : ph === 'scheduled' ? (
-                        <p className="text-[11px] font-bold text-amber-600">Starts {openDay(Number(w.startMs))}</p>
-                      ) : (
-                        <>
-                          <p className="text-[11px] text-slate-500">
-                            {count} of {cfg.minPlayers} players joined
-                          </p>
-                          <div className="mt-1 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                            <div className="h-full bg-[#0e9f55]" style={{ width: `${Math.min(100, Math.round((count / Math.max(1, cfg.minPlayers)) * 100))}%` }} />
-                          </div>
-                        </>
-                      )}
+                <div key={g.id} className={`${card} p-3.5`}>
+                  <button type="button" onClick={() => onPick(g.id)} className="w-full text-left cursor-pointer">
+                    <div className="flex items-center gap-3">
+                      <span className="w-7 h-7 rounded-full bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-xs font-black flex items-center justify-center shrink-0">{idx + 1}</span>
+                      <GameIcon game={g.id} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-black text-slate-900 dark:text-white">{g.label}</p>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${tagCls}`}>{tag}</span>
+                        </div>
+                        {ph === 'running' ? (
+                          <>
+                            <p className="text-[11px] font-bold text-[#0e9f55]">Closes in {countdown(Number(w.endMs) - nowMs)}</p>
+                            <p className="text-[11px] text-slate-500 truncate">
+                              {top && top.pts > 0 ? `${top.name} leads with ${top.pts} pts` : 'No points yet'} · {playersText(joinedN, 'registered')}
+                            </p>
+                          </>
+                        ) : ph === 'scheduled' ? (
+                          <p className="text-[11px] font-bold text-amber-600">Starts {openDay(Number(w.startMs))} · {playersText(joinedN, 'registered')}</p>
+                        ) : it.qualified ? (
+                          <p className="text-[11px] text-slate-500">{playersText(count, 'registered')}. Enough to start, waiting for its turn.</p>
+                        ) : (
+                          <>
+                            <p className="text-[11px] text-slate-500">
+                              {count} of {cfg.minPlayers} registered players, {Math.max(0, cfg.minPlayers - count)} more to start
+                            </p>
+                            <div className="mt-1 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                              <div className="h-full bg-[#0e9f55]" style={{ width: `${Math.min(100, Math.round((count / Math.max(1, cfg.minPlayers)) * 100))}%` }} />
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
                     </div>
-                    <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
-                  </div>
-                </button>
+                  </button>
+                  <GameRulesToggle title={`${g.label} reward rules`} lines={rewardRulesFor(g.id, cfg)} className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800" />
+                </div>
               );
             })}
           </div>
@@ -546,6 +582,7 @@ const GameIcon: React.FC<{ game: string; className?: string }> = ({ game, classN
     );
   return <img src={`/images/games/${game}.webp`} alt="" loading="lazy" onError={() => setFailed(true)} className={`${className} shrink-0 object-cover bg-slate-200 dark:bg-slate-800`} />;
 };
+const ordinal = (n: number) => `${n}${[, 'st', 'nd', 'rd'][n % 100 > 10 && n % 100 < 14 ? 0 : n % 10] || 'th'}`;
 const playersText = (n: number, adj = '') => `${n} ${adj ? adj + ' ' : ''}${n === 1 ? 'player' : 'players'}`;
 
 /* ================================================================== */
@@ -694,6 +731,12 @@ const GamePage: React.FC<{
           tableCount={acceptedCount}
           nowMs={nowMs}
         />
+      )}
+
+      {best && (
+        <div className={`${card} p-3.5`}>
+          <GameRulesToggle title={`${gameLabel(game)} league rules`} lines={leagueRulesFor(game)} />
+        </div>
       )}
 
       <ModeToggle mode={mode} onMode={onMode} />

@@ -108,6 +108,10 @@ export async function saveGroupLink(link: string) {
   if (v && !/^https:\/\/(chat\.whatsapp\.com|wa\.me|whatsapp\.com)\//i.test(v)) throw new Error('Paste the full WhatsApp group invite link, starting with https://chat.whatsapp.com/');
   await setDoc(doc(db, 'settings', 'gamesConfig'), { groupLink: v }, { merge: true });
 }
+/** How many games run a reward week at the same time (1 or 2) */
+export async function saveSlots(n: number) {
+  await setDoc(doc(db, 'settings', 'gamesConfig'), { slots: Number(n) === 2 ? 2 : 1 }, { merge: true });
+}
 /** Notice of the day: shows until the end of today (Lagos). Posting a new one replaces the old one. */
 export async function postDailyNotice(text: string) {
   const t = String(text || '').trim().slice(0, 280);

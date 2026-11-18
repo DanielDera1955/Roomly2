@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { GAMES, gameLabel, playsGame, subscribeGamers, timeAgo, waTo } from '../hub.js';
-import { computeRows, matchCounts, weekPhase, creditState, rewardConfigFor } from '../boardCore.js';
+import { computeRows, matchCounts, weekPhase, creditState, rewardConfigFor, rewardSlots } from '../boardCore.js';
 import {
   subscribeSeasons,
   subscribeSeasonJoins,
@@ -23,6 +23,7 @@ import {
   saveGameSettings,
   addAllToSeason,
   saveGroupLink,
+  saveSlots,
   postDailyNotice,
 } from '../adminGames';
 
@@ -300,7 +301,7 @@ const WeeksTab: React.FC<any> = ({ season, gamers, matches, weeks, rewardJoins, 
   const nowMs = Date.now();
   if (!week) return <p className="text-xs text-slate-400">No reward weeks yet. A week starts once a game has enough players.</p>;
 
-  const joined = new Set(rewardJoins.filter((r: any) => r.weekKey === week.id).map((r: any) => r.gid));
+  const joined = new Set(rewardJoins.filter((r: any) => r.game === week.game).map((r: any) => r.gid));
   const base = { seasonId: season.id, joined, fromMs: Number(week.startMs), toMs: Number(week.endMs), weekKey: week.id };
   const table = computeRows(week.game, gamers, matches, { ...base, adjusts });
   const disputed = matches.filter((m: any) => m.game === week.game && m.seasonId === season.id && m.status === 'disputed' && Number(m.loggedAtMs) >= Number(week.startMs) && Number(m.loggedAtMs) < Number(week.endMs));
@@ -470,6 +471,22 @@ const AnnounceBox: React.FC<{ config: any }> = ({ config }) => {
 const SettingsTab: React.FC<{ config: any }> = ({ config }) => (
   <div className="space-y-3">
     <AnnounceBox config={config} />
+    <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-1.5">
+      <p className="text-xs font-bold text-slate-900 dark:text-white">Games per week</p>
+      <p className="text-[11px] text-slate-500">How many games run a reward week at the same time. Applies to weeks not yet scheduled.</p>
+      <div className="grid grid-cols-2 gap-2">
+        {[1, 2].map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => saveSlots(n).catch((e: any) => window.alert(e?.message || 'Could not save.'))}
+            className={`h-10 rounded-xl text-xs font-bold cursor-pointer ${rewardSlots(config) === n ? 'bg-[#0e9f55] text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200'}`}
+          >
+            {n} {n === 1 ? 'game' : 'games'}
+          </button>
+        ))}
+      </div>
+    </div>
     <p className="text-[11px] text-slate-500">Changes apply from the next reward week. A week that has already started keeps the settings it started with.</p>
     {GAMES.map((g: { id: string; label: string }) => (
       <GameSettingsRow key={g.id} game={g.id} label={g.label} cfg={rewardConfigFor(config, g.id)} />

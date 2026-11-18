@@ -687,6 +687,19 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/gamers/$(request.resource.data.gid)).data.get('rewardBlocked', {}).get(request.resource.data.game, false) == false;
       allow update, delete: if isAdmin();
     }
+    match /rewardRegs/{id} {
+      allow read: if true;
+      allow create: if ownsGamer(request.resource.data.gid)
+        && gamerOk(request.resource.data.gid)
+        && id == request.resource.data.seasonId + '_' + request.resource.data.gid + '_' + request.resource.data.game
+        && request.resource.data.atMs > request.time.toMillis() - 600000
+        && request.resource.data.atMs < request.time.toMillis() + 600000
+        && exists(/databases/$(database)/documents/seasonJoins/$(request.resource.data.seasonId + '_' + request.resource.data.gid))
+        && get(/databases/$(database)/documents/seasonJoins/$(request.resource.data.seasonId + '_' + request.resource.data.gid)).data.get('rulesVersion', 0) >= 1
+        && request.resource.data.game in get(/databases/$(database)/documents/gamers/$(request.resource.data.gid)).data.games
+        && get(/databases/$(database)/documents/gamers/$(request.resource.data.gid)).data.get('rewardBlocked', {}).get(request.resource.data.game, false) == false;
+      allow update, delete: if isAdmin();
+    }
 
     // Every Challenge tap (who, whom, game, when). Only the admin reads the log.
     match /challengeTaps/{id} {
