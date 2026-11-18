@@ -111,6 +111,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
   const [config, setConfig] = useState<any>({});
   const [hiddenFromMe, setHiddenFromMe] = useState<Set<string>>(new Set());
   const [joinPrompt, setJoinPrompt] = useState(false);
+  const [mode, setMode] = useState<'best' | 'reward'>('best');
 
   useEffect(() => {
     knownHubUid().then(setUid);
@@ -224,6 +225,8 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
           config={rewardConfigFor(config, game)}
           hiddenFromMe={hiddenFromMe}
           onJoinPrompt={() => setJoinPrompt(true)}
+          mode={mode}
+          onMode={setMode}
         />
       ) : (
         <GamesHome
@@ -244,6 +247,9 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
           weeks={weeks}
           rewardJoins={rewardJoins}
           config={config}
+          mode={mode}
+          onMode={setMode}
+          rewardBoards={rewardBoards}
         />
       )}
       {registering && (
@@ -267,6 +273,28 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
 /* Games home                                                          */
 /* ================================================================== */
 
+const ModeToggle: React.FC<{ mode: 'best' | 'reward'; onMode: (m: 'best' | 'reward') => void }> = ({ mode, onMode }) => (
+  <div>
+    <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-slate-200/70 dark:bg-slate-800">
+      {([['best', 'Best in Caritas'], ['reward', 'Weekly Reward Contest']] as ['best' | 'reward', string][]).map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          onClick={() => onMode(id)}
+          className={`h-11 rounded-xl text-sm font-bold cursor-pointer ${mode === id ? 'bg-white dark:bg-slate-950 text-[#0e9f55] shadow-sm' : 'text-slate-500'}`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+    <p className="mt-1.5 px-1 text-[11px] text-slate-500">
+      {mode === 'best'
+        ? 'The season table for the whole of Caritas. Every counting match adds to it.'
+        : 'One game each week. It starts from zero, and the top 3 with enough points win a food credit.'}
+    </p>
+  </div>
+);
+
 const GamesHome: React.FC<{
   me: any;
   /** Signed in as a Roomly customer on this phone (not yet a player) */
@@ -286,7 +314,10 @@ const GamesHome: React.FC<{
   weeks: any[];
   rewardJoins: any[];
   config: any;
-}> = ({ me, isCustomer = false, gamers, boards, isOpen, opensAt, nowMs, onPick, onRegister, season, upcoming, seasons, join, joinsCount, weeks, rewardJoins, config }) => {
+  mode: 'best' | 'reward';
+  onMode: (m: 'best' | 'reward') => void;
+  rewardBoards: Record<string, any[]>;
+}> = ({ me, isCustomer = false, gamers, boards, isOpen, opensAt, nowMs, onPick, onRegister, season, upcoming, seasons, join, joinsCount, weeks, rewardJoins, config, mode, onMode, rewardBoards }) => {
   const registered = gamers.filter((g) => !g.banned).length;
   const myBest = me
     ? GAMES.filter((g) => playsGame(me, g.id))
@@ -340,6 +371,9 @@ const GamesHome: React.FC<{
         </div>
       </div>
 
+      {/* Two contests: pick one here so a new visitor sees the difference first */}
+      <ModeToggle mode={mode} onMode={onMode} />
+
       {/* Season league: join, rules and the Hall of fame */}
       <SeasonCard season={season} upcoming={upcoming} seasons={seasons} me={me} join={join} joinsCount={joinsCount} nowMs={nowMs} onRegister={onRegister} />
 
@@ -348,6 +382,8 @@ const GamesHome: React.FC<{
       {/* My settings: open to challenges, per game, and edit profile */}
       {me && <MyStatusCard me={me} season={season} join={join} weeks={weeks} rewardJoins={rewardJoins} isOpen={isOpen} opensAt={opensAt} nowMs={nowMs} onEdit={onRegister} />}
 
+      {mode === 'best' && (
+        <>
       {/* Game cards */}
       <div className="flex items-end justify-between">
         <div>
@@ -380,6 +416,69 @@ const GamesHome: React.FC<{
           );
         })}
       </div>
+        </>
+      )}
+      {mode === 'reward' && (
+        <>
+          <div className={`${card} overflow-hidden`}>
+            <div className="relative h-28 bg-slate-200 dark:bg-slate-800">
+              <img src="/images/reward-plate.webp" alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+              <div className="absolute left-3 bottom-3">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-200">Weekly reward</p>
+                <p className="text-base font-black text-white leading-tight">Top 3 each win a food credit</p>
+              </div>
+              <span className="absolute right-3 bottom-3 text-[10px] font-semibold text-white/80">Example plate</span>
+            </div>
+          </div>
+          <div className="flex items-end justify-between">
+            <div>
+              <h3 className="text-base font-black text-slate-900 dark:text-white">Reward weeks by game</h3>
+              <p className="text-[11px] text-slate-500">Games take turns. A game starts once enough players join it.</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-3">
+            {GAMES.map((g) => {
+              const cfg = rewardConfigFor(config, g.id);
+              const w = activeWeekFor(weeks, g.id, nowMs);
+              const ph = w ? weekPhase(w, nowMs) : '';
+              const count = boards[g.id].length;
+              const top = (rewardBoards[g.id] || [])[0];
+              const joinedN = w ? rewardJoins.filter((x) => x.weekKey === w.id).length : 0;
+              return (
+                <button key={g.id} type="button" onClick={() => onPick(g.id)} className={`${card} p-3.5 text-left cursor-pointer hover:border-[#0e9f55]/50 transition-colors`}>
+                  <div className="flex items-center gap-3">
+                    <GameIcon game={g.id} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-black text-slate-900 dark:text-white">{g.label}</p>
+                      {ph === 'running' ? (
+                        <>
+                          <p className="text-[11px] font-bold text-[#0e9f55]">Reward week is on. Closes in {countdown(Number(w.endMs) - nowMs)}</p>
+                          <p className="text-[11px] text-slate-500 truncate">
+                            {top && top.pts > 0 ? `${top.name} leads with ${top.pts} pts` : 'No points yet'} · {joinedN} joined
+                          </p>
+                        </>
+                      ) : ph === 'scheduled' ? (
+                        <p className="text-[11px] font-bold text-amber-600">Starts {openDay(Number(w.startMs))}</p>
+                      ) : (
+                        <>
+                          <p className="text-[11px] text-slate-500">
+                            {count} of {cfg.minPlayers} players joined
+                          </p>
+                          <div className="mt-1 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                            <div className="h-full bg-[#0e9f55]" style={{ width: `${Math.min(100, Math.round((count / Math.max(1, cfg.minPlayers)) * 100))}%` }} />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
       <p className="text-center text-[10px] text-slate-400">Roomly is not affiliated with or endorsed by the makers of these games.</p>
     </>
   );
@@ -424,9 +523,10 @@ const GamePage: React.FC<{
   config: { minPlayers: number; minPoints: number; creditValue: number };
   hiddenFromMe: Set<string>;
   onJoinPrompt: () => void;
-}> = ({ game, me, board, matches, tournaments, isOpen, opensAt, nowMs, focusMatch, onFocusDone, onBack, onRegister, season, join, week, otherWeek, rewardRows, rewardJoined, config, hiddenFromMe, onJoinPrompt }) => {
+  mode: 'best' | 'reward';
+  onMode: (m: 'best' | 'reward') => void;
+}> = ({ game, me, board, matches, tournaments, isOpen, opensAt, nowMs, focusMatch, onFocusDone, onBack, onRegister, season, join, week, otherWeek, rewardRows, rewardJoined, config, hiddenFromMe, onJoinPrompt, mode, onMode: setMode }) => {
   const [tab, setTab] = useState<'table' | 'tournaments'>('table');
-  const [mode, setMode] = useState<'best' | 'reward'>('best');
   const [logging, setLogging] = useState(false);
   const plays = playsGame(me, game);
   const joined = Boolean(join);
