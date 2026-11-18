@@ -490,10 +490,10 @@ const GamesHome: React.FC<{
                   <p className="mt-3 text-sm font-black text-slate-900 dark:text-white">{g.label}</p>
                   <p className="mt-0.5 text-[11px] text-slate-500 flex items-center gap-1 truncate">
                     <Crown className="w-3 h-3 text-amber-500 shrink-0" />
-                    <span className="truncate">{leader ? `${leader.name}, ${leader.pts} pts` : 'No leader yet'}</span>
+                    <span className="truncate">{leader ? `Crown: ${leader.name}, ${leader.pts} pts` : 'Crown is empty'}</span>
                   </p>
                   {plays && (
-                    <p className="mt-0.5 text-[11px] font-bold text-[#0e9f55] truncate">{mine ? `You: #${mine.rank}, ${mine.pts} pts` : 'You are registered'}</p>
+                    <p className="mt-0.5 text-[11px] font-bold text-[#0e9f55] truncate">{mine ? `You: #${mine.rank} in Caritas` : 'You are registered'}</p>
                   )}
                   <p className="mt-2 text-[10px] text-slate-400">{playersText(counts.byGame[g.id] || 0, 'registered')}</p>
                 </button>
@@ -632,6 +632,7 @@ const GamePage: React.FC<{
   const accepted = rulesAccepted(join);
   const myRow = me ? board.find((r) => r.id === me.id) : null;
   const champ = board.find((r) => r.crown);
+  const tiedTop = Boolean(champ && board[1] && board[1].pts === champ.pts);
   const best = mode === 'best';
   const rewardRunning = Boolean(week && weekPhase(week, nowMs) === 'running');
   const [rulesMoved, setRulesMoved] = useState(false);
@@ -689,27 +690,47 @@ const GamePage: React.FC<{
           </p>
           {champ ? (
             <>
-              <h3 className="mt-1 text-2xl font-black pr-14">{champ.name}</h3>
-              <p className="text-xs text-emerald-50/90 flex items-center gap-1 mt-0.5">
-                <MapPin className="w-3 h-3" /> {champ.origin === 'Caritas' ? champ.hostel : champ.origin === 'Guest' ? 'Guest player' : champ.origin} · {champ.pts} pts
+              <h3 className="mt-1 text-2xl font-black pr-14 flex items-center gap-2">
+                <span className="text-amber-300">#1</span> <span className="truncate">{champ.name}</span>
+              </h3>
+              <p className="text-xs text-emerald-50/90 mt-0.5">
+                {tiedTop ? `Leading the ${gameLabel(game)} table. Beat them to take the crown.` : `The undisputed ${gameLabel(game)} player in Caritas.`}
               </p>
+              <span className="mt-2 inline-block px-2.5 py-1 rounded-full bg-white/15 text-[11px] font-bold">
+                {champ.pts} pts{Number(champ.w) > 0 ? ` · ${champ.w} ${Number(champ.w) === 1 ? 'win' : 'wins'}` : ''}
+              </span>
             </>
           ) : (
             <>
-              <h3 className="mt-1 text-xl font-black">No champion yet</h3>
-              <p className="text-xs text-emerald-50/90 mt-0.5">{!season ? 'The race starts when a season begins.' : isOpen ? 'Win the first match and the crown is yours.' : `The race starts ${openDay(opensAt)}.`}</p>
+              <h3 className="mt-1 text-xl font-black">The crown is empty</h3>
+              <p className="text-xs text-emerald-50/90 mt-0.5">{!season ? 'The race starts when a season begins.' : isOpen ? "Win the first match and it's yours." : `The race starts ${openDay(opensAt)}.`}</p>
             </>
           )}
           <div className="mt-4 pt-3 border-t border-white/20 space-y-2.5">
-            <p className="text-sm font-bold">
-              {plays
-                ? myRow
-                  ? champ && champ.id === me.id
-                    ? 'You wear the crown.'
-                    : `You: #${myRow.rank} with ${myRow.pts} pts${champ ? `, ${Math.max(0, champ.pts - myRow.pts)} behind the crown` : ''}`
-                  : 'You are registered. Your place appears after your first match.'
-                : 'Free to join. Other league players can message you on WhatsApp to challenge you.'}
-            </p>
+            {plays ? (
+              myRow ? (
+                champ && champ.id === me.id ? (
+                  <>
+                    <p className="text-sm font-bold">You hold the crown. Defend it.</p>
+                    <p className="text-[11px] text-emerald-50/90">Tap any player to schedule a match and increase your gap.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-bold">
+                      You are #{myRow.rank} in Caritas.{champ ? ` ${Math.max(0, champ.pts - myRow.pts)} ${Math.max(0, champ.pts - myRow.pts) === 1 ? 'point' : 'points'} to the crown.` : ''}
+                    </p>
+                    <p className="text-[11px] text-emerald-50/90">Tap any player in the table to schedule a match on WhatsApp.</p>
+                  </>
+                )
+              ) : (
+                <p className="text-sm font-bold">You are registered. Your place appears after your first match.</p>
+              )
+            ) : (
+              <>
+                <p className="text-sm font-bold">Think you can take the crown?</p>
+                <p className="text-[11px] text-emerald-50/90">Free to join. League players schedule 1v1 matches on WhatsApp. Tap any player to challenge them.</p>
+              </>
+            )}
             <p className="text-[11px] text-emerald-50/90">{playersText(registered, 'registered')} in {gameLabel(game)}</p>
             <div className="grid grid-cols-2 gap-2">
               <button type="button" onClick={onRegister} className="h-10 rounded-xl bg-white text-[#0e9f55] text-xs font-bold flex items-center justify-center gap-1 cursor-pointer">
