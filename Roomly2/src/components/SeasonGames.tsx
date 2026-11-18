@@ -291,21 +291,21 @@ export const MainRulesDropdown: React.FC<{ title: string; lines: string[]; defau
         aria-expanded={open}
         className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
       >
-        <span className="flex items-center gap-2 text-xs font-black text-slate-900 dark:text-white">
+        <span className="flex items-center gap-2 text-sm font-black text-slate-900 dark:text-white">
           <BookOpen className="w-3.5 h-3.5 text-slate-500" /> {title}
         </span>
         {open ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
       </button>
       {open && (
         <>
-          <ul className="mt-2 space-y-1.5 list-disc pl-5 marker:text-[#0e9f55]">
+          <ul className="mt-2 space-y-2 list-disc pl-5 marker:text-[#0e9f55]">
             {lines.map((l, i) => (
-              <li key={i} className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+              <li key={i} className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
                 {l}
               </li>
             ))}
           </ul>
-          <button type="button" onClick={() => setFull(true)} className="mt-3 text-[11px] font-bold text-[#0e9f55] cursor-pointer">
+          <button type="button" onClick={() => setFull(true)} className="mt-3 text-xs font-bold text-[#0e9f55] cursor-pointer">
             Read all the rules
           </button>
         </>
@@ -344,6 +344,7 @@ export const RewardIntro: React.FC<{ cfg: RewardCfg; game?: string; showImage?: 
           "To take part, register for that game's reward contest and tick to accept its rules.",
           'Reward matches only count in the reward table. League matches only count in the Best in Caritas league table for that game.',
           'You can only play the same player twice per week, once at home and one away.',
+          'Credits are sent the morning after the week ends. A credit opens at 12:00AM the next day and lasts 24 hours, so use it before it expires. It works on Outside Food and Canteen Items only, not on delivery. It takes a fixed ' + naira(cfg.creditValue) + ' off your items, any part you do not use is lost, and one credit applies per order.',
         ]}
         className="pt-3 border-t border-slate-100 dark:border-slate-800"
       />
@@ -352,8 +353,8 @@ export const RewardIntro: React.FC<{ cfg: RewardCfg; game?: string; showImage?: 
 );
 
 /** Register once for a game's reward contest: its rules, one tick */
-export const RewardRegisterSheet: React.FC<{ game: string; cfg: RewardCfg; me: any; season: Season; join: any; week: any | null; onClose: () => void }> = ({ game, cfg, me, season, join, week, onClose }) => {
-  const [ticked, setTicked] = useState(false);
+export const RewardRegisterSheet: React.FC<{ game: string; cfg: RewardCfg; me: any; season: Season; join: any; week: any | null; acceptedGame?: string; onClose: () => void }> = ({ game, cfg, me, season, join, week, acceptedGame = '', onClose }) => {
+  const [ticked, setTicked] = useState(Boolean(acceptedGame));
   const [busy, setBusy] = useState(false);
   return (
     <Modal title={`Join the ${gameLabel(game)} reward contest`} onClose={onClose}>
@@ -364,10 +365,16 @@ export const RewardRegisterSheet: React.FC<{ game: string; cfg: RewardCfg; me: a
           </li>
         ))}
       </ul>
-      <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-950 cursor-pointer">
-        <input type="checkbox" checked={ticked} onChange={(e) => setTicked(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#0e9f55]" />
-        <span className="text-xs font-semibold text-slate-800 dark:text-slate-100">I have read and accept the {gameLabel(game)} reward contest rules.</span>
-      </label>
+      {acceptedGame ? (
+        <p className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 text-xs font-semibold text-slate-700 dark:text-slate-200">
+          You accepted the reward contest rules on {gameLabel(acceptedGame)}. They apply here too.
+        </p>
+      ) : (
+        <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-950 cursor-pointer">
+          <input type="checkbox" checked={ticked} onChange={(e) => setTicked(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#0e9f55]" />
+          <span className="text-xs font-semibold text-slate-800 dark:text-slate-100">I have read and accept the {gameLabel(game)} reward contest rules.</span>
+        </label>
+      )}
       <button
         type="button"
         disabled={!ticked || busy}
@@ -401,10 +408,12 @@ export const RewardCard: React.FC<{
   join: any;
   /** This player is registered for this game's reward contest */
   rewardJoined: boolean;
+  /** A game where this player already accepted the current reward rules ('' if none) */
+  acceptedGame?: string;
   /** Players registered for this game's reward contest */
   tableCount: number;
   nowMs: number;
-}> = ({ game, week, otherWeek, rewardRows, config, me, season, join, rewardJoined, tableCount, nowMs }) => {
+}> = ({ game, week, otherWeek, rewardRows, config, me, season, join, rewardJoined, acceptedGame = '', tableCount, nowMs }) => {
   const [sheet, setSheet] = useState(false);
   const phase = weekPhase(week, nowMs);
   const minPoints = week ? Number(week.minPoints) : config.minPoints;
@@ -494,7 +503,7 @@ export const RewardCard: React.FC<{
           )}
         </div>
       </div>
-      {sheet && season && <RewardRegisterSheet game={game} cfg={cfg} me={me} season={season} join={join} week={week} onClose={() => setSheet(false)} />}
+      {sheet && season && <RewardRegisterSheet game={game} cfg={cfg} me={me} season={season} join={join} week={week} acceptedGame={acceptedGame} onClose={() => setSheet(false)} />}
     </div>
   );
 };

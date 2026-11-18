@@ -48,6 +48,7 @@ import {
   queuedWeek,
   isChallengeable,
   rulesAccepted,
+  RULES_VERSION,
   setChallengeable,
   tapChallenge,
   refreshContact,
@@ -226,6 +227,10 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
   const acceptedAll = joins.filter((j) => rulesAccepted(j)).length;
 
   const gameMatches = (g: string) => matches.filter((m) => m.game === g && season && m.seasonId === season.id);
+  const rewardAcceptedFor = (g: string) => {
+    const x = me ? rewardJoins.find((r) => r.gid === me.id && r.game !== g && Number(r.rulesVersion || 0) >= RULES_VERSION) : null;
+    return x ? String(x.game) : '';
+  };
   const rewardJoinedFor = (g: string) => {
     return Boolean(me && rewardJoins.some((x) => x.game === g && x.gid === me.id));
   };
@@ -252,6 +257,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
           otherWeek={queuedWeek(weeks, nowMs)}
           rewardRows={rewardBoards[game] || []}
           rewardJoined={rewardJoinedFor(game)}
+          acceptedGame={rewardAcceptedFor(game)}
           config={rewardConfigFor(config, game)}
           hiddenFromMe={hiddenFromMe}
           mode={mode}
@@ -599,13 +605,14 @@ const GamePage: React.FC<{
   otherWeek: any | null;
   rewardRows: any[];
   rewardJoined: boolean;
+  acceptedGame: string;
   config: { minPlayers: number; minPoints: number; creditValue: number };
   hiddenFromMe: Set<string>;
   mode: 'best' | 'reward';
   onMode: (m: 'best' | 'reward') => void;
   registered: number;
   acceptedCount: number;
-}> = ({ game, me, board, matches, tournaments, isOpen, opensAt, nowMs, focusMatch, onFocusDone, onBack, onRegister, season, join, week, otherWeek, rewardRows, rewardJoined, config, hiddenFromMe, mode, onMode, registered, acceptedCount }) => {
+}> = ({ game, me, board, matches, tournaments, isOpen, opensAt, nowMs, focusMatch, onFocusDone, onBack, onRegister, season, join, week, otherWeek, rewardRows, rewardJoined, acceptedGame, config, hiddenFromMe, mode, onMode, registered, acceptedCount }) => {
   const [logging, setLogging] = useState(false);
   const [busy, setBusy] = useState(false);
   const plays = playsGame(me, game);
@@ -716,12 +723,11 @@ const GamePage: React.FC<{
           season={season}
           join={join}
           rewardJoined={rewardJoined}
+          acceptedGame={acceptedGame}
           tableCount={acceptedCount}
           nowMs={nowMs}
         />
       )}
-
-      <ModeToggle mode={mode} onMode={onMode} />
 
       {/* Registration week */}
       {!isOpen && opensAt > 0 && (
