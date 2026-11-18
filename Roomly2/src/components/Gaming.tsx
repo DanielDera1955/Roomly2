@@ -44,6 +44,7 @@ import {
   subscribeRewardJoins,
   subscribeGamesConfig,
   subscribeHiddenFromMe,
+  subscribePointAdjust,
   activeWeekFor,
   queuedWeek,
   isChallengeable,
@@ -106,6 +107,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
   const [joins, setJoins] = useState<any[]>([]);
   const [weeks, setWeeks] = useState<any[]>([]);
   const [rewardJoins, setRewardJoins] = useState<any[]>([]);
+  const [adjusts, setAdjusts] = useState<any[]>([]);
   const [config, setConfig] = useState<any>({});
   const [hiddenFromMe, setHiddenFromMe] = useState<Set<string>>(new Set());
   const [joinPrompt, setJoinPrompt] = useState(false);
@@ -150,6 +152,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
   useEffect(() => subscribeSeasonJoins(target?.id || '', setJoins), [target?.id]);
   useEffect(() => subscribeRewardWeeks(season?.id || '', setWeeks), [season?.id]);
   useEffect(() => subscribeRewardJoins(season?.id || '', setRewardJoins), [season?.id]);
+  useEffect(() => subscribePointAdjust(season?.id || '', setAdjusts), [season?.id]);
   useEffect(() => subscribeHiddenFromMe(me?.id || '', setHiddenFromMe), [me?.id]);
   const myJoin = me ? joins.find((j) => j.gid === me.id) || null : null;
 
@@ -165,13 +168,13 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
       }
       const w = activeWeekFor(weeks, g.id, nowMs);
       const rj = new Set(rewardJoins.filter((x) => w && x.weekKey === w.id).map((x) => x.gid));
-      out[g.id] = computeRows(g.id, gamers, matches, { seasonId: season.id, joined }).map((r: any) => ({
+      out[g.id] = computeRows(g.id, gamers, matches, { seasonId: season.id, joined, adjusts }).map((r: any) => ({
         ...r,
         ready: isChallengeable(joinById.get(r.id), g.id, rj.has(r.id)),
       }));
     });
     return out;
-  }, [gamers, matches, season?.id, joins, weeks, rewardJoins, nowMs]);
+  }, [gamers, matches, season?.id, joins, weeks, rewardJoins, adjusts, nowMs]);
 
   /** The reward tables: only matches inside the running week, from zero, only players who joined that week */
   const rewardBoards = useMemo(() => {
@@ -183,10 +186,10 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
         return;
       }
       const rj = new Set(rewardJoins.filter((x) => x.weekKey === w.id).map((x) => x.gid));
-      out[g.id] = computeRows(g.id, gamers, matches, { seasonId: season.id, joined: rj, fromMs: Number(w.startMs), toMs: Number(w.endMs) });
+      out[g.id] = computeRows(g.id, gamers, matches, { seasonId: season.id, joined: rj, fromMs: Number(w.startMs), toMs: Number(w.endMs), adjusts, weekKey: w.id });
     });
     return out;
-  }, [gamers, matches, season?.id, weeks, rewardJoins, nowMs]);
+  }, [gamers, matches, season?.id, weeks, rewardJoins, adjusts, nowMs]);
 
   const openRegister = () => setRegistering(true);
 

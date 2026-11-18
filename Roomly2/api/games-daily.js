@@ -44,6 +44,7 @@ export default async function handler(req, res) {
       const joins = rows(await db.collection('seasonJoins').where('seasonId', '==', season.id).get());
       const rewardJoins = rows(await db.collection('rewardJoins').where('seasonId', '==', season.id).get());
       const weeks = rows(await db.collection('rewardWeeks').where('seasonId', '==', season.id).get());
+      const adjusts = rows(await db.collection('pointAdjust').where('seasonId', '==', season.id).get());
       const seasonJoined = new Set(joins.map((j) => j.gid));
 
       /* 1. Issue credits for weeks that have closed */
@@ -51,7 +52,7 @@ export default async function handler(req, res) {
         if (week.status === 'issued' || week.status === 'none' || now < Number(week.endMs)) continue;
         try {
           const joined = new Set(rewardJoins.filter((j) => j.weekKey === week.id).map((j) => j.gid));
-          const opts = { seasonId: season.id, joined, fromMs: Number(week.startMs), toMs: Number(week.endMs) };
+          const opts = { seasonId: season.id, joined, fromMs: Number(week.startMs), toMs: Number(week.endMs), adjusts, weekKey: week.id };
           const table = computeRows(week.game, gamers, matches, opts);
           const winners = rewardWinners(table, Number(week.minPoints)).filter((r) => {
             const g = gamers.find((x) => x.id === r.id);
@@ -160,7 +161,7 @@ export default async function handler(req, res) {
         try {
           const champions = {};
           for (const game of GAME_IDS) {
-            const top = computeRows(game, gamers, matches, { seasonId: season.id, joined: seasonJoined })[0];
+            const top = computeRows(game, gamers, matches, { seasonId: season.id, joined: seasonJoined, adjusts })[0];
             if (top && top.pts > 0) champions[game] = { gid: top.id, name: top.name, pts: top.pts, origin: top.origin };
           }
           await db.doc(`seasons/${season.id}`).update({ champions, championsAt: now });

@@ -522,11 +522,11 @@ service cloud.firestore {
       allow update: if isAdmin()
         // The owner edits their profile and Ready switches
         || (anyUser() && resource.data.ownerUid == request.auth.uid
-            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['banned', 'ownerUid'])
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['banned', 'ownerUid', 'rewardBlocked', 'contacted'])
             && request.resource.data.name.size() <= 40)
         // Same number on a new phone: allowed only with a PIN claim written in the same save
         || (anyUser() && request.resource.data.ownerUid == request.auth.uid
-            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['banned'])
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['banned', 'rewardBlocked', 'contacted'])
             && existsAfter(/databases/$(database)/documents/gamerClaims/$(gid + '_' + request.auth.uid))
             && !exists(/databases/$(database)/documents/gamerClaims/$(gid + '_' + request.auth.uid)))
         // Same, with a fresh one-time claim id each time, so a phone can take its profile back as often as needed
@@ -710,12 +710,19 @@ service cloud.firestore {
     // and an unpaid order gives it back once the day it was placed has ended. Roomly (admin) can change anything.
     match /creditIndex/{pk} {
       allow get: if true;
-      allow list, write: if false;
+      allow list: if false;
+      allow write: if isAdmin();
+    }
+    // Points Roomly adds or removes by hand to settle disputes. Everyone reads them so tables match.
+    match /pointAdjust/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
     match /credits/{id} {
       allow get: if true;
       allow list: if isAdmin();
-      allow create, delete: if false;
+      allow create: if isAdmin();
+      allow delete: if false;
       allow update: if isAdmin()
         || (resource.data.status == 'active'
             && request.resource.data.status == 'used'

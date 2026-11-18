@@ -161,6 +161,18 @@ export async function setChallengeable(season: Season, join: any, me: any, game:
 
 /* ------------------------------ reward weeks ------------------------------ */
 
+export function subscribePointAdjust(seasonId: string, cb: (list: any[]) => void) {
+  if (!seasonId) {
+    cb([]);
+    return () => {};
+  }
+  return onSnapshot(
+    query(collection(hubDb, 'pointAdjust'), where('seasonId', '==', seasonId)),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    () => cb([])
+  );
+}
+
 export function subscribeRewardWeeks(seasonId: string, cb: (list: any[]) => void) {
   if (!seasonId) {
     cb([]);

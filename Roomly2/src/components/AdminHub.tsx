@@ -41,6 +41,7 @@ import {
   addSchool,
 } from '../hub.js';
 import { HOSTELS } from '../config';
+import { AdminGames } from './AdminGames';
 import { subscribeSeasons, adminCreateSeason, adminUpdateSeasonDates, type Season } from '../season';
 import { subscribeShopTokens } from '../shopsAdmin.js';
 
@@ -129,6 +130,7 @@ export const AdminHub: React.FC = () => {
       </div>
 
       <Disputes />
+      <AdminGames />
       <ResetPlayer />
       <Schools settings={settings} />
       <AdminTournaments />

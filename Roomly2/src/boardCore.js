@@ -138,6 +138,14 @@ export function computeRows(game, gamers, matches, opts = {}) {
         a.lastPtMs = Math.max(a.lastPtMs, at); b.lastPtMs = Math.max(b.lastPtMs, at);
       }
     });
+  // Points Roomly added or removed by hand (dispute settlements). A week table only takes the ones set for that week.
+  (opts.adjusts || []).forEach((a) => {
+    const r = rows[a.gid];
+    if (!r || a.game !== game || (opts.seasonId && a.seasonId !== opts.seasonId)) return;
+    if (opts.weekKey ? a.weekKey !== opts.weekKey : opts.fromMs != null) return;
+    r.pts = Math.max(0, r.pts + Number(a.pts || 0));
+    r.adj = (r.adj || 0) + Number(a.pts || 0);
+  });
   const list = Object.values(rows).map((r) => ({ ...r, gd: r.gf - r.ga }));
   const main = (r) => (scored ? r.gf : r.dmg);
   list.sort(
