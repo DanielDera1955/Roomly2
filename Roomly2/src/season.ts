@@ -42,7 +42,8 @@ export const GAME_RULES: { title: string; lines: string[] }[] = [
     title: 'Results',
     lines: [
       'The winner enters the result: the opponent, the score, the stats (goals, kills and damage where the game has them) and a screenshot of the final score. A draw can be entered by either player. A screenshot is required.',
-      'You can enter at most 2 matches between the same two players on the same day. The player who challenged is home in the first match and the rematch reverses it. Extra matches do not count.',
+      'Each match counts in one contest only: the league table or a reward week, depending on where you log it. League matches never add to a reward table and reward matches never add to the league.',
+      'Between the same two players, at most 4 league matches count per week (2 home and 2 away) and at most 2 reward matches count per week (1 home and 1 away). The player who challenged is home in the first match and the rematch reverses it. Extra matches do not count.',
       'Your opponent confirms the result or reports it. If nobody answers for 5 hours it shows as recorded. Reports are allowed for 24 hours after the result was entered. After that it is locked, even if it was wrong.',
     ],
   },
@@ -57,7 +58,7 @@ export const GAME_RULES: { title: string; lines: string[] }[] = [
     title: 'Reward weeks',
     lines: [
       'Reward weeks go one game at a time. When enough players have registered for a game\'s reward contest, its week starts the next Monday at 12:00AM and runs Monday to Sunday. Roomly sets the minimum number of players and points for each game. A change applies from the next reward week.',
-      'Tap Join the reward contest on a game and tick its rules to register once for the semester. You can register late. The reward table counts only matches entered in that week, starting from zero. The general table is not affected.',
+      'Tap Join the reward contest on a game and tick its rules to register once for the semester. You can register late. The reward table counts only reward matches entered in that week, starting from zero. League points are not affected.',
       'The table closes at 12:00AM when the week ends. After that no result can be entered and the ranking is decided.',
     ],
   },
@@ -283,9 +284,18 @@ export function leagueRulesFor(game: string): string[] {
     scored
       ? 'The winner enters the result with the score and a screenshot of the final score. A draw can be entered by either player.'
       : 'The winner enters the result with their kills, damage and a screenshot of the final result.',
-    'You can enter at most 2 matches between the same two players on the same day. Extra matches do not count.',
+    'League matches only count in the league table. Between the same two players, at most 4 count per week (2 home and 2 away). Extra matches do not count.',
     'Your opponent confirms the result or reports it within 24 hours. If nobody answers for 5 hours it shows as recorded.',
     'Tap Challenge on a player to message them on WhatsApp. Use Report if someone behaves badly.',
+  ];
+}
+/** The short version shown open on the game page: the main league rules for one game */
+export function leagueMainRulesFor(game: string): string[] {
+  return [
+    `Win 3 points${isScored(game) ? ', draw 1' : ''}, loss 0. The first player on the standing is the official Best in Caritas for ${gameLabel(game)}.`,
+    'Only matches logged in the league count here. Reward matches never add to league points.',
+    'At most 4 matches count per week between the same two players, 2 home and 2 away.',
+    'The winner logs the result with a screenshot. The opponent can report it within 24 hours.',
   ];
 }
 /** Reward contest rules for one game only (or the general version when no game is given) */
@@ -294,7 +304,8 @@ export function rewardRulesFor(game: string | null, cfg: { minPlayers: number; m
   return [
     `Reward weeks go one game at a time. The first game to reach ${cfg.minPlayers} registered players starts the week.`,
     `Join the reward contest and tick the rules to register once for the semester. Only registered players count toward the ${cfg.minPlayers} and appear on the reward table.`,
-    `The week runs Monday to Sunday and the table closes at 12:00AM. Only matches entered in that week count, starting from zero.`,
+    `The week runs Monday to Sunday and the table closes at 12:00AM. Only reward matches entered in that week count, starting from zero. League matches do not add to it.`,
+    'Log a reward match from the reward tab. Both players must be registered for this reward contest. Between the same two players, at most 2 matches count in the week (1 home and 1 away).',
     `Points: a win is 3, a draw is 1 and a loss is 0. Ties are broken by wins, then ${game && !isScored(game) ? 'damage' : 'goals or damage'}, then kills, then whoever reached the points first.`,
     `The top 3 players with at least ${cfg.minPoints} points each win a ${naira(cfg.creditValue)} food credit for ${label}. A player below ${cfg.minPoints} points gets nothing and the credit is not passed down.`,
     'Credits are issued the morning after the week closes, open at the next 12:00AM and last 24 hours. A credit works on Outside Food and Canteen Items, not on delivery.',

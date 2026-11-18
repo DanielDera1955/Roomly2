@@ -33,7 +33,7 @@ import {
   markEntryPaid,
   leaveTournament,
 } from '../hub.js';
-import { computeRows, matchCounts, matchRecorded, canDispute, weekPhase, lagosDay, DISPUTE_HOURS, AUTO_CONFIRM_HOURS, rewardConfigFor, rewardRegsFor, qualifiedAtMs } from '../boardCore.js';
+import { computeRows, matchCounts, matchRecorded, canDispute, weekPhase, lagosDay, DISPUTE_HOURS, AUTO_CONFIRM_HOURS, rewardConfigFor, rewardRegsFor, qualifiedAtMs, contestOf, lagosWeek, MAX_PAIR_LEAGUE_WEEK, MAX_PAIR_REWARD_WEEK } from '../boardCore.js';
 import {
   subscribeSeasons,
   currentSeason,
@@ -54,10 +54,11 @@ import {
   joinSeason,
   pairContext,
   leagueRulesFor,
+  leagueMainRulesFor,
   rewardRulesFor,
   type Season,
 } from '../season';
-import { SeasonRulesCard, RewardCard, RewardIntro, GameRulesToggle, ChallengeTable, AnnouncementsCard, RulesSheet } from './SeasonGames';
+import { SeasonRulesCard, RewardCard, RewardIntro, GameRulesToggle, MainRulesDropdown, ChallengeTable, AnnouncementsCard, RulesSheet } from './SeasonGames';
 import { HistoryButton } from './GamesHistory';
 
 const card = 'bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800';
@@ -192,7 +193,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
         return;
       }
       const rj = new Set(rewardJoins.filter((x) => x.game === g.id).map((x) => x.gid));
-      out[g.id] = computeRows(g.id, gamers, matches, { seasonId: season.id, joined: rj, fromMs: Number(w.startMs), toMs: Number(w.endMs), adjusts, weekKey: w.id });
+      out[g.id] = computeRows(g.id, gamers, matches, { seasonId: season.id, joined: rj, fromMs: Number(w.startMs), toMs: Number(w.endMs), adjusts, weekKey: w.id, contest: 'reward' });
     });
     return out;
   }, [gamers, matches, season?.id, weeks, rewardJoins, adjusts, nowMs]);
@@ -313,11 +314,6 @@ const ModeToggle: React.FC<{ mode: 'best' | 'reward'; onMode: (m: 'best' | 'rewa
         </button>
       ))}
     </div>
-    <p className="mt-1.5 px-1 text-[11px] text-slate-500">
-      {mode === 'best'
-        ? 'The season table for the whole of Caritas. Every counting match adds to it.'
-        : 'One game each week. It starts from zero, and the top 3 with enough points win a food credit.'}
-    </p>
   </div>
 );
 
@@ -623,7 +619,9 @@ const GamePage: React.FC<{
   const champ = board.find((r) => r.crown);
   const best = mode === 'best';
   const rewardRunning = Boolean(week && weekPhase(week, nowMs) === 'running');
-  const canLog = Boolean(plays && accepted && season && isOpen);
+  const [rulesMoved, setRulesMoved] = useState(false);
+  const rewardOk = Boolean(rewardJoined && rewardRunning);
+  const canLog = Boolean(plays && accepted && season && isOpen && (best || rewardOk));
   const toConfirm = me
     ? matches.filter((m) => m.bUid === me.id && m.status === 'pending' && canDispute(m, nowMs)).sort((a) => (a.id === focusMatch ? -1 : 0))
     : [];
@@ -631,10 +629,25 @@ const GamePage: React.FC<{
     ? matches.filter((m) => (m.aUid === me.id || m.bUid === me.id) && (m.status === 'disputed' || (m.aUid === me.id && m.status === 'pending' && !matchRecorded(m, nowMs))))
     : [];
   const recent = matches
-    .filter((m) => matchCounts(m))
+    .filter((m) => matchCounts(m) && contestOf(m) === (best ? 'league' : 'reward'))
     .sort((a, b) => (b.loggedAtMs || 0) - (a.loggedAtMs || 0))
     .slice(0, 8);
-  const logLabel = !plays ? `Register for ${gameLabel(game)} to log results` : !season ? 'No season is running yet' : !accepted ? 'Accept the league rules to log results' : !isOpen ? `Results open ${openDay(opensAt)}` : 'I won: log my result';
+  const logLabel = !plays
+    ? `Register for ${gameLabel(game)} to log results`
+    : !season
+    ? 'No season is running yet'
+    : !accepted
+    ? 'Accept the league rules to log results'
+    : !isOpen
+    ? `Results open ${openDay(opensAt)}`
+    : best
+    ? 'I won: log my league match'
+    : !rewardRunning
+    ? 'No reward week is running for this game'
+    : !rewardJoined
+    ? 'Join the reward contest to log reward matches'
+    : 'I won: log my reward match';
+  const rulesNewMember = !accepted && !rulesMoved;
 
   return (
     <>
@@ -733,12 +746,6 @@ const GamePage: React.FC<{
         />
       )}
 
-      {best && (
-        <div className={`${card} p-3.5`}>
-          <GameRulesToggle title={`${gameLabel(game)} league rules`} lines={leagueRulesFor(game)} />
-        </div>
-      )}
-
       <ModeToggle mode={mode} onMode={onMode} />
 
       {/* Registration week */}
@@ -758,6 +765,13 @@ const GamePage: React.FC<{
       {mineOpen.map((m) => (
         <MyOpenResult key={m.id} m={m} me={me} nowMs={nowMs} />
       ))}
+
+      {/* New members read the main rules first. Once they tick or close them, the rules move below the table. */}
+      {best && rulesNewMember && (
+        <div className={`${card} p-3.5`}>
+          <MainRulesDropdown title={`${gameLabel(game)} league rules`} lines={leagueMainRulesFor(game)} defaultOpen onToggle={(o) => !o && setRulesMoved(true)} />
+        </div>
+      )}
 
       {/* Log a result: the only thing above the table. Everyone can see it, members can use it. */}
       <button
@@ -780,8 +794,8 @@ const GamePage: React.FC<{
           hiddenFromMe={hiddenFromMe}
           rewardRunning={false}
           isOpen={isOpen}
-          title={season ? `${season.name} table` : 'League table'}
-          note="Win 3, draw 1, loss 0. #1 wears the Best in Caritas crown, whatever their school."
+          title={season ? `${season.name} Standing` : 'League standing'}
+          note="The first player here is the official Best in Caritas for this game. Only matches logged in the league count."
         />
       ) : rewardRunning ? (
         <ChallengeTable
@@ -799,6 +813,12 @@ const GamePage: React.FC<{
         />
       ) : (
         <div className={`${card} p-5 text-center text-xs text-slate-400`}>No reward week is running for this game right now. The table appears here when one starts.</div>
+      )}
+
+      {best && !rulesNewMember && (
+        <div className={`${card} p-3.5`}>
+          <MainRulesDropdown title={`${gameLabel(game)} league rules`} lines={leagueMainRulesFor(game)} defaultOpen={false} />
+        </div>
       )}
 
       {best && tournaments.length > 0 && (
@@ -850,7 +870,7 @@ const GamePage: React.FC<{
         </div>
       )}
 
-      {logging && season && <LogResultSheet game={game} me={me} board={board} matches={matches} season={season} onClose={() => setLogging(false)} />}
+      {logging && season && <LogResultSheet game={game} me={me} board={best ? board : rewardRows} matches={matches} season={season} contest={best ? 'league' : 'reward'} weekKey={best ? '' : week?.id || ''} onClose={() => setLogging(false)} />}
     </>
   );
 };
@@ -1193,7 +1213,7 @@ const RegisterSheet: React.FC<{ me: any; season: Season | null; session: { name?
   );
 };
 
-const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; matches: any[]; season: Season; onClose: () => void }> = ({ game, me, board, matches, season, onClose }) => {
+const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; matches: any[]; season: Season; contest: 'league' | 'reward'; weekKey: string; onClose: () => void }> = ({ game, me, board, matches, season, contest, weekKey, onClose }) => {
   const [opps, setOpps] = useState<any[] | null>(null);
   const [opp, setOpp] = useState('');
   const [mine, setMine] = useState('');
@@ -1216,16 +1236,23 @@ const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; matches: a
     if (opp) pairContext(me, opp, game).then(setCtx).catch(() => setCtx(null));
   }, [opp]);
 
-  const today = lagosDay(Date.now());
-  const playedToday = opp
-    ? matches.filter((m) => matchCounts(m) && ((m.aUid === me.id && m.bUid === opp) || (m.aUid === opp && m.bUid === me.id)) && lagosDay(m.loggedAtMs || 0) === today).length
+  const thisWeek = lagosWeek(Date.now());
+  const cap = contest === 'reward' ? MAX_PAIR_REWARD_WEEK : MAX_PAIR_LEAGUE_WEEK;
+  const playedWeek = opp
+    ? matches.filter(
+        (m) =>
+          matchCounts(m) &&
+          contestOf(m) === contest &&
+          ((m.aUid === me.id && m.bUid === opp) || (m.aUid === opp && m.bUid === me.id)) &&
+          (contest === 'reward' ? m.weekKey === weekKey : lagosWeek(m.loggedAtMs || 0) === thisWeek)
+      ).length
     : 0;
   const o = board.find((r) => r.id === opp);
 
   const submit = async () => {
     setError('');
     if (!o) return setError('Pick your opponent.');
-    if (playedToday >= 2) return setError('You have already logged 2 matches against this player today.');
+    if (playedWeek >= cap) return setError(`You have already logged ${cap} ${contest} matches against this player this week. More will not count.`);
     let a = 1;
     let b = 0;
     if (scored) {
@@ -1242,6 +1269,8 @@ const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; matches: a
         kills: scored ? 0 : Number(kills) || 0,
         damage: scored ? 0 : Number(damage) || 0,
         homeUid: ctx?.challengerId === me.id ? o.id : me.id,
+        contest,
+        weekKey,
       });
       onClose();
       go(link);
@@ -1252,14 +1281,16 @@ const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; matches: a
   };
 
   return (
-    <Sheet title={`Log a ${gameLabel(game)} win`} onClose={onClose}>
+    <Sheet title={`Log a ${gameLabel(game)} ${contest} win`} onClose={onClose}>
       {opps === null ? (
         <p className="text-sm text-slate-400">Loading...</p>
       ) : opps.length === 0 ? (
         <p className="text-sm text-slate-500">You can log a result against players you challenged through Roomly (or who challenged you) in the last 3 days.</p>
       ) : (
         <>
-          <p className="text-[11px] text-slate-500">Only the winner logs the result. A screenshot of the final score is required.</p>
+          <p className="text-[11px] text-slate-500">
+            {contest === 'reward' ? 'This match counts in the reward table only, not the league.' : 'This match counts in the league standing only, not a reward week.'} Only the winner logs the result. A screenshot of the final score is required.
+          </p>
           <div>
             <label className={label}>Opponent</label>
             <select value={opp} onChange={(e) => setOpp(e.target.value)} className={input}>
@@ -1298,7 +1329,7 @@ const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; matches: a
               <p className="col-span-2 text-[11px] text-slate-500">You are logging that you won this match.</p>
             </div>
           )}
-          {playedToday >= 2 && <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">You already played this person twice today. A third match will not be accepted.</p>}
+          {playedWeek >= cap && <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">You already logged {cap} {contest} matches against this player this week. More will not count.</p>}
           <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300 cursor-pointer">
             <Camera className="w-4 h-4 text-[#0e9f55]" />
             <span>{file ? file.name : 'Screenshot of the final score (required)'}</span>

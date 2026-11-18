@@ -1,6 +1,6 @@
 /**
  * Games: pure rules shared by the app and the daily server job (no Firebase, no browser code here).
- * Points, tie-breaks, the 2-matches-a-day cap, reward week windows and the top 3 that earn credits.
+ * Points, tie-breaks, the weekly pair caps, reward week windows and the top 3 that earn credits.
  */
 
 export const GAME_IDS = ['efootball', 'fifa', 'dls', 'freefire', 'codm'];
@@ -12,8 +12,9 @@ export const POINTS = { win: 3, draw: 1, loss: 0 };
 export const AUTO_CONFIRM_HOURS = 5;
 /** The opponent can report a result for this long after it was entered, then it locks */
 export const DISPUTE_HOURS = 24;
-/** At most this many matches count between the same two players on the same day */
-export const MAX_PAIR_PER_DAY = 2;
+/** At most this many matches count between the same two players in one week: league 4 (2 home, 2 away), reward 2 (1 home, 1 away) */
+export const MAX_PAIR_LEAGUE_WEEK = 4;
+export const MAX_PAIR_REWARD_WEEK = 2;
 
 const HOUR = 3600000;
 const DAY = 86400000;
@@ -61,19 +62,26 @@ export const canDispute = (m, nowMs = Date.now()) =>
 /** Winner id of a match ('' for a draw) */
 export const winnerOf = (m) => (m.scoreA > m.scoreB ? m.aUid : m.scoreB > m.scoreA ? m.bUid : '');
 
+/** A match belongs to one contest only. Matches without a tag are league matches. */
+export const contestOf = (m) => (m && m.contest === 'reward' ? 'reward' : 'league');
+/** Lagos week number, weeks start Monday 12:00AM */
+export const lagosWeek = (ms) => Math.floor((lagosDay(ms) + 3) / 7);
+
 /**
- * Keep only the first 2 counting matches between the same two players on the same Lagos day
- * (the rematch reverses home and away). Extra matches are ignored by every board, whatever was written.
+ * Keep only the first counting matches between the same two players in one week, per contest:
+ * 4 in the league, 2 in a reward week. Extra matches are ignored by every board, whatever was written.
  */
-export function capPairsPerDay(matches) {
+export function capPairs(matches) {
   const sorted = [...matches].filter(matchCounts).sort((a, b) => Number(a.loggedAtMs || 0) - Number(b.loggedAtMs || 0));
   const seen = {};
   const keep = new Set();
   sorted.forEach((m) => {
+    const c = contestOf(m);
     const pair = [m.aUid, m.bUid].sort().join('|');
-    const key = `${m.seasonId || ''}|${m.game}|${pair}|${lagosDay(m.loggedAtMs)}`;
+    const period = c === 'reward' ? m.weekKey || lagosWeek(m.loggedAtMs) : lagosWeek(m.loggedAtMs);
+    const key = `${m.seasonId || ''}|${m.game}|${c}|${pair}|${period}`;
     seen[key] = (seen[key] || 0) + 1;
-    if (seen[key] <= MAX_PAIR_PER_DAY) keep.add(m.id || m);
+    if (seen[key] <= (c === 'reward' ? MAX_PAIR_REWARD_WEEK : MAX_PAIR_LEAGUE_WEEK)) keep.add(m.id || m);
   });
   return matches.filter((m) => keep.has(m.id || m));
 }
@@ -84,6 +92,7 @@ export function capPairsPerDay(matches) {
  *   seasonId   count only matches of this season (matches without a season id never count)
  *   joined     Set of player ids on this table (season joined, or joined the reward week). Everyone else is left out.
  *   fromMs/toMs count only matches entered in [fromMs, toMs) (a reward week window)
+ *   contest    'league' (default) or 'reward': a table counts matches of its own contest only
  *   includeDisputed  count reported matches as if they stood (used only to see whether a report could change the top 3)
  *   nowMs      "ready" is not used any more; kept so callers can pass a clock
  * Order: points, wins, main stat (goals scored, or damage), kills, whoever reached their points first, then name.
@@ -109,12 +118,20 @@ export function computeRows(game, gamers, matches, opts = {}) {
         p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0, dmg: 0, kills: 0, lastPtMs: 0,
       };
     });
-  const pool = matches.filter((m) => m.game === game && (!opts.seasonId || m.seasonId === opts.seasonId));
+  // A table counts the matches played in its own contest only
+  const contest = opts.contest === 'reward' ? 'reward' : 'league';
+  const pool = matches.filter(
+    (m) =>
+      m.game === game &&
+      (!opts.seasonId || m.seasonId === opts.seasonId) &&
+      contestOf(m) === contest &&
+      (contest !== 'reward' || !opts.weekKey || m.weekKey === opts.weekKey)
+  );
   const inWindow = (m) => (opts.fromMs == null || Number(m.loggedAtMs) >= opts.fromMs) && (opts.toMs == null || Number(m.loggedAtMs) < opts.toMs);
   const counting = opts.includeDisputed
     ? pool.filter((m) => ['pending', 'confirmed', 'disputed'].includes(m.status)).map((m) => (m.status === 'disputed' ? { ...m, status: 'pending' } : m))
     : pool;
-  capPairsPerDay(counting)
+  capPairs(counting)
     .filter(inWindow)
     .forEach((m) => {
       const a = rows[m.aUid];

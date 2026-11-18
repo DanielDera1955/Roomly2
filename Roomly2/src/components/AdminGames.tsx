@@ -302,9 +302,9 @@ const WeeksTab: React.FC<any> = ({ season, gamers, matches, weeks, rewardJoins, 
   if (!week) return <p className="text-xs text-slate-400">No reward weeks yet. A week starts once a game has enough players.</p>;
 
   const joined = new Set(rewardJoins.filter((r: any) => r.game === week.game).map((r: any) => r.gid));
-  const base = { seasonId: season.id, joined, fromMs: Number(week.startMs), toMs: Number(week.endMs), weekKey: week.id };
+  const base = { seasonId: season.id, contest: 'reward', joined, fromMs: Number(week.startMs), toMs: Number(week.endMs), weekKey: week.id };
   const table = computeRows(week.game, gamers, matches, { ...base, adjusts });
-  const disputed = matches.filter((m: any) => m.game === week.game && m.seasonId === season.id && m.status === 'disputed' && Number(m.loggedAtMs) >= Number(week.startMs) && Number(m.loggedAtMs) < Number(week.endMs));
+  const disputed = matches.filter((m: any) => m.game === week.game && m.seasonId === season.id && m.status === 'disputed' && m.contest === 'reward' && m.weekKey === week.id && Number(m.loggedAtMs) >= Number(week.startMs) && Number(m.loggedAtMs) < Number(week.endMs));
   const minPoints = Number(week.minPoints) || rewardConfigFor(config, week.game).minPoints;
   const weekAdj = adjusts.filter((a: any) => a.weekKey === week.id);
   const credOf = (gid: string) => credits.filter((c: any) => c.weekKey === week.id && c.gid === gid && c.status !== 'void');

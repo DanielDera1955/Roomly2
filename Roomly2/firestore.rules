@@ -621,6 +621,9 @@ service cloud.firestore {
         && (request.resource.data.scoreA > request.resource.data.scoreB || request.resource.data.game in ['efootball', 'fifa', 'dls'])
         && request.resource.data.proofA is string
         && request.resource.data.proofA.matches('https://res[.]cloudinary[.]com/.*')
+        // One contest per match: the league table or a reward week. A reward match names its week.
+        && request.resource.data.get('contest', 'league') in ['league', 'reward']
+        && (request.resource.data.get('contest', 'league') == 'league' || request.resource.data.get('weekKey', 0) is string)
         && request.resource.data.get('kills', 0) is int && request.resource.data.get('kills', 0) >= 0 && request.resource.data.get('kills', 0) <= 999
         && request.resource.data.get('damage', 0) is int && request.resource.data.get('damage', 0) >= 0 && request.resource.data.get('damage', 0) <= 99999
         && (contact(request.resource.data.aUid, request.resource.data.bUid) || contact(request.resource.data.bUid, request.resource.data.aUid));

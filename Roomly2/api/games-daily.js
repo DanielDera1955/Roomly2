@@ -54,7 +54,7 @@ export default async function handler(req, res) {
         if (week.status === 'issued' || week.status === 'none' || now < Number(week.endMs)) continue;
         try {
           const joined = new Set(rewardJoins.filter((j) => j.game === week.game).map((j) => j.gid));
-          const opts = { seasonId: season.id, joined, fromMs: Number(week.startMs), toMs: Number(week.endMs), adjusts, weekKey: week.id };
+          const opts = { seasonId: season.id, contest: 'reward', joined, fromMs: Number(week.startMs), toMs: Number(week.endMs), adjusts, weekKey: week.id };
           const table = computeRows(week.game, gamers, matches, opts);
           const winners = rewardWinners(table, Number(week.minPoints)).filter((r) => {
             const g = gamers.find((x) => x.id === r.id);

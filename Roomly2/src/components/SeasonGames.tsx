@@ -275,8 +275,48 @@ export const GameRulesToggle: React.FC<{ title: string; lines: string[]; classNa
   );
 };
 
-/** What the reward is, written out, plus how it runs. The rules open at the very end. */
-export const RewardIntro: React.FC<{ cfg: RewardCfg; game?: string; showImage?: boolean }> = ({ cfg, game, showImage = true }) => (
+/** A short rules list, open when the page opens, with a button to the full rules. The full rules are not embedded. */
+export const MainRulesDropdown: React.FC<{ title: string; lines: string[]; defaultOpen?: boolean; onToggle?: (open: boolean) => void; className?: string }> = ({ title, lines, defaultOpen = true, onToggle, className = '' }) => {
+  const [open, setOpen] = useState(defaultOpen);
+  const [full, setFull] = useState(false);
+  return (
+    <div className={className}>
+      <button
+        type="button"
+        onClick={() => {
+          const v = !open;
+          setOpen(v);
+          onToggle?.(v);
+        }}
+        aria-expanded={open}
+        className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
+      >
+        <span className="flex items-center gap-2 text-xs font-black text-slate-900 dark:text-white">
+          <BookOpen className="w-3.5 h-3.5 text-slate-500" /> {title}
+        </span>
+        {open ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+      </button>
+      {open && (
+        <>
+          <ul className="mt-2 space-y-1.5 list-disc pl-5 marker:text-[#0e9f55]">
+            {lines.map((l, i) => (
+              <li key={i} className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                {l}
+              </li>
+            ))}
+          </ul>
+          <button type="button" onClick={() => setFull(true)} className="mt-3 text-[11px] font-bold text-[#0e9f55] cursor-pointer">
+            Read all the rules
+          </button>
+        </>
+      )}
+      {full && <RulesSheet onClose={() => setFull(false)} />}
+    </div>
+  );
+};
+
+/** What the reward is, written out, plus the Main Rule list */
+export const RewardIntro: React.FC<{ cfg: RewardCfg; game?: string; showImage?: boolean }> = ({ cfg, showImage = true }) => (
   <>
     {showImage && (
       <div className="relative h-32 bg-slate-200 dark:bg-slate-800">
@@ -295,16 +335,14 @@ export const RewardIntro: React.FC<{ cfg: RewardCfg; game?: string; showImage?: 
       <p className="text-sm font-black text-slate-900 dark:text-white">
         Price: {naira(cfg.creditValue)} food credit for each of the top 3 players of the week.
       </p>
-      <div className="space-y-1.5 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
-        <p>It runs week by week, one game at a time. The first game to reach {cfg.minPlayers} registered players starts the week.</p>
-        <p>
-          To be paid, a top 3 player must have at least {cfg.minPoints} points. Each win is 3 points, a draw is 1 and a loss is 0.
-        </p>
-        <p>You can only take part after you register for the reward contest of that game and tick its rules.</p>
-      </div>
-      <GameRulesToggle
-        title="Read the rules"
-        lines={rewardRulesFor(game || null, cfg)}
+      <MainRulesDropdown
+        title="Main Rule"
+        lines={[
+          `The first game to reach ${cfg.minPlayers} registered players starts the week.`,
+          `To be paid, a top 3 player must have at least ${cfg.minPoints} points. Each win is 3 points, a draw is 1 and a loss is 0.`,
+          "You can only take part after you register for that game's reward contest and tick to accept its rules.",
+          'Reward matches only count here. At most 2 matches count per week between the same two players, one home and one away.',
+        ]}
         className="pt-3 border-t border-slate-100 dark:border-slate-800"
       />
     </div>

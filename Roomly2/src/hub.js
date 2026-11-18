@@ -741,7 +741,7 @@ export function subscribeAllMatches(cb) {
  * myScore / theirScore: goals for football games, or 1 and 0 for the others.
  * extra: { seasonId, kills, damage, homeUid }. A screenshot is required.
  * Returns the WhatsApp link asking the opponent to confirm.
- * @param {string} game @param {any} me @param {any} opp @param {number} myScore @param {number} theirScore @param {File | null} proofFile @param {{seasonId: string, kills?: number, damage?: number, homeUid?: string}} extra
+ * @param {string} game @param {any} me @param {any} opp @param {number} myScore @param {number} theirScore @param {File | null} proofFile @param {{seasonId: string, kills?: number, damage?: number, homeUid?: string, contest?: string, weekKey?: string}} extra
  */
 export async function logResult(game, me, opp, myScore, theirScore, proofFile, extra) {
   await hubUid();
@@ -770,7 +770,12 @@ export async function logResult(game, me, opp, myScore, theirScore, proofFile, e
     proofB: '',
     disputeNote: '',
     homeUid: extra.homeUid || '',
+    contest: extra.contest === 'reward' ? 'reward' : 'league',
   };
+  if (data.contest === 'reward') {
+    if (!extra.weekKey) throw new Error('No reward week is running for this game.');
+    data.weekKey = extra.weekKey;
+  }
   if (!isScored(game)) {
     data.kills = Math.max(0, Math.min(999, Math.round(Number(extra.kills) || 0)));
     data.damage = Math.max(0, Math.min(99999, Math.round(Number(extra.damage) || 0)));
