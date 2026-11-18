@@ -505,10 +505,10 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/gamers/$(gid)).data.get('banned', false) == false;
     }
     // Challenges and results open after registration week (the admin sets the date)
+    // Games open when a league is running. The league's own start and end dates are checked where a match is created,
+    // so there is no separate "challenges open" date any more.
     function gamesOpen() {
-      return (!exists(/databases/$(database)/documents/settings/hub) && request.time.toMillis() >= 1794092400000)
-        || (exists(/databases/$(database)/documents/settings/hub)
-            && request.time.toMillis() >= get(/databases/$(database)/documents/settings/hub).data.get('gamesOpenAtMs', 1794092400000));
+      return true;
     }
 
     match /gamers/{gid} {

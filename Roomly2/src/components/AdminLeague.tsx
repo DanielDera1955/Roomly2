@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { subscribeHubSettings, saveHubSettings } from '../hub.js';
 import {
   subscribeSeasons,
@@ -12,7 +13,7 @@ import {
   type Season,
 } from '../season';
 import { AdminGames } from './AdminGames';
-import { GamesOpenDate, Disputes, Schools, ResetPlayer, AdminTournaments, toLocal } from './AdminHub';
+import { Disputes, Schools, ResetPlayer, AdminTournaments, toLocal } from './AdminHub';
 
 const card = 'p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-3';
 const input =
@@ -23,7 +24,8 @@ const DAY = 86400000;
 const dayText = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 
 /** Create a league. It is one league for all the games: every game gets its own table in it. */
-const CreateLeague: React.FC = () => {
+const CreateLeague: React.FC<{ hasLeagues: boolean }> = ({ hasLeagues }) => {
+  const [open, setOpen] = useState(false);
   const [name, setName] = useState(SEMESTER_NAMES[0]);
   const [year, setYear] = useState('');
   const [auto, setAuto] = useState(true);
@@ -45,14 +47,22 @@ const CreateLeague: React.FC = () => {
       setYear('');
       setStart('');
       setEnd('');
+      setOpen(false);
     } catch (e: any) {
       window.alert(e?.message || 'Could not create the league.');
     }
     setBusy(false);
   };
+  // The very first league is not hidden: the form is open until one exists
+  const shown = open || !hasLeagues;
   return (
     <div className={card}>
-      <p className={h}>Create a league</p>
+      <button type="button" onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between gap-2 cursor-pointer">
+        <span className={h}>Create a league</span>
+        {hasLeagues && (shown ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />)}
+      </button>
+      {shown && (
+        <>
       <p className="text-[11px] text-slate-500">One league covers all the games. Every game gets its own table in it, so you create it once.</p>
       <select value={name} onChange={(e) => setName(e.target.value)} className={input}>
         {SEMESTER_NAMES.map((n) => (
@@ -77,6 +87,8 @@ const CreateLeague: React.FC = () => {
       <button type="button" disabled={busy || !start || !end || !year.trim()} onClick={create} className={`${btn} bg-[#0e9f55] text-white`}>
         Create league
       </button>
+        </>
+      )}
     </div>
   );
 };
@@ -165,17 +177,48 @@ const LeagueCard: React.FC<{ s: Season }> = ({ s }) => {
   );
 };
 
-const Timeline: React.FC = () => {
+/** Running season first, then the upcoming one, then the create button. Ended leagues are tucked away. */
+const Leagues: React.FC = () => {
   const [list, setList] = useState<Season[]>([]);
+  const [showPast, setShowPast] = useState(false);
   useEffect(() => subscribeSeasons(setList), []);
-  const sorted = [...list].sort((x, y) => Number(y.startMs) - Number(x.startMs));
+  const now = Date.now();
+  const running = list.filter((s) => Number(s.startMs) <= now && now < Number(s.endMs)).sort((x, y) => Number(y.startMs) - Number(x.startMs));
+  const upcoming = list.filter((s) => Number(s.startMs) > now).sort((x, y) => Number(x.startMs) - Number(y.startMs));
+  const past = list.filter((s) => Number(s.endMs) <= now).sort((x, y) => Number(y.endMs) - Number(x.endMs));
   return (
-    <div className={card}>
-      <p className={h}>League timeline</p>
-      {sorted.length === 0 && <p className="text-xs text-slate-400">No league yet. Create one above and players can join.</p>}
-      {sorted.map((s) => (
-        <LeagueCard key={s.id} s={s} />
-      ))}
+    <div className="space-y-4">
+      <div className={card}>
+        <p className={h}>Running season</p>
+        {running.length === 0 && <p className="text-xs text-slate-400">No league is running right now.</p>}
+        {running.map((s) => (
+          <LeagueCard key={s.id} s={s} />
+        ))}
+      </div>
+      <div className={card}>
+        <p className={h}>Upcoming season</p>
+        {upcoming.length === 0 && <p className="text-xs text-slate-400">No league is scheduled. Create the next one below.</p>}
+        {upcoming.map((s) => (
+          <LeagueCard key={s.id} s={s} />
+        ))}
+      </div>
+      <CreateLeague hasLeagues={list.length > 0} />
+      {past.length > 0 && (
+        <div className={card}>
+          <button type="button" onClick={() => setShowPast((v) => !v)} className="w-full flex items-center justify-between gap-2 cursor-pointer">
+            <span className={h}>Past leagues ({past.length})</span>
+            {showPast ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+          </button>
+          {showPast && (
+            <>
+              <p className="text-[11px] text-slate-500">Ended leagues appear in the Games History after the next 7:00AM daily run.</p>
+              {past.map((s) => (
+                <LeagueCard key={s.id} s={s} />
+              ))}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -236,9 +279,7 @@ export const AdminLeague: React.FC = () => {
       </div>
       {section === 'league' ? (
         <>
-          <CreateLeague />
-          <Timeline />
-          <GamesOpenDate settings={settings} />
+          <Leagues />
           <AdminGames section="league" />
           <Disputes />
           <AdminTournaments />

@@ -26,7 +26,6 @@ import {
   subscribeTournaments,
   subscribeEntries,
   subscribeHubSettings,
-  gamesOpensAt,
   schoolsList,
   canonicalSchool,
   joinTournament,
@@ -149,10 +148,11 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
   }, [focusMatch, matches, game]);
 
   const me = myGamer(gamers, uid);
-  const opensAt = gamesOpensAt(settings);
-  const isOpen = nowMs >= opensAt;
   const season = currentSeason(seasons, nowMs);
   const upcoming = upcomingSeason(seasons, nowMs);
+  // The league's start date is the only date that opens results and challenges
+  const opensAt = Number((season || upcoming)?.startMs || 0);
+  const isOpen = Boolean(season);
   const target = season || upcoming;
   useEffect(() => subscribeSeasonJoins(target?.id || '', setJoins), [target?.id]);
   useEffect(() => subscribeRewardWeeks(season?.id || '', setWeeks), [season?.id]);
@@ -409,8 +409,8 @@ const GamesHome: React.FC<{
         )}
         <div className="mt-4 grid grid-cols-2 gap-2">
           <div className="px-3 py-2 rounded-xl bg-white/15">
-            <p className="text-[10px] text-emerald-50/90">{myBest ? `Players in ${myBest.g.label}` : isOpen ? 'Challenges' : 'Challenges open in'}</p>
-            <p className="text-lg font-black leading-tight">{myBest ? counts.byGame[myBest.g.id] || 0 : isOpen ? 'Open now' : countdown(opensAt - nowMs)}</p>
+            <p className="text-[10px] text-emerald-50/90">{myBest ? `Players in ${myBest.g.label}` : isOpen ? 'Challenges' : opensAt > 0 ? 'Challenges open in' : 'Challenges'}</p>
+            <p className="text-lg font-black leading-tight">{myBest ? counts.byGame[myBest.g.id] || 0 : isOpen ? 'Open now' : opensAt > 0 ? countdown(opensAt - nowMs) : 'Soon'}</p>
           </div>
           <div className="px-3 py-2 rounded-xl bg-white/15">
             <p className="text-[10px] text-emerald-50/90">Players across all games</p>
@@ -428,7 +428,7 @@ const GamesHome: React.FC<{
             <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20">{myReward.row.pts >= myReward.min ? 'Winning' : `Needs ${myReward.min - myReward.row.pts} more`}</span>
           </div>
         )}
-        {!isOpen && <p className="mt-3 text-[11px] text-emerald-50/90">Registration week. Challenges open {openDay(opensAt)}.</p>}
+        {!isOpen && opensAt > 0 && <p className="mt-3 text-[11px] text-emerald-50/90">Registration week. Challenges open {openDay(opensAt)}.</p>}
         {!me && <p className="mt-3 text-[11px] text-emerald-50/80">Registered before on another phone or browser? Tap Join and use the same number and PIN to get your profile back.</p>}
         <div className="mt-4 grid grid-cols-2 gap-2">
           <button type="button" onClick={onRegister} className="h-11 rounded-xl bg-white text-[#0e9f55] text-sm font-bold flex items-center justify-center gap-1.5 cursor-pointer">
@@ -739,7 +739,7 @@ const GamePage: React.FC<{
       <ModeToggle mode={mode} onMode={onMode} />
 
       {/* Registration week */}
-      {!isOpen && (
+      {!isOpen && opensAt > 0 && (
         <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 flex items-start gap-2.5">
           <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
           <p className="text-xs text-amber-900 dark:text-amber-200">
