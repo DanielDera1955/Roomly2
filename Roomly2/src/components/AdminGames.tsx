@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { GAMES, gameLabel, playsGame, subscribeGamers, subscribeAllMatches, timeAgo, waTo } from '../hub.js';
+import { GAMES, gameLabel, playsGame, subscribeGamers, timeAgo, waTo } from '../hub.js';
 import { computeRows, matchCounts, weekPhase, creditState, rewardConfigFor } from '../boardCore.js';
 import {
   subscribeSeasons,
@@ -8,6 +8,7 @@ import {
   subscribeRewardJoins,
   subscribePointAdjust,
   subscribeGamesConfig,
+  subscribeSeasonMatches,
   type Season,
 } from '../season';
 import {
@@ -62,12 +63,12 @@ export const AdminGames: React.FC = () => {
 
   useEffect(() => subscribeSeasons(setSeasons), []);
   useEffect(() => subscribeGamers(setGamers), []);
-  useEffect(() => subscribeAllMatches(setMatches), []);
   useEffect(() => subscribeGamesConfig(setConfig), []);
   const now = Date.now();
   const season = seasons.find((s) => s.id === seasonId) || seasons.find((s) => Number(s.startMs) <= now && now < Number(s.endMs)) || [...seasons].sort((a, b) => Number(b.startMs) - Number(a.startMs))[0] || null;
   const sid = season?.id || '';
   useEffect(() => subscribeSeasonJoins(sid, setJoins), [sid]);
+  useEffect(() => subscribeSeasonMatches(sid, setMatches), [sid]);
   useEffect(() => subscribeRewardWeeks(sid, setWeeks), [sid]);
   useEffect(() => subscribeRewardJoins(sid, setRewardJoins), [sid]);
   useEffect(() => subscribePointAdjust(sid, setAdjusts), [sid]);

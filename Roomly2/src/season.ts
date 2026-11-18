@@ -81,7 +81,7 @@ export const GAME_RULES: { title: string; lines: string[] }[] = [
 
 /* ------------------------------ seasons ------------------------------ */
 
-export type Season = { id: string; name: string; startMs: number; endMs: number; createdAtMs?: number; champions?: Record<string, any> };
+export type Season = { id: string; name: string; session?: string; startMs: number; endMs: number; createdAtMs?: number; champions?: Record<string, any> };
 
 export function subscribeSeasons(cb: (list: Season[]) => void) {
   return onSnapshot(
@@ -160,6 +160,33 @@ export async function setChallengeable(season: Season, join: any, me: any, game:
 }
 
 /* ------------------------------ reward weeks ------------------------------ */
+
+/** Matches of one season only. The app never loads old seasons: History reads the frozen copy instead. */
+export function subscribeSeasonMatches(seasonId: string, cb: (list: any[]) => void) {
+  if (!seasonId) {
+    cb([]);
+    return () => {};
+  }
+  return onSnapshot(
+    query(collection(hubDb, 'matches'), where('seasonId', '==', seasonId)),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })).filter((m: any) => m.v === 2)),
+    () => cb([])
+  );
+}
+
+/** Finished seasons (frozen copies), newest first */
+export function subscribeArchives(cb: (list: any[]) => void) {
+  return onSnapshot(
+    collection(hubDb, 'seasonArchive'),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })).sort((a: any, b: any) => Number(b.startMs) - Number(a.startMs))),
+    () => cb([])
+  );
+}
+export async function loadArchiveTable(seasonId: string, game: string): Promise<any[]> {
+  await hubUid();
+  const s = await getDoc(doc(hubDb, 'seasonArchive', seasonId, 'tables', game));
+  return s.exists() ? ((s.data() as any).rows || []) : [];
+}
 
 export function subscribePointAdjust(seasonId: string, cb: (list: any[]) => void) {
   if (!seasonId) {
@@ -309,11 +336,11 @@ export const todayKey = (ms = Date.now()) => lagosDay(ms);
 
 /* ------------------------------ admin (Phase 1: seasons only) ------------------------------ */
 
-export async function adminCreateSeason(name: string, startMs: number, endMs: number) {
+export async function adminCreateSeason(name: string, startMs: number, endMs: number, session = '') {
   const clean = String(name || '').trim().slice(0, 40);
   if (!clean) throw new Error('Give the season a name.');
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) throw new Error('The end date must be after the start date.');
-  const ref = await addDoc(collection(db, 'seasons'), { name: clean, startMs, endMs, createdAtMs: Date.now() });
+  const ref = await addDoc(collection(db, 'seasons'), { name: clean, session: String(session || '').trim().slice(0, 20), startMs, endMs, createdAtMs: Date.now() });
   return ref.id;
 }
 export async function adminUpdateSeasonDates(id: string, startMs: number, endMs: number) {

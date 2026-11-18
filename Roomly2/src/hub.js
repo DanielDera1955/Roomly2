@@ -1049,11 +1049,12 @@ export async function fetchLeaders() {
     const seasons = (await getDocs(collection(hubDb, 'seasons'))).docs.map((d) => ({ id: d.id, ...d.data() }));
     const season = seasons.find((x) => Number(x.startMs) <= now && now < Number(x.endMs));
     if (season) {
-      const [gamers, matches, joinsSnap] = await Promise.all([
+      const [gamers, matchesSnap, joinsSnap] = await Promise.all([
         once(subscribeGamers),
-        once(subscribeAllMatches),
+        getDocs(query(collection(hubDb, 'matches'), where('seasonId', '==', season.id))),
         getDocs(query(collection(hubDb, 'seasonJoins'), where('seasonId', '==', season.id))),
       ]);
+      const matches = matchesSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((m) => m.v === 2);
       const joined = new Set(joinsSnap.docs.map((d) => d.data().gid));
       GAMES.forEach((g) => {
         const top = computeRows(g.id, gamers, matches, { seasonId: season.id, joined }).find((r) => r.crown);

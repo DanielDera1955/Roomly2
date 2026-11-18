@@ -13,7 +13,6 @@ import {
   subscribeGamers,
   registerGamer,
   getRecentOpponents,
-  subscribeAllMatches,
   logResult,
   confirmMatch,
   disputeMatch,
@@ -45,15 +44,18 @@ import {
   subscribeGamesConfig,
   subscribeHiddenFromMe,
   subscribePointAdjust,
+  subscribeSeasonMatches,
   activeWeekFor,
   queuedWeek,
   isChallengeable,
   setChallengeable,
   tapChallenge,
+  joinSeason,
   pairContext,
   type Season,
 } from '../season';
 import { SeasonCard, RewardCard, ChallengeList, RulesSheet, AnnouncementsCard } from './SeasonGames';
+import { HistoryButton } from './GamesHistory';
 
 const card = 'bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800';
 const input =
@@ -128,7 +130,6 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
     }
   }, []);
   useEffect(() => subscribeGamers(setGamers), []);
-  useEffect(() => subscribeAllMatches(setMatches), []);
   useEffect(() => subscribeTournaments(setTournaments), []);
   useEffect(() => subscribeHubSettings(setSettings), []);
   useEffect(() => subscribeSeasons(setSeasons), []);
@@ -154,6 +155,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
   useEffect(() => subscribeRewardWeeks(season?.id || '', setWeeks), [season?.id]);
   useEffect(() => subscribeRewardJoins(season?.id || '', setRewardJoins), [season?.id]);
   useEffect(() => subscribePointAdjust(season?.id || '', setAdjusts), [season?.id]);
+  useEffect(() => subscribeSeasonMatches(season?.id || '', setMatches), [season?.id]);
   useEffect(() => subscribeHiddenFromMe(me?.id || '', setHiddenFromMe), [me?.id]);
   const myJoin = me ? joins.find((j) => j.gid === me.id) || null : null;
 
@@ -255,6 +257,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
       {registering && (
         <RegisterSheet
           me={me}
+          season={target}
           session={session}
           schools={schoolsList(settings)}
           onClose={() => setRegistering(false)}
@@ -332,7 +335,7 @@ const GamesHome: React.FC<{
         <div className="absolute top-4 right-4 w-12 h-12 rounded-2xl bg-white/15 flex items-center justify-center">
           <Trophy className="w-6 h-6" />
         </div>
-        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-100">Roomly hostel league</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-100">Roomly Caritas League</p>
         <h2 className="mt-1 text-2xl font-black tracking-tight">Best in Caritas</h2>
         <p className="text-xs text-emerald-50/90 mt-1">Your hostel. Your game. Your chance to lead.</p>
         <div className="mt-4 flex gap-2">
@@ -378,6 +381,8 @@ const GamesHome: React.FC<{
       <SeasonCard season={season} upcoming={upcoming} seasons={seasons} me={me} join={join} joinsCount={joinsCount} nowMs={nowMs} onRegister={onRegister} />
 
       <AnnouncementsCard config={config} nowMs={nowMs} />
+
+      <HistoryButton meId={me?.id} />
 
       {/* My settings: open to challenges, per game, and edit profile */}
       {me && <MyStatusCard me={me} season={season} join={join} weeks={weeks} rewardJoins={rewardJoins} isOpen={isOpen} opensAt={opensAt} nowMs={nowMs} onEdit={onRegister} />}
@@ -1136,13 +1141,16 @@ const Sheet: React.FC<{ title: string; onClose: () => void; children: React.Reac
   </div>
 );
 
-const RegisterSheet: React.FC<{ me: any; session: { name?: string; phone?: string; pin?: string }; schools: string[]; onClose: () => void; onSaved: () => void }> = ({
+const RegisterSheet: React.FC<{ me: any; season: Season | null; session: { name?: string; phone?: string; pin?: string }; schools: string[]; onClose: () => void; onSaved: () => void }> = ({
   me,
+  season,
   session,
   schools,
   onClose,
   onSaved,
 }) => {
+  const [rulesRead, setRulesRead] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const [name, setName] = useState(me?.name || session.name || '');
   const [hostel, setHostel] = useState(me?.hostel || '');
   const [school, setSchool] = useState<'caritas' | 'other' | 'guest'>(me?.school || 'caritas');
@@ -1168,7 +1176,10 @@ const RegisterSheet: React.FC<{ me: any; session: { name?: string; phone?: strin
     setBusy(true);
     setError('');
     try {
-      await registerGamer({ name, school, schoolName: canonicalSchool(schoolName, schools), hostel, phone, pin, games, ids, freeNote });
+      if (!me && season && !rulesRead) throw new Error('Tick the box to say you have read the game rules.');
+      const created = await registerGamer({ name, school, schoolName: canonicalSchool(schoolName, schools), hostel, phone, pin, games, ids, freeNote });
+      // A new player goes straight onto the season tables (the rules tick is stored with the join)
+      if (!me && season) await joinSeason(season, created).catch(() => {});
       onSaved();
     } catch (e: any) {
       setError(e?.message || 'Could not save.');
@@ -1177,7 +1188,7 @@ const RegisterSheet: React.FC<{ me: any; session: { name?: string; phone?: strin
   };
 
   return (
-    <Sheet title={me ? 'Your player profile' : 'Register for Hostel Games'} onClose={onClose}>
+    <Sheet title={me ? 'Your player profile' : 'Join the Roomly Caritas League'} onClose={onClose}>
       <p className="text-xs text-slate-500">One profile for the games you play, tied to your Roomly account. Your WhatsApp number stays private.</p>
       <div>
         <label className={label}>Gamer name</label>
@@ -1305,6 +1316,15 @@ const RegisterSheet: React.FC<{ me: any; session: { name?: string; phone?: strin
         <input value={freeNote} onChange={(e) => setFreeNote(e.target.value)} maxLength={60} className={input} placeholder="e.g. Evenings after 8pm" />
       </div>
       {error && <p className="text-xs font-semibold text-rose-600">{error}</p>}
+      {!me && season && (
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input type="checkbox" checked={rulesRead} onChange={(e) => setRulesRead(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#0e9f55]" />
+          <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+            I have read the <button type="button" onClick={() => setRulesOpen(true)} className="underline text-[#0e9f55]">game rules</button> and agree to follow them. This puts me on the {season.name} table.
+          </span>
+        </label>
+      )}
+      {rulesOpen && <RulesSheet onClose={() => setRulesOpen(false)} />}
       <button type="button" disabled={busy} onClick={save} className="w-full h-12 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60">
         {busy && <Loader2 className="w-4 h-4 animate-spin" />} {me ? 'Save profile' : 'Save registration'}
       </button>

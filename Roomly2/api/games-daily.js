@@ -164,6 +164,27 @@ export default async function handler(req, res) {
             const top = computeRows(game, gamers, matches, { seasonId: season.id, joined: seasonJoined, adjusts })[0];
             if (top && top.pts > 0) champions[game] = { gid: top.id, name: top.name, pts: top.pts, origin: top.origin };
           }
+          // Frozen copy for History: names and points only (no phone numbers, no screenshots)
+          const freshWeeks = rows(await db.collection('rewardWeeks').where('seasonId', '==', season.id).get());
+          await db.doc(`seasonArchive/${season.id}`).set({
+            name: season.name,
+            session: season.session || '',
+            startMs: Number(season.startMs),
+            endMs: Number(season.endMs),
+            champions,
+            weeks: freshWeeks
+              .filter((w) => Array.isArray(w.results) && w.results.length)
+              .sort((a, b) => Number(a.startMs) - Number(b.startMs))
+              .map((w) => ({ game: w.game, startMs: Number(w.startMs), endMs: Number(w.endMs), minPoints: Number(w.minPoints), creditValue: Number(w.creditValue), results: w.results })),
+            archivedAtMs: now,
+          });
+          for (const game of GAME_IDS) {
+            const table = computeRows(game, gamers, matches, { seasonId: season.id, joined: seasonJoined, adjusts });
+            await db.doc(`seasonArchive/${season.id}/tables/${game}`).set({
+              game,
+              rows: table.map((r) => ({ id: r.id, rank: r.rank, name: r.name, origin: r.origin, p: r.p, w: r.w, d: r.d, l: r.l, gf: r.gf, ga: r.ga, pts: r.pts })),
+            });
+          }
           await db.doc(`seasons/${season.id}`).update({ champions, championsAt: now });
           out.champions.push(season.id);
         } catch (e) {

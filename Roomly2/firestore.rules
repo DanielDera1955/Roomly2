@@ -644,6 +644,15 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin();
     }
+    // Frozen copy of a finished season (written by the daily job): final tables, champions, reward winners
+    match /seasonArchive/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+      match /tables/{game} {
+        allow read: if true;
+        allow write: if isAdmin();
+      }
+    }
     match /seasonJoins/{id} {
       allow read: if true;
       allow create: if ownsGamer(request.resource.data.gid)

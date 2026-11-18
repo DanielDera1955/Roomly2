@@ -106,7 +106,7 @@ export const SeasonCard: React.FC<{
       <div className={`${card} p-4 space-y-3`}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Season league</p>
+            <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Roomly Caritas League</p>
             {target ? (
               <>
                 <p className="text-base font-black text-slate-900 dark:text-white truncate">{target.name}</p>
