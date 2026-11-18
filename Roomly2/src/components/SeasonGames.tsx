@@ -523,6 +523,11 @@ export const ChallengeTable: React.FC<{
   const [busyId, setBusyId] = useState('');
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const scored = isScored(game);
+  // Football: P W D L GF. The other games have no draws or goals: P W L Kills.
+  const stats: { k: string; h: string }[] = scored
+    ? [{ k: 'p', h: 'P' }, { k: 'w', h: 'W' }, { k: 'd', h: 'D' }, { k: 'l', h: 'L' }, { k: 'gf', h: 'GF' }]
+    : [{ k: 'p', h: 'P' }, { k: 'w', h: 'W' }, { k: 'l', h: 'L' }, { k: 'kills', h: 'K' }];
+  const cols = `28px minmax(0,1fr) ${stats.map(() => '22px').join(' ')} 30px 84px`;
   const member = Boolean(me && season && (me.games || []).includes(game) && rulesAccepted(join));
   const needle = q.trim().toLowerCase();
   const list = useMemo(() => rows.filter((r) => !needle || String(r.name).toLowerCase().includes(needle)), [rows, needle]);
@@ -554,46 +559,66 @@ export const ChallengeTable: React.FC<{
       {list.length === 0 ? (
         <p className="p-4 text-center text-xs text-slate-400">{q ? 'Nobody matches that name.' : emptyText || 'No players yet. Register for this game to be the first on the table.'}</p>
       ) : (
-        <div className="divide-y divide-slate-100 dark:divide-slate-800">
-          {list.slice(0, limit).map((r) => {
+        <div className="overflow-hidden rounded-xl border border-slate-100 dark:border-slate-800">
+          {/* Header */}
+          <div className="grid items-center gap-x-1 px-2 py-2 bg-slate-50 dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800 text-[10px] font-black uppercase tracking-wide text-slate-400" style={{ gridTemplateColumns: cols }}>
+            <span className="text-center">#</span>
+            <span>Player</span>
+            {stats.map((c) => (
+              <span key={c.k} className="text-center">{c.h}</span>
+            ))}
+            <span className="text-center">Pts</span>
+            <span />
+          </div>
+          {list.slice(0, limit).map((r, idx) => {
             const self = Boolean(me && r.id === me.id);
             const canTap = member && !self && r.ready && isOpen && !hiddenFromMe.has(r.id);
+            const medal = r.rank === 1 ? 'bg-amber-400 text-amber-950' : r.rank === 2 ? 'bg-slate-300 text-slate-800' : r.rank === 3 ? 'bg-orange-300 text-orange-950' : '';
             return (
-              <div key={r.id} className={`py-2.5 px-1 ${self ? 'bg-emerald-50 dark:bg-emerald-950/40 rounded-lg' : ''}`}>
-                <div className="flex items-center gap-2.5">
-                  <span className="w-6 shrink-0 text-center text-xs font-bold text-slate-500 flex items-center justify-center">
-                    {r.crown ? <Crown className="w-4 h-4 text-amber-500" /> : r.rank}
+              <div key={r.id} className={`border-b last:border-b-0 border-slate-100 dark:border-slate-800 ${self ? 'bg-emerald-50 dark:bg-emerald-950/40' : idx % 2 ? 'bg-slate-50/60 dark:bg-slate-900/40' : ''}`}>
+                <div className="grid items-center gap-x-1 px-2 py-2" style={{ gridTemplateColumns: cols }}>
+                  <span className="flex items-center justify-center">
+                    <span className={`w-6 h-6 rounded-full text-[11px] font-black flex items-center justify-center ${medal || 'text-slate-500'}`}>{r.rank}</span>
                   </span>
-                  <div className="min-w-0 flex-1">
-                    <p className={`text-sm truncate ${self ? 'font-black text-slate-900 dark:text-white' : 'font-semibold text-slate-800 dark:text-slate-200'}`}>
-                      {r.name}
-                      {r.tag && <span className="ml-1.5 px-1.5 py-px rounded-md bg-slate-100 dark:bg-slate-800 text-[9px] font-bold text-slate-500 dark:text-slate-400 align-middle">{r.tag}</span>}
+                  <div className="min-w-0">
+                    <p className={`text-[13px] leading-tight truncate flex items-center gap-1 ${self ? 'font-black text-slate-900 dark:text-white' : 'font-semibold text-slate-800 dark:text-slate-200'}`}>
+                      {r.crown && <Crown className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
+                      <span className="truncate">{r.name}</span>
+                      {self && <span className="shrink-0 px-1 rounded bg-[#0e9f55] text-white text-[8px] font-black">YOU</span>}
                     </p>
                     <p className="text-[10px] text-slate-400 truncate">
-                      {scored ? `P${r.p} · ${r.w}W ${r.d}D ${r.l}L · GD ${r.gd > 0 ? `+${r.gd}` : r.gd}` : `P${r.p} · ${r.w}W ${r.l}L`} · {ago(r.lastActiveMs)}
+                      {r.tag ? `${r.tag} · ` : ''}
+                      {ago(r.lastActiveMs)}
                     </p>
                   </div>
-                  <span className="w-8 shrink-0 text-right text-sm font-black text-[#0e9f55] tabular-nums">{r.pts}</span>
-                  <div className="w-[88px] shrink-0 flex items-center justify-end gap-1">
-                    {canTap && (
+                  {stats.map((c) => (
+                    <span key={c.k} className="text-center text-xs tabular-nums text-slate-600 dark:text-slate-300">{r[c.k] || 0}</span>
+                  ))}
+                  <span className="text-center text-sm font-black text-[#0e9f55] tabular-nums">{r.pts}</span>
+                  <div className="flex items-center justify-end gap-0.5">
+                    {canTap ? (
                       <button
                         type="button"
                         disabled={busyId === r.id}
                         onClick={() => challenge(r)}
-                        className="h-8 px-2.5 rounded-lg bg-[#0e9f55] text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-60"
+                        className="h-7 px-2 rounded-lg bg-[#0e9f55] text-white text-[10px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-60"
                       >
-                        <MessageCircle className="w-3.5 h-3.5" /> Challenge
+                        <MessageCircle className="w-3 h-3" /> Challenge
                       </button>
-                    )}
+                    ) : member && !self ? (
+                      <span className="h-7 px-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 text-[10px] font-bold flex items-center gap-1">
+                        <MessageCircle className="w-3 h-3" /> Locked
+                      </span>
+                    ) : null}
                     {member && !self && (
-                      <button type="button" onClick={() => setMenu(menu === r.id ? '' : r.id)} aria-label="More" className="w-7 h-8 rounded-lg text-slate-400 flex items-center justify-center cursor-pointer">
+                      <button type="button" onClick={() => setMenu(menu === r.id ? '' : r.id)} aria-label="More" className="w-5 h-7 text-slate-400 flex items-center justify-center cursor-pointer">
                         <MoreHorizontal className="w-4 h-4" />
                       </button>
                     )}
                   </div>
                 </div>
                 {menu === r.id && (
-                  <div className="mt-1.5 ml-8 flex gap-3">
+                  <div className="px-3 pb-2 flex gap-4">
                     <button type="button" onClick={() => { setMenu(''); setReporting(r); }} className="text-[11px] font-semibold text-slate-500 flex items-center gap-1 cursor-pointer">
                       <Flag className="w-3 h-3" /> Report
                     </button>

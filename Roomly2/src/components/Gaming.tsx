@@ -168,20 +168,21 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
     const joinById = new Map(joins.map((j) => [j.gid, j]));
     const joined = new Set(joins.map((j) => j.gid));
     GAMES.forEach((g: { id: string }) => {
-      if (!season) {
+      // Players are listed from the moment they join, even before the league starts (0 points)
+      if (!target) {
         out[g.id] = [];
         return;
       }
       const w = activeWeekFor(weeks, g.id, nowMs);
       const rj = new Set(rewardJoins.filter((x) => x.game === g.id).map((x) => x.gid));
-      out[g.id] = computeRows(g.id, gamers, matches, { seasonId: season.id, joined, adjusts }).map((r: any) => ({
+      out[g.id] = computeRows(g.id, gamers, matches, { seasonId: target.id, joined, adjusts }).map((r: any) => ({
         ...r,
         ready: isChallengeable(joinById.get(r.id), g.id, rj.has(r.id)),
         accepted: rulesAccepted(joinById.get(r.id)),
       }));
     });
     return out;
-  }, [gamers, matches, season?.id, joins, weeks, rewardJoins, adjusts, nowMs]);
+  }, [gamers, matches, target?.id, joins, weeks, rewardJoins, adjusts, nowMs]);
 
   /** The reward tables: only matches inside the running week, from zero, only players who joined that week */
   const rewardBoards = useMemo(() => {
