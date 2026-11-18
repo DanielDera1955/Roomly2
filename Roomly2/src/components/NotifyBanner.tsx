@@ -28,17 +28,26 @@ export const NotifyBanner: React.FC<{ pk?: string; className?: string }> = ({ pk
   };
 
   if (on) {
+    // "Send test" is for Roomly only: it shows when the page is opened with ?test=1
+    let showTest = false;
+    try {
+      showTest = new URLSearchParams(window.location.search).get('test') === '1';
+    } catch {}
     return (
-      <div className={`flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 text-[11px] text-emerald-900 dark:text-emerald-100 ${className}`}>
-        <span className="font-semibold">Batch alerts are on.</span>
+      <div className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 text-[11px] text-emerald-900 dark:text-emerald-100 ${className}`}>
+        <span className="flex items-center gap-1.5 font-semibold">
+          <Bell className="w-3.5 h-3.5" /> Batch alerts are on
+        </span>
         <span className="flex gap-3 font-bold">
-          <button
-            type="button"
-            className="underline cursor-pointer"
-            onClick={async () => setMsg((await sendTestPush()) ? 'Test sent. It should arrive in a few seconds.' : 'Could not send the test.')}
-          >
-            Send test
-          </button>
+          {showTest && (
+            <button
+              type="button"
+              className="underline cursor-pointer"
+              onClick={async () => setMsg((await sendTestPush()) ? 'Test sent. It should arrive in a few seconds.' : 'Could not send the test.')}
+            >
+              Send test
+            </button>
+          )}
           <button
             type="button"
             className="underline cursor-pointer"
