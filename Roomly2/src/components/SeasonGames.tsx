@@ -579,6 +579,7 @@ export const ChallengeTable: React.FC<{
                         {r.crown && <Crown className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
                         <span className="truncate">{r.name}</span>
                         {self && <span className="shrink-0 px-1 rounded bg-[#0e9f55] text-white text-[8px] font-black">YOU</span>}
+                        {!self && r.ready === false && <span className="shrink-0 px-1 rounded bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-[8px] font-black">NOT JOINED</span>}
                       </p>
                       <p className="text-[10px] text-slate-400 truncate">
                         {r.tag ? `${r.tag} · ` : ''}
@@ -647,7 +648,7 @@ const PlayerSheet: React.FC<{
     ? mine.filter((m) => (m.aUid === me.id || m.bUid === me.id) && lagosWeek(Number(m.loggedAtMs || 0)) === thisWeek).length
     : 0;
   const canTap = member && row.ready !== false && isOpen && !hidden;
-  const reason = !me ? 'Join this game to schedule a 1v1.' : !member ? 'Join this game and accept the rules to schedule a 1v1.' : row.ready === false ? `${row.name} has not accepted the rules yet.` : !isOpen ? 'Challenges open when the league starts.' : hidden ? `${row.name} is not available to challenge.` : '';
+  const reason = !me ? 'Join this game to schedule a 1v1.' : !member ? 'Join this game and accept the rules to schedule a 1v1.' : row.ready === false ? `${row.name} hasn't joined yet. You can challenge them once they open Games and accept the rules.` : !isOpen ? 'Challenges open when the league starts.' : hidden ? `${row.name} is not available to challenge.` : '';
   const outcome = (m: any) => {
     const w = winnerOf(m);
     return !w ? 'D' : w === row.id ? 'W' : 'L';
