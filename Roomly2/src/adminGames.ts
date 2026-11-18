@@ -80,3 +80,18 @@ export async function issueCredit(week: any, gid: string, name: string, rank: nu
 export async function saveGameSettings(game: string, cfg: { minPlayers: number; minPoints: number; creditValue: number }) {
   await setDoc(doc(db, 'settings', 'gamesConfig'), { perGame: { [game]: cfg } }, { merge: true });
 }
+
+/** Official WhatsApp group link (shown in Games and in the bell) */
+export async function saveGroupLink(link: string) {
+  const v = String(link || '').trim();
+  if (v && !/^https:\/\/(chat\.whatsapp\.com|wa\.me|whatsapp\.com)\//i.test(v)) throw new Error('Paste the full WhatsApp group invite link, starting with https://chat.whatsapp.com/');
+  await setDoc(doc(db, 'settings', 'gamesConfig'), { groupLink: v }, { merge: true });
+}
+/** Notice of the day: shows until the end of today (Lagos). Posting a new one replaces the old one. */
+export async function postDailyNotice(text: string) {
+  const t = String(text || '').trim().slice(0, 280);
+  const now = Date.now();
+  const LAGOS = 3600000;
+  const endMs = (Math.floor((now + LAGOS) / 86400000) + 1) * 86400000 - LAGOS;
+  await setDoc(doc(db, 'settings', 'gamesConfig'), { notice: t ? { text: t, atMs: now, endMs } : { text: '', atMs: now, endMs: 0 } }, { merge: true });
+}

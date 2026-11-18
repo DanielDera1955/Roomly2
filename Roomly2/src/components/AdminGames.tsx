@@ -20,6 +20,8 @@ import {
   voidCredit,
   issueCredit,
   saveGameSettings,
+  saveGroupLink,
+  postDailyNotice,
 } from '../adminGames';
 
 const card = 'p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-3';
@@ -403,8 +405,51 @@ const TapsTab: React.FC<{ taps: any[] }> = ({ taps }) => {
 
 /* ------------------------------ Per-game settings ------------------------------ */
 
+const AnnounceBox: React.FC<{ config: any }> = ({ config }) => {
+  const [link, setLink] = useState(String(config?.groupLink || ''));
+  const [text, setText] = useState('');
+  const [msg, setMsg] = useState('');
+  useEffect(() => setLink(String(config?.groupLink || '')), [config?.groupLink]);
+  const live = config?.notice && Number(config.notice.endMs) > Date.now() ? String(config.notice.text || '') : '';
+  const run = async (fn: () => Promise<void>, ok: string) => {
+    try {
+      await fn();
+      setMsg(ok);
+    } catch (e: any) {
+      setMsg(e?.message || 'Could not save.');
+    }
+  };
+  return (
+    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-2">
+      <p className="text-xs font-bold text-slate-900 dark:text-white">Official announcements</p>
+      <p className="text-[10px] text-slate-500">WhatsApp group link (button in Games and in the bell)</p>
+      <div className="flex gap-2">
+        <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://chat.whatsapp.com/..." className={input} />
+        <button type="button" onClick={() => run(() => saveGroupLink(link), 'Link saved.')} className={`${btn} bg-slate-900 text-white dark:bg-white dark:text-slate-900 shrink-0`}>
+          Save
+        </button>
+      </div>
+      <p className="text-[10px] text-slate-500">Notice of the day. It shows until midnight tonight; a new one replaces it.</p>
+      {live && <p className="text-[11px] text-slate-700 dark:text-slate-300">Showing now: {live}</p>}
+      <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={280} rows={2} className="w-full p-3 text-sm bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-700" placeholder="Short notice for players" />
+      <div className="flex gap-2">
+        <button type="button" disabled={!text.trim()} onClick={() => run(async () => { await postDailyNotice(text); setText(''); }, 'Notice posted.')} className={`${btn} bg-[#0e9f55] text-white`}>
+          Post notice
+        </button>
+        {live && (
+          <button type="button" onClick={() => run(() => postDailyNotice(''), 'Notice removed.')} className={`${btn} text-rose-600`}>
+            Remove it
+          </button>
+        )}
+      </div>
+      {msg && <p className="text-[11px] text-slate-500">{msg}</p>}
+    </div>
+  );
+};
+
 const SettingsTab: React.FC<{ config: any }> = ({ config }) => (
   <div className="space-y-3">
+    <AnnounceBox config={config} />
     <p className="text-[11px] text-slate-500">Changes apply from the next reward week. A week that has already started keeps the settings it started with.</p>
     {GAMES.map((g: { id: string; label: string }) => (
       <GameSettingsRow key={g.id} game={g.id} label={g.label} cfg={rewardConfigFor(config, g.id)} />

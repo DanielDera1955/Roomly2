@@ -213,6 +213,28 @@ const JoinRulesSheet: React.FC<{ canJoin: boolean; title: string; busy: boolean;
 };
 
 /* ------------------------------------------------------------------ */
+/* Official announcements: Roomly's notice of the day and the WhatsApp group */
+/* ------------------------------------------------------------------ */
+
+export const AnnouncementsCard: React.FC<{ config: any; nowMs: number }> = ({ config, nowMs }) => {
+  const link = String(config?.groupLink || '');
+  const n = config?.notice && Number(config.notice.endMs) > nowMs ? String(config.notice.text || '') : '';
+  if (!link && !n) return null;
+  return (
+    <div className={`${card} p-4 space-y-2`}>
+      <p className="text-sm font-black text-slate-900 dark:text-white">Official announcements</p>
+      {n && <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">{n}</p>}
+      <p className="text-[11px] text-slate-500">Rewards, results and rule updates are posted in the official Roomly Games WhatsApp group.</p>
+      {link && (
+        <button type="button" onClick={() => window.open(link, '_blank', 'noopener')} className="w-full h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer">
+          <MessageCircle className="w-4 h-4" /> Join the WhatsApp group
+        </button>
+      )}
+    </div>
+  );
+};
+
+/* ------------------------------------------------------------------ */
 /* Reward card: the prize and who is winning it right now              */
 /* ------------------------------------------------------------------ */
 

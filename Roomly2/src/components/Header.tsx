@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SoundToggle } from './SoundToggle';
+import { NotificationBell } from './NotificationBell';
 import { Moon, Sun, ShoppingBag, UserRound, LogOut } from 'lucide-react';
 import { CustomerProfile } from '../types';
 import { SCHOOL_NAME } from '../config';
@@ -133,7 +133,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
           {/* Dark Mode Toggle */}
-          <SoundToggle className="border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" />
+          <NotificationBell phone={customer?.phone || ''} signedIn={signedIn} className="border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" />
           <button
             type="button"
             onClick={onToggleDarkMode}

@@ -53,7 +53,7 @@ import {
   pairContext,
   type Season,
 } from '../season';
-import { SeasonCard, RewardCard, ChallengeList, RulesSheet } from './SeasonGames';
+import { SeasonCard, RewardCard, ChallengeList, RulesSheet, AnnouncementsCard } from './SeasonGames';
 
 const card = 'bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800';
 const input =
@@ -243,6 +243,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
           joinsCount={joins.length}
           weeks={weeks}
           rewardJoins={rewardJoins}
+          config={config}
         />
       )}
       {registering && (
@@ -284,7 +285,8 @@ const GamesHome: React.FC<{
   joinsCount: number;
   weeks: any[];
   rewardJoins: any[];
-}> = ({ me, isCustomer = false, gamers, boards, isOpen, opensAt, nowMs, onPick, onRegister, season, upcoming, seasons, join, joinsCount, weeks, rewardJoins }) => {
+  config: any;
+}> = ({ me, isCustomer = false, gamers, boards, isOpen, opensAt, nowMs, onPick, onRegister, season, upcoming, seasons, join, joinsCount, weeks, rewardJoins, config }) => {
   const registered = gamers.filter((g) => !g.banned).length;
   const myBest = me
     ? GAMES.filter((g) => playsGame(me, g.id))
@@ -340,6 +342,8 @@ const GamesHome: React.FC<{
 
       {/* Season league: join, rules and the Hall of fame */}
       <SeasonCard season={season} upcoming={upcoming} seasons={seasons} me={me} join={join} joinsCount={joinsCount} nowMs={nowMs} onRegister={onRegister} />
+
+      <AnnouncementsCard config={config} nowMs={nowMs} />
 
       {/* My settings: open to challenges, per game, and edit profile */}
       {me && <MyStatusCard me={me} season={season} join={join} weeks={weeks} rewardJoins={rewardJoins} isOpen={isOpen} opensAt={opensAt} nowMs={nowMs} onEdit={onRegister} />}
