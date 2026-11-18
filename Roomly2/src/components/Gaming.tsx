@@ -429,10 +429,10 @@ const GamesHome: React.FC<{
           </div>
         )}
         {!isOpen && <p className="mt-3 text-[11px] text-emerald-50/90">Registration week. Challenges open {openDay(opensAt)}.</p>}
-        {!me && <p className="mt-3 text-[11px] text-emerald-50/80">Registered before on another phone or browser? Tap Register and use the same number and PIN to get your profile back.</p>}
+        {!me && <p className="mt-3 text-[11px] text-emerald-50/80">Registered before on another phone or browser? Tap Join and use the same number and PIN to get your profile back.</p>}
         <div className="mt-4 grid grid-cols-2 gap-2">
           <button type="button" onClick={onRegister} className="h-11 rounded-xl bg-white text-[#0e9f55] text-sm font-bold flex items-center justify-center gap-1.5 cursor-pointer">
-            {hasAccount ? 'Edit profile' : <><Plus className="w-4 h-4" /> {isCustomer ? 'Register as a player' : 'Register'}</>}
+            {hasAccount ? 'Edit profile' : <><Plus className="w-4 h-4" /> {isCustomer ? 'Join as a player' : 'Join'}</>}
           </button>
           <button type="button" onClick={() => go(inviteLink(me, opensAt))} className="h-11 rounded-xl bg-white/15 border border-white/30 text-white text-sm font-bold flex items-center justify-center gap-1.5 cursor-pointer">
             <MessageCircle className="w-4 h-4" /> Invite friends
@@ -450,16 +450,6 @@ const GamesHome: React.FC<{
           <div className={`${card} p-4 space-y-2`}>
             <h3 className="text-base font-black text-slate-900 dark:text-white">Choose your game</h3>
             <p className="text-xs text-slate-600 dark:text-slate-300">Compete for the best in Caritas for the featured games below.</p>
-            {!hasAccount && (
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <button type="button" onClick={onRegister} className="h-10 rounded-xl bg-[#0e9f55] text-white text-xs font-bold flex items-center justify-center gap-1 cursor-pointer">
-                  <Plus className="w-3.5 h-3.5" /> Register
-                </button>
-                <button type="button" onClick={() => go(inviteLink(me, opensAt))} className="h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-[#0e9f55] text-xs font-bold flex items-center justify-center gap-1 cursor-pointer">
-                  <MessageCircle className="w-3.5 h-3.5" /> Invite
-                </button>
-              </div>
-            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             {GAMES.map((g: { id: string; label: string }) => {
@@ -633,7 +623,7 @@ const GamePage: React.FC<{
     .sort((a, b) => (b.loggedAtMs || 0) - (a.loggedAtMs || 0))
     .slice(0, 8);
   const logLabel = !plays
-    ? `Register for ${gameLabel(game)} to log results`
+    ? `Join ${gameLabel(game)} League to log results`
     : !season
     ? 'No season is running yet'
     : !accepted
@@ -718,7 +708,7 @@ const GamePage: React.FC<{
             )}
             <div className="grid grid-cols-2 gap-2">
               <button type="button" onClick={onRegister} className="h-10 rounded-xl bg-white text-[#0e9f55] text-xs font-bold flex items-center justify-center gap-1 cursor-pointer">
-                {plays ? 'Edit profile' : <><Plus className="w-3.5 h-3.5" /> Register for {gameLabel(game)}</>}
+                {plays ? 'Edit profile' : <><Plus className="w-3.5 h-3.5" /> Join {gameLabel(game)} League</>}
               </button>
               <button
                 type="button"
@@ -753,7 +743,7 @@ const GamePage: React.FC<{
         <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 flex items-start gap-2.5">
           <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
           <p className="text-xs text-amber-900 dark:text-amber-200">
-            <strong>Challenges open {openDay(opensAt)}</strong> (in {countdown(opensAt - nowMs)}). Register now and invite your rivals so they're on the table.
+            <strong>Challenges open {openDay(opensAt)}</strong> (in {countdown(opensAt - nowMs)}). Join now and invite your rivals so they're on the table.
           </p>
         </div>
       )}
@@ -1430,7 +1420,7 @@ const TournamentCard: React.FC<{ t: any; me: any; account: any; onRegister: () =
           <span className="text-[11px] text-slate-400">{full ? 'Full' : `${t.slots - entries.length} slots left`}</span>
           {!me || !playsGame(me, t.game) ? (
             <button type="button" onClick={onRegister} className="h-10 px-4 rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer">
-              {me ? `Add ${gameLabel(t.game)}` : 'Register to join'}
+              {me ? `Add ${gameLabel(t.game)}` : 'Join to enter'}
             </button>
           ) : (
             <button type="button" disabled={busy || full} onClick={() => run(() => joinTournament(t, me))} className="h-10 px-5 rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer disabled:opacity-50">

@@ -157,7 +157,7 @@ export const SeasonRulesCard: React.FC<{
           </div>
           {target && !me && (
             <button type="button" onClick={onRegister} className="w-full h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer">
-              Register for a game to enter
+              Join a game to enter
             </button>
           )}
           {target && me && !hasGames && (
@@ -477,9 +477,9 @@ export const RewardCard: React.FC<{
                   <Check className="w-3.5 h-3.5" /> You are registered for the {gameLabel(game)} reward contest.
                 </p>
               ) : !me ? (
-                <p className="text-[11px] text-slate-500">Register as a player first to join the reward contest.</p>
+                <p className="text-[11px] text-slate-500">Join the league first to join the reward contest.</p>
               ) : !plays ? (
-                <p className="text-[11px] text-slate-500">Register for {gameLabel(game)} to join its reward contest.</p>
+                <p className="text-[11px] text-slate-500">Join {gameLabel(game)} League to join its reward contest.</p>
               ) : !rulesAccepted(join) ? (
                 <p className="text-[11px] text-amber-700 dark:text-amber-300 font-semibold">Accept the league rules first to join the reward contest.</p>
               ) : blocked ? (
