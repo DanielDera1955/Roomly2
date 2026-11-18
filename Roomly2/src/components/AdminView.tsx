@@ -42,6 +42,7 @@ import { heardLabel } from '../tracking.js';
 import { OrderRecord, CategoryDefinition, DeliveryRunner, locationText, shortLocation, roomText } from '../types';
 import { Product, FoodExtraOption, PRESET_PRODUCT_IMAGES, StoreKey, STORE_LABEL, STORE_SOURCE, categoriesForStore, storeOfSource } from '../config';
 import { AdminHub } from './AdminHub';
+import { AdminLeague } from './AdminLeague';
 import { AdminShops, useNewShopApplications } from './AdminShops';
 import { AdminPriceLists } from './AdminPriceLists';
 import { AdminDispatch, AdminTeam, AdminMoney, useOpenSettlements, needsAction } from './AdminDispatch';
@@ -157,7 +158,7 @@ const FoodOptionsEditor: React.FC<{ value: FoodOptions; source: Product['source'
   );
 };
 
-type AdminTab = 'posts' | 'dashboard' | 'orders' | 'team' | 'applications' | 'money' | 'feedback' | 'products' | 'categories' | 'customers' | 'activity' | 'hub';
+type AdminTab = 'posts' | 'dashboard' | 'orders' | 'team' | 'applications' | 'money' | 'feedback' | 'products' | 'categories' | 'customers' | 'activity' | 'hub' | 'league';
 
 export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpdated }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -718,7 +719,19 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
-            <span>Hub & Games</span>
+            <span>Hostel Hub</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCurrentTab('league')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+              currentTab === 'league'
+                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <span>League Games & Contest</span>
           </button>
 
           <button
@@ -765,6 +778,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
         {/* ================= HOSTEL HUB & GAMING ================= */}
         {currentTab === 'hub' && <AdminHub />}
+        {currentTab === 'league' && <AdminLeague />}
 
         {/* ================= TEAM: runners, operators, accounts, switches ================= */}
         {currentTab === 'team' && (

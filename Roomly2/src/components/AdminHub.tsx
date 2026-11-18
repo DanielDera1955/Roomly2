@@ -41,8 +41,6 @@ import {
   addSchool,
 } from '../hub.js';
 import { HOSTELS } from '../config';
-import { AdminGames } from './AdminGames';
-import { subscribeSeasons, adminCreateSeason, adminUpdateSeasonDates, adminRenameSeason, adminEndSeasonNow, SEMESTER_NAMES, type Season } from '../season';
 import { subscribeShopTokens } from '../shopsAdmin.js';
 
 const card = 'p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-3';
@@ -54,7 +52,7 @@ const WEEK = 7 * 86400000;
 const gameLabel = (id: string) => GAMES.find((g) => g.id === id)?.label || id;
 const reasonLabel = (id: string) => REPORT_REASONS.find((r) => r.id === id)?.label || id;
 
-/** Admin > Hub: reports and bans, water switch, tournament account, gaming disputes and tournaments */
+/** Admin > Hostel Hub: listings, reports and bans, the water switch and the outside store date */
 export const AdminHub: React.FC = () => {
   const [listings, setListings] = useState<any[]>([]);
   const [reports, setReports] = useState<any[]>([]);
@@ -129,11 +127,6 @@ export const AdminHub: React.FC = () => {
         ))}
       </div>
 
-      <Disputes />
-      <AdminGames />
-      <ResetPlayer />
-      <Schools settings={settings} />
-      <AdminTournaments />
     </div>
   );
 };
@@ -326,135 +319,45 @@ const PostForSomeone: React.FC<{ listings: any[] }> = ({ listings }) => {
 
 /* ------------------------------------------------------------------ */
 
-const toLocal = (ms: number) => {
+export const toLocal = (ms: number) => {
   const d = new Date(ms);
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
-/** Admin: create seasons and change their dates */
-const SeasonAdmin: React.FC = () => {
-  const [list, setList] = useState<Season[]>([]);
-  const [name, setName] = useState(SEMESTER_NAMES[0]);
-  const [year, setYear] = useState('');
-  const [auto, setAuto] = useState(true);
-  const [start, setStart] = useState('');
-  const [end, setEnd] = useState('');
-  const [busy, setBusy] = useState(false);
-  useEffect(() => subscribeSeasons(setList), []);
-  const create = async () => {
-    setBusy(true);
-    try {
-      await adminCreateSeason(name, new Date(start).getTime(), new Date(end).getTime(), year, auto);
-      setName(SEMESTER_NAMES[0]);
-      setYear('');
-      setStart('');
-      setEnd('');
-    } catch (e: any) {
-      window.alert(e?.message || 'Could not create the season.');
-    }
-    setBusy(false);
+/** Admin (League Games): the date challenges and results open for everyone */
+export const GamesOpenDate: React.FC<{ settings: any }> = ({ settings }) => {
+  const games = gamesOpensAt(settings);
+  const now = Date.now();
+  const [g, setG] = useState(toLocal(games));
+  useEffect(() => setG(toLocal(games)), [games]);
+  const save = async () => {
+    const ms = new Date(g).getTime();
+    if (!Number.isFinite(ms)) return window.alert('Pick a date and time.');
+    await saveHubSettings({ gamesOpenAtMs: ms });
   };
   return (
     <div className={card}>
-      <p className={h}>Seasons</p>
-      <p className="text-[11px] text-slate-500">Start at 12:00AM Monday so reward weeks line up. The end date is only expected: change it any time while school is still on. Only one semester should run at a time.</p>
-      {list.map((s) => (
-        <div key={s.id} className="py-2 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
-          <div className="flex items-center gap-2">
-            <select
-              value={SEMESTER_NAMES.includes(s.name) ? s.name : ''}
-              onChange={async (e) => {
-                try {
-                  await adminRenameSeason(s.id, e.target.value);
-                } catch (er: any) {
-                  window.alert(er?.message || 'Could not rename.');
-                }
-              }}
-              className={input}
-            >
-              {!SEMESTER_NAMES.includes(s.name) && <option value="">{s.name} (rename)</option>}
-              {SEMESTER_NAMES.map((n) => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </select>
-            {s.session && <span className="text-[11px] text-slate-500 shrink-0">{s.session}</span>}
-          </div>
-          {Number(s.endMs) > Date.now() && Number(s.endMs) - Date.now() < 3 * 86400000 && Number(s.startMs) < Date.now() && (
-            <p className="text-[11px] font-semibold text-amber-600">
-              Closes in {Math.max(1, Math.ceil((Number(s.endMs) - Date.now()) / 86400000))} day(s). Extend the end date if school is still on.
-            </p>
-          )}
-          <p className="text-[10px] text-slate-500">Start, then expected end</p>
-          <div className="flex gap-2">
-            <input type="datetime-local" defaultValue={toLocal(Number(s.startMs))} id={`ss-${s.id}`} className={input} />
-            <input type="datetime-local" defaultValue={toLocal(Number(s.endMs))} id={`se-${s.id}`} className={input} />
-            <button
-              type="button"
-              onClick={async () => {
-                const a = (document.getElementById(`ss-${s.id}`) as HTMLInputElement).value;
-                const b = (document.getElementById(`se-${s.id}`) as HTMLInputElement).value;
-                try {
-                  await adminUpdateSeasonDates(s.id, new Date(a).getTime(), new Date(b).getTime());
-                } catch (e: any) {
-                  window.alert(e?.message || 'Could not save.');
-                }
-              }}
-              className={`${btn} bg-slate-900 text-white dark:bg-white dark:text-slate-900 shrink-0`}
-            >
-              Save
-            </button>
-          </div>
-          {Number(s.startMs) < Date.now() && Number(s.endMs) > Date.now() && (
-            <button
-              type="button"
-              onClick={async () => {
-                if (!window.confirm('End this semester now? Champions are recorded and the table is archived. This cannot be undone.')) return;
-                try {
-                  await adminEndSeasonNow(s.id, Number(s.startMs));
-                } catch (er: any) {
-                  window.alert(er?.message || 'Could not end.');
-                }
-              }}
-              className={`${btn} bg-rose-600 text-white`}
-            >
-              End semester now
-            </button>
-          )}
-        </div>
-      ))}
-      <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
-        <select value={name} onChange={(e) => setName(e.target.value)} className={input}>
-          {SEMESTER_NAMES.map((n) => (
-            <option key={n} value={n}>{n}</option>
-          ))}
-        </select>
-        <input value={year} onChange={(e) => setYear(e.target.value)} maxLength={20} className={input} placeholder="Year, for example 2026/2027" />
-        <div className="flex gap-2">
-          <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} className={input} />
-          <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} className={input} />
-        </div>
-        <p className="text-[10px] text-slate-500">Start date, then expected end date (you can change it later).</p>
-        <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer">
-          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="h-4 w-4 accent-[#0e9f55]" />
-          Players join automatically (the first season). Off means they tap Join and tick the rules.
-        </label>
-        <button type="button" disabled={busy || !name || !start || !end} onClick={create} className={`${btn} bg-[#0e9f55] text-white disabled:opacity-50`}>
-          Create season
+      <p className={h}>Challenges open</p>
+      <p className="text-xs font-bold text-slate-900 dark:text-white">
+        {now >= games ? <span className="text-[#0e9f55]">Open now</span> : <span className="text-amber-600">Registration week, results open later</span>}
+      </p>
+      <p className="text-[11px] text-slate-500">Players can log results from this date. Set it at or before the league start.</p>
+      <div className="flex gap-2">
+        <input type="datetime-local" value={g} onChange={(e) => setG(e.target.value)} className={input} />
+        <button type="button" onClick={save} className={`${btn} bg-slate-900 text-white dark:bg-white dark:text-slate-900 shrink-0`}>
+          Save
         </button>
       </div>
     </div>
   );
 };
 
-/** Admin: when challenges open, and when outside store items can be ordered */
+/** Admin: when outside store items can be ordered */
 const LaunchDates: React.FC<{ settings: any }> = ({ settings }) => {
-  const games = gamesOpensAt(settings);
   const store = outsideStoreOpensAt(settings);
   const now = Date.now();
-  const [g, setG] = useState(toLocal(games));
   const [st, setSt] = useState(toLocal(store));
-  useEffect(() => setG(toLocal(games)), [games]);
   useEffect(() => setSt(toLocal(store)), [store]);
   const save = async (key: string, v: string) => {
     const ms = new Date(v).getTime();
@@ -465,17 +368,6 @@ const LaunchDates: React.FC<{ settings: any }> = ({ settings }) => {
     <div className={card}>
       <p className={h}>Launch dates</p>
       <div className="space-y-1.5">
-        <p className="text-xs font-bold text-slate-900 dark:text-white">
-          Games challenges {now >= games ? <span className="text-[#0e9f55]">· open</span> : <span className="text-amber-600">· registration week</span>}
-        </p>
-        <div className="flex gap-2">
-          <input type="datetime-local" value={g} onChange={(e) => setG(e.target.value)} className={input} />
-          <button type="button" onClick={() => save('gamesOpenAtMs', g)} className={`${btn} bg-slate-900 text-white dark:bg-white dark:text-slate-900 shrink-0`}>
-            Save
-          </button>
-        </div>
-      </div>
-      <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
         <p className="text-xs font-bold text-slate-900 dark:text-white">
           Outside store orders {now >= store ? <span className="text-[#0e9f55]">· open</span> : <span className="text-amber-600">· opens soon</span>}
         </p>
@@ -522,29 +414,11 @@ const BanForm: React.FC = () => {
 };
 
 const HubSettings: React.FC<{ settings: any }> = ({ settings }) => {
-  const acc = settings.tourneyAccount || {};
-  const [bank, setBank] = useState(acc.bank || '');
-  const [number, setNumber] = useState(acc.number || '');
-  const [name, setName] = useState(acc.name || '');
-  const [saved, setSaved] = useState('');
-  useEffect(() => {
-    setBank(acc.bank || '');
-    setNumber(acc.number || '');
-    setName(acc.name || '');
-  }, [acc.bank, acc.number, acc.name]);
-
-  const saveAccount = async () => {
-    await saveHubSettings({ tourneyAccount: { bank: bank.trim(), number: number.replace(/\D/g, ''), name: name.trim() } });
-    setSaved('Saved');
-    window.setTimeout(() => setSaved(''), 2000);
-  };
-
   return (
     <>
     <LaunchDates settings={settings} />
-    <SeasonAdmin />
     <div className={card}>
-      <p className={h}>Switches and accounts</p>
+      <p className={h}>Switches</p>
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="text-xs font-bold text-slate-900 dark:text-white">Water scarcity</p>
@@ -556,18 +430,6 @@ const HubSettings: React.FC<{ settings: any }> = ({ settings }) => {
           className={`${btn} ${settings.waterOn ? 'bg-[#0e9f55] text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}
         >
           {settings.waterOn ? 'ON' : 'OFF'}
-        </button>
-      </div>
-      <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-        <p className="text-xs font-bold text-slate-900 dark:text-white">Tournament entry account</p>
-        <p className="text-[11px] text-slate-500">Students see this when they join a paid tournament. Use an account only for tournaments.</p>
-        <div className="grid grid-cols-3 gap-2">
-          <input value={bank} onChange={(e) => setBank(e.target.value)} className={input} placeholder="Bank" />
-          <input value={number} onChange={(e) => setNumber(e.target.value)} inputMode="numeric" className={input} placeholder="Number" />
-          <input value={name} onChange={(e) => setName(e.target.value)} className={input} placeholder="Name" />
-        </div>
-        <button type="button" onClick={saveAccount} className={`${btn} bg-slate-900 text-white dark:bg-white dark:text-slate-900`}>
-          {saved || 'Save account'}
         </button>
       </div>
     </div>
@@ -637,7 +499,7 @@ const FlaggedRow: React.FC<{ l: any; reports: any[] }> = ({ l, reports }) => {
 /* ------------------------------------------------------------------ */
 
 /** Schools players pick under "Other school": the official list, plus names players typed that aren't on it yet */
-const Schools: React.FC<{ settings: any }> = ({ settings }) => {
+export const Schools: React.FC<{ settings: any }> = ({ settings }) => {
   const [gamers, setGamers] = useState<any[]>([]);
   const [busy, setBusy] = useState('');
   useEffect(() => subscribeGamers(setGamers), []);
@@ -697,7 +559,7 @@ const Schools: React.FC<{ settings: any }> = ({ settings }) => {
 };
 
 /** A player locked out (for example, they changed their PIN): clear their profile so they can register again */
-const ResetPlayer: React.FC = () => {
+export const ResetPlayer: React.FC = () => {
   const [gamers, setGamers] = useState<any[]>([]);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState('');
@@ -736,7 +598,7 @@ const ResetPlayer: React.FC = () => {
   );
 };
 
-const Disputes: React.FC = () => {
+export const Disputes: React.FC = () => {
   const [list, setList] = useState<any[]>([]);
   const [gamers, setGamers] = useState<any[]>([]);
   useEffect(() => adminSubscribeDisputes(setList), []);
@@ -855,7 +717,7 @@ const toLocalInput = (ms: number) => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
-const AdminTournaments: React.FC = () => {
+export const AdminTournaments: React.FC = () => {
   const [list, setList] = useState<any[]>([]);
   const [form, setForm] = useState<any>(null);
   useEffect(() => subscribeTournaments(setList), []);

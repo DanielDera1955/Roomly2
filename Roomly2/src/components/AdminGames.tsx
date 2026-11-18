@@ -38,17 +38,21 @@ const when = (ms: number) => (ms ? new Date(ms).toLocaleString('en-GB', { day: '
 const day = (ms: number) => (ms ? new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '');
 const open = (url: string) => window.open(url, '_blank', 'noopener');
 
-type Tab = 'players' | 'credits' | 'weeks' | 'taps' | 'settings';
-const TABS: [Tab, string][] = [
+type Tab = 'players' | 'credits' | 'weeks' | 'taps' | 'settings' | 'announce';
+const TABS_LEAGUE: [Tab, string][] = [
   ['players', 'Players'],
-  ['credits', 'Credits'],
-  ['weeks', 'Week review'],
   ['taps', 'Challenge log'],
-  ['settings', 'Settings'],
+  ['announce', 'Announcements'],
+];
+const TABS_CONTEST: [Tab, string][] = [
+  ['weeks', 'Week review'],
+  ['credits', 'Credits'],
+  ['settings', 'Reward settings'],
 ];
 
-export const AdminGames: React.FC = () => {
-  const [tab, setTab] = useState<Tab>('players');
+export const AdminGames: React.FC<{ section?: 'league' | 'contest' }> = ({ section = 'league' }) => {
+  const TABS = section === 'contest' ? TABS_CONTEST : TABS_LEAGUE;
+  const [tab, setTab] = useState<Tab>(TABS[0][0]);
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [seasonId, setSeasonId] = useState('');
   const [gamers, setGamers] = useState<any[]>([]);
@@ -95,7 +99,7 @@ export const AdminGames: React.FC = () => {
   return (
     <div className={card}>
       <div className="flex items-center justify-between gap-2">
-        <p className={h}>Games</p>
+        <p className={h}>{section === 'contest' ? 'Weekly contest' : 'League players'}</p>
         <select value={sid} onChange={(e) => setSeasonId(e.target.value)} className="h-8 px-2 rounded-lg text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700">
           {seasons.map((s) => (
             <option key={s.id} value={s.id}>
@@ -104,7 +108,7 @@ export const AdminGames: React.FC = () => {
           ))}
         </select>
       </div>
-      {!season && <p className="text-xs text-slate-400">Create a season first (Seasons box above).</p>}
+      {!season && <p className="text-xs text-slate-400">Create a league first (League games section above).</p>}
       <div className="flex flex-wrap gap-1.5">
         {TABS.map(([id, label]) => (
           <button key={id} type="button" onClick={() => setTab(id)} className={`${btn} ${tab === id ? 'bg-[#0e9f55] text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
@@ -120,6 +124,7 @@ export const AdminGames: React.FC = () => {
       {season && tab === 'credits' && <CreditsTab {...shared} />}
       {season && tab === 'weeks' && <WeeksTab {...shared} season={season} />}
       {season && tab === 'taps' && <TapsTab taps={taps} />}
+      {tab === 'announce' && <AnnounceBox config={config} />}
       {tab === 'settings' && <SettingsTab config={config} />}
     </div>
   );
@@ -470,7 +475,6 @@ const AnnounceBox: React.FC<{ config: any }> = ({ config }) => {
 
 const SettingsTab: React.FC<{ config: any }> = ({ config }) => (
   <div className="space-y-3">
-    <AnnounceBox config={config} />
     <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-1.5">
       <p className="text-xs font-bold text-slate-900 dark:text-white">Games per week</p>
       <p className="text-[11px] text-slate-500">How many games run a reward week at the same time. Applies to weeks not yet scheduled.</p>
