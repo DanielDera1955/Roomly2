@@ -76,6 +76,27 @@ export async function issueCredit(week: any, gid: string, name: string, rank: nu
   await setDoc(doc(db, 'creditIndex', pk), { ids: arrayUnion(id) }, { merge: true });
 }
 
+/** Put every registered player on the season. Their own games decide which tables they appear in. They tick the rules on first open. */
+export async function addAllToSeason(season: { id: string }, gamers: any[], existing: Set<string>) {
+  let added = 0;
+  for (const g of gamers) {
+    if (!g.ownerUid || g.banned || !(g.games || []).length || existing.has(g.id)) continue;
+    await setDoc(doc(db, 'seasonJoins', `${season.id}_${g.id}`), {
+      seasonId: season.id,
+      gid: g.id,
+      ownerUid: g.ownerUid,
+      name: g.name,
+      off: {},
+      rulesVersion: 0,
+      rulesAtMs: 0,
+      joinedAtMs: Date.now(),
+      addedByAdmin: true,
+    });
+    added++;
+  }
+  return added;
+}
+
 /** Per-game reward settings. They apply from the next reward week. */
 export async function saveGameSettings(game: string, cfg: { minPlayers: number; minPoints: number; creditValue: number }) {
   await setDoc(doc(db, 'settings', 'gamesConfig'), { perGame: { [game]: cfg } }, { merge: true });

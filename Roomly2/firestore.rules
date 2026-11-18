@@ -660,9 +660,11 @@ service cloud.firestore {
         && id == request.resource.data.seasonId + '_' + request.resource.data.gid
         && exists(/databases/$(database)/documents/seasons/$(request.resource.data.seasonId))
         && request.time.toMillis() < get(/databases/$(database)/documents/seasons/$(request.resource.data.seasonId)).data.endMs;
+      // Roomly can add everyone already registered (rulesVersion 0 until they tick the rules)
+      allow create: if isAdmin();
       allow update: if isAdmin()
         || (ownsGamer(resource.data.gid)
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['off']));
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['off', 'rulesVersion', 'rulesAtMs']));
       allow delete: if isAdmin();
     }
 

@@ -336,6 +336,8 @@ const toLocal = (ms: number) => {
 const SeasonAdmin: React.FC = () => {
   const [list, setList] = useState<Season[]>([]);
   const [name, setName] = useState('');
+  const [year, setYear] = useState('');
+  const [auto, setAuto] = useState(true);
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [busy, setBusy] = useState(false);
@@ -343,8 +345,9 @@ const SeasonAdmin: React.FC = () => {
   const create = async () => {
     setBusy(true);
     try {
-      await adminCreateSeason(name, new Date(start).getTime(), new Date(end).getTime());
+      await adminCreateSeason(name, new Date(start).getTime(), new Date(end).getTime(), year, auto);
       setName('');
+      setYear('');
       setStart('');
       setEnd('');
     } catch (e: any) {
@@ -358,7 +361,7 @@ const SeasonAdmin: React.FC = () => {
       <p className="text-[11px] text-slate-500">Start at 12:00AM Monday so reward weeks line up. Only one season should run at a time.</p>
       {list.map((s) => (
         <div key={s.id} className="py-2 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
-          <p className="text-xs font-bold text-slate-900 dark:text-white">{s.name}</p>
+          <p className="text-xs font-bold text-slate-900 dark:text-white">{s.name}{s.session ? ` (${s.session})` : ''}</p>
           <div className="flex gap-2">
             <input type="datetime-local" defaultValue={toLocal(Number(s.startMs))} id={`ss-${s.id}`} className={input} />
             <input type="datetime-local" defaultValue={toLocal(Number(s.endMs))} id={`se-${s.id}`} className={input} />
@@ -381,11 +384,16 @@ const SeasonAdmin: React.FC = () => {
         </div>
       ))}
       <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
-        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} className={input} placeholder="Season name, for example Season 1" />
+        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} className={input} placeholder="First Semester League" />
+        <input value={year} onChange={(e) => setYear(e.target.value)} maxLength={20} className={input} placeholder="Year, for example 2026/2027" />
         <div className="flex gap-2">
           <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} className={input} />
           <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} className={input} />
         </div>
+        <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer">
+          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="h-4 w-4 accent-[#0e9f55]" />
+          Players join automatically (the first season). Off means they tap Join and tick the rules.
+        </label>
         <button type="button" disabled={busy || !name || !start || !end} onClick={create} className={`${btn} bg-[#0e9f55] text-white disabled:opacity-50`}>
           Create season
         </button>

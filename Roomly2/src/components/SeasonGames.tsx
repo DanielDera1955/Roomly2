@@ -1,17 +1,18 @@
-import React, { useMemo, useState } from 'react';
-import { Trophy, Crown, Loader2, Users, MessageCircle, X, Search, Flag, EyeOff, BookOpen, Check } from 'lucide-react';
-import { gameLabel } from '../hub.js';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Trophy, Crown, Loader2, Users, MessageCircle, X, Search, Flag, EyeOff, BookOpen, Check, ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-react';
+import { gameLabel, isScored } from '../hub.js';
 import { weekPhase } from '../boardCore.js';
 import {
   GAME_RULES,
   RULES_VERSION,
   REPORT_REASONS_GAMES,
   joinSeason,
+  acceptRules,
+  rulesAccepted,
   joinRewardWeek,
   tapChallenge,
   reportPlayer,
   hideFromPlayer,
-  hallOfFame,
   type Season,
 } from '../season';
 
@@ -84,110 +85,118 @@ export const RulesSheet: React.FC<{ onClose: () => void }> = ({ onClose }) => (
 );
 
 /* ------------------------------------------------------------------ */
-/* Season card (Games home)                                            */
+/* Season and rules: one card on the Games home                        */
 /* ------------------------------------------------------------------ */
 
-export const SeasonCard: React.FC<{
+export const SeasonRulesCard: React.FC<{
   season: Season | null;
   upcoming: Season | null;
-  seasons: Season[];
   me: any;
   join: any;
   joinsCount: number;
   nowMs: number;
   onRegister: () => void;
-}> = ({ season, upcoming, seasons, me, join, joinsCount, nowMs, onRegister }) => {
+}> = ({ season, upcoming, me, join, joinsCount, nowMs, onRegister }) => {
   const [rulesOpen, setRulesOpen] = useState(false);
-  const [joining, setJoining] = useState(false);
+  const [sheet, setSheet] = useState(false);
+  const [busy, setBusy] = useState(false);
   const target = season || upcoming;
-  const past = hallOfFame(seasons, nowMs);
+  const auto = target ? target.autoJoin !== false : true;
+  const hasGames = Boolean(me && (me.games || []).length);
+  const accepted = rulesAccepted(join);
+  // Players who still have to tick the rules: added by Roomly or registered before, or a new season that needs a Join tap
+  const needsRules = Boolean(target && hasGames && !accepted);
+
+  // First open: show the rules screen once per visit for players who still have to tick
+  useEffect(() => {
+    if (!needsRules || !target || !me) return;
+    const key = `roomly_rules_gate_${target.id}_${me.id}`;
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, '1');
+    } catch {}
+    setSheet(true);
+  }, [needsRules, target?.id, me?.id]);
+
+  const confirm = async () => {
+    if (!target || !me) return;
+    setBusy(true);
+    try {
+      if (join) await acceptRules(join, target, me);
+      else await joinSeason(target, me);
+      setSheet(false);
+    } catch (e: any) {
+      window.alert(e?.message || 'Could not save. Try again.');
+    }
+    setBusy(false);
+  };
+
   return (
     <>
-      <div className={`${card} p-4 space-y-3`}>
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Roomly Caritas League</p>
-            {target ? (
-              <>
-                <p className="text-base font-black text-slate-900 dark:text-white truncate">{target.name}</p>
-                <p className="text-[11px] text-slate-500">
-                  {season ? `Ends ${dayText(target.endMs)}` : `Starts ${dayText(target.startMs)}`} · <Users className="inline w-3 h-3 -mt-0.5" /> {joinsCount} joined
-                </p>
-              </>
-            ) : (
-              <p className="text-sm font-bold text-slate-700 dark:text-slate-200">No season is running yet. Check back soon.</p>
-            )}
+      <div className={`${card} overflow-hidden`}>
+        <div className="p-4 space-y-3">
+          <div className="flex items-start gap-3">
+            <span className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-[#0e9f55] flex items-center justify-center shrink-0">
+              <Trophy className="w-5 h-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Roomly Caritas League</p>
+              {target ? (
+                <>
+                  <p className="text-lg font-black text-slate-900 dark:text-white leading-tight">{target.name}</p>
+                  <p className="text-[11px] text-slate-500">
+                    {season ? `Ends ${dayText(target.endMs)}` : `Starts ${dayText(target.startMs)}`} · <Users className="inline w-3 h-3 -mt-0.5" /> {joinsCount} {joinsCount === 1 ? 'player' : 'players'}
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm font-bold text-slate-700 dark:text-slate-200">No season is running yet. Check back soon.</p>
+              )}
+            </div>
           </div>
-          <button type="button" onClick={() => setRulesOpen(true)} className="shrink-0 h-9 px-3 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1 cursor-pointer">
-            <BookOpen className="w-3.5 h-3.5" /> Rules
-          </button>
+          {target && !me && (
+            <button type="button" onClick={onRegister} className="w-full h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer">
+              Register for a game to enter
+            </button>
+          )}
+          {target && me && !hasGames && (
+            <button type="button" onClick={onRegister} className="w-full h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer">
+              Add a game to your profile
+            </button>
+          )}
+          {target && hasGames && accepted && <p className="text-xs font-bold text-[#0e9f55] flex items-center gap-1.5"><Check className="w-4 h-4" /> You are in the league.</p>}
+          {needsRules && (
+            <button type="button" onClick={() => setSheet(true)} className="w-full h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer">
+              {auto ? 'Read the rules to enter the league' : `Join ${target?.name || 'the league'}`}
+            </button>
+          )}
         </div>
-        {target && (
-          <>
-            {!me ? (
-              <button type="button" onClick={onRegister} className="w-full h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer">
-                Register as a player to join
-              </button>
-            ) : join ? (
-              <p className="text-xs font-bold text-[#0e9f55] flex items-center gap-1.5">
-                <Check className="w-4 h-4" /> You are in {target.name}. Challenge players in your game tables.
-              </p>
-            ) : (
-              <button
-                type="button"
-                disabled={joining}
-                onClick={() => setRulesOpen(true)}
-                className="w-full h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer disabled:opacity-60"
-              >
-                Join {target.name}
-              </button>
-            )}
-          </>
+        <button type="button" onClick={() => setRulesOpen(!rulesOpen)} aria-expanded={rulesOpen} className="w-full px-4 py-3 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 cursor-pointer">
+          <span className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-slate-500" /> Game rules
+          </span>
+          {rulesOpen ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+        </button>
+        {rulesOpen && (
+          <div className="px-4 pb-4">
+            <RulesBody />
+          </div>
         )}
       </div>
-      {past.length > 0 && (
-        <div className={`${card} p-4 space-y-2`}>
-          <p className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5">
-            <Crown className="w-4 h-4 text-amber-500" /> Hall of fame
-          </p>
-          {past.map((s) => (
-            <div key={s.id}>
-              <p className="text-[11px] font-bold text-slate-500">{s.name}</p>
-              <div className="mt-1 grid grid-cols-1 gap-1">
-                {Object.entries(s.champions || {}).map(([g, c]: [string, any]) => (
-                  <p key={g} className="text-xs text-slate-700 dark:text-slate-300">
-                    <span className="font-bold">{gameLabel(g)}:</span> {c.name} ({c.pts} pts{c.origin && c.origin !== 'Caritas' ? `, ${c.origin}` : ''})
-                  </p>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      {rulesOpen && (
+      {sheet && target && (
         <JoinRulesSheet
-          canJoin={Boolean(me && !join && target)}
-          title={join ? 'Game rules' : `Join ${target?.name || 'the season'}`}
-          busy={joining}
-          onClose={() => setRulesOpen(false)}
-          onJoin={async () => {
-            if (!target || !me) return;
-            setJoining(true);
-            try {
-              await joinSeason(target, me);
-              setRulesOpen(false);
-            } catch (e: any) {
-              window.alert(e?.message || 'Could not join. Try again.');
-            }
-            setJoining(false);
-          }}
+          canJoin
+          title={auto ? 'Read the rules' : `Join ${target.name}`}
+          cta={auto ? 'Enter the league' : 'Join the league'}
+          busy={busy}
+          onClose={() => setSheet(false)}
+          onJoin={confirm}
         />
       )}
     </>
   );
 };
 
-const JoinRulesSheet: React.FC<{ canJoin: boolean; title: string; busy: boolean; onClose: () => void; onJoin: () => void }> = ({ canJoin, title, busy, onClose, onJoin }) => {
+const JoinRulesSheet: React.FC<{ canJoin: boolean; title: string; cta: string; busy: boolean; onClose: () => void; onJoin: () => void }> = ({ canJoin, title, cta, busy, onClose, onJoin }) => {
   const [read, setRead] = useState(false);
   return (
     <Modal title={title} onClose={onClose}>
@@ -204,7 +213,7 @@ const JoinRulesSheet: React.FC<{ canJoin: boolean; title: string; busy: boolean;
             onClick={onJoin}
             className="w-full h-12 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
           >
-            {busy && <Loader2 className="w-4 h-4 animate-spin" />} Join season
+            {busy && <Loader2 className="w-4 h-4 animate-spin" />} {cta}
           </button>
         </>
       )}
@@ -258,7 +267,7 @@ export const RewardCard: React.FC<{
   const value = week ? Number(week.creditValue) : config.creditValue;
   const slots = [0, 1, 2].map((i) => rewardRows[i] || null);
   const closed = phase === 'closed' || phase === 'issued' || phase === 'none';
-  const canJoin = Boolean(week && me && join && !rewardJoined && (phase === 'running' || phase === 'scheduled') && (me.games || []).includes(game) && !(me.rewardBlocked && me.rewardBlocked[game]));
+  const canJoin = Boolean(week && me && rulesAccepted(join) && !rewardJoined && (phase === 'running' || phase === 'scheduled') && (me.games || []).includes(game) && !(me.rewardBlocked && me.rewardBlocked[game]));
   return (
     <div className={`${card} overflow-hidden`}>
       <div className="relative h-36 bg-slate-200 dark:bg-slate-800">
@@ -327,7 +336,7 @@ export const RewardCard: React.FC<{
                 {busy && <Loader2 className="w-4 h-4 animate-spin" />} Join this week's reward
               </button>
             )}
-            {!join && me && <p className="text-[11px] text-amber-700 dark:text-amber-300 font-semibold">Join the season first to take part.</p>}
+            {me && !rulesAccepted(join) && <p className="text-[11px] text-amber-700 dark:text-amber-300 font-semibold">Accept the league rules first to take part.</p>}
           </>
         ) : (
           <>
@@ -360,34 +369,32 @@ export const RewardCard: React.FC<{
 };
 
 /* ------------------------------------------------------------------ */
-/* Players to challenge                                                */
+/* Table with a Challenge button on every row                          */
 /* ------------------------------------------------------------------ */
 
-export const ChallengeList: React.FC<{
+export const ChallengeTable: React.FC<{
   game: string;
+  rows: any[];
   me: any;
   season: Season | null;
   join: any;
-  board: any[];
   hiddenFromMe: Set<string>;
   rewardRunning: boolean;
   isOpen: boolean;
-  onJoinPrompt: () => void;
-  onRegister: () => void;
-}> = ({ game, me, season, join, board, hiddenFromMe, rewardRunning, isOpen, onJoinPrompt, onRegister }) => {
+  title: string;
+  note?: string;
+  emptyText?: string;
+}> = ({ game, rows, me, season, join, hiddenFromMe, rewardRunning, isOpen, title, note, emptyText }) => {
   const [q, setQ] = useState('');
-  const [limit, setLimit] = useState(20);
+  const [limit, setLimit] = useState(30);
+  const [menu, setMenu] = useState('');
   const [reporting, setReporting] = useState<any | null>(null);
   const [busyId, setBusyId] = useState('');
   const [hidden, setHidden] = useState<Set<string>>(new Set());
-  const plays = Boolean(me && (me.games || []).includes(game));
-  const list = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return board
-      .filter((r) => r.id !== me?.id && r.ready && !hiddenFromMe.has(r.id))
-      .filter((r) => !needle || String(r.name).toLowerCase().includes(needle) || String(r.hostel || r.tag || '').toLowerCase().includes(needle))
-      .sort((a, b) => Number(b.lastActiveMs || 0) - Number(a.lastActiveMs || 0));
-  }, [board, q, me?.id, hiddenFromMe]);
+  const scored = isScored(game);
+  const member = Boolean(me && season && (me.games || []).includes(game) && rulesAccepted(join));
+  const needle = q.trim().toLowerCase();
+  const list = useMemo(() => rows.filter((r) => !needle || String(r.name).toLowerCase().includes(needle)), [rows, needle]);
 
   const challenge = async (r: any) => {
     if (!season) return;
@@ -401,70 +408,62 @@ export const ChallengeList: React.FC<{
   };
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-end justify-between">
-        <div>
-          <h3 className="text-sm font-black text-slate-900 dark:text-white">Players to challenge</h3>
-          <p className="text-[11px] text-slate-500">{rewardRunning ? 'Reward table: matches count for this week.' : 'League table: most recently active first.'}</p>
-        </div>
-        {join && plays && <span className="text-[11px] font-bold text-[#0e9f55]">{list.length} players</span>}
+    <div className={`${card} p-3`}>
+      <div className="flex items-center justify-between px-1 mb-2">
+        <p className="text-sm font-black text-slate-900 dark:text-white">{title}</p>
+        <span className="text-[11px] text-slate-400">{rows.length} {rows.length === 1 ? 'player' : 'players'}</span>
       </div>
-      {!me ? (
-        <div className={`${card} p-4 text-center space-y-2`}>
-          <p className="text-xs text-slate-500">Register as a player to challenge others.</p>
-          <button type="button" onClick={onRegister} className="h-10 px-4 rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer">
-            Register
-          </button>
+      {note && <p className="px-1 mb-2 text-[10px] text-slate-400">{note}</p>}
+      {rows.length > 8 && (
+        <div className="relative mb-2">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name" className={`${input} pl-9`} />
         </div>
-      ) : !season ? (
-        <div className={`${card} p-4 text-center text-xs text-slate-400`}>No season is running yet.</div>
-      ) : !join ? (
-        <div className={`${card} p-4 text-center space-y-2`}>
-          <p className="text-xs text-slate-500">Only players in this table can see each other. Join the season to start challenging.</p>
-          <button type="button" onClick={onJoinPrompt} className="h-10 px-4 rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer">
-            Join the season
-          </button>
-        </div>
-      ) : !plays ? (
-        <div className={`${card} p-4 text-center space-y-2`}>
-          <p className="text-xs text-slate-500">Add {gameLabel(game)} to your profile to join this table.</p>
-          <button type="button" onClick={onRegister} className="h-10 px-4 rounded-xl bg-[#0e9f55] text-white text-xs font-bold cursor-pointer">
-            Edit profile
-          </button>
-        </div>
+      )}
+      {list.length === 0 ? (
+        <p className="p-4 text-center text-xs text-slate-400">{q ? 'Nobody matches that name.' : emptyText || 'No players yet. Register for this game to be the first on the table.'}</p>
       ) : (
-        <>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name" className={`${input} pl-9`} />
-          </div>
-          {list.length === 0 ? (
-            <div className={`${card} p-4 text-center text-xs text-slate-400`}>{q ? 'Nobody matches that name.' : 'Nobody is open to challenges yet. Invite your friends to join.'}</div>
-          ) : (
-            <div className={`${card} divide-y divide-slate-100 dark:divide-slate-800`}>
-              {list.slice(0, limit).map((r) => (
-                <div key={r.id} className="p-3">
-                  <div className="flex items-center gap-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                        {r.name} <span className="font-normal text-slate-400">#{r.rank}</span>
-                      </p>
-                      <p className="text-[11px] text-slate-500 truncate">
-                        {r.pts} pts · {r.tag || r.hostel} · {ago(r.lastActiveMs)}
-                      </p>
-                      {r.freeNote && <p className="text-[10px] text-slate-400 truncate">{r.freeNote}</p>}
-                    </div>
-                    <button
-                      type="button"
-                      disabled={!isOpen || busyId === r.id}
-                      onClick={() => challenge(r)}
-                      className="shrink-0 h-9 px-3 rounded-lg bg-[#0e9f55] text-white text-xs font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                    >
-                      <MessageCircle className="w-3.5 h-3.5" /> Challenge
-                    </button>
+        <div className="divide-y divide-slate-100 dark:divide-slate-800">
+          {list.slice(0, limit).map((r) => {
+            const self = Boolean(me && r.id === me.id);
+            const canTap = member && !self && r.ready && isOpen && !hiddenFromMe.has(r.id);
+            return (
+              <div key={r.id} className={`py-2.5 px-1 ${self ? 'bg-emerald-50 dark:bg-emerald-950/40 rounded-lg' : ''}`}>
+                <div className="flex items-center gap-2.5">
+                  <span className="w-6 shrink-0 text-center text-xs font-bold text-slate-500 flex items-center justify-center">
+                    {r.crown ? <Crown className="w-4 h-4 text-amber-500" /> : r.rank}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className={`text-sm truncate ${self ? 'font-black text-slate-900 dark:text-white' : 'font-semibold text-slate-800 dark:text-slate-200'}`}>
+                      {r.name}
+                      {r.tag && <span className="ml-1.5 px-1.5 py-px rounded-md bg-slate-100 dark:bg-slate-800 text-[9px] font-bold text-slate-500 dark:text-slate-400 align-middle">{r.tag}</span>}
+                    </p>
+                    <p className="text-[10px] text-slate-400 truncate">
+                      {scored ? `P${r.p} · ${r.w}W ${r.d}D ${r.l}L · GD ${r.gd > 0 ? `+${r.gd}` : r.gd}` : `P${r.p} · ${r.w}W ${r.l}L`} · {ago(r.lastActiveMs)}
+                    </p>
                   </div>
-                  <div className="mt-1.5 flex gap-3">
-                    <button type="button" onClick={() => setReporting(r)} className="text-[11px] font-semibold text-slate-400 flex items-center gap-1 cursor-pointer">
+                  <span className="w-8 shrink-0 text-right text-sm font-black text-[#0e9f55] tabular-nums">{r.pts}</span>
+                  <div className="w-[88px] shrink-0 flex items-center justify-end gap-1">
+                    {canTap && (
+                      <button
+                        type="button"
+                        disabled={busyId === r.id}
+                        onClick={() => challenge(r)}
+                        className="h-8 px-2.5 rounded-lg bg-[#0e9f55] text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-60"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" /> Challenge
+                      </button>
+                    )}
+                    {member && !self && (
+                      <button type="button" onClick={() => setMenu(menu === r.id ? '' : r.id)} aria-label="More" className="w-7 h-8 rounded-lg text-slate-400 flex items-center justify-center cursor-pointer">
+                        <MoreHorizontal className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {menu === r.id && (
+                  <div className="mt-1.5 ml-8 flex gap-3">
+                    <button type="button" onClick={() => { setMenu(''); setReporting(r); }} className="text-[11px] font-semibold text-slate-500 flex items-center gap-1 cursor-pointer">
                       <Flag className="w-3 h-3" /> Report
                     </button>
                     <button
@@ -479,21 +478,21 @@ export const ChallengeList: React.FC<{
                           window.alert(e?.message || 'Could not save.');
                         }
                       }}
-                      className="text-[11px] font-semibold text-slate-400 flex items-center gap-1 cursor-pointer disabled:opacity-60"
+                      className="text-[11px] font-semibold text-slate-500 flex items-center gap-1 cursor-pointer disabled:opacity-60"
                     >
                       <EyeOff className="w-3 h-3" /> {hidden.has(r.id) ? 'Hidden from them' : 'Hide me from this player'}
                     </button>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {list.length > limit && (
-            <button type="button" onClick={() => setLimit(limit + 20)} className="w-full h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer">
-              Show more players
-            </button>
-          )}
-        </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {list.length > limit && (
+        <button type="button" onClick={() => setLimit(limit + 30)} className="mt-2 w-full h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer">
+          Show more players
+        </button>
       )}
       {reporting && <ReportSheet game={game} me={me} target={reporting} onClose={() => setReporting(null)} />}
     </div>

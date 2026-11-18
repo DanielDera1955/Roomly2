@@ -81,7 +81,7 @@ export const GAME_RULES: { title: string; lines: string[] }[] = [
 
 /* ------------------------------ seasons ------------------------------ */
 
-export type Season = { id: string; name: string; session?: string; startMs: number; endMs: number; createdAtMs?: number; champions?: Record<string, any> };
+export type Season = { id: string; name: string; session?: string; autoJoin?: boolean; startMs: number; endMs: number; createdAtMs?: number; champions?: Record<string, any> };
 
 export function subscribeSeasons(cb: (list: Season[]) => void) {
   return onSnapshot(
@@ -134,9 +134,19 @@ export async function joinSeason(season: Season, me: any) {
   updateDoc(doc(hubDb, 'gamers', me.id), { lastActiveMs: Date.now() }).catch(() => {});
 }
 
+/** Has this player accepted the rules for the season? (Roomly may add players first; they accept on first open.) */
+export const rulesAccepted = (join: any) => Boolean(join && Number(join.rulesVersion || 0) >= 1);
+/** A player Roomly added to the season ticks the rules to complete their entry */
+export async function acceptRules(join: any, season: Season, me: any) {
+  await hubUid();
+  await updateDoc(doc(hubDb, 'seasonJoins', join.id), { rulesVersion: RULES_VERSION, rulesAtMs: Date.now() });
+  await syncOpen(me, season, { ...join, rulesVersion: RULES_VERSION }, null);
+}
+
 /** Is this player open to challenges in this game? On by default after joining; a reward-week join keeps it on. */
 export function isChallengeable(join: any, game: string, rewardJoined = false): boolean {
-  if (!join) return false;
+  // Added by Roomly but the rules are not accepted yet: on the table, not open to challenges
+  if (!join || Number(join.rulesVersion || 0) < 1) return false;
   if (rewardJoined) return true;
   return !(join.off && join.off[game]);
 }
@@ -336,11 +346,11 @@ export const todayKey = (ms = Date.now()) => lagosDay(ms);
 
 /* ------------------------------ admin (Phase 1: seasons only) ------------------------------ */
 
-export async function adminCreateSeason(name: string, startMs: number, endMs: number, session = '') {
+export async function adminCreateSeason(name: string, startMs: number, endMs: number, session = '', autoJoin = true) {
   const clean = String(name || '').trim().slice(0, 40);
   if (!clean) throw new Error('Give the season a name.');
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) throw new Error('The end date must be after the start date.');
-  const ref = await addDoc(collection(db, 'seasons'), { name: clean, session: String(session || '').trim().slice(0, 20), startMs, endMs, createdAtMs: Date.now() });
+  const ref = await addDoc(collection(db, 'seasons'), { name: clean, session: String(session || '').trim().slice(0, 20), autoJoin: Boolean(autoJoin), startMs, endMs, createdAtMs: Date.now() });
   return ref.id;
 }
 export async function adminUpdateSeasonDates(id: string, startMs: number, endMs: number) {

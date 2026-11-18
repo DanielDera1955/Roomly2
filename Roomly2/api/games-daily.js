@@ -46,6 +46,8 @@ export default async function handler(req, res) {
       const weeks = rows(await db.collection('rewardWeeks').where('seasonId', '==', season.id).get());
       const adjusts = rows(await db.collection('pointAdjust').where('seasonId', '==', season.id).get());
       const seasonJoined = new Set(joins.map((j) => j.gid));
+      // Only players who accepted the rules count toward the 20 needed to start a reward week
+      const accepted = new Set(joins.filter((j) => Number(j.rulesVersion || 0) >= 1).map((j) => j.gid));
 
       /* 1. Issue credits for weeks that have closed */
       for (const week of weeks) {
@@ -118,7 +120,7 @@ export default async function handler(req, res) {
             const qualified = [];
             for (const game of GAME_IDS) {
               const cfg = rewardConfigFor(config, game);
-              const count = gamers.filter((g) => seasonJoined.has(g.id) && playsGame(g, game)).length;
+              const count = gamers.filter((g) => accepted.has(g.id) && playsGame(g, game)).length;
               const qref = db.doc(`gameQueue/${season.id}_${game}`);
               if (count >= cfg.minPlayers) {
                 let q = await qref.get();
