@@ -425,7 +425,8 @@ const GamePage: React.FC<{
   hiddenFromMe: Set<string>;
   onJoinPrompt: () => void;
 }> = ({ game, me, board, matches, tournaments, isOpen, opensAt, nowMs, focusMatch, onFocusDone, onBack, onRegister, season, join, week, otherWeek, rewardRows, rewardJoined, config, hiddenFromMe, onJoinPrompt }) => {
-  const [tab, setTab] = useState<'table' | 'reward' | 'tournaments'>('table');
+  const [tab, setTab] = useState<'table' | 'tournaments'>('table');
+  const [mode, setMode] = useState<'best' | 'reward'>('best');
   const [logging, setLogging] = useState(false);
   const plays = playsGame(me, game);
   const joined = Boolean(join);
@@ -442,8 +443,10 @@ const GamePage: React.FC<{
     .filter((m) => matchCounts(m))
     .sort((a, b) => (b.loggedAtMs || 0) - (a.loggedAtMs || 0))
     .slice(0, 8);
-  const tabs: ('table' | 'reward' | 'tournaments')[] = rewardRunning ? ['table', 'reward', 'tournaments'] : ['table', 'tournaments'];
-  const tabLabel = (t: string) => (t === 'table' ? 'General' : t === 'reward' ? 'Reward week' : `Tournaments${tournaments.length ? ` (${tournaments.length})` : ''}`);
+  const tabs: ('table' | 'tournaments')[] = ['table', 'tournaments'];
+  const tabLabel = (t: string) => (t === 'table' ? 'General table' : `Tournaments${tournaments.length ? ` (${tournaments.length})` : ''}`);
+  const best = mode === 'best';
+  const rewardIds = new Set(rewardRows.map((r: any) => r.id));
 
   return (
     <>
@@ -459,8 +462,25 @@ const GamePage: React.FC<{
         </div>
       </div>
 
+      {/* Two contests on one game: the season table (Best in Caritas) and the weekly reward contest */}
+      <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-slate-200/70 dark:bg-slate-800">
+        {([['best', 'Best in Caritas'], ['reward', 'Weekly Reward Contest']] as ['best' | 'reward', string][]).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setMode(id)}
+            className={`h-11 rounded-xl text-sm font-bold cursor-pointer ${mode === id ? 'bg-white dark:bg-slate-950 text-[#0e9f55] shadow-sm' : 'text-slate-500'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="text-[11px] text-slate-500 -mt-2 px-1">
+        {best ? 'The season table for the whole of Caritas. Every counting match adds to it.' : 'This week only, from zero. Top 3 with enough points win a food credit.'}
+      </p>
+
       {/* The reward: the plate and who is winning it right now */}
-      <RewardCard
+      {!best && <RewardCard
         game={game}
         week={week}
         otherWeek={otherWeek}
@@ -472,7 +492,7 @@ const GamePage: React.FC<{
         rewardJoined={rewardJoined}
         tableCount={board.length}
         nowMs={nowMs}
-      />
+      />}
 
       {/* Registration week */}
       {!isOpen && (
@@ -493,7 +513,7 @@ const GamePage: React.FC<{
       ))}
 
       {/* Champion spotlight */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0e9f55] to-emerald-700 text-white p-5">
+      {best && <><div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0e9f55] to-emerald-700 text-white p-5">
         <div className="absolute top-4 right-4 w-12 h-12 rounded-2xl bg-white/15 flex items-center justify-center">
           <Trophy className="w-6 h-6" />
         </div>
@@ -556,6 +576,7 @@ const GamePage: React.FC<{
 
       {/* My profile: open to challenges and my stats */}
       {plays && <MyProfileCard me={me} row={myRow} game={game} season={season} join={join} week={week} rewardJoined={rewardJoined} isOpen={isOpen} opensAt={opensAt} onEdit={onRegister} />}
+      </>}
 
       {/* Players to challenge */}
       <ChallengeList
@@ -563,9 +584,9 @@ const GamePage: React.FC<{
         me={me}
         season={season}
         join={join}
-        board={board}
+        board={best ? board : board.filter((r: any) => rewardIds.has(r.id))}
         hiddenFromMe={hiddenFromMe}
-        rewardRunning={rewardRunning}
+        rewardRunning={!best && rewardRunning}
         isOpen={isOpen}
         onJoinPrompt={onJoinPrompt}
         onRegister={onRegister}
@@ -584,9 +605,9 @@ const GamePage: React.FC<{
         </button>
       )}
 
-      {/* General / Reward week / Tournaments */}
-      <div className={`${card} overflow-hidden`}>
-        <div className={`grid ${tabs.length === 3 ? 'grid-cols-3' : 'grid-cols-2'} gap-1 p-1 border-b border-slate-100 dark:border-slate-800`}>
+      {/* General table / Tournaments */}
+      {best && <div className={`${card} overflow-hidden`}>
+        <div className={`grid grid-cols-2 gap-1 p-1 border-b border-slate-100 dark:border-slate-800`}>
           {tabs.map((t) => (
             <button
               key={t}
@@ -600,15 +621,23 @@ const GamePage: React.FC<{
         </div>
         {tab === 'tournaments' ? (
           <Tournaments list={tournaments} me={me} onRegister={onRegister} />
-        ) : tab === 'reward' && rewardRunning ? (
-          <LeagueTable game={game} board={rewardRows} meId={me?.id} title="Reward week table" note="Counts only matches entered this week. Starts from zero." />
         ) : (
           <LeagueTable game={game} board={board} meId={me?.id} title={season ? `${season.name} table` : 'League table'} />
         )}
-      </div>
+      </div>}
+
+      {!best && (
+        <div className={`${card} overflow-hidden`}>
+          {rewardRunning ? (
+            <LeagueTable game={game} board={rewardRows} meId={me?.id} title="Weekly reward table" note="Counts only matches entered this week, from zero. Only players who joined the week are listed." />
+          ) : (
+            <p className="p-5 text-center text-xs text-slate-400">No reward week is running for this game right now. The table appears here when one starts.</p>
+          )}
+        </div>
+      )}
 
       {/* Recent results */}
-      <div className="space-y-2">
+      {best && <div className="space-y-2">
         <div className="flex items-end justify-between">
           <h3 className="text-sm font-black text-slate-900 dark:text-white">Recent results</h3>
           <span className="text-[11px] text-slate-400">Counting matches</span>
@@ -645,7 +674,7 @@ const GamePage: React.FC<{
             })}
           </div>
         )}
-      </div>
+      </div>}
 
       {logging && season && <LogResultSheet game={game} me={me} board={board} matches={matches} season={season} onClose={() => setLogging(false)} />}
     </>
