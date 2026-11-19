@@ -1112,9 +1112,12 @@ export async function fetchLeaders() {
     // A failed read is never remembered, so the next visit tries again
     return leaders;
   }
-  try {
-    sessionStorage.setItem(LEADERS_KEY, JSON.stringify({ at: now, leaders }));
-  } catch {}
+  // Remember the answer only when it names at least one crown holder, so an empty or half-loaded read is tried again next time
+  if (Object.values(leaders).some(Boolean)) {
+    try {
+      sessionStorage.setItem(LEADERS_KEY, JSON.stringify({ at: now, leaders }));
+    } catch {}
+  }
   return leaders;
 }
 

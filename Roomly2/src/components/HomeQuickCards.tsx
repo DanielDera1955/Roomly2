@@ -428,10 +428,17 @@ const HostelLeagueCard: React.FC<{ onOpen: (game?: string) => void; session?: { 
                     <CrownRowIcon game={g.id} />
                     <span className="text-sm font-semibold truncate">{g.label}</span>
                   </span>
-                  <span className="mt-1 flex items-center gap-1 text-[11px] text-emerald-50/85">
-                    {l && <Crown className="w-3 h-3 shrink-0 text-amber-300" />}
-                    <span className="truncate">{leaders === null ? ' ' : l ? `${l.name}, ${l.pts} pts` : 'No crown yet'}</span>
-                  </span>
+                  {l ? (
+                    <>
+                      <span className="mt-1 flex items-center gap-1 text-[12px] font-bold text-white">
+                        <Crown className="w-3 h-3 shrink-0 text-amber-300" />
+                        <span className="truncate">{l.name}</span>
+                      </span>
+                      <span className="block text-[11px] text-emerald-50/85">#1 · {l.pts} pts</span>
+                    </>
+                  ) : (
+                    <span className="mt-1 block text-[11px] text-emerald-50/85 truncate">{leaders === null ? ' ' : 'No crown yet'}</span>
+                  )}
                 </button>
               );
             })}
