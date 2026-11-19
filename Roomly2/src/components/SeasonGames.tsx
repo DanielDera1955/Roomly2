@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Trophy, Crown, Loader2, Users, MessageCircle, X, Search, Flag, EyeOff, BookOpen, Check, ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-react';
 import { gameLabel, isScored } from '../hub.js';
-import { weekPhase, lagosWeek, contestOf, matchCounts, winnerOf, MAX_PAIR_LEAGUE_WEEK, MAX_PAIR_REWARD_WEEK } from '../boardCore.js';
+import { weekPhase, lagosWeek, contestOf, matchCounts, winnerOf, proofOf, MAX_PAIR_LEAGUE_WEEK, MAX_PAIR_REWARD_WEEK } from '../boardCore.js';
+import ProofThumb from './ProofThumb';
 import {
   GAME_RULES,
   RULES_VERSION,
@@ -101,7 +102,6 @@ export const SeasonRulesCard: React.FC<{
   onRegister: () => void;
 }> = ({ season, upcoming, me, join, joinsCount, nowMs, onRegister }) => {
   const [rulesOpen, setRulesOpen] = useState(false);
-  const [sheet, setSheet] = useState(false);
   const [busy, setBusy] = useState(false);
   const target = season || upcoming;
   const auto = target ? target.autoJoin !== false : true;
@@ -109,17 +109,9 @@ export const SeasonRulesCard: React.FC<{
   const accepted = rulesAccepted(join);
   // Players who still have to tick the rules: added by Roomly or registered before, or a new season that needs a Join tap
   const needsRules = Boolean(target && hasGames && !accepted);
-
-  // First open: show the rules screen once per visit for players who still have to tick
   useEffect(() => {
-    if (!needsRules || !target || !me) return;
-    const key = `roomly_rules_gate_${target.id}_${me.id}`;
-    try {
-      if (sessionStorage.getItem(key)) return;
-      sessionStorage.setItem(key, '1');
-    } catch {}
-    setSheet(true);
-  }, [needsRules, target?.id, me?.id]);
+    if (needsRules) setRulesOpen(true);
+  }, [needsRules]);
 
   const confirm = async () => {
     if (!target || !me) return;
@@ -127,7 +119,6 @@ export const SeasonRulesCard: React.FC<{
     try {
       if (join) await acceptRules(join, target, me);
       else await joinSeason(target, me);
-      setSheet(false);
     } catch (e: any) {
       window.alert(e?.message || 'Could not save. Try again.');
     }
@@ -168,9 +159,15 @@ export const SeasonRulesCard: React.FC<{
           )}
           {target && hasGames && accepted && <p className="text-xs font-bold text-[#0e9f55] flex items-center gap-1.5"><Check className="w-4 h-4" /> You are in the league.</p>}
           {needsRules && (
-            <button type="button" onClick={() => setSheet(true)} className="w-full h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer">
-              {auto ? 'Read the rules to enter the league' : `Join ${target?.name || 'the league'}`}
-            </button>
+            <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 p-3 space-y-2">
+              <p className="text-xs font-bold text-slate-900 dark:text-white">{auto ? 'One tap to open your challenges' : `Join ${target?.name || 'the league'}`}</p>
+              <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                {auto ? 'Other players cannot challenge you until you accept the game rules below. Read them, then tap.' : 'Read the rules below, then tap to join.'}
+              </p>
+              <button type="button" disabled={busy} onClick={confirm} className="w-full h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60">
+                {busy && <Loader2 className="w-4 h-4 animate-spin" />} {auto ? 'Accept the rules' : 'Join the league'}
+              </button>
+            </div>
           )}
         </div>
         <button type="button" onClick={() => setRulesOpen(!rulesOpen)} aria-expanded={rulesOpen} className="w-full px-4 py-3 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 cursor-pointer">
@@ -185,42 +182,7 @@ export const SeasonRulesCard: React.FC<{
           </div>
         )}
       </div>
-      {sheet && target && (
-        <JoinRulesSheet
-          canJoin
-          title={auto ? 'Read the rules' : `Join ${target.name}`}
-          cta={auto ? 'Enter the league' : 'Join the league'}
-          busy={busy}
-          onClose={() => setSheet(false)}
-          onJoin={confirm}
-        />
-      )}
     </>
-  );
-};
-
-const JoinRulesSheet: React.FC<{ canJoin: boolean; title: string; cta: string; busy: boolean; onClose: () => void; onJoin: () => void }> = ({ canJoin, title, cta, busy, onClose, onJoin }) => {
-  const [read, setRead] = useState(false);
-  return (
-    <Modal title={title} onClose={onClose}>
-      <RulesBody />
-      {canJoin && (
-        <>
-          <label className="flex items-start gap-2 cursor-pointer">
-            <input type="checkbox" checked={read} onChange={(e) => setRead(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#0e9f55]" />
-            <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">I have read the game rules and agree to follow them.</span>
-          </label>
-          <button
-            type="button"
-            disabled={!read || busy}
-            onClick={onJoin}
-            className="w-full h-12 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-          >
-            {busy && <Loader2 className="w-4 h-4 animate-spin" />} {cta}
-          </button>
-        </>
-      )}
-    </Modal>
   );
 };
 
@@ -618,7 +580,7 @@ export const ChallengeTable: React.FC<{
                         {r.crown && <Crown className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
                         <span className="truncate">{r.name}</span>
                         {self && <span className="shrink-0 px-1 rounded bg-[#0e9f55] text-white text-[8px] font-black">YOU</span>}
-                        {!self && r.ready === false && <span className="shrink-0 px-1 rounded bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-[8px] font-black">NOT JOINED</span>}
+                        {!self && r.ready === false && <span className="shrink-0 px-1 rounded bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-[8px] font-black">RULES PENDING</span>}
                       </p>
                       <p className="text-[10px] text-slate-400 truncate">
                         {r.tag ? `${r.tag} · ` : ''}
@@ -687,7 +649,7 @@ const PlayerSheet: React.FC<{
     ? mine.filter((m) => (m.aUid === me.id || m.bUid === me.id) && lagosWeek(Number(m.loggedAtMs || 0)) === thisWeek).length
     : 0;
   const canTap = member && row.ready !== false && isOpen && !hidden;
-  const reason = !me ? 'Join this game to schedule a 1v1.' : !member ? 'Join this game and accept the rules to schedule a 1v1.' : row.ready === false ? `${row.name} hasn't joined yet. You can challenge them once they open Games and accept the rules.` : !isOpen ? 'Challenges open when the league starts.' : hidden ? `${row.name} is not available to challenge.` : '';
+  const reason = !me ? 'Join this game to schedule a 1v1.' : !member ? 'Join this game and accept the rules to schedule a 1v1.' : row.ready === false ? `${row.name} has not accepted the rules yet. You can challenge them once they open Games and tap Accept the rules.` : !isOpen ? 'Challenges open when the league starts.' : hidden ? `${row.name} is not available to challenge.` : '';
   const outcome = (m: any) => {
     const w = winnerOf(m);
     return !w ? 'D' : w === row.id ? 'W' : 'L';
@@ -726,6 +688,7 @@ const PlayerSheet: React.FC<{
                   <span className={`w-6 h-6 rounded-full text-[11px] font-black flex items-center justify-center ${o === 'W' ? 'bg-emerald-100 text-emerald-700' : o === 'L' ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-600'}`}>{o}</span>
                   <span className="min-w-0 flex-1 text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">vs {opp(m)}</span>
                   <span className="text-xs font-black tabular-nums text-slate-700 dark:text-slate-200">{score(m)}</span>
+                  <ProofThumb url={proofOf(m)} size={32} />
                   <span className="text-[10px] text-slate-400 w-12 text-right">{dayOf(Number(m.loggedAtMs || 0))}</span>
                 </div>
               );

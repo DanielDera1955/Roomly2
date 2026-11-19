@@ -9,7 +9,9 @@ export const SCORED_GAMES = ['efootball', 'fifa', 'dls'];
 export const POINTS = { win: 3, draw: 1, loss: 0 };
 
 /** A result counts at once. After this long with no answer it shows as "recorded". */
-export const AUTO_CONFIRM_HOURS = 5;
+export const AUTO_CONFIRM_HOURS = 24;
+/** The player who logged a result can take it back for this long, and only while it is their latest result */
+export const TAKEBACK_MINUTES = 10;
 /** The opponent can report a result for this long after it was entered, then it locks */
 export const DISPUTE_HOURS = 24;
 /** At most this many matches count between the same two players in one week: league 4 (2 home, 2 away), reward 2 (1 home, 1 away) */
@@ -52,12 +54,27 @@ export const playsGame = (g, game) => Boolean(g && !g.banned && g.ownerUid && (g
 
 /** Points count at once. A report removes the match until Roomly decides; a cancelled or void match never counts. */
 export const matchCounts = (m) => Boolean(m) && (m.status === 'pending' || m.status === 'confirmed');
-/** Confirmed, or nobody answered for 5 hours: shown as "recorded" */
+/** Confirmed, or nobody answered for 24 hours: shown as "recorded" */
 export const matchRecorded = (m, nowMs = Date.now()) =>
   Boolean(m) && (m.status === 'confirmed' || (m.status === 'pending' && nowMs - Number(m.loggedAtMs || 0) >= AUTO_CONFIRM_HOURS * HOUR));
 /** Reports are allowed until 24 hours after entry, then the result locks */
 export const canDispute = (m, nowMs = Date.now()) =>
   Boolean(m) && (m.status === 'pending' || m.status === 'confirmed') && nowMs - Number(m.loggedAtMs || 0) < DISPUTE_HOURS * HOUR;
+
+/** Take it back: my pending result, under 10 minutes old, and no newer result of mine after it */
+export const canTakeBack = (m, all, meId, nowMs = Date.now()) =>
+  Boolean(m) &&
+  m.status === 'pending' &&
+  m.aUid === meId &&
+  nowMs - Number(m.loggedAtMs || 0) < TAKEBACK_MINUTES * 60000 &&
+  !(all || []).some((x) => x.id !== m.id && x.aUid === meId && matchCounts(x) && Number(x.loggedAtMs || 0) > Number(m.loggedAtMs || 0));
+
+/** A small version of a Cloudinary screenshot for lists (the full picture opens on tap) */
+export const thumbUrl = (url, w = 120) =>
+  String(url || '').replace('/upload/', `/upload/c_fill,w_${w},h_${w},q_auto,f_auto/`);
+
+/** The screenshot to show for a match: the winner's (logger's) first, else the opponent's */
+export const proofOf = (m) => (m && (m.proofA || m.proofB)) || '';
 
 /** Winner id of a match ('' for a draw) */
 export const winnerOf = (m) => (m.scoreA > m.scoreB ? m.aUid : m.scoreB > m.scoreA ? m.bUid : '');

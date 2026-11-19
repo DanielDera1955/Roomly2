@@ -642,7 +642,9 @@ service cloud.firestore {
         || (ownsGamer(resource.data.bUid) && resource.data.status in ['pending', 'confirmed']
             && request.time.toMillis() < resource.data.loggedAtMs + 86400000
             && changed().hasOnly(['status', 'disputeNote', 'proofB']) && request.resource.data.status == 'disputed')
+        // Take it back: only the first minutes after logging (the app shows 10; 15 leaves room for a phone clock that is a little off)
         || (ownsGamer(resource.data.aUid) && resource.data.status == 'pending'
+            && request.time.toMillis() < resource.data.loggedAtMs + 900000
             && changed().hasOnly(['status']) && request.resource.data.status == 'cancelled')
         || (resource.data.status == 'disputed'
             && ((ownsGamer(resource.data.aUid) && changed().hasOnly(['proofA']))

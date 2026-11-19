@@ -40,10 +40,10 @@ export const GAME_RULES: { title: string; lines: string[] }[] = [
   {
     title: 'Results',
     lines: [
-      'The winner enters the result: the opponent, the score, the stats (goals, kills and damage where the game has them) and a screenshot of the final score. A draw can be entered by either player. A screenshot is required.',
+      'The winner enters the result: the opponent, the score, the stats (goals, kills and damage where the game has them) and a screenshot of the final score. A draw can be entered by either player. A screenshot is required. Screenshots you upload are shown to other players.',
       'Each match counts in one contest only: the league table or a reward week, depending on where you log it. League matches never add to a reward table and reward matches never add to the league.',
       'Between the same two players, at most 4 league matches count per week (2 home and 2 away) and at most 2 reward matches count per week (1 home and 1 away). The player who challenged is home in the first match and the rematch reverses it. Extra matches do not count.',
-      'Your opponent confirms the result or reports it. If nobody answers for 5 hours it shows as recorded. Reports are allowed for 24 hours after the result was entered. After that it is locked, even if it was wrong.',
+      'Your opponent confirms the result or reports it. If nobody answers for 24 hours it is confirmed automatically. Reports are allowed for 24 hours after the result was entered. After that it is locked, even if it was wrong. You can take back a result you entered within 10 minutes, if you have not entered a newer one.',
     ],
   },
   {
@@ -293,7 +293,7 @@ export function leagueRulesFor(game: string): string[] {
       ? 'The winner enters the result with the score and a screenshot of the final score. A draw can be entered by either player.'
       : 'The winner enters the result with their kills, damage and a screenshot of the final result.',
     'League matches only count in the league table. Between the same two players, at most 4 count per week (2 home and 2 away). Extra matches do not count.',
-    'Your opponent confirms the result or reports it within 24 hours. If nobody answers for 5 hours it shows as recorded.',
+    'Your opponent confirms the result or reports it within 24 hours. If nobody answers for 24 hours it is confirmed automatically.',
     'Tap a player on the table, then Schedule 1v1, to message them on WhatsApp. Use Report if someone behaves badly.',
   ];
 }

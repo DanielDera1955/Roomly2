@@ -86,7 +86,7 @@ export const READY_CHOICES = [
 ];
 /** League points, like a football table. Tournament places add a bonus. */
 export const POINTS = { win: 3, draw: 1, loss: 0, podium: [10, 6, 3] };
-/** A result counts at once; after 5 hours with no answer it shows as recorded; reports are allowed for 24 hours */
+/** A result counts at once; after 24 hours with no answer it shows as recorded; reports are allowed for 24 hours */
 export { AUTO_CONFIRM_HOURS, DISPUTE_HOURS } from './boardCore.js';
 /** You can log a result only against someone you contacted (or who contacted you) through Roomly in this time */
 export const CONTACT_VALID_DAYS = 3;
@@ -792,7 +792,7 @@ export async function logResult(game, me, opp, myScore, theirScore, proofFile, e
   const result = isScored(game) ? `${me.name} ${a}-${b} ${opp.name}` : a > b ? `${me.name} won` : `${me.name} and ${opp.name} drew`;
   return waShare(
     `${opp.name}, I logged our ${gameLabel(game)} match on Roomly Caritas: ${result}. ` +
-      `Confirm it here: ${appLink({ match: ref.id })} (it already counts, and shows as recorded after ${AUTO_CONFIRM_HOURS} hours).`
+      `Confirm it here: ${appLink({ match: ref.id })} (it already counts, and is confirmed automatically after ${AUTO_CONFIRM_HOURS} hours).`
   );
 }
 
@@ -1083,7 +1083,7 @@ export async function fetchLeaders() {
     const raw = sessionStorage.getItem(LEADERS_KEY);
     if (raw) {
       const v = JSON.parse(raw);
-      if (v && Date.now() - v.at < 5 * 60000) return v.leaders;
+      if (v && Date.now() - v.at < 60000) return v.leaders;
     }
   } catch {}
   await hubUid();
@@ -1094,19 +1094,24 @@ export async function fetchLeaders() {
     const seasons = (await getDocs(collection(hubDb, 'seasons'))).docs.map((d) => ({ id: d.id, ...d.data() }));
     const season = seasons.find((x) => Number(x.startMs) <= now && now < Number(x.endMs));
     if (season) {
-      const [gamers, matchesSnap, joinsSnap] = await Promise.all([
+      const [gamers, matchesSnap, joinsSnap, adjSnap] = await Promise.all([
         once(subscribeGamers),
         getDocs(query(collection(hubDb, 'matches'), where('seasonId', '==', season.id))),
         getDocs(query(collection(hubDb, 'seasonJoins'), where('seasonId', '==', season.id))),
+        getDocs(query(collection(hubDb, 'pointAdjust'), where('seasonId', '==', season.id))).catch(() => null),
       ]);
+      const adjusts = adjSnap ? adjSnap.docs.map((d) => ({ id: d.id, ...d.data() })) : [];
       const matches = matchesSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((m) => m.v === 2);
       const joined = new Set(joinsSnap.docs.map((d) => d.data().gid));
       GAMES.forEach((g) => {
-        const top = computeRows(g.id, gamers, matches, { seasonId: season.id, joined }).find((r) => r.crown);
+        const top = computeRows(g.id, gamers, matches, { seasonId: season.id, joined, adjusts }).find((r) => r.crown);
         leaders[g.id] = top ? { name: top.name, pts: top.pts } : null;
       });
     }
-  } catch {}
+  } catch {
+    // A failed read is never remembered, so the next visit tries again
+    return leaders;
+  }
   try {
     sessionStorage.setItem(LEADERS_KEY, JSON.stringify({ at: now, leaders }));
   } catch {}

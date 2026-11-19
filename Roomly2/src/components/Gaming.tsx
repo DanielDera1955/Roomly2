@@ -32,7 +32,8 @@ import {
   markEntryPaid,
   leaveTournament,
 } from '../hub.js';
-import { computeRows, matchCounts, matchRecorded, canDispute, weekPhase, lagosDay, DISPUTE_HOURS, AUTO_CONFIRM_HOURS, rewardConfigFor, rewardRegsFor, qualifiedAtMs, contestOf, lagosWeek, MAX_PAIR_LEAGUE_WEEK, MAX_PAIR_REWARD_WEEK } from '../boardCore.js';
+import { computeRows, matchCounts, matchRecorded, canDispute, canTakeBack, proofOf, weekPhase, lagosDay, DISPUTE_HOURS, AUTO_CONFIRM_HOURS, TAKEBACK_MINUTES, rewardConfigFor, rewardRegsFor, qualifiedAtMs, contestOf, lagosWeek, MAX_PAIR_LEAGUE_WEEK, MAX_PAIR_REWARD_WEEK } from '../boardCore.js';
+import ProofThumb from './ProofThumb';
 import {
   subscribeSeasons,
   currentSeason,
@@ -60,7 +61,7 @@ import {
   rewardRulesFor,
   type Season,
 } from '../season';
-import { SeasonRulesCard, RewardCard, RewardIntro, GameRulesToggle, MainRulesDropdown, ChallengeTable, AnnouncementsCard, RulesSheet } from './SeasonGames';
+import { SeasonRulesCard, RewardCard, RewardIntro, GameRulesToggle, MainRulesDropdown, ChallengeTable, AnnouncementsCard, RulesBody } from './SeasonGames';
 import { HistoryButton } from './GamesHistory';
 
 const card = 'bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800';
@@ -642,7 +643,7 @@ const GamePage: React.FC<{
     ? matches.filter((m) => m.bUid === me.id && m.status === 'pending' && canDispute(m, nowMs)).sort((a) => (a.id === focusMatch ? -1 : 0))
     : [];
   const mineOpen = me
-    ? matches.filter((m) => (m.aUid === me.id || m.bUid === me.id) && (m.status === 'disputed' || (m.aUid === me.id && m.status === 'pending' && !matchRecorded(m, nowMs))))
+    ? matches.filter((m) => (m.aUid === me.id || m.bUid === me.id) && (m.status === 'disputed' || canTakeBack(m, matches, me.id, nowMs)))
     : [];
   const recent = matches
     .filter((m) => matchCounts(m) && contestOf(m) === (best ? 'league' : 'reward'))
@@ -779,7 +780,7 @@ const GamePage: React.FC<{
         <ConfirmCard key={m.id} m={m} highlight={m.id === focusMatch} onDone={onFocusDone} nowMs={nowMs} />
       ))}
       {mineOpen.map((m) => (
-        <MyOpenResult key={m.id} m={m} me={me} nowMs={nowMs} />
+        <MyOpenResult key={m.id} m={m} me={me} nowMs={nowMs} allowTakeBack={canTakeBack(m, matches, me.id, nowMs)} />
       ))}
 
       {/* New members read the main rules first. Once they tick or close them, the rules move below the table. */}
@@ -871,6 +872,7 @@ const GamePage: React.FC<{
                         {matchRecorded(m, nowMs) ? ' · recorded' : ''}
                       </p>
                     </div>
+                    {!m.status.startsWith('disp') && <ProofThumb url={proofOf(m)} size={40} />}
                     {iWon && (
                       <button
                         type="button"
@@ -942,8 +944,12 @@ const ConfirmCard: React.FC<{ m: any; highlight: boolean; onDone: () => void; no
   return (
     <div className={`p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border ${highlight ? 'border-[#0e9f55]' : 'border-emerald-200 dark:border-emerald-900'} space-y-3`}>
       <div>
-        <p className="text-[11px] text-slate-500">{m.aName} logged a result. It already counts. {hoursLeft > 0 ? `It shows as recorded in ${hoursLeft}h.` : 'It is recorded.'} Report it within {DISPUTE_HOURS} hours if it is wrong.</p>
-        <p className="text-base font-black text-slate-900 dark:text-white">{resultText(m)}</p>
+        <p className="text-[11px] text-slate-500">{m.aName} logged a result. It already counts. {hoursLeft > 0 ? `It is confirmed automatically in ${hoursLeft}h.` : 'It is confirmed.'} Report it within {DISPUTE_HOURS} hours if it is wrong.</p>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-base font-black text-slate-900 dark:text-white">{resultText(m)}</p>
+          <ProofThumb url={proofOf(m)} size={52} />
+        </div>
+        {proofOf(m) && <p className="text-[11px] text-slate-400">Tap the screenshot to check the score.</p>}
       </div>
       {disputing ? (
         <DisputeForm m={m} onClose={() => setDisputing(false)} />
@@ -975,30 +981,34 @@ const ConfirmCard: React.FC<{ m: any; highlight: boolean; onDone: () => void; no
   );
 };
 
-/** Results I logged that are still waiting, and disputes */
-const MyOpenResult: React.FC<{ m: any; me: any; nowMs: number }> = ({ m, me }) => {
+/** My latest result for its first 10 minutes (Take it back), and any result that is disputed */
+const MyOpenResult: React.FC<{ m: any; me: any; nowMs: number; allowTakeBack: boolean }> = ({ m, me, nowMs, allowTakeBack }) => {
   const [busy, setBusy] = useState(false);
   const iLogged = m.aUid === me.id;
+  const minsLeft = Math.max(1, Math.ceil((TAKEBACK_MINUTES * 60000 - (nowMs - (m.loggedAtMs || 0))) / 60000));
   return (
     <div className={`${card} p-3.5 space-y-2`}>
-      <p className="text-sm font-bold text-slate-900 dark:text-white">{resultText(m)}</p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-bold text-slate-900 dark:text-white">{resultText(m)}</p>
+        <ProofThumb url={iLogged ? m.proofA : m.proofB} size={44} />
+      </div>
       <p className="text-[11px] text-slate-500">
         {m.status === 'disputed'
           ? 'Disputed. Roomly will check the screenshots and decide.'
-          : `Counts now. ${m.bName} can confirm it, or it shows as recorded after ${AUTO_CONFIRM_HOURS} hours.`}
+          : `Counts now. ${m.bName} can confirm it or report it.`}
       </p>
-      {m.status === 'pending' && iLogged && (
+      {m.status === 'pending' && iLogged && allowTakeBack && (
         <button
           type="button"
           disabled={busy}
           onClick={async () => {
             setBusy(true);
-            await cancelMatch(m).catch(() => {});
+            await cancelMatch(m).catch(() => window.alert('Too late to take it back.'));
             setBusy(false);
           }}
-          className="text-xs font-bold text-rose-600 cursor-pointer"
+          className="text-[11px] font-semibold text-slate-400 underline cursor-pointer"
         >
-          Take it back
+          Wrong score? Take it back ({minsLeft} min left)
         </button>
       )}
       {m.status === 'disputed' && (
@@ -1049,8 +1059,7 @@ const RegisterSheet: React.FC<{ me: any; season: Season | null; session: { name?
   onClose,
   onSaved,
 }) => {
-  const [rulesRead, setRulesRead] = useState(false);
-  const [rulesOpen, setRulesOpen] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(true);
   const [name, setName] = useState(me?.name || session.name || '');
   const [hostel, setHostel] = useState(me?.hostel || '');
   const [school, setSchool] = useState<'caritas' | 'other' | 'guest'>(me?.school || 'caritas');
@@ -1077,9 +1086,8 @@ const RegisterSheet: React.FC<{ me: any; season: Season | null; session: { name?
     setError('');
     try {
       const auto = Boolean(season && season.autoJoin !== false);
-      if (!me && auto && !rulesRead) throw new Error(rewardGame ? 'Tick the box to accept the rules.' : 'Tick the box to say you have read the game rules.');
       const created = await registerGamer({ name, school, schoolName: canonicalSchool(schoolName, schools), hostel, phone, pin, games, ids, freeNote });
-      // A new player goes straight onto the season tables (the rules tick is stored with the join)
+      // A new player goes straight onto the season tables (tapping Join is the acceptance, stored with the join)
       if (!me && auto && season) {
         await joinSeason(season, created).catch(() => {});
         if (rewardGame && (created.games || games).includes(rewardGame)) {
@@ -1232,16 +1240,23 @@ const RegisterSheet: React.FC<{ me: any; season: Season | null; session: { name?
       )}
       {error && <p className="text-xs font-semibold text-rose-600">{error}</p>}
       {!me && season && season.autoJoin !== false && (
-        <label className="flex items-start gap-2 cursor-pointer">
-          <input type="checkbox" checked={rulesRead} onChange={(e) => setRulesRead(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#0e9f55]" />
-          <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-            I have read the <button type="button" onClick={() => setRulesOpen(true)} className="underline text-[#0e9f55]">game rules</button>{rewardGame ? <> and the {gameLabel(rewardGame)} reward contest rules below</> : null} and agree to follow them. This puts me on the {season.name} table{rewardGame ? <> and in the {gameLabel(rewardGame)} reward contest</> : null}.
-          </span>
-        </label>
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+          <button type="button" onClick={() => setRulesOpen(!rulesOpen)} aria-expanded={rulesOpen} className="w-full px-3 py-2.5 flex items-center justify-between cursor-pointer">
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Game rules{rewardGame ? ' and reward contest rules' : ''}</span>
+            <span className="text-[11px] font-semibold text-[#0e9f55]">{rulesOpen ? 'Hide' : 'Show'}</span>
+          </button>
+          {rulesOpen && (
+            <div className="px-3 pb-3">
+              <RulesBody />
+            </div>
+          )}
+        </div>
       )}
-      {rulesOpen && <RulesSheet onClose={() => setRulesOpen(false)} />}
+      {!me && season && season.autoJoin !== false && (
+        <p className="text-[11px] text-slate-500">By tapping the button you accept these rules and join the {season.name} table{rewardGame ? <> and the {gameLabel(rewardGame)} reward contest</> : null}.</p>
+      )}
       <button type="button" disabled={busy} onClick={save} className="w-full h-12 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60">
-        {busy && <Loader2 className="w-4 h-4 animate-spin" />} {me ? 'Save profile' : 'Save registration'}
+        {busy && <Loader2 className="w-4 h-4 animate-spin" />} {me ? 'Save profile' : season && season.autoJoin !== false ? 'Join and accept the rules' : 'Save registration'}
       </button>
     </Sheet>
   );
