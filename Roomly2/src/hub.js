@@ -780,13 +780,53 @@ export async function logResult(game, me, opp, myScore, theirScore, proofFile, e
     data.kills = Math.max(0, Math.min(999, Math.round(Number(extra.kills) || 0)));
     data.damage = Math.max(0, Math.min(99999, Math.round(Number(extra.damage) || 0)));
   }
-  await setDoc(ref, data);
+  try {
+    await setDoc(ref, data);
+  } catch (e) {
+    if (e && (e.code === 'permission-denied' || /permission/i.test(String(e.message)))) {
+      throw new Error(await explainMatchDenied(game, me, opp, extra.seasonId, data));
+    }
+    throw e;
+  }
   updateDoc(doc(hubDb, 'gamers', me.id), { lastActiveMs: Date.now() }).catch(() => {});
   const result = isScored(game) ? `${me.name} ${a}-${b} ${opp.name}` : a > b ? `${me.name} won` : `${me.name} and ${opp.name} drew`;
   return waShare(
     `${opp.name}, I logged our ${gameLabel(game)} match on Roomly Caritas: ${result}. ` +
       `Confirm it here: ${appLink({ match: ref.id })} (it already counts, and shows as recorded after ${AUTO_CONFIRM_HOURS} hours).`
   );
+}
+
+/** The database refused a result: find out which rule it was and say it in plain words (reads only, writes nothing) */
+async function explainMatchDenied(game, me, opp, seasonId, data) {
+  const fallback = 'Could not save this result. Tell Roomly, so they can check it.';
+  try {
+    const uid = await hubUid();
+    const [mine, theirs, season, jA, jB, cAB, cBA] = await Promise.all([
+      getDoc(doc(hubDb, 'gamers', me.id)),
+      getDoc(doc(hubDb, 'gamers', opp.id)),
+      getDoc(doc(hubDb, 'seasons', seasonId)),
+      getDoc(doc(hubDb, 'seasonJoins', `${seasonId}_${me.id}`)),
+      getDoc(doc(hubDb, 'seasonJoins', `${seasonId}_${opp.id}`)),
+      getDoc(doc(hubDb, 'gameContacts', `${me.id}_${opp.id}_${game}`)),
+      getDoc(doc(hubDb, 'gameContacts', `${opp.id}_${me.id}_${game}`)),
+    ]);
+    const now = Date.now();
+    if (!mine.exists() || mine.data().ownerUid !== uid) return 'This profile belongs to another sign-in. Tap Edit profile, use your number and PIN, save, then try again.';
+    if (mine.data().banned) return 'Your player profile is switched off. Tell Roomly.';
+    if (!theirs.exists() || theirs.data().banned) return `${opp.name} cannot take part right now.`;
+    if (!season.exists()) return 'This league no longer exists. Refresh the page.';
+    if (Number(season.data().startMs) > now) return 'The league has not started yet.';
+    if (now >= Number(season.data().endMs)) return 'The league has ended. Roomly may have moved the end date. Refresh and try again.';
+    if (!jA.exists()) return 'You have not joined this league. Tap Join and accept the rules.';
+    if (!jB.exists()) return `${opp.name} has not joined this league yet.`;
+    const fresh = [cAB, cBA].some((c) => c.exists() && Number(c.data().atMs) >= now - CONTACT_VALID_DAYS * 86400000);
+    if (!fresh) return `Your contact with ${opp.name} is older than ${CONTACT_VALID_DAYS} days. Tap Schedule 1v1 on them again, then log.`;
+    if (!/^https:\/\/res\.cloudinary\.com\//.test(String(data.proofA || ''))) return 'The screenshot did not upload properly. Choose it again and retry.';
+    if (Math.abs(now - Number(data.loggedAtMs)) > 540000) return "Your phone's clock looks wrong. Set it to automatic time and try again.";
+    return fallback;
+  } catch {
+    return fallback;
+  }
 }
 export async function confirmMatch(m) {
   await hubUid();
