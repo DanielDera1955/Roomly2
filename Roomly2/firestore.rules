@@ -591,42 +591,51 @@ service cloud.firestore {
     // Match results. One player logs it; the other confirms or disputes. The table is worked out from these.
     match /matches/{id} {
       function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+      // A recent "Schedule 1v1" tap between the two players (either way, within 3 days)
       function contact(f, t) {
         return exists(/databases/$(database)/documents/gameContacts/$(f + '_' + t + '_' + request.resource.data.game))
           && get(/databases/$(database)/documents/gameContacts/$(f + '_' + t + '_' + request.resource.data.game)).data.atMs
              >= request.time.toMillis() - 259200000;
       }
+      // Each document is read once (the two players and the season), so a result stays well under the 10 reads a rule may make.
+      function createOk() {
+        let d = request.resource.data;
+        let ga = get(/databases/$(database)/documents/gamers/$(d.aUid)).data;
+        let gb = get(/databases/$(database)/documents/gamers/$(d.bUid)).data;
+        let se = get(/databases/$(database)/documents/seasons/$(d.seasonId)).data;
+        return anyUser()
+          && ga.ownerUid == request.auth.uid
+          && ga.get('banned', false) == false
+          && gb.get('banned', false) == false
+          && d.aUid != d.bUid
+          && d.v == 2
+          && d.game in ['efootball', 'fifa', 'dls', 'freefire', 'codm']
+          && d.status == 'pending'
+          && d.scoreA is int && d.scoreA >= 0 && d.scoreA <= 99
+          && d.scoreB is int && d.scoreB >= 0 && d.scoreB <= 99
+          && d.loggedAtMs > request.time.toMillis() - 600000
+          && d.loggedAtMs < request.time.toMillis() + 600000
+          && gamesOpen()
+          // Seasons: the match belongs to the running season and both players joined it
+          && d.seasonId is string
+          && se.startMs <= request.time.toMillis()
+          && request.time.toMillis() < se.endMs
+          && exists(/databases/$(database)/documents/seasonJoins/$(d.seasonId + '_' + d.aUid))
+          && exists(/databases/$(database)/documents/seasonJoins/$(d.seasonId + '_' + d.bUid))
+          // Only the winner enters the result (either player for a draw, football games only), with a screenshot
+          && d.scoreA >= d.scoreB
+          && (d.scoreA > d.scoreB || d.game in ['efootball', 'fifa', 'dls'])
+          && d.proofA is string
+          && d.proofA.matches('https://res[.]cloudinary[.]com/.*')
+          // One contest per match: the league table or a reward week. A reward match names its week.
+          && d.get('contest', 'league') in ['league', 'reward']
+          && (d.get('contest', 'league') == 'league' || d.get('weekKey', 0) is string)
+          && d.get('kills', 0) is int && d.get('kills', 0) >= 0 && d.get('kills', 0) <= 999
+          && d.get('damage', 0) is int && d.get('damage', 0) >= 0 && d.get('damage', 0) <= 99999
+          && (contact(d.aUid, d.bUid) || contact(d.bUid, d.aUid));
+      }
       allow read: if true;
-      allow create: if ownsGamer(request.resource.data.aUid)
-        && gamerOk(request.resource.data.aUid)
-        && gamerOk(request.resource.data.bUid)
-        && request.resource.data.aUid != request.resource.data.bUid
-        && request.resource.data.v == 2
-        && request.resource.data.game in ['efootball', 'fifa', 'dls', 'freefire', 'codm']
-        && request.resource.data.status == 'pending'
-        && request.resource.data.scoreA is int && request.resource.data.scoreA >= 0 && request.resource.data.scoreA <= 99
-        && request.resource.data.scoreB is int && request.resource.data.scoreB >= 0 && request.resource.data.scoreB <= 99
-        && request.resource.data.loggedAtMs > request.time.toMillis() - 600000
-        && request.resource.data.loggedAtMs < request.time.toMillis() + 600000
-        && gamesOpen()
-        // Seasons: the match belongs to the running season and both players joined it
-        && request.resource.data.seasonId is string
-        && exists(/databases/$(database)/documents/seasons/$(request.resource.data.seasonId))
-        && get(/databases/$(database)/documents/seasons/$(request.resource.data.seasonId)).data.startMs <= request.time.toMillis()
-        && request.time.toMillis() < get(/databases/$(database)/documents/seasons/$(request.resource.data.seasonId)).data.endMs
-        && exists(/databases/$(database)/documents/seasonJoins/$(request.resource.data.seasonId + '_' + request.resource.data.aUid))
-        && exists(/databases/$(database)/documents/seasonJoins/$(request.resource.data.seasonId + '_' + request.resource.data.bUid))
-        // Only the winner enters the result (either player for a draw, football games only), with a screenshot
-        && request.resource.data.scoreA >= request.resource.data.scoreB
-        && (request.resource.data.scoreA > request.resource.data.scoreB || request.resource.data.game in ['efootball', 'fifa', 'dls'])
-        && request.resource.data.proofA is string
-        && request.resource.data.proofA.matches('https://res[.]cloudinary[.]com/.*')
-        // One contest per match: the league table or a reward week. A reward match names its week.
-        && request.resource.data.get('contest', 'league') in ['league', 'reward']
-        && (request.resource.data.get('contest', 'league') == 'league' || request.resource.data.get('weekKey', 0) is string)
-        && request.resource.data.get('kills', 0) is int && request.resource.data.get('kills', 0) >= 0 && request.resource.data.get('kills', 0) <= 999
-        && request.resource.data.get('damage', 0) is int && request.resource.data.get('damage', 0) >= 0 && request.resource.data.get('damage', 0) <= 99999
-        && (contact(request.resource.data.aUid, request.resource.data.bUid) || contact(request.resource.data.bUid, request.resource.data.aUid));
+      allow create: if createOk();
       allow update: if isAdmin()
         || (ownsGamer(resource.data.bUid) && resource.data.status == 'pending'
             && changed().hasOnly(['status', 'confirmedAtMs']) && request.resource.data.status == 'confirmed')
