@@ -32,6 +32,19 @@ const SHOOT_PCT = (SHOOT_CROSS_S / (SHOOT_PATHS.length * SHOOT_EVERY_S)) * 100;
 /** The repeating stars begin one full gap after the first star */
 const SHOOT_LOOP_FROM_S = SHOOT_FIRST_S + SHOOT_EVERY_S;
 
+/** Hero photo for each part of the day (public/images/hero/<slot>.webp). Slots follow Enugu daylight. Swap a file to change a photo. */
+type HeroSlot = 'sunrise' | 'day' | 'golden' | 'night';
+const heroSlotAt = (hour: number): HeroSlot => (hour >= 5 && hour < 9 ? 'sunrise' : hour >= 9 && hour < 16 ? 'day' : hour >= 16 && hour < 18.5 ? 'golden' : 'night');
+/** Where each photo is anchored when the card crops it */
+const HERO_FOCUS: Record<HeroSlot, string> = { sunrise: 'center 35%', day: 'center 40%', golden: 'center 60%', night: 'center 55%' };
+/** Shows while the photo loads (and stays if it ever fails to load, with the old colours) */
+const HERO_LOADING_SKY: Record<HeroSlot, string> = {
+  sunrise: 'linear-gradient(180deg,#7c2d12 0%,#c2410c 55%,#f59e0b 100%)',
+  day: 'linear-gradient(180deg,#0369a1 0%,#0ea5e9 60%,#38bdf8 100%)',
+  golden: 'linear-gradient(180deg,#9a3412 0%,#d97706 55%,#fbbf24 100%)',
+  night: 'linear-gradient(180deg,#1e1b4b 0%,#312e81 55%,#0e7490 100%)',
+};
+
 const isOutsideOrder = (o: OrderRecord) => o.cart === 'store' || o.cart === 'food';
 /** Inside: to the hostel (or the spot the student typed). Outside: to the school gate. */
 const wayLabel = (o: OrderRecord) => (isOutsideOrder(o) ? 'On its way to the gate' : o.area === 'Custom' ? `On the way to ${o.building}` : 'On the way to the hostel');
@@ -101,25 +114,35 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
   // Midnight to 5am says "Good morning" but keeps the night sky (moon and stars)
   const morning = dayPart === 'Good morning' && new Date().getHours() >= 5;
   const afternoon = dayPart === 'Good afternoon';
-  const sky = morning
+  // Time-of-day photo behind the card. If it ever fails to load, the old coloured sky and dark/bright text come back.
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const [photoLoaded, setPhotoLoaded] = useState('');
+  const nowD = new Date();
+  const slot = heroSlotAt(nowD.getHours() + nowD.getMinutes() / 60);
+  const photo = !photoFailed;
+  const sky = photo
+    ? HERO_LOADING_SKY[slot]
+    : morning
     ? 'linear-gradient(180deg,#fb923c 0%,#fbbf24 45%,#fde68a 100%)'
     : afternoon
     ? 'linear-gradient(180deg,#0ea5e9 0%,#38bdf8 55%,#7dd3fc 100%)'
     : 'linear-gradient(180deg,#1e1b4b 0%,#312e81 55%,#0e7490 100%)';
   // Everyone gets the time-of-day sky (sunrise, blue sky, moon and stars)
   const plain = false;
-  const ink = plain ? 'text-slate-900 dark:text-white' : morning ? 'text-orange-950' : 'text-white';
+  const ink = plain ? 'text-slate-900 dark:text-white' : photo ? 'text-white' : morning ? 'text-orange-950' : 'text-white';
   // Colour touches that follow the sky: the name, the faded welcome line, the delivery chip and the button
-  const nameColor = plain ? 'text-[#0e9f55]' : morning ? 'text-orange-700' : afternoon ? 'text-yellow-200' : 'text-amber-200';
-  const softText = plain ? 'text-slate-500 dark:text-slate-400' : morning ? 'text-orange-950/70' : afternoon ? 'text-white/85' : 'text-white/70';
+  const nameColor = plain ? 'text-[#0e9f55]' : photo ? 'text-amber-200' : morning ? 'text-orange-700' : afternoon ? 'text-yellow-200' : 'text-amber-200';
+  const softText = plain ? 'text-slate-500 dark:text-slate-400' : photo ? 'text-white/85' : morning ? 'text-orange-950/70' : afternoon ? 'text-white/85' : 'text-white/70';
   const chipBg = plain
     ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200'
+    : photo
+    ? 'bg-black/35'
     : morning
     ? 'bg-orange-900/15'
     : afternoon
     ? 'bg-sky-900/35'
     : 'bg-indigo-950/45';
-  const buttonInk = plain ? 'text-[#0e9f55] border border-emerald-200 dark:border-emerald-900' : morning ? 'text-orange-800' : afternoon ? 'text-sky-700' : 'text-indigo-900';
+  const buttonInk = plain ? 'text-[#0e9f55] border border-emerald-200 dark:border-emerald-900' : photo ? 'text-emerald-800' : morning ? 'text-orange-800' : afternoon ? 'text-sky-700' : 'text-indigo-900';
 
   // Ticks every second while an outside order is counting down to the gate (and every 30s otherwise)
   const [nowMs, setNowMs] = useState(Date.now());
@@ -171,6 +194,9 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
   // "Arrives before" countdown (until delivered; outside switches to the gate countdown once sent)
   const arrivalMs = trackOrder && trackOrder.status !== 'Delivered' ? arrivalDeadlineMs(trackOrder) : null;
   const arrivalLate = arrivalMs !== null && arrivalMs - nowMs <= 0;
+  // Which extras show: with a photo it follows the slot (the photo has its own sun and moon), without it the old day parts
+  const showClouds = photo ? slot === 'day' : afternoon;
+  const showNight = photo ? slot === 'night' : !morning && !afternoon;
   // Stars sit inside the right-hand sky area (left, top within that area, delay)
   const stars: Array<[number, number, number]> = [
     [8, 18, 0],
@@ -195,6 +221,8 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
         .rb-glow { animation: rb-glow 5s ease-in-out infinite; }
         .rb-twinkle { animation: rb-twinkle 3s ease-in-out infinite; }
         .rb-bob { animation: rb-bob 1.1s ease-in-out infinite; }
+        @keyframes rb-pan { 0% { transform: scale(1.04) translateX(-1.5%); } 100% { transform: scale(1.12) translateX(1.5%); } }
+        .rb-pan { animation: rb-pan 38s ease-in-out infinite alternate; }
         /* Shooting star: crosses the night sky in about a second, then stays hidden for the rest of its cycle */
         @keyframes rb-shoot {
           0% { opacity: 0; transform: rotate(var(--rb-a)) translateX(0); }
@@ -218,30 +246,49 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
         }
         .rb-shoot.rb-shoot-once { animation: rb-shoot-once ${SHOOT_CROSS_S}s linear 1 both; }
         @media (prefers-reduced-motion: reduce) {
-          .rb-drift, .rb-drift-slow, .rb-glow, .rb-twinkle, .rb-bob, .rb-shoot { animation: none !important; }
+          .rb-drift, .rb-drift-slow, .rb-glow, .rb-twinkle, .rb-bob, .rb-pan, .rb-shoot { animation: none !important; }
         }
       `}</style>
 
+      {/* Time-of-day photo, slowly panning, with a dark wash (strongest behind the text on the left) so the words stay readable */}
+      {!plain && photo && (
+        <>
+          <img
+            key={slot}
+            src={`/images/hero/${slot}.webp`}
+            alt=""
+            aria-hidden="true"
+            decoding="async"
+            onLoad={() => setPhotoLoaded(slot)}
+            onError={() => setPhotoFailed(true)}
+            className={`rb-pan absolute inset-0 w-full h-full object-cover pointer-events-none transition-opacity duration-700 ${photoLoaded === slot ? 'opacity-100' : 'opacity-0'}`}
+            style={{ objectPosition: HERO_FOCUS[slot] }}
+          />
+          <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(90deg,rgba(2,6,23,.55) 0%,rgba(2,6,23,.3) 55%,rgba(2,6,23,.1) 100%)' }} />
+        </>
+      )}
       {/* scenery: kept in the top-right corner so it never moves behind the text (new visitors only) */}
       {!plain && (
       <div className="absolute right-0 top-0 w-[112px] h-[128px] overflow-hidden pointer-events-none">
-        {morning && (
+        {!photo && morning && (
           <div
             className="rb-glow absolute right-6 top-9 w-12 h-12 rounded-full bg-orange-50"
             style={{ boxShadow: '0 0 34px 12px rgba(255,237,213,.8)' }}
           />
         )}
-        {afternoon && (
+        {showClouds && (
           <>
-            <div
-              className="rb-glow absolute right-6 top-9 w-12 h-12 rounded-full bg-yellow-300"
-              style={{ boxShadow: '0 0 26px 8px rgba(253,224,71,.6)' }}
-            />
+            {!photo && (
+              <div
+                className="rb-glow absolute right-6 top-9 w-12 h-12 rounded-full bg-yellow-300"
+                style={{ boxShadow: '0 0 26px 8px rgba(253,224,71,.6)' }}
+              />
+            )}
             <span className="rb-drift absolute right-[42px] top-[46px] w-[50px] h-4 rounded-full bg-white/90" />
             <span className="rb-drift-slow absolute right-3 top-[82px] w-9 h-3 rounded-full bg-white/90" />
           </>
         )}
-        {!morning && !afternoon && (
+        {showNight && (
           <>
             {stars.map(([l, t, delay]) => (
               <span
@@ -250,18 +297,20 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
                 style={{ left: l, top: t, animationDelay: `${delay}s` }}
               />
             ))}
-            <div
-              className="absolute right-[26px] top-9 w-10 h-10 rounded-full bg-amber-200 overflow-hidden"
-              style={{ boxShadow: '0 0 26px 6px rgba(253,230,138,.35)' }}
-            >
-              <div className="absolute w-10 h-10 rounded-full left-[11px] -top-1.5" style={{ background: '#262266' }} />
-            </div>
+            {!photo && (
+              <div
+                className="absolute right-[26px] top-9 w-10 h-10 rounded-full bg-amber-200 overflow-hidden"
+                style={{ boxShadow: '0 0 26px 6px rgba(253,230,138,.35)' }}
+              >
+                <div className="absolute w-10 h-10 rounded-full left-[11px] -top-1.5" style={{ background: '#262266' }} />
+              </div>
+            )}
           </>
         )}
       </div>
       )}
       {/* Night sky only: the first shooting star at SHOOT_FIRST_S seconds, then one after every SHOOT_CLEAR_S seconds of clear sky, on five lines taken in turn, behind the text */}
-      {!plain && !morning && !afternoon && (
+      {!plain && showNight && (
         <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
           {/* The first star: path 0, once */}
           {[SHOOT_FIRST_S].map((delay, i) => {
@@ -281,7 +330,7 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
       <div className="relative z-10">
         {/* No date strip: the greeting is the first thing they read */}
         {isGuest && (
-          <p className={`text-[11px] font-extrabold uppercase tracking-[0.14em] ${morning ? 'text-orange-800' : 'opacity-90'}`}>
+          <p className={`text-[11px] font-extrabold uppercase tracking-[0.14em] ${morning && !photo ? 'text-orange-800' : 'opacity-90'}`}>
             Hey there, {dayPart.toLowerCase()}
           </p>
         )}
