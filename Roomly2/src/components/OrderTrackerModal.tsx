@@ -929,7 +929,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                         <p className="text-[11px] text-emerald-800 dark:text-emerald-400">
                           {gateLeftMs !== null && gateLeftMs > 0
                             ? `It will be at the school gate in under ${GATE_ARRIVAL_MINUTES} minutes. Head to the gate when the timer is nearly done.`
-                            : 'Please collect it. Your number is on the pack.'}
+                            : 'Please collect it. Match it with the name, phone number or package photo in your order.'}
                         </p>
                         {gateDone && <ArrivalNote where="At the school gate" />}
                       </div>

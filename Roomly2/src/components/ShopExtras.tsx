@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { NoPhoto } from './NoPhoto';
+import { useSlowDrift } from './HomeQuickCards';
 import { Plus, Minus, X, RotateCcw, Star, Sparkles } from 'lucide-react';
 import { Product, storeOfSource } from '../config';
 
@@ -336,33 +337,41 @@ export const FeaturedRow: React.FC<{
   onAdd: (p: Product) => void;
   onOpen: (p: Product) => void;
 }> = ({ items, qtyOf, onAdd, onOpen }) => {
+  // Three or more cards drift sideways by themselves in an endless loop (same drift as the Hostel League crown row)
+  // and can still be swiped. The row then holds the cards twice so the loop has no visible jump.
+  const loop = items.length >= 3;
+  const rowRef = useSlowDrift(loop ? items.length : 0);
   if (!items.length) return null;
   return (
     <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 shadow-[0_2px_10px_-4px_rgba(15,60,40,0.15)] space-y-2">
       <p className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
         <Star className="w-3.5 h-3.5 text-amber-500" /> Featured: Most Bought Items
       </p>
-      {/* Cards are sized so about 2.5 show on any phone: the cut-off card tells students to swipe */}
-      <div className="flex gap-2 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-px-3 -mx-3 px-3">
-        {items.map((p) => {
-          const q = qtyOf(p.id);
-          return (
-            <div key={p.id} className="shrink-0 basis-[38%] snap-start p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-1.5">
-              <button type="button" onClick={() => onOpen(p)} className="block w-full text-left cursor-pointer">
-                <Thumb p={p} big />
-                <span className="block mt-1 text-[11px] font-bold text-slate-900 dark:text-white leading-tight line-clamp-2">{p.name}</span>
-                <span className="block text-[11px] text-slate-500">{naira(p.price)}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onAdd(p)}
-                className={`w-full py-1 rounded-lg text-[11px] font-bold cursor-pointer ${q > 0 ? 'bg-[#0e9f55] text-white' : 'bg-[#0e9f55]/10 text-[#0e9f55]'}`}
-              >
-                {p.isFood ? 'Choose' : q > 0 ? `In cart (${q}) +` : '+ Add'}
-              </button>
-            </div>
-          );
-        })}
+      {/* Cards are sized so about 2.5 show on any phone: the cut-off card tells students to swipe. No scroll snapping, it would fight the drift. */}
+      <div ref={rowRef} className="flex gap-2 overflow-x-auto no-scrollbar -mx-3 px-3">
+        {(loop ? [0, 1] : [0]).map((copy) =>
+          items.map((p) => {
+            const q = qtyOf(p.id);
+            const hidden = copy === 1;
+            return (
+              <div key={`${copy}-${p.id}`} aria-hidden={hidden || undefined} className="shrink-0 basis-[38%] p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-1.5">
+                <button type="button" tabIndex={hidden ? -1 : undefined} onClick={() => onOpen(p)} className="block w-full text-left cursor-pointer">
+                  <Thumb p={p} big />
+                  <span className="block mt-1 text-[11px] font-bold text-slate-900 dark:text-white leading-tight line-clamp-2">{p.name}</span>
+                  <span className="block text-[11px] text-slate-500">{naira(p.price)}</span>
+                </button>
+                <button
+                  type="button"
+                  tabIndex={hidden ? -1 : undefined}
+                  onClick={() => onAdd(p)}
+                  className={`w-full py-1 rounded-lg text-[11px] font-bold cursor-pointer ${q > 0 ? 'bg-[#0e9f55] text-white' : 'bg-[#0e9f55]/10 text-[#0e9f55]'}`}
+                >
+                  {p.isFood ? 'Choose' : q > 0 ? `In cart (${q}) +` : '+ Add'}
+                </button>
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );

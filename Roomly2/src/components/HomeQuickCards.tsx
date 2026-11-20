@@ -292,7 +292,7 @@ const CROWN_ROW_RESUME_MS = 3000;
  * it starts again a few seconds after the student lets go. It rests while off screen, while the tab is hidden,
  * and stays still for people who have switched animations off on their phone.
  */
-function useSlowDrift(setSize: number) {
+export function useSlowDrift(setSize: number) {
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = ref.current;
