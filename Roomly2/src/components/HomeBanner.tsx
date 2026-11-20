@@ -8,10 +8,8 @@ import { CreditsPill } from './CreditsPill';
 type DayPart = 'Good morning' | 'Good afternoon' | 'Good evening';
 
 /** Night sky shooting star: seconds of clear sky between one star disappearing and the next appearing, and how long after the page opens the first one appears */
-const SHOOT_CLEAR_S = 10;
-const SHOOT_FIRST_S = 2.5;
-/** The opening pair: clear sky between the first star and the second, shorter than the usual gap. Happens once each time the header loads. */
-const SHOOT_PAIR_CLEAR_S = 3;
+const SHOOT_CLEAR_S = 20;
+const SHOOT_FIRST_S = 5;
 /** How long one star takes to cross the sky, in seconds (stays the same whatever the gap between stars) */
 const SHOOT_CROSS_S = 1.05;
 /** From one star appearing to the next appearing: the crossing plus the clear gap */
@@ -31,9 +29,8 @@ const SHOOT_PATHS: Array<[string, number, number, number, number]> = [
 ];
 /** The share of one full cycle (all paths) that a single crossing takes, as a percentage */
 const SHOOT_PCT = (SHOOT_CROSS_S / (SHOOT_PATHS.length * SHOOT_EVERY_S)) * 100;
-/** When the second star of the opening pair appears, and when the regular, repeating stars begin after it */
-const SHOOT_SECOND_S = SHOOT_FIRST_S + SHOOT_CROSS_S + SHOOT_PAIR_CLEAR_S;
-const SHOOT_LOOP_FROM_S = SHOOT_SECOND_S + SHOOT_EVERY_S;
+/** The repeating stars begin one full gap after the first star */
+const SHOOT_LOOP_FROM_S = SHOOT_FIRST_S + SHOOT_EVERY_S;
 
 const isOutsideOrder = (o: OrderRecord) => o.cart === 'store' || o.cart === 'food';
 /** Inside: to the hostel (or the spot the student typed). Outside: to the school gate. */
@@ -263,17 +260,17 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
         )}
       </div>
       )}
-      {/* Night sky only: a quick opening pair of shooting stars, then one after every SHOOT_CLEAR_S seconds of clear sky, on five lines taken in turn, behind the text */}
+      {/* Night sky only: the first shooting star at SHOOT_FIRST_S seconds, then one after every SHOOT_CLEAR_S seconds of clear sky, on five lines taken in turn, behind the text */}
       {!plain && !morning && !afternoon && (
         <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
-          {/* Opening pair: paths 0 and 1, once */}
-          {[SHOOT_FIRST_S, SHOOT_SECOND_S].map((delay, i) => {
+          {/* The first star: path 0, once */}
+          {[SHOOT_FIRST_S].map((delay, i) => {
             const [left, top, angle, length, travel] = SHOOT_PATHS[i];
             return <span key={`once-${i}`} className="rb-shoot rb-shoot-once" style={{ left, top, width: length, ['--rb-a' as any]: `${angle}deg`, ['--rb-d' as any]: `${travel}px`, animationDelay: `${delay}s` }} />;
           })}
-          {/* Then the repeating stars, starting on path 2 so the third star takes a new line */}
+          {/* Then the repeating stars, starting on path 1 so the second star takes a new line */}
           {SHOOT_PATHS.map((_, i) => {
-            const [left, top, angle, length, travel] = SHOOT_PATHS[(i + 2) % SHOOT_PATHS.length];
+            const [left, top, angle, length, travel] = SHOOT_PATHS[(i + 1) % SHOOT_PATHS.length];
             return <span key={`loop-${i}`} className="rb-shoot" style={{ left, top, width: length, ['--rb-a' as any]: `${angle}deg`, ['--rb-d' as any]: `${travel}px`, animationDelay: `${SHOOT_LOOP_FROM_S + i * SHOOT_EVERY_S}s` }} />;
           })}
         </div>

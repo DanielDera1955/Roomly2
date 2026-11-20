@@ -1345,6 +1345,19 @@ export default function App() {
             storeOpensAtMs={storeLocked ? storeOpensMs : 0}
             products={products}
             showBehind={!signedInCustomer}
+            between={showHowItWorks ? <HowRoomlyWorks
+            storeOpensMs={storeOpensMs}
+            onStart={() => {
+              setSourceMode('inside');
+              setSelectedTab('store');
+              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+            }}
+            onHub={() => {
+              setSourceMode('inside');
+              setSelectedTab('hub');
+              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+            }}
+          /> : null}
             onOpen={(t: QuickTarget) => {
               setSearchQuery('');
               setSelectedFilter('All');
@@ -1361,21 +1374,6 @@ export default function App() {
               window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
             }}
           />
-
-          {/* How Roomly works: folded guide for first-time visitors, until the first completed order */}
-          {showHowItWorks && <HowRoomlyWorks
-            storeOpensMs={storeOpensMs}
-            onStart={() => {
-              setSourceMode('inside');
-              setSelectedTab('store');
-              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
-            }}
-            onHub={() => {
-              setSourceMode('inside');
-              setSelectedTab('hub');
-              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
-            }}
-          />}
 
           {/* No sign-in box on the home screen: new students give their details once, at checkout.
               Returning students on a new phone use "Sign in" in the header, which opens this popup. */}

@@ -166,7 +166,9 @@ export const HomeQuickCards: React.FC<{
   onOpenGames: (game?: string) => void;
   /** The logged-in Roomly customer, so their player profile can be found on this browser */
   session?: { phone?: string; pin?: string };
-}> = ({ onOpen, storeOpensAtMs = 0, products = [], showBehind = true, onOpenGames, session }) => {
+  /** Shown between the four cards and the game card (the "How you get your order" section) */
+  between?: React.ReactNode;
+}> = ({ onOpen, storeOpensAtMs = 0, products = [], showBehind = true, onOpenGames, session, between }) => {
   const [, setTick] = useState(0);
   const [broken, setBroken] = useState<Record<string, boolean>>({});
   useEffect(() => {
@@ -261,6 +263,7 @@ export const HomeQuickCards: React.FC<{
         })}
       </div>
 
+      {between}
       <HostelLeagueCard onOpen={onOpenGames} session={session} />
 
       {showBehind && <BehindEveryOrder />}
