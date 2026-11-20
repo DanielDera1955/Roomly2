@@ -1,6 +1,6 @@
 /**
  * Where students come from.
- * - ref: the tag on the link they first opened, e.g. roomly2-inky.vercel.app/?ref=hallgroup
+ * - ref: the tag on the link they first opened, e.g. roomlycaritas.vercel.app/?ref=hallgroup
  *   (first one wins, so a student who later opens a plain link still counts for the group that brought them)
  * - heardFrom: what they tapped for "How did you hear about Roomly?" at their first checkout
  * Both live in this browser and are added to their orders and their Games registration.

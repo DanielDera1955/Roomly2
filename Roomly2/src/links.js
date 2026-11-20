@@ -1,6 +1,6 @@
 /**
  * Section links for promotion posts. Each one opens the app straight on one section:
- *   roomly2-inky.vercel.app/?ref=cs#outside-food
+ *   roomlycaritas.vercel.app/?ref=cs#outside-food
  * The #part is removed right after it is read, so a refresh or the back button opens the app normally.
  * A tagged link (?ref=) also counts one visit per phone, per tag, per day, for Admin > Where students come from.
  */
@@ -20,7 +20,7 @@ export const SECTION_LINKS = {
   'hub-lostfound': { side: 'inside', tab: 'hub', hub: 'lostfound', label: 'Hostel Hub: Lost & Found' },
 };
 
-export const SITE_URL = 'https://roomly2-inky.vercel.app';
+export const SITE_URL = 'https://roomlycaritas.vercel.app';
 
 /** The link a post should use for one group: tag + section */
 export function buildLink(tag, section) {

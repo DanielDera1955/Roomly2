@@ -57,7 +57,6 @@ import {
   acceptRules,
   registerReward,
   pairContext,
-  leagueRulesFor,
   leagueMainRulesFor,
   rewardRulesFor,
   type Season,
@@ -506,7 +505,6 @@ const GamesHome: React.FC<{
                   )}
                   <p className="mt-2 text-[10px] text-slate-400">{playersText(counts.byGame[g.id] || 0, 'registered')}</p>
                 </button>
-                  <GameRulesToggle title="Rules" lines={leagueRulesFor(g.id)} className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800" />
                 </div>
               );
             })}

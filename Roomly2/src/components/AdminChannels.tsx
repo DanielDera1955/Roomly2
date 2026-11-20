@@ -8,7 +8,7 @@ import { OrderRecord } from '../types';
 
 /**
  * Admin: where students come from. Each promotion gets its own link, e.g.
- *   roomly2-inky.vercel.app/?ref=breadegg   roomly2-inky.vercel.app/?ref=hallgroup
+ *   roomlycaritas.vercel.app/?ref=breadegg   roomlycaritas.vercel.app/?ref=hallgroup
  * The tag is saved with the student's orders and Games registration. Students with no tag are grouped by
  * what they answered for "How did you hear about Roomly?" at their first checkout.
  */
@@ -130,7 +130,7 @@ export const AdminChannels: React.FC = () => {
             </div>
           )}
           <p className="text-[10px] text-slate-400 leading-snug">
-            Give each group its own link, e.g. roomly2-inky.vercel.app/?ref=hallgroup. "Said" rows are students with no tag who answered "How did
+            Give each group its own link, e.g. roomlycaritas.vercel.app/?ref=hallgroup. "Said" rows are students with no tag who answered "How did
             you hear about Roomly?". Visits count each phone once a day per tagged link. Links from the Posts tab already carry each group's tag.
           </p>
         </>
