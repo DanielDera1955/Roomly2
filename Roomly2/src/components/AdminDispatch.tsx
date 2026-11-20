@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { outOfStockSummary } from '../config';
+import { outOfStockSummary, arrivalDeadlineMs, GATE_ARRIVAL_MINUTES } from '../config';
 import { ChevronDown, Trash2 } from 'lucide-react';
 import {
   subscribeOrders,
@@ -18,6 +18,7 @@ import {
   setRunnerAdminOff,
   autoDeliverOverdue,
   resolveNotReceived,
+  waNumber,
 } from '../api.js';
 import { OrderRecord, locationText } from '../types';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
@@ -63,10 +64,30 @@ const Pills: React.FC<{ value: string; options: [string, string][]; onChange: (v
   </div>
 );
 
+
+const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+/** Completed orders: was it on time? Outside orders only record the "Order delivered" tap, so the gate time is that tap plus the customer's gate countdown (an estimate). */
+const arrivalCheck = (o: OrderRecord): { text: string; late: boolean } | null => {
+  const promised = arrivalDeadlineMs(o);
+  const sentMs = o.deliveredAt ? Date.parse(o.deliveredAt) : NaN;
+  if (promised === null || !Number.isFinite(sentMs)) return null;
+  const outside = o.cart === 'store' || o.cart === 'food';
+  const arriveMs = outside ? sentMs + GATE_ARRIVAL_MINUTES * 60000 : sentMs;
+  const diff = Math.round((promised - arriveMs) / 60000);
+  const sent = outside ? `sent ${clock(sentMs)}, at the gate about ${clock(arriveMs)} (estimated)` : `arrived ${clock(sentMs)}`;
+  const verdict = diff >= 0 ? `on time, ${diff} min to spare` : `late by ${-diff} min`;
+  return { text: `Promised by ${clock(promised)}, ${sent}: ${verdict}`, late: diff < 0 };
+};
+
+const whatsappLink = (o: OrderRecord) =>
+  `https://wa.me/${waNumber(o.phone)}?text=${encodeURIComponent(`Hi ${o.name}, this is Roomly about your order ${o.id}.`)}`;
+
 /** One order, tap to open */
 const OrderRow: React.FC<{ o: OrderRecord; showSection?: boolean }> = ({ o, showSection }) => {
   const [open, setOpen] = useState(false);
   const stage = orderStage(o);
+  const check = stage === 'completed' ? arrivalCheck(o) : null;
   return (
     <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 text-xs space-y-2">
       <button type="button" onClick={() => setOpen(!open)} className="w-full flex items-start justify-between gap-2 text-left cursor-pointer">
@@ -94,15 +115,29 @@ const OrderRow: React.FC<{ o: OrderRecord; showSection?: boolean }> = ({ o, show
               ? `Completed ${o.deliveredAt ? new Date(o.deliveredAt).toLocaleString([], { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : ''}`
               : o.status}
           </p>
+          {check && (
+            <p className={`text-[11px] font-semibold ${check.late ? 'text-rose-600' : 'text-emerald-600'}`}>{check.text}</p>
+          )}
         </div>
         <div className="shrink-0 text-right">
           <p className="font-extrabold text-[#0e9f55]">{naira(o.totalAmount)}</p>
           <ChevronDown className={`w-4 h-4 text-slate-400 inline transition-transform ${open ? 'rotate-180' : ''}`} />
         </div>
       </button>
+      <div className="flex items-center justify-between gap-2 text-[11px]">
+        <span className="font-mono text-slate-600 dark:text-slate-300">{o.phone}</span>
+        <a
+          href={whatsappLink(o)}
+          target="_blank"
+          rel="noreferrer"
+          className="px-2.5 py-1 rounded-lg bg-[#0e9f55] text-white font-bold"
+        >
+          WhatsApp
+        </a>
+      </div>
       {open && (
         <div className="space-y-1.5 pt-1 border-t border-slate-200 dark:border-slate-700">
-          <p className="text-[11px] text-slate-500">{locationText(o)} · {o.phone}</p>
+          <p className="text-[11px] text-slate-500">{locationText(o)}</p>
           {(o.items || []).map((i: any, idx) => {
             const opts: any[] = i.extras || [];
             const optsTotal = opts.reduce((t, e) => t + (e.price || 0) * (e.quantity || 1), 0);
