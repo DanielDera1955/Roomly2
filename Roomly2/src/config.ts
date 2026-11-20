@@ -132,6 +132,9 @@ export const PRICING = {
  * "Behind every order" on the home page. Count only partners who are active right now.
  * Change a number here when you add or lose a store, vendor, runner or keke rider.
  */
+/** Roomly's main WhatsApp group (games and everything else). An admin group link, if one is set, takes its place. */
+export const ROOMLY_GROUP_LINK = 'https://chat.whatsapp.com/DxNn262Vgj3DAzQCzjTAPD';
+
 export const BEHIND_EVERY_ORDER: { count: number; label: string }[] = [
   { count: 5, label: 'Oye stores' },
   { count: 3, label: 'Food vendors' },

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Trophy, Crown, Camera, Loader2, Users, Calendar, MessageCircle, Gamepad2, ChevronRight, ArrowLeft, Plus, Check, X, MapPin, Lock, Share2 } from 'lucide-react';
-import { HOSTELS } from '../config';
+import { HOSTELS, ROOMLY_GROUP_LINK } from '../config';
 import {
   GAMES,
   isScored,
@@ -463,6 +463,13 @@ const GamesHome: React.FC<{
             <MessageCircle className="w-4 h-4" /> Invite friends
           </button>
         </div>
+        <button
+          type="button"
+          onClick={() => window.open(String(config?.groupLink || '') || ROOMLY_GROUP_LINK, '_blank', 'noopener')}
+          className="mt-2 w-full h-11 rounded-xl bg-white/15 border border-white/30 text-white text-sm font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+        >
+          <MessageCircle className="w-4 h-4" /> Join Roomly updates on WhatsApp
+        </button>
       </div>
 
       {/* Two contests, one tap apart */}
