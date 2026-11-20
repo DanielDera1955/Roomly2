@@ -3788,6 +3788,25 @@ export async function createProductRequest({ side, items, note, category, phone,
   return ref.id;
 }
 
+/** Admin: every product request, newest first, answered and unanswered (the Requests tab). Shows the latest 300. */
+export function subscribeAllProductRequests(cb) {
+  const q = query(collection(db, 'productRequests'), orderBy('createdAt', 'desc'), limit(300));
+  return onSnapshot(
+    q,
+    (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id }))),
+    () => cb([])
+  );
+}
+/** Admin: how many requests are still waiting for a price (the number on the Requests tab) */
+export function subscribeOpenRequestCount(cb) {
+  const q = query(collection(db, 'productRequests'), where('status', '==', 'open'), limit(100));
+  return onSnapshot(
+    q,
+    (snap) => cb(snap.size),
+    () => cb(0)
+  );
+}
+
 /** Student: live updates for one request (the id is the key, like an order id) */
 /** @returns {() => void} */
 export function subscribeProductRequest(id, cb) {

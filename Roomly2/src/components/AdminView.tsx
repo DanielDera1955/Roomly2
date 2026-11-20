@@ -36,6 +36,7 @@ import {
   TrendingUp,
   BarChart3,
   MessageSquare,
+  ClipboardList,
 } from 'lucide-react';
 import { sellingPrice, isOutsideSource } from '../config';
 import { heardLabel } from '../tracking.js';
@@ -43,10 +44,12 @@ import { OrderRecord, CategoryDefinition, DeliveryRunner, locationText, shortLoc
 import { Product, FoodExtraOption, PRESET_PRODUCT_IMAGES, StoreKey, STORE_LABEL, STORE_SOURCE, categoriesForStore, storeOfSource } from '../config';
 import { AdminHub } from './AdminHub';
 import { AdminLeague } from './AdminLeague';
+import { AdminAlerts } from './AdminAlerts';
 import { AdminShops, useNewShopApplications } from './AdminShops';
 import { AdminPriceLists } from './AdminPriceLists';
 import { AdminDispatch, AdminTeam, AdminMoney, useOpenSettlements, needsAction } from './AdminDispatch';
 import { AdminInsights } from './AdminInsights';
+import { AdminRequests, useWaitingRequestCount } from './AdminRequests';
 import { AdminFeedbackPanel } from './FeedbackPanels';
 import { ActivityLog } from './ActivityLog';
 import {
@@ -158,7 +161,7 @@ const FoodOptionsEditor: React.FC<{ value: FoodOptions; source: Product['source'
   );
 };
 
-type AdminTab = 'posts' | 'dashboard' | 'orders' | 'team' | 'applications' | 'money' | 'feedback' | 'products' | 'categories' | 'customers' | 'activity' | 'hub' | 'league';
+type AdminTab = 'posts' | 'dashboard' | 'orders' | 'team' | 'applications' | 'money' | 'feedback' | 'products' | 'requests' | 'categories' | 'customers' | 'activity' | 'hub' | 'league' | 'alerts';
 
 export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpdated }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -170,6 +173,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
   // Active Admin Tab
   const [currentTab, setCurrentTab] = useState<AdminTab>('dashboard');
   const newApplications = useNewApplicationCount() + useNewShopApplications();
+  const waitingRequests = useWaitingRequestCount();
   // Red count on the Money tab: days sent and waiting for your confirmation, or overdue
   const moneyAlerts = needsAction(useOpenSettlements()).length;
 
@@ -673,6 +677,24 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
           <button
             type="button"
+            onClick={() => setCurrentTab('requests')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+              currentTab === 'requests'
+                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <ClipboardList className="w-3.5 h-3.5" />
+            <span>Requests</span>
+            {waitingRequests > 0 && (
+              <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#0e9f55] text-white text-[10px] font-black flex items-center justify-center">
+                {waitingRequests}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={() => setCurrentTab('categories')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
               currentTab === 'categories'
@@ -733,6 +755,17 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
           >
             <span>League Games & Contest</span>
           </button>
+          <button
+            type="button"
+            onClick={() => setCurrentTab('alerts')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+              currentTab === 'alerts'
+                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <span>Alerts</span>
+          </button>
 
           <button
             type="button"
@@ -779,6 +812,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
         {/* ================= HOSTEL HUB & GAMING ================= */}
         {currentTab === 'hub' && <AdminHub />}
         {currentTab === 'league' && <AdminLeague />}
+        {currentTab === 'alerts' && <AdminAlerts />}
 
         {/* ================= TEAM: runners, operators, accounts, switches ================= */}
         {currentTab === 'team' && (
@@ -806,6 +840,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
         {/* ================= FEEDBACK: students' ratings of each runner and operator ================= */}
         {currentTab === 'feedback' && <AdminFeedbackPanel />}
+
+        {/* ================= REQUESTS: every product request students sent, answered and not ================= */}
+        {currentTab === 'requests' && <AdminRequests />}
 
         {/* ================= TAB 3: PRODUCTS & PHOTOS (User prompt explicitly requested adding product images) ================= */}
         {currentTab === 'products' && (
