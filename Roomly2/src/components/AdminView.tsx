@@ -221,6 +221,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
   // Customers State
   const [customers, setCustomers] = useState<any[]>([]);
   const [custList, setCustList] = useState<'ordered' | 'started' | 'none'>('ordered');
+  const [custSeen, setCustSeen] = useState<'default' | 'recent' | 'quiet'>('default');
 
   const [loading, setLoading] = useState(false);
 
@@ -1740,12 +1741,25 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
           ];
           const count = (id: string) => customers.filter((c) => (c.group || 'none') === id).length;
           // Not contacted yet first, then the newest activity
+          const WEEK = 7 * 24 * 3600000;
+          const seenOf = (c: any) => Number(c.lastSeenMs || 0);
+          const ago = (ms: number) => {
+            const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+            if (m < 1) return 'just now';
+            if (m < 60) return `${m} min ago`;
+            const h = Math.round(m / 60);
+            if (h < 24) return `${h} ${h === 1 ? 'hour' : 'hours'} ago`;
+            const d = Math.round(h / 24);
+            return `${d} ${d === 1 ? 'day' : 'days'} ago`;
+          };
           const shown = customers
             .filter((c) => (c.group || 'none') === custList)
-            .sort(
-              (a, b) =>
-                Number(Boolean(a.contactedAt)) - Number(Boolean(b.contactedAt)) ||
-                String(b.lastOrderAt || b.cart?.at || b.updatedAt || '').localeCompare(String(a.lastOrderAt || a.cart?.at || a.updatedAt || ''))
+            .filter((c) => custSeen !== 'quiet' || Date.now() - seenOf(c) > WEEK)
+            .sort((a, b) =>
+              custSeen === 'recent'
+                ? seenOf(b) - seenOf(a)
+                : Number(Boolean(a.contactedAt)) - Number(Boolean(b.contactedAt)) ||
+                  String(b.lastOrderAt || b.cart?.at || b.updatedAt || '').localeCompare(String(a.lastOrderAt || a.cart?.at || a.updatedAt || ''))
             );
           const toContact = shown.filter((c) => !c.contactedAt).length;
           const listLabel = (id: string) => lists.find((l) => l.id === id)?.label || '';
@@ -1796,6 +1810,27 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                   ? "Checked out without paying, or left items in their cart (signed-in students only, counted from today)."
                   : 'Have an account (checkout or Games) but never started an order.'}
               </p>
+              <div className="flex flex-wrap gap-1.5">
+                {([
+                  ['default', 'Not contacted first'],
+                  ['recent', 'Recently opened first'],
+                  ['quiet', 'Not opened in 7 days'],
+                ] as const).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setCustSeen(id)}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-bold cursor-pointer ${
+                      custSeen === id ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {custSeen === 'quiet' && (
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">Includes students not seen yet. Opens are recorded only for students signed in on their phone, from the day this was added.</p>
+              )}
               {shown.length > 0 && (
                 <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200">
                   {toContact === 0 ? 'Everyone in this list has been contacted.' : `${toContact} of ${shown.length} not contacted yet. They show first.`}
@@ -1824,6 +1859,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
                       Phone: <span className="font-mono text-slate-700 dark:text-slate-300">{c.phone}</span>
                     </p>
                     <p className="text-[11px] text-slate-500">Room: {locationText(c)}</p>
+                    <p className="text-[11px] text-slate-500">Last opened: {seenOf(c) ? ago(seenOf(c)) : 'Not seen yet'}</p>
                     {heardText(c) && <p className="text-[11px] text-slate-500">Heard from: {heardText(c)}</p>}
                     {c.contactedAt && (
                       <p className="text-[11px] mt-0.5">

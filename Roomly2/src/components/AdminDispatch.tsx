@@ -19,6 +19,7 @@ import {
   autoDeliverOverdue,
   resolveNotReceived,
   waNumber,
+  getCustomerSeenMs,
 } from '../api.js';
 import { OrderRecord, locationText } from '../types';
 import { BatchSwitches, OperatorOverridePanel } from './BatchSwitches';
@@ -80,6 +81,14 @@ const arrivalCheck = (o: OrderRecord): { text: string; late: boolean } | null =>
   return { text: `Promised by ${clock(promised)}, ${sent}: ${verdict}`, late: diff < 0 };
 };
 
+/** Outside orders: did the student open the app after the parcel reached the gate? (a hint, not proof of pickup) */
+const seenAfterGate = (o: OrderRecord, seenMs: number): string => {
+  const sentMs = o.deliveredAt ? Date.parse(o.deliveredAt) : NaN;
+  if (!Number.isFinite(sentMs) || !seenMs) return '';
+  const gateMs = sentMs + GATE_ARRIVAL_MINUTES * 60000;
+  return seenMs >= gateMs ? `Opened the app after arrival, ${clock(seenMs)}` : '';
+};
+
 const whatsappLink = (o: OrderRecord) =>
   `https://wa.me/${waNumber(o.phone)}?text=${encodeURIComponent(`Hi ${o.name}, this is Roomly about your order ${o.id}.`)}`;
 
@@ -88,6 +97,17 @@ const OrderRow: React.FC<{ o: OrderRecord; showSection?: boolean }> = ({ o, show
   const [open, setOpen] = useState(false);
   const stage = orderStage(o);
   const check = stage === 'completed' ? arrivalCheck(o) : null;
+  const [seenMs, setSeenMs] = useState(0);
+  const outsideDone = stage === 'completed' && (o.cart === 'store' || o.cart === 'food');
+  useEffect(() => {
+    if (!outsideDone) return;
+    let live = true;
+    getCustomerSeenMs(o.phone).then((ms: number) => live && setSeenMs(ms));
+    return () => {
+      live = false;
+    };
+  }, [outsideDone, o.phone]);
+  const seenText = outsideDone ? seenAfterGate(o, seenMs) : '';
   return (
     <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 text-xs space-y-2">
       <button type="button" onClick={() => setOpen(!open)} className="w-full flex items-start justify-between gap-2 text-left cursor-pointer">
@@ -118,6 +138,7 @@ const OrderRow: React.FC<{ o: OrderRecord; showSection?: boolean }> = ({ o, show
           {check && (
             <p className={`text-[11px] font-semibold ${check.late ? 'text-rose-600' : 'text-emerald-600'}`}>{check.text}</p>
           )}
+          {seenText && <p className="text-[11px] font-semibold text-emerald-600">{seenText}</p>}
         </div>
         <div className="shrink-0 text-right">
           <p className="font-extrabold text-[#0e9f55]">{naira(o.totalAmount)}</p>

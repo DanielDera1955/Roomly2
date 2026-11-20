@@ -1981,6 +1981,43 @@ export async function saveCustomerCart(phone, pin, items) {
 }
 
 /**
+ * Signed-in student opened the app: stamp the time on their profile (at most every 30 minutes per device).
+ * Admin sees it on completed outside orders. A missed stamp never blocks anything.
+ */
+let lastSeenStamp = 0;
+export async function touchCustomerSeen(phone, pin) {
+  const p = normalizePhone(phone);
+  if (DEMO || !isValidNigerianPhone(p) || !isValidPin(pin)) return;
+  if (Date.now() - lastSeenStamp < 30 * 60000) return;
+  lastSeenStamp = Date.now();
+  try {
+    const ref = doc(db, 'customers', await profileKey(p, pin));
+    const snap = await getDoc(ref);
+    if (!snap.exists() || snap.data().moved) return;
+    await setDoc(ref, { lastSeenMs: Date.now() }, { merge: true });
+  } catch (e) {
+    /* best effort */
+  }
+}
+
+/** Admin: the latest time this phone number's student opened the app (0 when unknown). Cached for 2 minutes. */
+const seenCache = new Map();
+export async function getCustomerSeenMs(phone) {
+  const p = normalizePhone(phone);
+  if (!p) return 0;
+  const hit = seenCache.get(p);
+  if (hit && Date.now() - hit.at < 2 * 60000) return hit.ms;
+  try {
+    const snap = await getDocs(query(collection(db, 'customers'), where('phone', '==', p)));
+    const ms = snap.docs.reduce((m, d) => Math.max(m, Number(d.data().lastSeenMs || 0)), 0);
+    seenCache.set(p, { at: Date.now(), ms });
+    return ms;
+  } catch (e) {
+    return 0;
+  }
+}
+
+/**
  * Admin Customers tab: remember that this student was messaged on WhatsApp, and which list they were in then
  * ('ordered' | 'started' | 'none'). on = false clears it. Saved on their profile so it shows on every device.
  * @returns {Promise<boolean>} true when saved

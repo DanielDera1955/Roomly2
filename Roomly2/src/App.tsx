@@ -24,6 +24,7 @@ import {
   subscribeProductRequest,
   getOutsideChoices,
   saveCustomerCart,
+  touchCustomerSeen,
 } from './api.js';
 import { onFoodMenu, FOOD_BATCH_LABEL, dayWord, timeLabelFull, openDateText, INSIDE_LAUNCH_MS, caritasLineFor, liveStatusFor, SCHOOL_NAME, ShopGroup, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
 import { MessageCircle, Info } from 'lucide-react';
@@ -500,6 +501,16 @@ export default function App() {
     }, 5000);
     return () => window.clearTimeout(t);
   }, [cartItems, cartOwner, loadedOwner]);
+  // Signed-in students: note when they open the app (admin sees it on completed outside orders)
+  useEffect(() => {
+    if (!phone || !pin) return;
+    const stamp = () => {
+      if (document.visibilityState === 'visible') touchCustomerSeen(phone, pin);
+    };
+    stamp();
+    document.addEventListener('visibilitychange', stamp);
+    return () => document.removeEventListener('visibilitychange', stamp);
+  }, [phone, pin]);
   // Today's prices: a saved cart follows the current store price; deleted products drop out
   useEffect(() => {
     if (!products.length) return;
