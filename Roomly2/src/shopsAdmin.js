@@ -167,8 +167,8 @@ export async function createShopDirect(input) {
     .filter((i) => i.name && (i.price > 0 || kind === 'service'));
   if (items.length < 1) throw new Error('Add at least one item with a price.');
   if (items.length > 30) throw new Error('Add at most 30 items. The vendor can add more from their edit link.');
-  if (!input.photoFile) throw new Error('Add a photo.');
-  const photo = await uploadProductImage(input.photoFile);
+  // A photo is optional when the admin adds a vendor for someone; the vendor can add one from their edit link
+  const photo = input.photoFile ? await uploadProductImage(input.photoFile) : '';
 
   const id = doc(collection(db, 'shops')).id;
   const token = newToken();

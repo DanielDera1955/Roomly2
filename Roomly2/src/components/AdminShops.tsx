@@ -163,7 +163,7 @@ const CreateShopForm: React.FC<{ onCreated: (id: string, link: string, name: str
         />
       </div>
       <div>
-        <p className="text-[11px] font-bold text-slate-500 mb-1">Photo</p>
+        <p className="text-[11px] font-bold text-slate-500 mb-1">Photo (optional)</p>
         <input type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files?.[0] || null)} className="text-xs" />
       </div>
       <label className="flex items-start gap-2 text-xs text-slate-700 dark:text-slate-200">

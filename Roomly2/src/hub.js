@@ -517,7 +517,7 @@ export async function adminCreateListing(input) {
   if (!name) throw new Error('Add their name.');
   if (!input.hostel) throw new Error('Choose the hostel.');
   if (!input.consent) throw new Error('Tick that this person agreed to be listed.');
-  if (type !== 'wanted' && type !== 'lost' && type !== 'found' && !input.photoFile) throw new Error('Add a photo.');
+  // A photo is optional when the admin posts for someone; students posting for themselves still need one
   const phone = normalizePhone(input.phone);
   if (!isValidNigerianPhone(phone)) throw new Error('Enter a valid 11-digit phone number.');
   // Checked directly (not isBannedFromRoomly) so the admin's own browser is never flagged as banned

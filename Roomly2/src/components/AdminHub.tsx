@@ -175,7 +175,6 @@ const PostForSomeone: React.FC<{ listings: any[] }> = ({ listings }) => {
   const mine = listings.filter((l) => l.postedByAdmin && l.status === 'active');
   const [label1, label2] = PRICE_LABELS[type] || ['Price (₦)'];
   const longLived = LONG_LIVED.includes(type);
-  const photoNeeded = type !== 'wanted' && type !== 'lost' && type !== 'found';
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -241,7 +240,7 @@ const PostForSomeone: React.FC<{ listings: any[] }> = ({ listings }) => {
             </select>
           )}
           <div>
-            <p className="text-[11px] font-bold text-slate-500 mb-1">Photo{photoNeeded ? '' : ' (optional)'}</p>
+            <p className="text-[11px] font-bold text-slate-500 mb-1">Photo (optional)</p>
             <input type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files?.[0] || null)} className="text-xs" />
           </div>
           <div className="grid grid-cols-2 gap-2">
