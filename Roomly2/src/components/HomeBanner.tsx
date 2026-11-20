@@ -17,15 +17,15 @@ const SHOOT_EVERY_S = SHOOT_CROSS_S + SHOOT_CLEAR_S;
 /**
  * The lines the stars take, in turn: where each starts (left, top), the angle it falls at, how long its streak is
  * and how far it travels (px). All fall the same general way, left to right, like a real meteor shower, but from
- * spread-out points and at clearly different angles. A shorter distance in the same time reads as a slower, shorter star.
- * None of them crosses the moon in the top-right corner.
+ * spread-out points and at clearly different angles (24 to 32 degrees: gently diagonal, never near horizontal).
+ * A shorter distance in the same time reads as a slower, shorter star. None of them crosses the moon in the top-right corner.
  */
 const SHOOT_PATHS: Array<[string, number, number, number, number]> = [
-  ['-22%', 6, 14, 72, 560],
+  ['-22%', 6, 24, 72, 520],
   ['10%', -10, 26, 56, 420],
-  ['-22%', 52, 7, 84, 600],
+  ['-22%', 18, 28, 84, 520],
   ['34%', -8, 32, 44, 300],
-  ['-5%', 24, 18, 64, 480],
+  ['-5%', 24, 24, 64, 480],
 ];
 /** The share of one full cycle (all paths) that a single crossing takes, as a percentage */
 const SHOOT_PCT = (SHOOT_CROSS_S / (SHOOT_PATHS.length * SHOOT_EVERY_S)) * 100;
@@ -36,7 +36,7 @@ const SHOOT_LOOP_FROM_S = SHOOT_FIRST_S + SHOOT_EVERY_S;
 type HeroSlot = 'sunrise' | 'day' | 'golden' | 'night';
 const heroSlotAt = (hour: number): HeroSlot => (hour >= 5 && hour < 9 ? 'sunrise' : hour >= 9 && hour < 16 ? 'day' : hour >= 16 && hour < 18.5 ? 'golden' : 'night');
 /** Where each photo is anchored when the card crops it */
-const HERO_FOCUS: Record<HeroSlot, string> = { sunrise: 'center 35%', day: 'center 40%', golden: 'center 60%', night: 'center 55%' };
+const HERO_FOCUS: Record<HeroSlot, string> = { sunrise: 'center 35%', day: 'center 30%', golden: 'center 60%', night: 'center 55%' };
 /** Shows while the photo loads (and stays if it ever fails to load, with the old colours) */
 const HERO_LOADING_SKY: Record<HeroSlot, string> = {
   sunrise: 'linear-gradient(180deg,#7c2d12 0%,#c2410c 55%,#f59e0b 100%)',
@@ -195,7 +195,6 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
   const arrivalMs = trackOrder && trackOrder.status !== 'Delivered' ? arrivalDeadlineMs(trackOrder) : null;
   const arrivalLate = arrivalMs !== null && arrivalMs - nowMs <= 0;
   // Which extras show: with a photo it follows the slot (the photo has its own sun and moon), without it the old day parts
-  const showClouds = photo ? slot === 'day' : afternoon;
   const showNight = photo ? slot === 'night' : !morning && !afternoon;
   // Stars sit inside the right-hand sky area (left, top within that area, delay)
   const stars: Array<[number, number, number]> = [
@@ -221,8 +220,8 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
         .rb-glow { animation: rb-glow 5s ease-in-out infinite; }
         .rb-twinkle { animation: rb-twinkle 3s ease-in-out infinite; }
         .rb-bob { animation: rb-bob 1.1s ease-in-out infinite; }
-        @keyframes rb-pan { 0% { transform: scale(1.04) translateX(-1.5%); } 100% { transform: scale(1.12) translateX(1.5%); } }
-        .rb-pan { animation: rb-pan 38s ease-in-out infinite alternate; }
+        @keyframes rb-pan { 0% { transform: scale(1.06) translateX(-3%); } 100% { transform: scale(1.14) translateX(3%); } }
+        .rb-pan { animation: rb-pan 24s ease-in-out infinite alternate; }
         /* Shooting star: crosses the night sky in about a second, then stays hidden for the rest of its cycle */
         @keyframes rb-shoot {
           0% { opacity: 0; transform: rotate(var(--rb-a)) translateX(0); }
@@ -276,14 +275,12 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
             style={{ boxShadow: '0 0 34px 12px rgba(255,237,213,.8)' }}
           />
         )}
-        {showClouds && (
+        {!photo && afternoon && (
           <>
-            {!photo && (
-              <div
-                className="rb-glow absolute right-6 top-9 w-12 h-12 rounded-full bg-yellow-300"
-                style={{ boxShadow: '0 0 26px 8px rgba(253,224,71,.6)' }}
-              />
-            )}
+            <div
+              className="rb-glow absolute right-6 top-9 w-12 h-12 rounded-full bg-yellow-300"
+              style={{ boxShadow: '0 0 26px 8px rgba(253,224,71,.6)' }}
+            />
             <span className="rb-drift absolute right-[42px] top-[46px] w-[50px] h-4 rounded-full bg-white/90" />
             <span className="rb-drift-slow absolute right-3 top-[82px] w-9 h-3 rounded-full bg-white/90" />
           </>
@@ -324,8 +321,6 @@ export const HomeBanner: React.FC<HomeBannerProps> = ({
           })}
         </div>
       )}
-      {!plain && <div className="absolute -left-8 -right-8 -bottom-12 h-20 rounded-[50%] bg-[#0e9f55]/55" />}
-      {!plain && <div className="absolute left-[120px] -right-16 -bottom-14 h-20 rounded-[50%] bg-[#0b8044]/50" />}
 
       <div className="relative z-10">
         {/* No date strip: the greeting is the first thing they read */}
