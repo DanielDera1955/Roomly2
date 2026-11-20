@@ -54,6 +54,7 @@ import {
   tapChallenge,
   refreshContact,
   joinSeason,
+  acceptRules,
   registerReward,
   pairContext,
   leagueRulesFor,
@@ -637,6 +638,7 @@ const GamePage: React.FC<{
   const best = mode === 'best';
   const rewardRunning = Boolean(week && weekPhase(week, nowMs) === 'running');
   const [rulesMoved, setRulesMoved] = useState(false);
+  const [accepting, setAccepting] = useState(false);
   const rewardOk = Boolean(rewardJoined && rewardRunning);
   const canLog = Boolean(plays && accepted && season && isOpen && (best || rewardOk));
   const toConfirm = me
@@ -788,6 +790,29 @@ const GamePage: React.FC<{
         <div className={`${card} p-3.5`}>
           <MainRulesDropdown title={`${gameLabel(game)} league rules`} lines={leagueMainRulesFor(game)} defaultOpen onToggle={(o) => !o && setRulesMoved(true)} />
         </div>
+      )}
+
+      {/* A player who has not accepted yet: the rules stay open and one tick accepts them (no second button) */}
+      {best && me && season && !accepted && (
+        <label className={`${card} p-3.5 flex items-start gap-2 cursor-pointer ${accepting ? 'opacity-60' : ''}`}>
+          <input
+            type="checkbox"
+            checked={accepting}
+            disabled={accepting}
+            onChange={async () => {
+              setAccepting(true);
+              try {
+                if (join) await acceptRules(join, season, me);
+                else await joinSeason(season, me);
+              } catch (e: any) {
+                window.alert(e?.message || 'Could not save. Try again.');
+                setAccepting(false);
+              }
+            }}
+            className="mt-0.5 h-4 w-4 accent-[#0e9f55]"
+          />
+          <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">I have read the game rules and accept them. Other players can challenge me once I tick.</span>
+        </label>
       )}
 
       {/* Log a result: the only thing above the table. Everyone can see it, members can use it. */}
@@ -1059,7 +1084,8 @@ const RegisterSheet: React.FC<{ me: any; season: Season | null; session: { name?
   onClose,
   onSaved,
 }) => {
-  const [rulesOpen, setRulesOpen] = useState(true);
+  const [rulesRead, setRulesRead] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const [name, setName] = useState(me?.name || session.name || '');
   const [hostel, setHostel] = useState(me?.hostel || '');
   const [school, setSchool] = useState<'caritas' | 'other' | 'guest'>(me?.school || 'caritas');
@@ -1086,8 +1112,9 @@ const RegisterSheet: React.FC<{ me: any; season: Season | null; session: { name?
     setError('');
     try {
       const auto = Boolean(season && season.autoJoin !== false);
+      if (!me && auto && !rulesRead) throw new Error('Tick the box to accept the game rules and join.');
       const created = await registerGamer({ name, school, schoolName: canonicalSchool(schoolName, schools), hostel, phone, pin, games, ids, freeNote });
-      // A new player goes straight onto the season tables (tapping Join is the acceptance, stored with the join)
+      // A new player goes straight onto the season tables (the rules tick is stored with the join)
       if (!me && auto && season) {
         await joinSeason(season, created).catch(() => {});
         if (rewardGame && (created.games || games).includes(rewardGame)) {
@@ -1242,7 +1269,7 @@ const RegisterSheet: React.FC<{ me: any; season: Season | null; session: { name?
       {!me && season && season.autoJoin !== false && (
         <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
           <button type="button" onClick={() => setRulesOpen(!rulesOpen)} aria-expanded={rulesOpen} className="w-full px-3 py-2.5 flex items-center justify-between cursor-pointer">
-            <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Game rules{rewardGame ? ' and reward contest rules' : ''}</span>
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Read the game rules{rewardGame ? ' and reward contest rules' : ''}</span>
             <span className="text-[11px] font-semibold text-[#0e9f55]">{rulesOpen ? 'Hide' : 'Show'}</span>
           </button>
           {rulesOpen && (
@@ -1253,10 +1280,15 @@ const RegisterSheet: React.FC<{ me: any; season: Season | null; session: { name?
         </div>
       )}
       {!me && season && season.autoJoin !== false && (
-        <p className="text-[11px] text-slate-500">By tapping the button you accept these rules and join the {season.name} table{rewardGame ? <> and the {gameLabel(rewardGame)} reward contest</> : null}.</p>
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input type="checkbox" checked={rulesRead} onChange={(e) => setRulesRead(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#0e9f55]" />
+          <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+            Ticking this and joining accepts the game rules{rewardGame ? <> and the {gameLabel(rewardGame)} reward contest rules above</> : null}. You only do this once. It puts me on the {season.name} table{rewardGame ? <> and in the {gameLabel(rewardGame)} reward contest</> : null}.
+          </span>
+        </label>
       )}
-      <button type="button" disabled={busy} onClick={save} className="w-full h-12 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60">
-        {busy && <Loader2 className="w-4 h-4 animate-spin" />} {me ? 'Save profile' : season && season.autoJoin !== false ? 'Join and accept the rules' : 'Save registration'}
+      <button type="button" disabled={busy || (!me && Boolean(season && season.autoJoin !== false) && !rulesRead)} onClick={save} className="w-full h-12 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60">
+        {busy && <Loader2 className="w-4 h-4 animate-spin" />} {me ? 'Save profile' : season && season.autoJoin !== false ? 'Join the league' : 'Save registration'}
       </button>
     </Sheet>
   );

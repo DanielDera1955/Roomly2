@@ -29,6 +29,15 @@ export async function loadTaps(seasonId: string): Promise<any[]> {
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })).sort((a, b) => Number(b.atMs) - Number(a.atMs));
 }
 
+/** Player reports (harassing, fake results, farming points). Newest first. */
+export async function loadReports(): Promise<any[]> {
+  const snap = await getDocs(query(collection(db, 'gameReports'), limit(500)));
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })).sort((a, b) => Number(b.atMs) - Number(a.atMs));
+}
+export async function setReportHandled(id: string, on: boolean) {
+  await updateDoc(doc(db, 'gameReports', id), { handledMs: on ? Date.now() : 0 });
+}
+
 /** Contacted mark for one player in one game (date kept, so "not contacted" can be listed first) */
 export async function markContacted(gid: string, game: string, on: boolean) {
   await updateDoc(doc(db, 'gamers', gid), { [`contacted.${game}`]: on ? Date.now() : 0 });

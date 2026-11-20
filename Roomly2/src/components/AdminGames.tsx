@@ -15,6 +15,8 @@ import {
   loadPhones,
   loadCredits,
   loadTaps,
+  loadReports,
+  setReportHandled,
   markContacted,
   setRewardBlocked,
   adjustPoints,
@@ -38,9 +40,10 @@ const when = (ms: number) => (ms ? new Date(ms).toLocaleString('en-GB', { day: '
 const day = (ms: number) => (ms ? new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '');
 const open = (url: string) => window.open(url, '_blank', 'noopener');
 
-type Tab = 'players' | 'credits' | 'weeks' | 'taps' | 'settings' | 'announce';
+type Tab = 'players' | 'reports' | 'credits' | 'weeks' | 'taps' | 'settings' | 'announce';
 const TABS_LEAGUE: [Tab, string][] = [
   ['players', 'Players'],
+  ['reports', 'Reports'],
   ['taps', 'Challenge log'],
   ['announce', 'Announcements'],
 ];
@@ -65,6 +68,7 @@ export const AdminGames: React.FC<{ section?: 'league' | 'contest' }> = ({ secti
   const [phones, setPhones] = useState<Map<string, string>>(new Map());
   const [credits, setCredits] = useState<any[]>([]);
   const [taps, setTaps] = useState<any[]>([]);
+  const [reports, setReports] = useState<any[]>([]);
   const [loadErr, setLoadErr] = useState('');
 
   useEffect(() => subscribeSeasons(setSeasons), []);
@@ -82,10 +86,11 @@ export const AdminGames: React.FC<{ section?: 'league' | 'contest' }> = ({ secti
   const refresh = async () => {
     setLoadErr('');
     try {
-      const [p, c, t] = await Promise.all([loadPhones(), loadCredits(), loadTaps(sid)]);
+      const [p, c, t, r] = await Promise.all([loadPhones(), loadCredits(), loadTaps(sid), loadReports().catch(() => [])]);
       setPhones(p);
       setCredits(c);
       setTaps(t);
+      setReports(r);
     } catch (e: any) {
       setLoadErr(e?.message || 'Could not load. Check that you are signed in as admin and the new rules are published.');
     }
@@ -113,6 +118,7 @@ export const AdminGames: React.FC<{ section?: 'league' | 'contest' }> = ({ secti
         {TABS.map(([id, label]) => (
           <button key={id} type="button" onClick={() => setTab(id)} className={`${btn} ${tab === id ? 'bg-[#0e9f55] text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
             {label}
+            {id === 'reports' && reports.some((r) => !r.handledMs) ? ` (${reports.filter((r) => !r.handledMs).length})` : ''}
           </button>
         ))}
         <button type="button" onClick={refresh} className={`${btn} text-slate-500`}>
@@ -123,6 +129,7 @@ export const AdminGames: React.FC<{ section?: 'league' | 'contest' }> = ({ secti
       {season && tab === 'players' && <PlayersTab {...shared} season={season} />}
       {season && tab === 'credits' && <CreditsTab {...shared} />}
       {season && tab === 'weeks' && <WeeksTab {...shared} season={season} />}
+      {tab === 'reports' && <ReportsTab reports={reports} refresh={refresh} />}
       {season && tab === 'taps' && <TapsTab taps={taps} />}
       {tab === 'announce' && <AnnounceBox config={config} />}
       {tab === 'settings' && <SettingsTab config={config} />}
@@ -405,6 +412,55 @@ const WeeksTab: React.FC<any> = ({ season, gamers, matches, weeks, rewardJoins, 
 };
 
 /* ------------------------------ Challenge log ------------------------------ */
+
+const REASON_LABEL: Record<string, string> = {
+  harassing: 'Harassing',
+  fake: 'Fake result or screenshot',
+  farming: 'Farming or fake points',
+  noshow: 'Did not show',
+  other: 'Other',
+};
+const ReportsTab: React.FC<{ reports: any[]; refresh: () => void }> = ({ reports, refresh }) => {
+  const [showDone, setShowDone] = useState(false);
+  const open = reports.filter((r) => !r.handledMs);
+  const list = showDone ? reports : open;
+  // How many reports each player has, so repeat names stand out
+  const counts: Record<string, number> = {};
+  reports.forEach((r) => (counts[r.target] = (counts[r.target] || 0) + 1));
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] text-slate-500">{open.length} waiting. Check the player's matches and screenshots in Players, then mark it handled.</p>
+        <button type="button" onClick={() => setShowDone(!showDone)} className={`${btn} bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 shrink-0`}>
+          {showDone ? 'Hide handled' : 'Show handled'}
+        </button>
+      </div>
+      {list.length === 0 && <p className="text-xs text-slate-400">No reports.</p>}
+      {list.map((r) => (
+        <div key={r.id} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-1">
+          <p className="text-xs text-slate-800 dark:text-slate-200">
+            <span className="font-bold">{r.fromName}</span> reported <span className="font-bold">{r.targetName}</span> · {gameLabel(r.game)} · {when(Number(r.atMs))}
+          </p>
+          <p className="text-[11px] font-bold text-rose-600">
+            {REASON_LABEL[r.reason] || r.reason}
+            {counts[r.target] > 1 ? ` · ${counts[r.target]} reports on this player` : ''}
+          </p>
+          {r.note && <p className="text-[11px] text-slate-600 dark:text-slate-300">{r.note}</p>}
+          <button
+            type="button"
+            onClick={async () => {
+              await setReportHandled(r.id, !r.handledMs).catch(() => window.alert('Could not update.'));
+              refresh();
+            }}
+            className={`${btn} ${r.handledMs ? 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-200' : 'bg-[#0e9f55] text-white'}`}
+          >
+            {r.handledMs ? 'Handled. Undo' : 'Mark handled'}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+};
 
 const TapsTab: React.FC<{ taps: any[] }> = ({ taps }) => {
   const [q, setQ] = useState('');

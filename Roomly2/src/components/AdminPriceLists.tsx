@@ -9,6 +9,7 @@ import {
   subscribeLinkPrices,
   subscribeLinkNewItems,
   applySupplierCosts,
+  repriceSchoolItems,
   addSupplierItem,
   getProductsFresh,
 } from '../api.js';
@@ -33,6 +34,8 @@ export const AdminPriceLists: React.FC<{ categories: any[] }> = ({ categories })
   const [cats, setCats] = useState<string[]>([]);
   const [side, setSide] = useState<'inside' | 'outside'>('inside');
   const [copied, setCopied] = useState('');
+  const [repricing, setRepricing] = useState(false);
+  const [repriceMsg, setRepriceMsg] = useState('');
   const insideCats = useMemo(() => categoriesForStore(categories || [], 'inside').map((c: any) => c.name).filter((n: string) => n.toLowerCase() !== 'food'), [categories]);
   const outsideCats = useMemo(() => categoriesForStore(categories || [], 'store').map((c: any) => c.name).filter((n: string) => n.toLowerCase() !== 'food'), [categories]);
   const sideCats = side === 'outside' ? outsideCats : insideCats;
@@ -76,6 +79,35 @@ export const AdminPriceLists: React.FC<{ categories: any[] }> = ({ categories })
             Send each supplier their own link. They see photos and type their prices; they never see Roomly's prices or margin. Nothing changes in the store
             until you apply it.
           </p>
+
+          {/* Canteen margin: run after the margin in config changes */}
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-2">
+            <p className="text-xs font-bold text-slate-900 dark:text-white">Reprice canteen items</p>
+            <p className="text-[11px] text-slate-500">
+              Canteen items now sell at their cost with no margin. Each item keeps the price it was saved at, so tap this once to update all of them. Outside food and store items are not touched.
+            </p>
+            <button
+              type="button"
+              disabled={repricing}
+              onClick={async () => {
+                if (!window.confirm('Reprice every canteen item from its cost?')) return;
+                setRepricing(true);
+                setRepriceMsg('');
+                try {
+                  const n = await repriceSchoolItems();
+                  setRepriceMsg(n ? `${n} item${n === 1 ? '' : 's'} repriced.` : 'Every canteen item is already at the right price.');
+                  reload();
+                } catch (e: any) {
+                  setRepriceMsg(e?.message || 'Could not reprice. Try again.');
+                }
+                setRepricing(false);
+              }}
+              className={`${btn} bg-[#0e9f55] text-white`}
+            >
+              {repricing ? 'Repricing...' : 'Reprice canteen items'}
+            </button>
+            {repriceMsg && <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">{repriceMsg}</p>}
+          </div>
 
           {/* New link */}
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-2">

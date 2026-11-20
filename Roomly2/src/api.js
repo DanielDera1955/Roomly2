@@ -36,6 +36,7 @@ import {
   isOldPayOrder,
   runnerPayFor,
   sellingPrice,
+  isOutsideSource,
   hostelSideOf,
   CATEGORY_SETUP,
   STORE_SOURCE,
@@ -5208,6 +5209,44 @@ export async function applySupplierCosts(list) {
     console.error(e);
   }
   logActivity('price', `applied supplier prices to ${n} item${n === 1 ? '' : 's'}`);
+  return n;
+}
+/**
+ * Admin: recalculate every canteen (inside school) item's selling price from its cost, with the margin in PRICING.schoolMargin.
+ * Needed once after the margin changes, because each product stores the price it was saved at. Returns how many items changed.
+ */
+export async function repriceSchoolItems() {
+  const cat = await readCatalog(true);
+  const changed = [];
+  cat.products = cat.products.map((p) => {
+    if (isOutsideSource(p.source) || !(Number(p.costPrice) > 0)) return p;
+    const price = sellingPrice(Number(p.costPrice), 'school');
+    if (price === p.price) return p;
+    changed.push(p.id);
+    return { ...p, price };
+  });
+  let n = changed.length;
+  if (n) await writeCatalog(cat);
+  // A price a runner or operator changed later is stored separately and wins over the catalog: reprice those too
+  try {
+    const ovSnap = await getDoc(doc(db, 'catalog', 'overrides'));
+    const prices = (ovSnap.exists() && ovSnap.data().prices) || {};
+    const school = new Map(cat.products.filter((p) => !isOutsideSource(p.source)).map((p) => [p.id, p]));
+    const fix = {};
+    Object.entries(prices).forEach(([id, o]) => {
+      if (!school.has(id) || !o || !(Number(o.cost) > 0)) return;
+      const price = sellingPrice(Number(o.cost), 'school');
+      if (price !== o.price) fix[id] = { price };
+    });
+    if (Object.keys(fix).length) {
+      await setDoc(doc(db, 'catalog', 'overrides'), { prices: fix }, { merge: true });
+      n += Object.keys(fix).length;
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  catalogAt = 0;
+  logActivity('price', `repriced ${n} canteen item${n === 1 ? '' : 's'}`);
   return n;
 }
 /** Admin: add a supplier's new item to the store (inside school or outside store, by the link's side) */

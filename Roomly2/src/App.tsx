@@ -1052,7 +1052,7 @@ export default function App() {
     customer?.deliveredOrdersCount || 0,
     screenOrders.filter((o) => o.status === 'Delivered' && o.paymentStatus !== 'unpaid').length
   );
-  const showHowItWorks = !(signedInCustomer && completedCount >= 3);
+  const showHowItWorks = !(signedInCustomer && completedCount >= 1);
   // Midnight to noon is morning (the banner keeps a night sky until 5am)
   const hour = new Date(clockMs).getHours();
   const dayPart = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -1362,6 +1362,21 @@ export default function App() {
             }}
           />
 
+          {/* How Roomly works: folded guide for first-time visitors, until the first completed order */}
+          {showHowItWorks && <HowRoomlyWorks
+            storeOpensMs={storeOpensMs}
+            onStart={() => {
+              setSourceMode('inside');
+              setSelectedTab('store');
+              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+            }}
+            onHub={() => {
+              setSourceMode('inside');
+              setSelectedTab('hub');
+              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+            }}
+          />}
+
           {/* No sign-in box on the home screen: new students give their details once, at checkout.
               Returning students on a new phone use "Sign in" in the header, which opens this popup. */}
           {signInOpen && !signedInCustomer && (
@@ -1592,21 +1607,6 @@ export default function App() {
 
           {/* Lower on the page so the menu comes first: trust strip (returning students) and the how-to + runner link */}
           {signedInCustomer && <BehindEveryOrder />}
-          {/* How Roomly works: folded guide, until the student's 3rd completed order */}
-          {showHowItWorks && <HowRoomlyWorks
-            storeOpensMs={storeOpensMs}
-            onStart={() => {
-              setSourceMode('inside');
-              setSelectedTab('store');
-              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
-            }}
-            onHub={() => {
-              setSourceMode('inside');
-              setSelectedTab('hub');
-              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
-            }}
-          />}
-
           {/* Feedback: a short form that lands in Admin > Feedback */}
           <button
             type="button"

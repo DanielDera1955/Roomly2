@@ -109,8 +109,9 @@ export const SeasonRulesCard: React.FC<{
   const accepted = rulesAccepted(join);
   // Players who still have to tick the rules: added by Roomly or registered before, or a new season that needs a Join tap
   const needsRules = Boolean(target && hasGames && !accepted);
+  // Rules stay open until the player accepts, then fold away
   useEffect(() => {
-    if (needsRules) setRulesOpen(true);
+    setRulesOpen(needsRules);
   }, [needsRules]);
 
   const confirm = async () => {
@@ -159,15 +160,12 @@ export const SeasonRulesCard: React.FC<{
           )}
           {target && hasGames && accepted && <p className="text-xs font-bold text-[#0e9f55] flex items-center gap-1.5"><Check className="w-4 h-4" /> You are in the league.</p>}
           {needsRules && (
-            <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 p-3 space-y-2">
-              <p className="text-xs font-bold text-slate-900 dark:text-white">{auto ? 'One tap to open your challenges' : `Join ${target?.name || 'the league'}`}</p>
-              <p className="text-[11px] text-slate-600 dark:text-slate-300">
-                {auto ? 'Other players cannot challenge you until you accept the game rules below. Read them, then tap.' : 'Read the rules below, then tap to join.'}
-              </p>
-              <button type="button" disabled={busy} onClick={confirm} className="w-full h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60">
-                {busy && <Loader2 className="w-4 h-4 animate-spin" />} {auto ? 'Accept the rules' : 'Join the league'}
-              </button>
-            </div>
+            <label className={`rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 p-3 flex items-start gap-2 cursor-pointer ${busy ? 'opacity-60' : ''}`}>
+              <input type="checkbox" checked={busy} disabled={busy} onChange={confirm} className="mt-0.5 h-4 w-4 accent-[#0e9f55]" />
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                I have read the game rules below and accept them. {auto ? 'Other players can challenge me once I tick.' : `This joins me to ${target?.name || 'the league'}.`}
+              </span>
+            </label>
           )}
         </div>
         <button type="button" onClick={() => setRulesOpen(!rulesOpen)} aria-expanded={rulesOpen} className="w-full px-4 py-3 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 cursor-pointer">
@@ -538,6 +536,7 @@ export const ChallengeTable: React.FC<{
         <span className="text-[11px] text-slate-400">{rows.length} {rows.length === 1 ? 'player' : 'players'}</span>
       </div>
       {note && <p className="px-1 mb-2 text-[10px] text-slate-400">{note}</p>}
+      {me && <p className="px-1 mb-2 text-[10px] text-slate-400">Think someone is farming or faking points? Tap their name, then Report.</p>}
       {rows.length > 8 && (
         <div className="relative mb-2">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />

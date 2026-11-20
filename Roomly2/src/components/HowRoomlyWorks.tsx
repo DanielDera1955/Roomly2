@@ -1,90 +1,88 @@
-import React from 'react';
-import { ChevronDown, Plus, Check, Timer } from 'lucide-react';
+import React, { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 
 /**
- * Home page: "How Roomly works". Four drawn mini screens (no screenshots, so it stays light on data
- * and never goes out of date), shown until the student's 3rd completed order (App decides).
+ * Home page, under the four cards: "How you get your order". A folded headline for first-time visitors
+ * (App decides how long it shows). Two tabs of plain steps, no screenshots, so it stays light on data
+ * and never goes out of date.
  */
-const Screen: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="h-[72px] rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-center justify-center px-2">
-    {children}
-  </div>
-);
+const GUARANTEE = 'Any issue with your order is refunded.';
+
+const TABS: { id: 'outside' | 'canteen'; label: string; steps: string[]; note?: string }[] = [
+  {
+    id: 'outside',
+    label: 'Outside food and stores',
+    steps: [
+      'Order before the batch time stated.',
+      'Pay and tap "I\'ve paid". Your countdown starts, and your order is packed with your name or phone number on it.',
+      'Track it from your dashboard when it is on its way and when it arrives at the school gate, before the countdown hits zero.',
+    ],
+    note: 'Store items work exactly the same way.',
+  },
+  {
+    id: 'canteen',
+    label: 'Canteen items',
+    steps: [
+      'Order before the batch time stated.',
+      'Pay and tap "I\'ve paid".',
+      'Your order is packed by a student runner and brought to your room.',
+      'You can track when the runner is on their way to your hostel and when they have arrived at your room, so you know even if you are not there.',
+    ],
+  },
+];
 
 export const HowRoomlyWorks: React.FC<{ storeOpensMs: number; onStart: () => void; onHub: () => void }> = ({ onStart, onHub }) => {
-  const steps: { title: string; note?: string; screen: React.ReactNode }[] = [
-    {
-      title: 'Pick what you want',
-      screen: (
-        <div className="w-full flex items-center gap-2">
-          <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 shrink-0" />
-          <div className="min-w-0 flex-1 space-y-1">
-            <div className="h-2 w-4/5 rounded bg-slate-300 dark:bg-slate-600" />
-            <div className="h-2 w-1/2 rounded bg-slate-200 dark:bg-slate-700" />
-          </div>
-          <span className="w-6 h-6 rounded-full bg-[#0e9f55] text-white flex items-center justify-center shrink-0">
-            <Plus className="w-3.5 h-3.5" />
-          </span>
-        </div>
-      ),
-    },
-    {
-      title: 'Pay and tap "I\'ve paid"',
-      screen: (
-        <div className="w-full space-y-1.5">
-          <div className="h-2 w-3/4 mx-auto rounded bg-slate-300 dark:bg-slate-600" />
-          <div className="h-6 rounded-lg bg-[#0e9f55] text-white text-[10px] font-bold flex items-center justify-center">I've paid</div>
-        </div>
-      ),
-    },
-    {
-      title: 'Your countdown starts',
-      screen: (
-        <div className="flex items-center gap-1.5 text-[#0b8044] dark:text-emerald-400">
-          <Timer className="w-4 h-4" />
-          <span className="font-mono tabular-nums text-base font-black">00:45:10</span>
-        </div>
-      ),
-    },
-    {
-      title: 'Delivered before it hits 0',
-      note: 'Outside orders at the gate, canteen orders to your room',
-      screen: (
-        <div className="flex flex-col items-center gap-1">
-          <span className="w-7 h-7 rounded-full bg-[#0e9f55] text-white flex items-center justify-center">
-            <Check className="w-4 h-4" />
-          </span>
-          <span className="text-[10px] font-bold text-[#0b8044] dark:text-emerald-400">Delivered</span>
-        </div>
-      ),
-    },
-  ];
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<'outside' | 'canteen'>('outside');
+  const current = TABS.find((t) => t.id === tab) || TABS[0];
 
   return (
     <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 overflow-hidden">
-      <div className="px-4 pt-3.5 pb-4">
-        <p className="text-sm font-bold text-slate-900 dark:text-white">How Roomly works</p>
-        <ol className="mt-3 grid grid-cols-2 gap-2.5">
-          {steps.map((s, i) => (
-            <li key={s.title} className="min-w-0">
-              <Screen>{s.screen}</Screen>
-              <p className="mt-1.5 flex gap-1.5 text-xs font-bold text-slate-900 dark:text-white leading-snug">
-                <span className="text-[#0e9f55] shrink-0">{i + 1}</span>
-                <span className="min-w-0">{s.title}</span>
-              </p>
-              {s.note && <p className="mt-0.5 text-[10.5px] leading-snug text-slate-500 dark:text-slate-400">{s.note}</p>}
-            </li>
-          ))}
-        </ol>
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <button type="button" onClick={onStart} className="h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer">
-            Start ordering
-          </button>
-          <button type="button" onClick={onHub} className="h-11 rounded-xl border border-[#0e9f55] text-[#0e9f55] text-sm font-bold cursor-pointer">
-            Hostel Hub
-          </button>
+      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="w-full px-4 py-3.5 flex items-center justify-between gap-3 text-left cursor-pointer">
+        <span className="min-w-0">
+          <span className="block text-sm font-bold text-slate-900 dark:text-white">How you get your order</span>
+          <span className="block text-[11px] text-slate-500 dark:text-slate-400">Simple steps for food, store items and canteen items</span>
+        </span>
+        <ChevronDown className={`w-4 h-4 shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="px-4 pb-4 space-y-3">
+          <div className="grid grid-cols-2 gap-1.5" role="tablist">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.id}
+                onClick={() => setTab(t.id)}
+                className={`py-2 rounded-xl text-xs font-bold border cursor-pointer ${
+                  tab === t.id ? 'bg-[#0e9f55] border-[#0e9f55] text-white' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <ol className="space-y-2.5">
+            {current.steps.map((s, i) => (
+              <li key={s} className="flex gap-2.5 text-xs leading-relaxed text-slate-700 dark:text-slate-200">
+                <span className="shrink-0 w-5 h-5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-[#0e9f55] text-[11px] font-black flex items-center justify-center">{i + 1}</span>
+                <span className="min-w-0">{s}</span>
+              </li>
+            ))}
+          </ol>
+          {current.note && <p className="text-xs text-slate-500 dark:text-slate-400">{current.note}</p>}
+          <p className="text-xs font-bold text-[#0b8044] dark:text-emerald-400">{GUARANTEE}</p>
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button type="button" onClick={onStart} className="h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer">
+              Start ordering
+            </button>
+            <button type="button" onClick={onHub} className="h-11 rounded-xl border border-[#0e9f55] text-[#0e9f55] text-sm font-bold cursor-pointer">
+              Hostel Hub
+            </button>
+          </div>
         </div>
-      </div>
+      )}
       {/* Runner sign-up: small and always visible, so students who want to earn can find it */}
       <a
         href="#join"

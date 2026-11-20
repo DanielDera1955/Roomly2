@@ -122,7 +122,7 @@ export type ProductSource = 'school' | 'outside' | 'food';
 export const isOutsideSource = (s?: string) => s === 'outside' || s === 'food';
 
 export const PRICING = {
-  schoolMargin: 0.16, // every item bought inside school
+  schoolMargin: 0, // canteen items (bought inside school): no margin for now. Raise it here when demand is clear, then use Admin > Products > Reprice canteen items
   outsideMargin: 0.18, // outside-school items costing under outsideBigFrom
   outsideBigMargin: 0.12, // outside-school items costing outsideBigFrom or more
   outsideBigFrom: 10000,
