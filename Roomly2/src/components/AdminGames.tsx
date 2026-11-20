@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { GAMES, gameLabel, playsGame, subscribeGamers, timeAgo, waTo } from '../hub.js';
-import { computeRows, matchCounts, weekPhase, creditState, rewardConfigFor, rewardSlots } from '../boardCore.js';
+import { computeRows, matchCounts, weekPhase, creditState, rewardConfigFor, rewardSlots, rewardRegsFor, contestOf } from '../boardCore.js';
+import { farmSignals, opponentsOf, STREAK_FLAG, STREAK_REMOVE } from '../farmSignals.js';
 import {
   subscribeSeasons,
   subscribeSeasonJoins,
@@ -18,6 +19,9 @@ import {
   loadReports,
   setReportHandled,
   markContacted,
+  markNoWhatsapp,
+  markNumberChecked,
+  removeFarmAccount,
   setRewardBlocked,
   adjustPoints,
   voidCredit,
@@ -141,48 +145,183 @@ export const AdminGames: React.FC<{ section?: 'league' | 'contest' }> = ({ secti
 
 type Seg = 'never' | 'low' | 'active';
 const SEG_LABEL: Record<Seg, string> = { never: 'Never played', low: 'Low activity', active: 'Active' };
+type View = 'all' | 'league' | 'reward';
+const VIEW_LABEL: Record<View, string> = { all: 'All players', league: 'League table', reward: 'Weekly reward' };
 
-const PlayersTab: React.FC<any> = ({ season, gamers, matches, joins, taps, phones, config }) => {
+const PlayersTab: React.FC<any> = ({ season, gamers, matches, joins, taps, phones, config, weeks, rewardJoins, credits, refresh }) => {
   const [game, setGame] = useState<string>(GAMES[0].id);
+  const [view, setView] = useState<View>('all');
   const [seg, setSeg] = useState<Seg | 'all'>('all');
   const [q, setQ] = useState('');
+  const [flaggedOnly, setFlaggedOnly] = useState(false);
+  const [openPanel, setOpenPanel] = useState('');
+  const [removed, setRemoved] = useState<any>(null);
   const nowMs = Date.now();
+  // "All games" only makes sense for the weekly reward list
+  const activeGame = game === 'all' && view !== 'reward' ? GAMES[0].id : game;
   const joined = new Set(joins.map((j: any) => j.gid));
-  const cfg = rewardConfigFor(config, game);
+  const seasonMatches = useMemo(() => matches.filter((m: any) => m.seasonId === season.id), [matches, season.id]);
+  const signals = useMemo(() => farmSignals(gamers, seasonMatches, phones), [gamers, seasonMatches, phones]);
+  const regSets = useMemo(() => {
+    const out: Record<string, Set<string>> = {};
+    GAMES.forEach((g: { id: string }) => (out[g.id] = new Set(rewardRegsFor(rewardJoins, gamers, g.id).map((r: any) => r.gid))));
+    return out;
+  }, [rewardJoins, gamers]);
+
+  const rewardPhase = (gm: string): { kind: 'running' | 'scheduled' | 'full' | 'near' | 'open'; week?: any; n: number; min: number; left: number } => {
+    const c = rewardConfigFor(config, gm);
+    const n = regSets[gm]?.size || 0;
+    const mine = weeks.filter((w: any) => w.game === gm);
+    const running = mine.find((w: any) => weekPhase(w, nowMs) === 'running');
+    const sched = mine.filter((w: any) => weekPhase(w, nowMs) === 'scheduled').sort((a: any, b: any) => Number(a.startMs) - Number(b.startMs))[0];
+    const left = Math.max(0, c.minPlayers - n);
+    if (running) return { kind: 'running', week: running, n, min: c.minPlayers, left };
+    if (sched) return { kind: 'scheduled', week: sched, n, min: c.minPlayers, left };
+    if (n >= c.minPlayers) return { kind: 'full', n, min: c.minPlayers, left };
+    if (left <= 5) return { kind: 'near', n, min: c.minPlayers, left };
+    return { kind: 'open', n, min: c.minPlayers, left };
+  };
+
+  const entries = useMemo(() => {
+    const ids = activeGame === 'all' ? GAMES.map((x: { id: string }) => x.id) : [activeGame];
+    const list: { g: any; game: string }[] = [];
+    ids.forEach((gm: string) => {
+      if (view === 'reward') {
+        (regSets[gm] ? [...regSets[gm]] : []).forEach((gid) => {
+          const g = gamers.find((x: any) => x.id === gid);
+          if (g) list.push({ g, game: gm });
+        });
+      } else {
+        gamers.filter((g: any) => playsGame(g, gm) && (view === 'all' || joined.has(g.id))).forEach((g: any) => list.push({ g, game: gm }));
+      }
+    });
+    return list;
+  }, [gamers, activeGame, view, regSets, joins]);
 
   const rows = useMemo(() => {
-    const list = gamers
-      .filter((g: any) => playsGame(g, game))
-      .map((g: any) => {
-        const mine = matches.filter((m: any) => m.game === game && m.seasonId === season.id && matchCounts(m) && (m.aUid === g.id || m.bUid === g.id));
-        const last = mine.reduce((t: number, m: any) => Math.max(t, Number(m.loggedAtMs || 0)), 0);
-        const sent = taps.filter((t: any) => t.game === game && t.from === g.id).length;
-        const segment: Seg = mine.length === 0 ? 'never' : nowMs - last > 7 * DAY ? 'low' : 'active';
-        return { g, played: mine.length, sent, last, segment, contacted: Number(g.contacted?.[game] || 0), joined: joined.has(g.id) };
-      });
-    return list.sort((a: any, b: any) => Number(Boolean(a.contacted)) - Number(Boolean(b.contacted)) || a.contacted - b.contacted || (a.segment === b.segment ? a.last - b.last : a.segment === 'never' ? -1 : b.segment === 'never' ? 1 : a.segment === 'low' ? -1 : 1));
-  }, [gamers, matches, taps, game, season.id, joins]);
+    const list = entries.map(({ g, game: gm }) => {
+      const mine = seasonMatches.filter((m: any) => m.game === gm && matchCounts(m) && (m.aUid === g.id || m.bUid === g.id) && (view !== 'reward' || contestOf(m) === 'reward'));
+      const last = mine.reduce((t: number, m: any) => Math.max(t, Number(m.loggedAtMs || 0)), 0);
+      const sent = taps.filter((t: any) => t.game === gm && t.from === g.id).length;
+      const segment: Seg = mine.length === 0 ? 'never' : nowMs - last > 7 * DAY ? 'low' : 'active';
+      return { g, game: gm, played: mine.length, sent, last, segment, contacted: Number(g.contacted?.[gm] || 0), joined: joined.has(g.id), rewardReg: Boolean(regSets[gm]?.has(g.id)), sig: signals.get(g.id) };
+    });
+    return list.sort((a: any, b: any) => {
+      if (flaggedOnly) return (b.sig?.score || 0) - (a.sig?.score || 0);
+      return Number(Boolean(a.contacted)) - Number(Boolean(b.contacted)) || a.contacted - b.contacted || (a.segment === b.segment ? a.last - b.last : a.segment === 'never' ? -1 : b.segment === 'never' ? 1 : a.segment === 'low' ? -1 : 1);
+    });
+  }, [entries, seasonMatches, taps, view, signals, regSets, flaggedOnly, joins]);
 
-  const count = (s: Seg) => rows.filter((r: any) => r.segment === s).length;
-  const shown = rows.filter((r: any) => (seg === 'all' || r.segment === seg) && (!q.trim() || String(r.g.name).toLowerCase().includes(q.trim().toLowerCase())));
+  const count = (sg: Seg) => rows.filter((r: any) => r.segment === sg).length;
+  const flaggedCount = rows.filter((r: any) => r.sig?.flagged).length;
+  const shown = rows.filter(
+    (r: any) => (seg === 'all' || r.segment === seg) && (!flaggedOnly || r.sig?.flagged) && (!q.trim() || String(r.g.name).toLowerCase().includes(q.trim().toLowerCase()))
+  );
+  const viewCount = (v: View) => {
+    if (v === 'reward') return activeGame === 'all' ? GAMES.reduce((t: number, g: { id: string }) => t + (regSets[g.id]?.size || 0), 0) : regSets[activeGame]?.size || 0;
+    return gamers.filter((g: any) => playsGame(g, activeGame === 'all' ? GAMES[0].id : activeGame) && (v === 'all' || joined.has(g.id))).length;
+  };
 
-  const message = (r: any) => {
+  const leagueMessage = (r: any) => {
+    const cfg = rewardConfigFor(config, r.game);
     const name = r.g.name;
-    const gl = gameLabel(game);
+    const gl = gameLabel(r.game);
     if (r.segment === 'never') return `Hi ${name}, it's Roomly Caritas. You signed up for ${gl} but you have not played a match yet. Open Games, pick someone from Players to challenge and play your first one. The weekly reward is a ${naira(cfg.creditValue)} food credit.`;
     if (r.segment === 'low') return `Hi ${name}, it's Roomly Caritas. We have not seen a ${gl} match from you in over a week. You have ${r.played} played so far this season. Come back and challenge someone, the weekly ${naira(cfg.creditValue)} food credit is still up for grabs.`;
     return `Hi ${name}, it's Roomly Caritas. You are doing well in ${gl} with ${r.played} matches this season. Keep going, the top 3 with at least ${cfg.minPoints} points win a ${naira(cfg.creditValue)} food credit each reward week.`;
   };
+  /** The reward message depends on where that game's reward stands, and on whether the player has joined it */
+  const rewardMessage = (r: any, asRegistered = r.rewardReg) => {
+    const cfg = rewardConfigFor(config, r.game);
+    const ph = rewardPhase(r.game);
+    const name = r.g.name;
+    const gl = gameLabel(r.game);
+    const prize = `The top 3 with at least ${cfg.minPoints} points win a ${naira(cfg.creditValue)} food credit each.`;
+    const hi = `Hi ${name}, it's Roomly Caritas.`;
+    if (asRegistered) {
+      if (ph.kind === 'running') return `${hi} The ${gl} reward week is running now and closes ${when(Number(ph.week.endMs))}. ${prize} Open Games, tap ${gl} and log your reward matches before it closes.`;
+      if (ph.kind === 'scheduled') return `${hi} The ${gl} reward week starts ${when(Number(ph.week.startMs))} and runs 7 days. ${prize} You are registered, so be ready to play your reward matches.`;
+      if (ph.kind === 'full') return `${hi} The ${gl} reward has ${ph.n} registered players and is next in line to start. ${prize} You are registered, so be ready.`;
+      if (ph.kind === 'near') return `${hi} You are registered for the ${gl} reward. ${ph.n} of ${ph.min} players are in, only ${ph.left} more and the week starts. Tell your friends who play ${gl} to join so it starts sooner.`;
+      return `${hi} You are registered for the ${gl} reward. ${ph.n} of ${ph.min} players are in so far. The week starts once ${ph.min} players have registered, so invite the ${gl} players you know.`;
+    }
+    if (ph.kind === 'running') return `${hi} The ${gl} reward week is running now. ${prize} You play ${gl} but have not joined the reward contest. Open Games, tap ${gl} and tap Join the reward contest. You can join late.`;
+    if (ph.kind === 'scheduled') return `${hi} The ${gl} reward week starts ${when(Number(ph.week.startMs))}. ${prize} You play ${gl} but have not joined the reward contest. Open Games, tap ${gl} and tap Join the reward contest.`;
+    if (ph.kind === 'full') return `${hi} The ${gl} reward has ${ph.n} players registered and is next in line to start. You play ${gl} but have not joined. Open Games, tap ${gl} and tap Join the reward contest so you are on the table when the week starts.`;
+    if (ph.kind === 'near') return `${hi} The ${gl} reward needs only ${ph.left} more players to start (${ph.n} of ${ph.min}). You play ${gl}. Join the reward contest in Games and help it start.`;
+    return `${hi} ${ph.n} of ${ph.min} players have joined the ${gl} reward contest. You play ${gl}, so join it in Games and invite others. The week starts once ${ph.min} are in.`;
+  };
 
+  const run = async (fn: () => Promise<any>) => {
+    try {
+      await fn();
+    } catch (e: any) {
+      window.alert(e?.message || 'Could not save.');
+    }
+  };
+
+  const remove = async (r: any) => {
+    const opps = opponentsOf(r.g.id, seasonMatches, gamers);
+    const total = seasonMatches.filter((m: any) => matchCounts(m) && (m.aUid === r.g.id || m.bUid === r.g.id)).length;
+    const pts = opps.reduce((t: number, o: any) => t + o.pts, 0);
+    if (!window.confirm(`Remove ${r.g.name}?\n\nThe account is blocked and its ${total} counted matches this season are voided in the league and the reward contest. ${opps.length} opponents lose ${pts} points in total. This cannot be undone.`)) return;
+    try {
+      const reward = seasonMatches.filter((m: any) => matchCounts(m) && contestOf(m) === 'reward' && (m.aUid === r.g.id || m.bUid === r.g.id));
+      const weekKeys = new Set(reward.map((m: any) => m.weekKey));
+      const oppIds = new Set(opps.map((o: any) => o.id));
+      const toCheck = credits.filter((c: any) => weekKeys.has(c.weekKey) && oppIds.has(c.gid) && c.status !== 'void').map((c: any) => `${c.name} (${gameLabel(c.game)})`);
+      const n = await removeFarmAccount(r.g.id, season.id, seasonMatches);
+      setRemoved({ name: r.g.name, voided: n, opps, toCheck });
+      setOpenPanel('');
+      refresh();
+    } catch (e: any) {
+      window.alert(e?.message || 'Could not remove the account.');
+    }
+  };
+
+  const views: View[] = ['all', 'league', 'reward'];
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-1.5">
-        {GAMES.map((g: { id: string; label: string }) => (
-          <button key={g.id} type="button" onClick={() => setGame(g.id)} className={`${btn} ${game === g.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
-            {g.label}
+        {GAMES.map((g: { id: string; label: string }) => {
+          const c = rewardConfigFor(config, g.id);
+          return (
+            <button key={g.id} type="button" onClick={() => setGame(g.id)} className={`${btn} ${activeGame === g.id ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
+              {g.label} {regSets[g.id]?.size || 0}/{c.minPlayers}
+            </button>
+          );
+        })}
+        {view === 'reward' && (
+          <button type="button" onClick={() => setGame('all')} className={`${btn} ${activeGame === 'all' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
+            All games
+          </button>
+        )}
+      </div>
+      <p className="text-[10px] text-slate-400">The numbers are players registered for each game's reward contest, and how many it needs to start.</p>
+      <div className="grid grid-cols-3 gap-1.5">
+        {views.map((v) => (
+          <button key={v} type="button" onClick={() => { setView(v); setSeg('all'); }} className={`py-2 rounded-xl text-[11px] font-bold cursor-pointer ${view === v ? 'bg-[#0e9f55] text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
+            {VIEW_LABEL[v]} {viewCount(v)}
           </button>
         ))}
       </div>
+      <p className="text-[10px] text-slate-400">
+        {view === 'all' ? 'Everyone who has an account in this game.' : view === 'league' ? `Players on the ${season.name} league table for this game.` : activeGame === 'all' ? 'Players registered for a reward contest, across all games. A player appears once for each game.' : (() => { const ph = rewardPhase(activeGame); return ph.kind === 'running' ? 'The reward week is running now.' : ph.kind === 'scheduled' ? `The reward week starts ${when(Number(ph.week.startMs))}.` : `Collecting players: ${ph.n} of ${ph.min} registered.`; })()}
+      </p>
+      {removed && (
+        <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900 text-xs space-y-1.5">
+          <p className="font-bold text-rose-700 dark:text-rose-300">{removed.name} removed. {removed.voided} matches voided.</p>
+          {removed.opps.length > 0 && <p className="text-[11px] text-slate-600 dark:text-slate-300">Points taken from: {removed.opps.map((o: any) => `${o.name} (${o.pts})`).join(', ')}.</p>}
+          {removed.toCheck.length > 0 ? (
+            <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">Credits already issued to these players for the affected weeks: {removed.toCheck.join(', ')}. Check them in Credits and void any that no longer qualify.</p>
+          ) : (
+            <p className="text-[11px] text-slate-500">No credits were issued to these opponents for the affected weeks.</p>
+          )}
+          <button type="button" onClick={() => setRemoved(null)} className={`${btn} bg-slate-200 dark:bg-slate-700`}>
+            Close
+          </button>
+        </div>
+      )}
       <div className="grid grid-cols-4 gap-1.5 text-center">
         {([['all', 'All', rows.length], ['never', 'Never played', count('never')], ['low', 'Low activity', count('low')], ['active', 'Active', count('active')]] as [Seg | 'all', string, number][]).map(([id, label, n]) => (
           <button key={id} type="button" onClick={() => setSeg(id)} className={`p-2 rounded-xl ${seg === id ? 'bg-emerald-50 dark:bg-emerald-950/50 ring-1 ring-[#0e9f55]' : 'bg-slate-50 dark:bg-slate-800/60'} cursor-pointer`}>
@@ -191,35 +330,50 @@ const PlayersTab: React.FC<any> = ({ season, gamers, matches, joins, taps, phone
           </button>
         ))}
       </div>
-      <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-1.5">
-        <p className="text-[11px] text-slate-600 dark:text-slate-300">Put everyone already registered on {season.name}. They appear in the tables of their own games and tick the rules the first time they open Games.</p>
-        <button
-          type="button"
-          onClick={async () => {
-            if (!window.confirm(`Add all registered players to ${season.name}?`)) return;
-            try {
-              const n = await addAllToSeason(season, gamers, new Set(joins.map((j: any) => j.gid)));
-              window.alert(`${n} players added.`);
-            } catch (e: any) {
-              window.alert(e?.message || 'Could not add them.');
-            }
-          }}
-          className={`${btn} bg-[#0e9f55] text-white`}
-        >
-          Add all registered players
+      {view === 'league' && (
+        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-1.5">
+          <p className="text-[11px] text-slate-600 dark:text-slate-300">Put everyone already registered on {season.name}. They appear in the tables of their own games and tick the rules the first time they open Games.</p>
+          <button
+            type="button"
+            onClick={async () => {
+              if (!window.confirm(`Add all registered players to ${season.name}?`)) return;
+              try {
+                const n = await addAllToSeason(season, gamers, new Set(joins.map((j: any) => j.gid)));
+                window.alert(`${n} players added.`);
+              } catch (e: any) {
+                window.alert(e?.message || 'Could not add them.');
+              }
+            }}
+            className={`${btn} bg-[#0e9f55] text-white`}
+          >
+            Add all registered players
+          </button>
+        </div>
+      )}
+      <div className="flex gap-2">
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name" className={input} />
+        <button type="button" onClick={() => setFlaggedOnly(!flaggedOnly)} className={`${btn} shrink-0 ${flaggedOnly ? 'bg-rose-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
+          Flagged {flaggedCount}
         </button>
       </div>
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name" className={input} />
-      <p className="text-[10px] text-slate-400">Not contacted first. Low activity means no match in the last 7 days.</p>
+      <p className="text-[10px] text-slate-400">{flaggedOnly ? 'Highest suspicion first. The score only points you at a player, nobody is blocked automatically.' : 'Not contacted first. Low activity means no match in the last 7 days.'}</p>
       {shown.length === 0 && <p className="text-xs text-slate-400">Nobody here.</p>}
       {shown.slice(0, 80).map((r: any) => {
         const phone = phones.get(r.g.id);
-        const blocked = Boolean(r.g.rewardBlocked?.[game]);
+        const blocked = Boolean(r.g.rewardBlocked?.[r.game]);
+        const sig = r.sig;
+        const checked = Number(r.g.contacted?.numberChecked || 0) > 0;
+        const noWa = Number(r.g.contacted?.noWa || 0) > 0;
+        const streakish = Boolean(sig && sig.streak >= STREAK_FLAG);
+        const rowKey = `${r.g.id}_${r.game}`;
+        const opps = streakish && openPanel === rowKey ? opponentsOf(r.g.id, seasonMatches, gamers) : [];
         return (
-          <div key={r.g.id} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs space-y-1.5">
+          <div key={rowKey} className={`p-3 rounded-xl text-xs space-y-1.5 ${sig?.flagged ? 'bg-rose-50 dark:bg-rose-950/20 ring-1 ring-rose-200 dark:ring-rose-900' : 'bg-slate-50 dark:bg-slate-800/60'}`}>
             <div className="flex items-center justify-between gap-2">
               <p className="font-bold text-slate-900 dark:text-white truncate">
-                {r.g.name} <span className="font-normal text-slate-400">{SEG_LABEL[r.segment as Seg]}{r.joined ? '' : ', not in season'}</span>
+                {r.g.name}
+                {activeGame === 'all' ? <span className="font-normal text-slate-500"> · {gameLabel(r.game)}</span> : null}{' '}
+                <span className="font-normal text-slate-400">{SEG_LABEL[r.segment as Seg]}{view !== 'reward' && !r.joined ? ', not in season' : ''}</span>
               </p>
               <span className="text-[10px] text-slate-400 shrink-0">{r.g.lastActiveMs ? `Active ${timeAgo(Number(r.g.lastActiveMs))}` : 'No activity'}</span>
             </div>
@@ -227,17 +381,78 @@ const PlayersTab: React.FC<any> = ({ season, gamers, matches, joins, taps, phone
               Matches {r.played} · Taps sent {r.sent} · {r.contacted ? `Contacted ${day(r.contacted)}` : 'Not contacted'}
               {blocked ? ' · Blocked from rewards' : ''}
             </p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${r.rewardReg ? 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                Reward {r.rewardReg ? 'registered' : 'not registered'}
+              </span>
+              {checked && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300">Number checked</span>}
+              {noWa && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300">Not on WhatsApp</span>}
+              {sig && sig.score > 0 && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200">Suspicion {sig.score}</span>}
+            </div>
+            {sig && sig.flags.length > 0 && (
+              <ul className="space-y-0.5">
+                {sig.flags.map((f: any) => (
+                  <li key={f.key} className={`text-[11px] ${f.level === 'high' ? 'font-bold text-rose-600' : f.level === 'mid' ? 'font-semibold text-amber-600' : 'text-slate-500'}`}>
+                    {f.text}
+                    {f.key === 'dup' && sig.dupWith.length ? `: ${sig.dupWith.join(', ')}` : ''}
+                  </li>
+                ))}
+              </ul>
+            )}
             <div className="flex flex-wrap gap-1.5">
-              <button type="button" disabled={!phone} onClick={() => open(waTo(phone, message(r)))} className={`${btn} bg-[#0e9f55] text-white`}>
-                {phone ? 'WhatsApp' : 'No number'}
+              <button type="button" disabled={!phone} onClick={() => open(waTo(phone, view === 'reward' ? rewardMessage(r) : leagueMessage(r)))} className={`${btn} bg-[#0e9f55] text-white`}>
+                {phone ? (view === 'reward' ? 'WhatsApp reward' : 'WhatsApp') : 'No number'}
               </button>
-              <button type="button" onClick={() => markContacted(r.g.id, game, !r.contacted)} className={`${btn} bg-slate-200 dark:bg-slate-700`}>
+              {view !== 'reward' && !r.rewardReg && (
+                <button type="button" disabled={!phone} onClick={() => open(waTo(phone, rewardMessage(r, false)))} className={`${btn} bg-emerald-50 dark:bg-emerald-950/50 text-[#0e9f55]`}>
+                  Invite to reward
+                </button>
+              )}
+              <button type="button" onClick={() => markContacted(r.g.id, r.game, !r.contacted)} className={`${btn} bg-slate-200 dark:bg-slate-700`}>
                 {r.contacted ? 'Clear contacted' : 'Mark contacted'}
               </button>
-              <button type="button" onClick={() => setRewardBlocked(r.g.id, game, !blocked)} className={`${btn} text-rose-600`}>
+              <button type="button" onClick={() => run(() => markNumberChecked(r.g.id, !checked))} className={`${btn} ${checked ? 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300' : 'bg-slate-200 dark:bg-slate-700'}`}>
+                {checked ? 'Number checked' : 'Mark number checked'}
+              </button>
+              {(streakish || noWa) && (
+                <button type="button" onClick={() => run(() => markNoWhatsapp(r.g.id, !noWa))} className={`${btn} ${noWa ? 'bg-rose-100 dark:bg-rose-950/50 text-rose-700' : 'bg-slate-200 dark:bg-slate-700'}`}>
+                  {noWa ? 'Clear not on WhatsApp' : 'Not on WhatsApp'}
+                </button>
+              )}
+              <button type="button" onClick={() => setRewardBlocked(r.g.id, r.game, !blocked)} className={`${btn} text-rose-600`}>
                 {blocked ? 'Allow rewards' : 'Block rewards'}
               </button>
+              {streakish && (
+                <button type="button" onClick={() => setOpenPanel(openPanel === rowKey ? '' : rowKey)} className={`${btn} bg-slate-900 text-white dark:bg-white dark:text-slate-900`}>
+                  {openPanel === rowKey ? 'Hide opponents' : 'Opponents and removal'}
+                </button>
+              )}
             </div>
+            {openPanel === rowKey && streakish && (
+              <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2">
+                <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                  {sig.streak} losses in a row in {gameLabel(sig.streakGame)}. Try the number on WhatsApp first. If it does not reach WhatsApp, mark it, warn the opponents below, and remove the account at {STREAK_REMOVE} in a row.
+                </p>
+                {opps.map((o: any) => {
+                  const op = phones.get(o.id);
+                  const text = `Hi ${o.name}, it's Roomly Caritas. We are checking the account ${r.g.name} that you played in ${gameLabel(sig.streakGame)}. We cannot reach them on WhatsApp. Your points from matches against this account will be removed unless you give us a WhatsApp number to reach them.`;
+                  return (
+                    <div key={o.id} className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] text-slate-700 dark:text-slate-200 min-w-0">
+                        <span className="font-bold">{o.name}</span> · {o.matches} {o.matches === 1 ? 'match' : 'matches'}, {o.pts} pts at stake
+                      </p>
+                      <button type="button" disabled={!op} onClick={() => open(waTo(op, text))} className={`${btn} bg-[#0e9f55] text-white shrink-0`}>
+                        {op ? 'Warn on WhatsApp' : 'No number'}
+                      </button>
+                    </div>
+                  );
+                })}
+                <button type="button" disabled={!sig.removable} onClick={() => remove(r)} className={`${btn} bg-rose-600 text-white`}>
+                  Remove account and void its matches
+                </button>
+                {!sig.removable && <p className="text-[10px] text-slate-400">Removal opens at {STREAK_REMOVE} losses in a row with the number marked "Not on WhatsApp".</p>}
+              </div>
+            )}
           </div>
         );
       })}

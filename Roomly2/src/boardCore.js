@@ -26,7 +26,7 @@ const LAGOS = HOUR;
 export const isScored = (game) => SCORED_GAMES.includes(game);
 
 /** Per-game reward settings. The admin changes them; a change applies from the next reward week. */
-export const DEFAULT_REWARD_CONFIG = { minPlayers: 20, minPoints: 21, creditValue: 3500 };
+export const DEFAULT_REWARD_CONFIG = { minPlayers: 25, minPoints: 25, creditValue: 3500 };
 export function rewardConfigFor(settings, game) {
   const c = (settings && settings.perGame && settings.perGame[game]) || {};
   const num = (v, d) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.round(Number(v)) : d);
@@ -48,6 +48,25 @@ export function nextMondayStart(nowMs) {
   return startOfDay + ahead * DAY - LAGOS;
 }
 export const WEEK_MS = 7 * DAY;
+/** The next 12:00AM Lagos strictly after this moment, as a timestamp */
+export function nextMidnightAfter(nowMs) {
+  const lagos = Number(nowMs) + LAGOS;
+  return Math.floor(lagos / DAY) * DAY + DAY - LAGOS;
+}
+/**
+ * Rolling reward weeks. Where would a game that has just filled start?
+ * A week runs 7 days from a 12:00AM. With a free slot it starts at the next 12:00AM; otherwise it waits in line and starts
+ * the moment a running week ends. At most one waiting week per slot. Returns 0 when there is no room yet.
+ * weeks: this season's reward weeks; slots: how many weeks may run at once (1 or 2).
+ */
+export function nextRewardStart(weeks, slots, nowMs) {
+  const s = Number(slots) === 2 ? 2 : 1;
+  const active = (weeks || []).filter((w) => Number(w.endMs) > nowMs);
+  if (active.length >= s * 2) return 0;
+  if (active.length < s) return nextMidnightAfter(nowMs);
+  const ends = active.map((w) => Number(w.endMs)).sort((a, b) => a - b);
+  return ends[active.length - s];
+}
 
 /** Does this player take part in this game (registered, not banned, has the game on their profile)? */
 export const playsGame = (g, game) => Boolean(g && !g.banned && g.ownerUid && (g.games || []).includes(game));
@@ -78,6 +97,8 @@ export const proofOf = (m) => (m && (m.proofA || m.proofB)) || '';
 
 /** Winner id of a match ('' for a draw) */
 export const winnerOf = (m) => (m.scoreA > m.scoreB ? m.aUid : m.scoreB > m.scoreA ? m.bUid : '');
+/** Did this match give the player points (a win, or a draw)? */
+export const earnedPoints = (m, gid) => Boolean(m) && (m.aUid === gid || m.bUid === gid) && (winnerOf(m) === gid || winnerOf(m) === '');
 
 /** A match belongs to one contest only. Matches without a tag are league matches. */
 export const contestOf = (m) => (m && m.contest === 'reward' ? 'reward' : 'league');
@@ -220,6 +241,22 @@ export function weekPhase(w, nowMs = Date.now()) {
 
 /** A credit lasts 24 hours from the moment it opens */
 export const CREDIT_HOURS = 24;
+/**
+ * When a winner's credit can first be spent. Right away when every match that gave them points is settled.
+ * A match still inside its report window holds it until that window closes; a reported match (or a table where a
+ * report could change the top 3) holds it for 24 hours. Worst case: 24 hours for the last result to settle plus 24 hours.
+ */
+export function creditOpensAtMs(weekMatches, gid, nowMs, tableFlagged = false) {
+  const hold = DISPUTE_HOURS * HOUR;
+  let at = nowMs;
+  if (tableFlagged) at = nowMs + hold;
+  (weekMatches || []).forEach((m) => {
+    if (!earnedPoints(m, gid)) return;
+    if (m.status === 'disputed') at = Math.max(at, nowMs + hold);
+    else if (m.status === 'pending' && canDispute(m, nowMs)) at = Math.max(at, Number(m.loggedAtMs || 0) + hold);
+  });
+  return at;
+}
 /** Where a credit stands right now (expiry is worked out when read, not stored) */
 export function creditState(c, nowMs = Date.now()) {
   if (!c) return 'none';

@@ -59,7 +59,7 @@ export const CreditsPill: React.FC<{ phone?: string; onOpenGames?: () => void; i
                     <div key={c.id} className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900">
                       <p className="text-sm font-black text-slate-900 dark:text-white">{naira(Number(c.value))} food credit</p>
                       <p className="text-[11px] text-slate-600 dark:text-slate-300">
-                        {locked ? `Opens ${dt(Number(c.validFromMs))}. Then you have 24 hours.` : `Order before it expires: ${timeLeft(Number(c.expiresAtMs) - now)} left.`}
+                        {locked ? `Held until ${dt(Number(c.validFromMs))} while results are checked. Then you have 24 hours.` : `Order before it expires: ${timeLeft(Number(c.expiresAtMs) - now)} left.`}
                       </p>
                     </div>
                   );
@@ -68,7 +68,7 @@ export const CreditsPill: React.FC<{ phone?: string; onOpenGames?: () => void; i
             )}
             <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
               <p className="font-black text-slate-900 dark:text-white text-sm">How it works</p>
-              <p>Finish in the top 3 of a game's reward week with at least 21 points and a credit is issued the next morning.</p>
+              <p>Finish in the top 3 of a game's reward week with at least the minimum points set for that game and a credit is issued when the week closes. It opens straight away if all your matches are confirmed, otherwise after a short check of up to 24 hours.</p>
               <p>It works on Outside Food and Canteen Items, toward a full plate of food. Tick "Use my Games credit" at checkout. You still pay delivery.</p>
               <p>Your order must be placed before the credit expires.</p>
             </div>

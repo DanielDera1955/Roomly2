@@ -8,16 +8,15 @@ import { ChevronDown } from 'lucide-react';
  */
 const GUARANTEE = 'Any issue with your order is refunded.';
 
-const TABS: { id: 'outside' | 'canteen'; label: string; steps: string[]; note?: string }[] = [
+const TABS: { id: 'outside' | 'canteen'; label: string; steps: string[] }[] = [
   {
     id: 'outside',
-    label: 'Outside food and stores',
+    label: 'Outside Food and Stores',
     steps: [
       'Order before the batch time stated.',
       'Pay and tap "I\'ve paid". Your countdown starts, and your order is packed with your name or phone number on it.',
       'Track it from your dashboard when it is on its way and when it arrives at the school gate, before the countdown hits zero.',
     ],
-    note: 'Store items work exactly the same way.',
   },
   {
     id: 'canteen',
@@ -31,7 +30,7 @@ const TABS: { id: 'outside' | 'canteen'; label: string; steps: string[]; note?: 
   },
 ];
 
-export const HowRoomlyWorks: React.FC<{ storeOpensMs: number; onStart: () => void; onHub: () => void }> = ({ onStart, onHub }) => {
+export const HowRoomlyWorks: React.FC<{ storeOpensMs?: number }> = () => {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<'outside' | 'canteen'>('outside');
   const current = TABS.find((t) => t.id === tab) || TABS[0];
@@ -55,7 +54,7 @@ export const HowRoomlyWorks: React.FC<{ storeOpensMs: number; onStart: () => voi
                 role="tab"
                 aria-selected={tab === t.id}
                 onClick={() => setTab(t.id)}
-                className={`py-2 rounded-xl text-xs font-bold border cursor-pointer ${
+                className={`py-2 px-1 rounded-xl text-[11px] sm:text-xs font-bold border cursor-pointer whitespace-nowrap ${
                   tab === t.id ? 'bg-[#0e9f55] border-[#0e9f55] text-white' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
                 }`}
               >
@@ -71,16 +70,7 @@ export const HowRoomlyWorks: React.FC<{ storeOpensMs: number; onStart: () => voi
               </li>
             ))}
           </ol>
-          {current.note && <p className="text-xs text-slate-500 dark:text-slate-400">{current.note}</p>}
           <p className="text-xs font-bold text-[#0b8044] dark:text-emerald-400">{GUARANTEE}</p>
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            <button type="button" onClick={onStart} className="h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer">
-              Start ordering
-            </button>
-            <button type="button" onClick={onHub} className="h-11 rounded-xl border border-[#0e9f55] text-[#0e9f55] text-sm font-bold cursor-pointer">
-              Hostel Hub
-            </button>
-          </div>
         </div>
       )}
       {/* Runner sign-up: small and always visible, so students who want to earn can find it */}

@@ -57,16 +57,16 @@ export const GAME_RULES: { title: string; lines: string[] }[] = [
   {
     title: 'Reward weeks',
     lines: [
-      'Reward weeks go one game at a time. When enough players have registered for a game\'s reward contest, its week starts the next Monday at 12:00AM and runs Monday to Sunday. Roomly sets the minimum number of players and points for each game. A change applies from the next reward week.',
+      'Reward weeks go one game at a time. When enough players have registered for a game\'s reward contest, its week starts at the next 12:00AM and runs 7 days to 12:00AM. If another game\'s week is running, it starts when that one ends. Roomly sets the minimum number of players and points for each game. A change applies from the next reward week.',
       'Tap Join the reward contest on a game and tick its rules to register once for the semester. You can register late. The reward table counts only reward matches entered in that week, starting from zero. League points are not affected.',
-      'The table closes at 12:00AM when the week ends. After that no result can be entered and the ranking is decided.',
+      'The table closes at 12:00AM when the 7 days end. After that no result can be entered and the ranking is decided.',
     ],
   },
   {
     title: 'Credits',
     lines: [
       'The top 3 players with at least the minimum points each get one food credit. If a player in the top 3 is below the minimum, they get nothing, and credits are not passed down.',
-      'Credits are issued on the morning after the table closes. A credit opens at the next 12:00AM and lasts 24 hours from then. It counts if your order is placed before it expires.',
+      'Credits are issued when the table closes. If all your counted matches are confirmed, your credit opens straight away. If any of them is still waiting or reported, it opens after that is settled or after 24 hours, so it can take up to 48 hours. A credit lasts 24 hours from when it opens. It counts if your order is placed before it expires.',
       'A credit works on Outside Food and Canteen Items only, not on Outside Items and not on delivery. It is a fixed amount off your items. Whatever you do not use is lost. One credit per order.',
       'If a credit order is refunded because it was late or failed, the credit is restored with a fresh 24 hours.',
     ],
@@ -76,6 +76,7 @@ export const GAME_RULES: { title: string; lines: string[] }[] = [
     lines: [
       'Roomly settles disputes and can add or remove points to correct a result. If a report could change the top 3, Roomly holds the payout until it is settled.',
       'Honest mistakes are corrected with no penalty. A fake screenshot or a false claim removes the points and makes the player ineligible for the next reward week of that game. A second offence removes the player from Games and blocks the number.',
+      'Use a WhatsApp number that works, so Roomly can reach you. An account whose number is not on WhatsApp and that keeps losing to the same few players can be removed. The points other players earned against a removed account are removed too.',
     ],
   },
 ];
@@ -313,11 +314,11 @@ export function rewardRulesFor(game: string | null, cfg: { minPlayers: number; m
   return [
     `Reward weeks go one game at a time. The first game to reach ${cfg.minPlayers} registered players starts the week.`,
     `Join the reward contest and tick the rules to register once for the semester. Only registered players count toward the ${cfg.minPlayers} and appear on the reward table.`,
-    `The week runs Monday to Sunday and the table closes at 12:00AM. Only reward matches entered in that week count, starting from zero. League matches do not add to it.`,
+    `The week starts at the next 12:00AM after the game fills and runs 7 days to 12:00AM, when the table closes. Only reward matches entered in that week count, starting from zero. League matches do not add to it.`,
     'Log a reward match from the reward tab. Both players must be registered for this reward contest. Between the same two players, at most 2 matches count in the week (1 home and 1 away).',
     `Points: a win is 3, a draw is 1 and a loss is 0. Ties are broken by wins, then ${game && !isScored(game) ? 'damage' : 'goals or damage'}, then kills, then whoever reached the points first.`,
     `The top 3 players with at least ${cfg.minPoints} points each win a ${naira(cfg.creditValue)} food credit for ${label}. A player below ${cfg.minPoints} points gets nothing and the credit is not passed down.`,
-    'Credits are issued the morning after the week closes, open at the next 12:00AM and last 24 hours. A credit works on Outside Food and Canteen Items, not on delivery.',
+    'Credits are issued when the week closes. A credit opens straight away if all your counted matches are confirmed, otherwise after a reported or waiting match is settled or after 24 hours. It then lasts 24 hours. A credit works on Outside Food and Canteen Items, not on delivery.',
     'Roomly settles disputes. A fake screenshot removes the points and blocks the player from the next reward week of that game.',
   ];
 }

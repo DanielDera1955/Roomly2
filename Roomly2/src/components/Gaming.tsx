@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Trophy, Crown, Camera, Loader2, Users, Calendar, MessageCircle, Gamepad2, ChevronRight, ArrowLeft, Plus, Check, X, MapPin, Lock, Share2 } from 'lucide-react';
+import { Trophy, Crown, Camera, Loader2, Users, Calendar, MessageCircle, Gamepad2, ChevronRight, ArrowLeft, Plus, Check, X, MapPin, Lock } from 'lucide-react';
 import { HOSTELS, ROOMLY_GROUP_LINK } from '../config';
 import {
   GAMES,
@@ -391,6 +391,70 @@ const GamesHome: React.FC<{
         .sort((a: any, b: any) => a.row.rank - b.row.rank)[0]
     : null;
 
+  /** The highest league points any player has in a single game (not added up across games), and who holds them */
+  const topAll = useMemo(() => {
+    const seen = new Map<string, { id: string; name: string; label: string; pts: number }>();
+    let max = 0;
+    GAMES.forEach((g: { id: string; label: string }) => {
+      (boards[g.id] || []).forEach((r: any) => {
+        const pts = Number(r.pts || 0);
+        if (pts <= 0) return;
+        if (pts > max) max = pts;
+        const old = seen.get(r.id);
+        if (!old || pts > old.pts) seen.set(r.id, { id: r.id, name: r.name, label: g.label, pts });
+      });
+    });
+    const leaders = [...seen.values()].filter((x) => x.pts === max);
+    return { max, leaders };
+  }, [boards]);
+  const myTopPts = me ? Math.max(0, ...GAMES.map((g: { id: string }) => Number((boards[g.id] || []).find((r: any) => r.id === me.id)?.pts || 0))) : 0;
+  const iLead = Boolean(me && topAll.leaders.some((l) => l.id === me.id));
+  const others = topAll.leaders.filter((l) => !me || l.id !== me.id);
+  const nameCls = 'text-amber-200';
+  const winsToBeat = Math.floor((topAll.max - myTopPts) / 3) + 1;
+  let heroHead: React.ReactNode = 'Nobody has points yet. Win a match to take #1.';
+  let heroSub = '';
+  let heroSub2 = '';
+  if (topAll.max > 0) {
+    if (topAll.leaders.length === 1) {
+      const l = topAll.leaders[0];
+      heroSub = `#1 in ${l.label} with ${l.pts} pts`;
+      if (iLead) {
+        heroHead = 'You have the highest points across all games. Defend it.';
+      } else {
+        heroHead = (
+          <>
+            <span className={nameCls}>{l.name}</span> has the highest points across all games
+          </>
+        );
+        heroSub2 = myTopPts > 0 ? `Win ${winsToBeat} ${winsToBeat === 1 ? 'match' : 'matches'} to beat them` : 'Win a match to get on the board';
+      }
+    } else {
+      heroSub = `${topAll.max} pts each`;
+      if (iLead) {
+        heroHead =
+          others.length === 1 ? (
+            <>
+              You and <span className={nameCls}>{others[0].name}</span> share the highest points across all games
+            </>
+          ) : (
+            <>You and {others.length} others share the highest points across all games</>
+          );
+        heroSub2 = 'Win a match to take #1 alone';
+      } else {
+        heroHead =
+          topAll.leaders.length === 2 ? (
+            <>
+              <span className={nameCls}>{topAll.leaders[0].name}</span> and <span className={nameCls}>{topAll.leaders[1].name}</span> share the highest points across all games
+            </>
+          ) : (
+            <>{topAll.leaders.length} players share the highest points across all games</>
+          );
+        heroSub2 = myTopPts > 0 ? `Win ${winsToBeat} ${winsToBeat === 1 ? 'match' : 'matches'} to beat them` : 'Win a match to get on the board';
+      }
+    }
+  }
+
   /** Reward tab order: running, next, then games that are full in the order they filled, then the rest by players */
   const rewardOrder = useMemo(() => {
     const items = GAMES.map((g: { id: string; label: string }) => {
@@ -420,10 +484,10 @@ const GamesHome: React.FC<{
         {hasAccount ? (
           <>
             <p className="mt-1 text-xs text-emerald-50/90">Playing as {me.name}</p>
-            <h2 className="mt-0.5 text-2xl font-black tracking-tight pr-14">
-              {myBest ? `You are #${myBest.row.rank} best in Caritas in ${myBest.g.label}` : 'You are registered'}
-            </h2>
-            {!myBest && <p className="text-xs text-emerald-50/90 mt-1">Your place appears once the season table has your first match.</p>}
+            <h2 className="mt-0.5 text-2xl font-black tracking-tight pr-14">{heroHead}</h2>
+            {heroSub && <p className="text-xs font-semibold text-emerald-50/90 mt-1">{heroSub}</p>}
+            {heroSub2 && <p className="text-xs text-emerald-50/90 mt-0.5">{heroSub2}</p>}
+            {!myBest && <p className="text-xs text-emerald-50/90 mt-1">Your own place appears once the season table has your first match.</p>}
           </>
         ) : (
           <>
@@ -891,27 +955,26 @@ const GamePage: React.FC<{
               {recent.map((m) => {
                 const iWon = me && winnerOf(m) === me.id;
                 return (
-                  <div key={m.id} className="flex items-center gap-3 p-3">
+                  <div key={m.id} className="flex items-start gap-3 p-3">
                     <span className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
                       <Check className={`w-4 h-4 ${matchRecorded(m, nowMs) ? 'text-[#0e9f55]' : 'text-slate-400'}`} />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{resultText(m)}</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white break-words">{resultText(m)}</p>
                       <p className="text-[11px] text-slate-400">
                         {ago(m.loggedAtMs)}
                         {matchRecorded(m, nowMs) ? ' · recorded' : ''}
+                        {iWon && (
+                          <>
+                            {' · '}
+                            <button type="button" onClick={() => go(shareWinLink(m, me.id, myRow?.rank))} className="font-bold text-[#0e9f55] cursor-pointer">
+                              Share
+                            </button>
+                          </>
+                        )}
                       </p>
                     </div>
                     {!m.status.startsWith('disp') && <ProofThumb url={proofOf(m)} size={40} />}
-                    {iWon && (
-                      <button
-                        type="button"
-                        onClick={() => go(shareWinLink(m, me.id, myRow?.rank))}
-                        className="shrink-0 h-8 px-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-[#0e9f55] text-[11px] font-bold flex items-center gap-1 cursor-pointer"
-                      >
-                        <Share2 className="w-3.5 h-3.5" /> Share your win
-                      </button>
-                    )}
                   </div>
                 );
               })}
@@ -1218,7 +1281,7 @@ const RegisterSheet: React.FC<{ me: any; season: Season | null; session: { name?
       )}
       <div className="grid grid-cols-[1fr_110px] gap-2">
         <div>
-          <label className={label}>WhatsApp number</label>
+          <label className={label}>Your WhatsApp number</label>
           <input value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))} inputMode="numeric" maxLength={11} className={input} placeholder="080..." />
         </div>
         <div>
@@ -1226,7 +1289,7 @@ const RegisterSheet: React.FC<{ me: any; season: Season | null; session: { name?
           <input value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} inputMode="numeric" type="password" maxLength={6} className={input} placeholder="4 digits" />
         </div>
       </div>
-      <p className="-mt-2 text-[10px] text-slate-400">Same number and PIN you use at checkout. New to Roomly? Choose a 4-digit PIN now.</p>
+      <p className="-mt-2 text-[10px] text-slate-400">Use a number that is on WhatsApp. Roomly reaches you there about results and rewards. Same number and PIN you use at checkout. New to Roomly? Choose a 4-digit PIN now.</p>
       <div>
         <label className={label}>Which games do you play?</label>
         <div className="flex flex-wrap gap-2">

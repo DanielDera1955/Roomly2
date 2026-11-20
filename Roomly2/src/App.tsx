@@ -1345,19 +1345,7 @@ export default function App() {
             storeOpensAtMs={storeLocked ? storeOpensMs : 0}
             products={products}
             showBehind={!signedInCustomer}
-            between={showHowItWorks ? <HowRoomlyWorks
-            storeOpensMs={storeOpensMs}
-            onStart={() => {
-              setSourceMode('inside');
-              setSelectedTab('store');
-              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
-            }}
-            onHub={() => {
-              setSourceMode('inside');
-              setSelectedTab('hub');
-              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
-            }}
-          /> : null}
+            between={showHowItWorks ? <HowRoomlyWorks /> : null}
             onOpen={(t: QuickTarget) => {
               setSearchQuery('');
               setSelectedFilter('All');
