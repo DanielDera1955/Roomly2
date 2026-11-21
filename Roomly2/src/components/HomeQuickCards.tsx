@@ -372,6 +372,7 @@ export function useSlowDrift(setSize: number) {
 const HostelLeagueCard: React.FC<{ onOpen: (game?: string) => void; session?: { phone?: string; pin?: string } }> = ({ onOpen, session }) => {
   const [leaders, setLeaders] = useState<Record<string, { name: string; pts: number } | null> | null>(null);
   const [member, setMember] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   // One set = every game plus the "Full table" tile; the row shows the set twice so it can loop
   const rowRef = useSlowDrift(GAMES.length + 1);
   useEffect(() => {
@@ -379,11 +380,20 @@ const HostelLeagueCard: React.FC<{ onOpen: (game?: string) => void; session?: { 
     const check = () => isRegisteredGamer().then((m: boolean) => live && setMember(m));
     if (session?.phone && session?.pin) restoreGamerFromLogin(session.phone, session.pin).then(check);
     else check();
-    fetchLeaders()
-      .then((l: any) => live && setLeaders(l))
-      .catch(() => live && setLeaders({}));
+    // A failed or half-loaded read is tried again, so the tile never says "No crown yet" just because the first read was slow
+    let timer = 0;
+    const load = (attempt: number) =>
+      fetchLeaders()
+        .then((l: any) => live && setLeaders(l))
+        .catch(() => {
+          if (!live) return;
+          if (attempt < 3) timer = window.setTimeout(() => load(attempt + 1), attempt === 0 ? 2000 : 5000);
+          else setLoadFailed(true);
+        });
+    load(0);
     return () => {
       live = false;
+      window.clearTimeout(timer);
     };
   }, []);
   return (
@@ -440,7 +450,7 @@ const HostelLeagueCard: React.FC<{ onOpen: (game?: string) => void; session?: { 
                       <span className="block text-[11px] text-emerald-50/85">#1 · {l.pts} pts</span>
                     </>
                   ) : (
-                    <span className="mt-1 block text-[11px] text-emerald-50/85 truncate">{leaders === null ? ' ' : 'No crown yet'}</span>
+                    <span className="mt-1 block text-[11px] text-emerald-50/85 truncate">{leaders === null ? (loadFailed ? 'Tap to see' : ' ') : 'No crown yet'}</span>
                   )}
                 </button>
               );

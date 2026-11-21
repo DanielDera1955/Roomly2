@@ -1077,7 +1077,7 @@ const once = (subscribe) =>
     });
   });
 
-/** { efootball: { name, pts } | null, ... } for every game */
+/** { efootball: { name, pts } | null, ... } for every game. Throws when the read fails, so a failure is never shown as an empty table */
 export async function fetchLeaders() {
   try {
     const raw = sessionStorage.getItem(LEADERS_KEY);
@@ -1094,8 +1094,9 @@ export async function fetchLeaders() {
     const seasons = (await getDocs(collection(hubDb, 'seasons'))).docs.map((d) => ({ id: d.id, ...d.data() }));
     const season = seasons.find((x) => Number(x.startMs) <= now && now < Number(x.endMs));
     if (season) {
+      // getDocs asks the server first; the first onSnapshot answer can be an empty copy saved on the phone
       const [gamers, matchesSnap, joinsSnap, adjSnap] = await Promise.all([
-        once(subscribeGamers),
+        getDocs(collection(hubDb, 'gamers')).then((snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((g) => g.ownerUid)),
         getDocs(query(collection(hubDb, 'matches'), where('seasonId', '==', season.id))),
         getDocs(query(collection(hubDb, 'seasonJoins'), where('seasonId', '==', season.id))),
         getDocs(query(collection(hubDb, 'pointAdjust'), where('seasonId', '==', season.id))).catch(() => null),
@@ -1108,9 +1109,9 @@ export async function fetchLeaders() {
         leaders[g.id] = top ? { name: top.name, pts: top.pts } : null;
       });
     }
-  } catch {
-    // A failed read is never remembered, so the next visit tries again
-    return leaders;
+  } catch (e) {
+    // A failed read is never remembered and never passed off as "no crown yet": the caller retries
+    throw e;
   }
   // Remember the answer only when it names at least one crown holder, so an empty or half-loaded read is tried again next time
   if (Object.values(leaders).some(Boolean)) {

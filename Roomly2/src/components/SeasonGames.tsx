@@ -150,6 +150,20 @@ export const SeasonRulesCard: React.FC<{
               )}
             </div>
           </div>
+          {needsRules && (
+            <div className={`rounded-2xl border-2 border-amber-400 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-500/70 p-3.5 space-y-2.5 ${busy ? 'opacity-60' : ''}`}>
+              <p className="text-sm font-black text-amber-900 dark:text-amber-200">One step left. Accept the rules to play.</p>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" checked={busy} disabled={busy} onChange={confirm} className="mt-0.5 h-6 w-6 shrink-0 accent-[#0e9f55]" />
+                <span className="text-[13px] font-semibold text-slate-800 dark:text-slate-100 leading-snug">
+                  I have read the game rules and accept them. {auto ? 'Other players can challenge me once I tick.' : `This joins me to ${target?.name || 'the league'}.`}
+                </span>
+              </label>
+              <button type="button" onClick={() => setRulesOpen(true)} className="text-xs font-bold text-amber-800 dark:text-amber-300 underline underline-offset-2 cursor-pointer">
+                Read the rules first
+              </button>
+            </div>
+          )}
           {target && !me && (
             <button type="button" onClick={onRegister} className="w-full h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer">
               Join a game to enter
@@ -161,14 +175,6 @@ export const SeasonRulesCard: React.FC<{
             </button>
           )}
           {target && hasGames && accepted && <p className="text-xs font-bold text-[#0e9f55] flex items-center gap-1.5"><Check className="w-4 h-4" /> You are in the league.</p>}
-          {needsRules && (
-            <label className={`rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 p-3 flex items-start gap-2 cursor-pointer ${busy ? 'opacity-60' : ''}`}>
-              <input type="checkbox" checked={busy} disabled={busy} onChange={confirm} className="mt-0.5 h-4 w-4 accent-[#0e9f55]" />
-              <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                I have read the game rules below and accept them. {auto ? 'Other players can challenge me once I tick.' : `This joins me to ${target?.name || 'the league'}.`}
-              </span>
-            </label>
-          )}
         </div>
         <button type="button" onClick={() => setRulesOpen(!rulesOpen)} aria-expanded={rulesOpen} className="w-full px-4 py-3 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 cursor-pointer">
           <span className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
