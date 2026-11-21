@@ -745,7 +745,11 @@ const GamePage: React.FC<{
     : best
     ? 'I won: log my league match'
     : !rewardRunning
-    ? 'No reward week is running for this game'
+    ? week && weekPhase(week, nowMs) === 'scheduled'
+      ? 'Reward week starts at 12:00AM'
+      : rewardRegistered.length >= config.minPlayers
+      ? 'Reward week is waiting for its turn'
+      : `Reward week starts when ${config.minPlayers} players join`
     : !rewardJoined
     ? 'Join the reward contest to log reward matches'
     : 'I won: log my reward match';
@@ -904,7 +908,7 @@ const GamePage: React.FC<{
         type="button"
         disabled={!canLog && !(season && !plays)}
         onClick={() => (!plays ? (best ? onRegister() : onRewardRegister(game)) : setLogging(true))}
-        className="w-full h-12 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-default"
+        className="w-full h-12 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-500 dark:disabled:text-slate-400 disabled:cursor-default"
       >
         {canLog || !plays ? <Plus className="w-4 h-4" /> : <Lock className="w-4 h-4" />} {logLabel}
       </button>
