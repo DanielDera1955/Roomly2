@@ -230,6 +230,15 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
     GAMES.forEach((g: { id: string }) => (out[g.id] = rewardRegsFor(rewardJoins, gamers, g.id).length));
     return out;
   }, [gamers, rewardJoins]);
+  /** Who has registered for each game's reward contest, in the order they joined */
+  const rewardRegistered = useMemo(() => {
+    const out: Record<string, { id: string; name: string; atMs: number }[]> = {};
+    const byId = new Map(gamers.map((x: any) => [x.id, x]));
+    GAMES.forEach((g: { id: string }) => {
+      out[g.id] = rewardRegsFor(rewardJoins, gamers, g.id).map((r: any) => ({ id: r.gid, name: String((byId.get(r.gid) as any)?.name || r.name || 'Player'), atMs: Number(r.atMs || 0) }));
+    });
+    return out;
+  }, [gamers, rewardJoins]);
   /** The exact moment each game reached its minimum registered players (decides the order of reward weeks) */
   const qualAt = useMemo(() => {
     const out: Record<string, number> = {};
@@ -277,6 +286,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
           onMode={setMode}
           registered={counts.byGame[game] || 0}
           acceptedCount={acceptedCount[game] || 0}
+          rewardRegistered={rewardRegistered[game] || []}
         />
       ) : (
         <GamesHome
@@ -699,7 +709,8 @@ const GamePage: React.FC<{
   onMode: (m: 'best' | 'reward') => void;
   registered: number;
   acceptedCount: number;
-}> = ({ game, me, board, matches, tournaments, isOpen, opensAt, nowMs, focusMatch, onFocusDone, onBack, onRegister, onRewardRegister, season, join, week, otherWeek, rewardRows, rewardJoined, acceptedGame, config, hiddenFromMe, mode, onMode, registered, acceptedCount }) => {
+  rewardRegistered?: { id: string; name: string; atMs: number }[];
+}> = ({ game, me, board, matches, tournaments, isOpen, opensAt, nowMs, focusMatch, onFocusDone, onBack, onRegister, onRewardRegister, season, join, week, otherWeek, rewardRows, rewardJoined, acceptedGame, config, hiddenFromMe, mode, onMode, registered, acceptedCount , rewardRegistered = []}) => {
   const [logging, setLogging] = useState(false);
   const [busy, setBusy] = useState(false);
   const plays = playsGame(me, game);
@@ -835,6 +846,7 @@ const GamePage: React.FC<{
           acceptedGame={acceptedGame}
           onNewPlayer={() => onRewardRegister(game)}
           tableCount={acceptedCount}
+          registeredList={rewardRegistered}
           nowMs={nowMs}
         />
       )}
@@ -926,6 +938,21 @@ const GamePage: React.FC<{
           title="Weekly reward table"
           note="Counts only matches entered this week, from zero. Only players who joined the week are listed."
           emptyText="Nobody has joined this week's reward yet."
+        />
+      ) : rewardRegistered.length > 0 ? (
+        <ChallengeTable
+          game={game}
+          rows={rewardRegistered.map((r, i) => ({ id: r.id, name: r.name, rank: i + 1, pts: 0, lastActiveMs: r.atMs }))}
+          me={me}
+          season={season}
+          join={join}
+          hiddenFromMe={hiddenFromMe}
+          rewardRunning={false}
+          isOpen={isOpen}
+          matches={matches}
+          preStart
+          title="Registered for the reward week"
+          note="Points start from zero when the week begins."
         />
       ) : (
         <div className={`${card} p-5 text-center text-xs text-slate-400`}>No reward week is running for this game right now. The table appears here when one starts.</div>

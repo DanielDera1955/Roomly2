@@ -389,6 +389,16 @@ export const RewardRegisterSheet: React.FC<{ game: string; cfg: RewardCfg; me: a
   );
 };
 
+const joinedAgo = (ms: number) => {
+  if (!ms) return '';
+  const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  if (m < 2) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return h < 48 ? 'yesterday' : `${Math.round(h / 24)}d ago`;
+};
+
 export const RewardCard: React.FC<{
   game: string;
   week: any | null;
@@ -407,8 +417,10 @@ export const RewardCard: React.FC<{
   onNewPlayer?: () => void;
   /** Players registered for this game's reward contest */
   tableCount: number;
+  /** Players registered for this game's reward contest, in join order */
+  registeredList?: { id: string; name: string; atMs: number }[];
   nowMs: number;
-}> = ({ game, week, otherWeek, rewardRows, config, me, season, join, rewardJoined, acceptedGame = '', onNewPlayer, tableCount, nowMs }) => {
+}> = ({ game, week, otherWeek, rewardRows, config, me, season, join, rewardJoined, acceptedGame = '', onNewPlayer, tableCount, registeredList = [], nowMs }) => {
   const [sheet, setSheet] = useState(false);
   const phase = weekPhase(week, nowMs);
   const minPoints = week ? Number(week.minPoints) : config.minPoints;
@@ -460,9 +472,11 @@ export const RewardCard: React.FC<{
                 <p className="text-xs font-bold text-slate-900 dark:text-white">
                   {tableCount} of {config.minPlayers} players registered for {gameLabel(game)}
                 </p>
-                <div className="mt-1.5 h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                  <div className="h-full bg-[#0e9f55]" style={{ width: `${Math.min(100, Math.round((tableCount / Math.max(1, config.minPlayers)) * 100))}%` }} />
-                </div>
+                {tableCount < config.minPlayers && (
+                  <div className="mt-1.5 h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                    <div className="h-full bg-[#0e9f55]" style={{ width: `${Math.min(100, Math.round((tableCount / Math.max(1, config.minPlayers)) * 100))}%` }} />
+                  </div>
+                )}
                 <p className="mt-1 text-[11px] text-slate-500">
                   {tableCount >= config.minPlayers
                     ? 'Enough players. Its reward week starts when it gets a turn.'
@@ -523,7 +537,9 @@ export const ChallengeTable: React.FC<{
   note?: string;
   emptyText?: string;
   matches?: any[];
-}> = ({ game, rows, me, season, join, hiddenFromMe, rewardRunning, isOpen, title, note, emptyText, matches = [] }) => {
+  /** Before the week starts: join order, no medals, rows are not tappable */
+  preStart?: boolean;
+}> = ({ game, rows, me, season, join, hiddenFromMe, rewardRunning, isOpen, title, note, emptyText, matches = [], preStart = false }) => {
   const [q, setQ] = useState('');
   const [limit, setLimit] = useState(30);
   const [picked, setPicked] = useState<any | null>(null);
@@ -544,7 +560,7 @@ export const ChallengeTable: React.FC<{
         <span className="text-[11px] text-slate-400">{rows.length} {rows.length === 1 ? 'player' : 'players'}</span>
       </div>
       {note && <p className="px-1 mb-2 text-[10px] text-slate-400">{note}</p>}
-      {me && <p className="px-1 mb-2 text-[10px] text-slate-400">Think someone is farming or faking points? Tap their name, then Report.</p>}
+      {me && !preStart && <p className="px-1 mb-2 text-[10px] text-slate-400">Think someone is farming or faking points? Tap their name, then Report.</p>}
       {rows.length > 8 && (
         <div className="relative mb-2">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -570,13 +586,13 @@ export const ChallengeTable: React.FC<{
             {list.slice(0, limit).map((r, idx) => {
               const self = Boolean(me && r.id === me.id);
               const bg = self ? 'bg-emerald-50 dark:bg-emerald-950' : idx % 2 ? 'bg-slate-50 dark:bg-slate-900' : 'bg-white dark:bg-slate-900';
-              const medal = r.rank === 1 ? 'bg-amber-400 text-amber-950' : r.rank === 2 ? 'bg-slate-300 text-slate-800' : r.rank === 3 ? 'bg-orange-300 text-orange-950' : 'text-slate-500';
+              const medal = preStart ? 'text-slate-500' : r.rank === 1 ? 'bg-amber-400 text-amber-950' : r.rank === 2 ? 'bg-slate-300 text-slate-800' : r.rank === 3 ? 'bg-orange-300 text-orange-950' : 'text-slate-500';
               return (
                 <button
                   key={r.id}
                   type="button"
-                  onClick={() => !self && setPicked(r)}
-                  className={`w-full flex items-stretch text-left border-b last:border-b-0 border-slate-100 dark:border-slate-800 ${bg} ${self ? 'cursor-default' : 'cursor-pointer'}`}
+                  onClick={() => !self && !preStart && setPicked(r)}
+                  className={`w-full flex items-stretch text-left border-b last:border-b-0 border-slate-100 dark:border-slate-800 ${bg} ${self || preStart ? 'cursor-default' : 'cursor-pointer'}`}
                 >
                   <div className={`sticky left-0 z-10 flex items-center ${bg}`}>
                     <span className="w-8 py-2.5 flex items-center justify-center">
@@ -591,7 +607,7 @@ export const ChallengeTable: React.FC<{
                       </p>
                       <p className="text-[10px] text-slate-400 truncate">
                         {r.tag ? `${r.tag} · ` : ''}
-                        {ago(r.lastActiveMs)}
+                        {preStart ? `Joined ${joinedAgo(r.lastActiveMs)}` : ago(r.lastActiveMs)}
                       </p>
                     </div>
                     <span className="w-10 text-center text-sm font-black text-[#0e9f55] tabular-nums">{r.pts}</span>
@@ -605,7 +621,7 @@ export const ChallengeTable: React.FC<{
           </div>
         </div>
       )}
-      {list.length > 0 && <p className="mt-2 px-1 text-[10px] text-slate-400">Swipe the table sideways for more stats. Tap a player to see their matches and schedule a 1v1.</p>}
+      {list.length > 0 && !preStart && <p className="mt-2 px-1 text-[10px] text-slate-400">Swipe the table sideways for more stats. Tap a player to see their matches and schedule a 1v1.</p>}
       {list.length > limit && (
         <button type="button" onClick={() => setLimit(limit + 30)} className="mt-2 w-full h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer">
           Show more players
