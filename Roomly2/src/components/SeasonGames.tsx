@@ -483,13 +483,13 @@ export const RewardCard: React.FC<{
               ) : !me ? (
                 <p className="text-[11px] text-slate-500">New here? Fill in your player details once, accept the rules, and you are in the league and the reward contest.</p>
               ) : !plays ? (
-                <p className="text-[11px] text-slate-500">Join {gameLabel(game)} League to join its reward contest.</p>
+                <p className="text-[11px] text-slate-500">Join {gameLabel(game)} here and you are in its reward contest too. One tick, once.</p>
               ) : blocked ? (
                 <p className="text-[11px] text-slate-500">You cannot join this reward contest. Roomly can tell you why.</p>
               ) : null}
-              {!me && season && onNewPlayer && (
+              {(!me || !plays) && season && onNewPlayer && (
                 <button type="button" onClick={onNewPlayer} className="w-full h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer">
-                  Join the reward contest
+                  {!me ? 'Join the reward contest' : `Join ${gameLabel(game)} League and the reward contest`}
                 </button>
               )}
               {canRegister && (
