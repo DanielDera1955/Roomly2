@@ -132,7 +132,8 @@ export async function joinSeason(season: Season, me: any) {
     rulesAtMs: Date.now(),
     joinedAtMs: Date.now(),
   });
-  await syncOpen(me, season, { off: {} }, null);
+  // The join above already carries the accepted rules, so the contact opens (without this it was saved closed, readyUntil 0)
+  await syncOpen(me, season, { off: {}, rulesVersion: RULES_VERSION }, null);
   updateDoc(doc(hubDb, 'gamers', me.id), { lastActiveMs: Date.now() }).catch(() => {});
 }
 
@@ -158,15 +159,19 @@ async function syncOpen(me: any, season: Season, join: any, week: any | null) {
   await updateDoc(doc(hubDb, 'gamerContact', me.id), { readyUntil: until, atMs: Date.now() }).catch(() => {});
 }
 
-/** Renew a league member's contact date when they open Games (at most once a day per browser) */
+/** Renew a league member's contact date when they open Games: whenever it is missing, closed (0) or running out */
 export async function refreshContact(me: any, season: Season, join: any) {
   if (!me || !isChallengeable(join)) return;
-  const key = `roomly_contact_${me.id}`;
-  try {
-    if (Date.now() - Number(localStorage.getItem(key) || 0) < 86400000) return;
-    localStorage.setItem(key, String(Date.now()));
-  } catch {}
   await hubUid();
+  try {
+    const snap = await getDoc(doc(hubDb, 'gamerContact', me.id));
+    // No record to renew (it can only be created together with the profile)
+    if (!snap.exists()) return;
+    const until = Number((snap.data() as any).readyUntil) || 0;
+    if (until > Date.now() + 30 * 86400000) return;
+  } catch {
+    return;
+  }
   await syncOpen(me, season, join, null);
 }
 
@@ -358,21 +363,33 @@ export async function tapChallenge(game: string, me: any, opp: any, seasonId: st
   if (me.id === opp.id) throw new Error("That's you.");
   const hidden = await getDoc(doc(hubDb, 'gamerHides', `${opp.id}_${me.id}`));
   if (hidden.exists()) throw new Error(`${opp.name} is not available to challenge.`);
-  const c = await getDoc(doc(hubDb, 'gamerContact', opp.id));
-  if (!c.exists() || !c.data().phone || Number(c.data().readyUntil) <= Date.now()) throw new Error(`${opp.name} cannot be challenged right now.`);
+  const closed = `${opp.name} has not opened Games since joining, so their WhatsApp is not open yet. Ask them to open Games once, then try again.`;
+  let c;
+  try {
+    c = await getDoc(doc(hubDb, 'gamerContact', opp.id));
+  } catch {
+    // The rules refuse a read while the player's contact is closed
+    throw new Error(closed);
+  }
+  if (!c.exists() || !c.data().phone) throw new Error(`${opp.name} cannot be challenged right now.`);
+  if (Number(c.data().readyUntil) <= Date.now()) throw new Error(closed);
   const now = Date.now();
-  await addDoc(collection(hubDb, 'challengeTaps'), {
-    from: me.id,
-    to: opp.id,
-    fromName: me.name,
-    toName: opp.name,
-    game,
-    seasonId,
-    kind: rewardRunning ? 'reward' : 'league',
-    atMs: now,
-  });
-  // Needed so a result can be logged against this player (the rules check a recent contact)
-  await setDoc(doc(hubDb, 'gameContacts', `${me.id}_${opp.id}_${game}`), { from: me.id, to: opp.id, game, atMs: now });
+  try {
+    await addDoc(collection(hubDb, 'challengeTaps'), {
+      from: me.id,
+      to: opp.id,
+      fromName: me.name,
+      toName: opp.name,
+      game,
+      seasonId,
+      kind: rewardRunning ? 'reward' : 'league',
+      atMs: now,
+    });
+    // Needed so a result can be logged against this player (the rules check a recent contact)
+    await setDoc(doc(hubDb, 'gameContacts', `${me.id}_${opp.id}_${game}`), { from: me.id, to: opp.id, game, atMs: now });
+  } catch (e: any) {
+    throw new Error(`Could not record the challenge (${e?.code || 'error'}). Check your connection, or reopen Games and try again.`);
+  }
   updateDoc(doc(hubDb, 'gamers', me.id), { lastActiveMs: now }).catch(() => {});
   const text = `How far ${opp.name}, it's ${me.name}. Let's schedule a ${gameLabel(game)} 1v1 for the Roomly league ${rewardRunning ? 'reward table' : 'table'}. When will you be free?`;
   return waTo(c.data().phone, text);
