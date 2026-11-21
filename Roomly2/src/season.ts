@@ -302,10 +302,25 @@ export function leagueRulesFor(game: string): string[] {
 /** The short version shown open on the game page: the main league rules for one game */
 export function leagueMainRulesFor(game: string): string[] {
   return [
-    `Win 3 points${isScored(game) ? ', draw 1' : ''}, loss 0. The first player on the standing is the official Best in Caritas for ${gameLabel(game)}.`,
-    'Only matches logged in the league count here. Reward matches never add to league points.',
-    'At most 4 matches count per week between the same two players, 2 home and 2 away.',
-    'The winner logs the result with a screenshot. The opponent can report it within 24 hours.',
+    `A win is 3 points${isScored(game) ? ', a draw is 1' : ''} and a loss is 0. The player at the top of the league table is the Best in Caritas for ${gameLabel(game)}.`,
+    'Schedule a match with your opponent. The winner logs the result with a screenshot, and the opponent can dispute it within 24 hours.',
+    'You can play the same opponent up to 4 times a week: 2 at home and 2 away.',
+    'Matches played for the weekly food credit are separate. They do not add points to the league.',
+  ];
+}
+/** The one-line headline of the weekly food credit contest */
+export function rewardHeadlineFor(cfg: { minPoints: number; creditValue: number }): string {
+  return `Free ${naira(cfg.creditValue)} food credit every week for the top 3 players, with at least ${cfg.minPoints} points.`;
+}
+/** The short, plain version of the reward contest rules, shown on the game cards. The full rules (rewardRulesFor) are what players accept when they register. */
+export function rewardShortRulesFor(cfg: { minPlayers: number }): string[] {
+  return [
+    `One game runs the contest each week. The first game to get ${cfg.minPlayers} registered players starts it at the next 12:00AM, and it runs for 7 days.`,
+    'Register once and tick the rules. Reward matches count in the weekly reward table only, not in the league. A win is 3 points, a draw is 1 and a loss is 0.',
+    'Schedule a match with your opponent. The winner logs the result with a screenshot, and the opponent can dispute it.',
+    'You can play the same opponent twice a week: once at home and once away.',
+    'Your credit lasts 24 hours once it opens. It works on Outside Food and Canteen Items only, not on delivery.',
+    'A fake screenshot removes your points and blocks you from the next reward week of that game.',
   ];
 }
 /** Reward contest rules for one game only (or the general version when no game is given) */

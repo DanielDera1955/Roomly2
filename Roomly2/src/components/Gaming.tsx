@@ -59,6 +59,8 @@ import {
   pairContext,
   leagueMainRulesFor,
   rewardRulesFor,
+  rewardHeadlineFor,
+  rewardShortRulesFor,
   type Season,
 } from '../season';
 import { SeasonRulesCard, RewardCard, RewardIntro, GameRulesToggle, MainRulesDropdown, ChallengeTable, AnnouncementsCard, RulesBody } from './SeasonGames';
@@ -637,7 +639,7 @@ const GamesHome: React.FC<{
                       <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
                     </div>
                   </button>
-                  <GameRulesToggle title={`${g.label} reward rules`} lines={rewardRulesFor(g.id, cfg)} className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800" />
+                  <GameRulesToggle title={`${g.label} reward rules`} lines={[rewardHeadlineFor(cfg), ...rewardShortRulesFor(cfg)]} fullLines={rewardRulesFor(g.id, cfg)} className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800" />
                 </div>
               );
             })}

@@ -14,6 +14,8 @@ import {
   registerReward,
   leagueRulesFor,
   rewardRulesFor,
+  rewardHeadlineFor,
+  rewardShortRulesFor,
   tapChallenge,
   reportPlayer,
   hideFromPlayer,
@@ -213,8 +215,10 @@ export const AnnouncementsCard: React.FC<{ config: any; nowMs: number }> = ({ co
 type RewardCfg = { minPlayers: number; minPoints: number; creditValue: number };
 
 /** A tap-to-open rules block for one game (or the general reward rules). Shows only the lines it is given. */
-export const GameRulesToggle: React.FC<{ title: string; lines: string[]; className?: string }> = ({ title, lines, className = '' }) => {
+export const GameRulesToggle: React.FC<{ title: string; lines: string[]; fullLines?: string[]; className?: string }> = ({ title, lines, fullLines, className = '' }) => {
   const [open, setOpen] = useState(false);
+  const [full, setFull] = useState(false);
+  const shown = full && fullLines ? fullLines : lines;
   return (
     <div className={className}>
       <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="w-full flex items-center justify-between gap-2 text-left cursor-pointer">
@@ -224,13 +228,20 @@ export const GameRulesToggle: React.FC<{ title: string; lines: string[]; classNa
         {open ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
       </button>
       {open && (
-        <ul className="mt-2 space-y-1.5">
-          {lines.map((l, i) => (
-            <li key={i} className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
-              {l}
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="mt-3 space-y-3 list-disc pl-5 marker:text-[#0e9f55]">
+            {shown.map((l, i) => (
+              <li key={i} className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                {l}
+              </li>
+            ))}
+          </ul>
+          {fullLines && (
+            <button type="button" onClick={() => setFull((v) => !v)} className="mt-3 text-xs font-bold text-[#0e9f55] cursor-pointer">
+              {full ? 'Show the short version' : 'Read all the rules'}
+            </button>
+          )}
+        </>
       )}
     </div>
   );
@@ -259,7 +270,7 @@ export const MainRulesDropdown: React.FC<{ title: string; lines: string[]; defau
       </button>
       {open && (
         <>
-          <ul className="mt-2 space-y-2 list-disc pl-5 marker:text-[#0e9f55]">
+          <ul className="mt-3 space-y-3 list-disc pl-5 marker:text-[#0e9f55]">
             {lines.map((l, i) => (
               <li key={i} className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
                 {l}
@@ -293,20 +304,10 @@ export const RewardIntro: React.FC<{ cfg: RewardCfg; game?: string; showImage?: 
       </div>
     )}
     <div className="p-4 space-y-3">
-      <p className="text-sm font-black text-slate-900 dark:text-white">
-        Price: {naira(cfg.creditValue)} food credit for each of the top 3 players of the week.
-      </p>
+      <p className="text-sm font-black text-slate-900 dark:text-white">{rewardHeadlineFor(cfg)}</p>
       <MainRulesDropdown
         title="Main Rule"
-        lines={[
-          'One game runs the reward at a time, for 7 days. The first game to reach ' + cfg.minPlayers + ' registered players starts at the next 12:00AM, and the next full game starts when that week ends.',
-          'The top 3 players of the week each win the ' + naira(cfg.creditValue) + ' food credit.',
-          'The top 3 must end the week with at least ' + cfg.minPoints + ' points to be paid. A win is 3 points, a draw is 1 and a loss is 0.',
-          "To take part, register for that game's reward contest and tick to accept its rules.",
-          'Reward matches only count in the reward table. League matches only count in the Best in Caritas league table for that game.',
-          'You can only play the same player twice in a reward week, once at home and once away.',
-          'Credits are issued when the week ends. If all your matches are confirmed the credit opens straight away, otherwise it opens after a waiting or reported match is settled or after 24 hours. Once open it lasts 24 hours, so use it before it expires. It works on Outside Food and Canteen Items only, not on delivery. It takes a fixed ' + naira(cfg.creditValue) + ' off your items, any part you do not use is lost, and one credit applies per order.',
-        ]}
+        lines={rewardShortRulesFor(cfg)}
         defaultOpen={false}
         className="pt-3 border-t border-slate-100 dark:border-slate-800"
       />
