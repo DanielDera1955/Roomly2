@@ -560,7 +560,6 @@ export const ChallengeTable: React.FC<{
         <span className="text-[11px] text-slate-400">{rows.length} {rows.length === 1 ? 'player' : 'players'}</span>
       </div>
       {note && <p className="px-1 mb-2 text-[10px] text-slate-400">{note}</p>}
-      {me && !preStart && <p className="px-1 mb-2 text-[10px] text-slate-400">Think someone is farming or faking points? Tap their name, then Report.</p>}
       {rows.length > 8 && (
         <div className="relative mb-2">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -621,7 +620,7 @@ export const ChallengeTable: React.FC<{
           </div>
         </div>
       )}
-      {list.length > 0 && !preStart && <p className="mt-2 px-1 text-[10px] text-slate-400">Swipe the table sideways for more stats. Tap a player to see their matches and schedule a 1v1.</p>}
+      {list.length > 0 && !preStart && <p className="mt-2 px-1 text-[10px] text-slate-400">Swipe the table sideways for more stats.</p>}
       {list.length > limit && (
         <button type="button" onClick={() => setLimit(limit + 30)} className="mt-2 w-full h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer">
           Show more players

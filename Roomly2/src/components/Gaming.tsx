@@ -926,7 +926,7 @@ const GamePage: React.FC<{
           isOpen={isOpen}
           matches={matches}
           title={season ? `${season.name} Standing` : 'League standing'}
-          note="The first player here is the official Best in Caritas for this game. Only matches logged in the league count."
+          note="The top player is the Best in Caritas. Tap a player to schedule a 1v1."
         />
       ) : rewardRunning ? (
         <ChallengeTable
@@ -940,7 +940,7 @@ const GamePage: React.FC<{
           isOpen={isOpen}
           matches={matches}
           title="Weekly reward table"
-          note="Counts only matches entered this week, from zero. Only players who joined the week are listed."
+          note={`The top 3 win the ${naira((week && Number(week.creditValue)) || config.creditValue)} food credit. Tap a player to schedule a 1v1.`}
           emptyText="Nobody has joined this week's reward yet."
         />
       ) : rewardRegistered.length > 0 ? (
