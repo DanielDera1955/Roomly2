@@ -2,7 +2,7 @@
  * Games admin: reads and writes for the Players tab, credits, week review, challenge log and per-game settings.
  * Runs with the staff (admin) login, so the security rules decide who can use it.
  */
-import { collection, doc, getDocs, addDoc, setDoc, updateDoc, query, where, limit, arrayUnion, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, query, where, limit, arrayUnion, writeBatch } from 'firebase/firestore';
 import { db } from './firebase.ts';
 import { phoneKey, normalizePhone } from './api.js';
 import { CREDIT_HOURS, matchCounts } from './boardCore.js';
@@ -80,7 +80,7 @@ export async function adjustPoints(a: { seasonId: string; weekKey: string; game:
 export async function voidCredit(id: string) {
   await updateDoc(doc(db, 'credits', id), { status: 'void', voidedAtMs: Date.now() });
 }
-/** Give a player a fresh credit for a week (after a settlement). It opens now, because the results are already settled, and lasts 24 hours. */
+/** Give a player a fresh credit for a week (after a settlement). It opens now, because the results are already settled, and lasts 48 hours. Also writes the public winner line for the game page. */
 export async function issueCredit(week: any, gid: string, name: string, rank: number, phone: string, value: number) {
   const p = normalizePhone(phone || '');
   if (!p) throw new Error('No phone number saved for this player.');
@@ -106,6 +106,17 @@ export async function issueCredit(week: any, gid: string, name: string, rank: nu
     manual: true,
   });
   await setDoc(doc(db, 'creditIndex', pk), { ids: arrayUnion(id) }, { merge: true });
+  // The public winner line on the game page (one per player per week)
+  await setDoc(doc(db, 'gameWinners', `week_${week.id}_${gid}`), {
+    kind: 'weekly',
+    game: week.game,
+    ref: week.id,
+    gid,
+    name,
+    rank,
+    value: Number(value),
+    atMs: now,
+  });
 }
 
 /** Put every registered player on the season. Their own games decide which tables they appear in. They tick the rules on first open. */
@@ -151,4 +162,105 @@ export async function postDailyNotice(text: string) {
   const LAGOS = 3600000;
   const endMs = (Math.floor((now + LAGOS) / 86400000) + 1) * 86400000 - LAGOS;
   await setDoc(doc(db, 'settings', 'gamesConfig'), { notice: t ? { text: t, atMs: now, endMs } : { text: '', atMs: now, endMs: 0 } }, { merge: true });
+}
+
+/* ------------------------------ Special 1v1 ------------------------------ */
+
+/** Create a Special 1v1: one game, one special player (X), one day. Players see its card on that game's page. */
+export async function createSpecialEvent(e: {
+  seasonId: string;
+  game: string;
+  xId: string;
+  xName: string;
+  startMs: number;
+  endMs: number;
+  prizeChallenger: number;
+  prizeX: number;
+}) {
+  if (!e.game || !e.xId) throw new Error('Pick the game and the special player.');
+  if (!Number.isFinite(e.startMs) || !Number.isFinite(e.endMs) || e.endMs <= e.startMs) throw new Error('The end time must be after the start time.');
+  const id = `sp_${e.game}_${e.startMs}`;
+  await setDoc(doc(db, 'specialEvents', id), {
+    ...e,
+    prizeChallenger: Math.max(0, Math.round(Number(e.prizeChallenger) || 0)),
+    prizeX: Math.max(0, Math.round(Number(e.prizeX) || 0)),
+    needWins: 3,
+    ofMatches: 5,
+    status: 'on',
+    createdAtMs: Date.now(),
+  });
+  return id;
+}
+/** Pause: stops new special matches and hides the Challenge button. Matches already logged stay. */
+export async function setSpecialStatus(id: string, status: 'on' | 'paused') {
+  await updateDoc(doc(db, 'specialEvents', id), { status });
+}
+/** Remove the event card. Matches already logged are not touched. */
+export async function removeSpecialEvent(id: string) {
+  await deleteDoc(doc(db, 'specialEvents', id));
+}
+/** The admin has checked the matches: publish the winner on the game page and close the event. */
+export async function confirmSpecialWinner(
+  event: any,
+  result: { kind: 'challenger' | 'x'; gid: string; name: string; text: string; value: number }
+) {
+  const now = Date.now();
+  await setDoc(doc(db, 'gameWinners', `special_${event.id}`), {
+    kind: 'special',
+    game: event.game,
+    ref: event.id,
+    gid: result.gid,
+    name: result.name,
+    winKind: result.kind,
+    text: String(result.text || '').slice(0, 160),
+    value: Number(result.value) || 0,
+    atMs: now,
+  });
+  await updateDoc(doc(db, 'specialEvents', event.id), {
+    status: 'done',
+    winner: { kind: result.kind, gid: result.gid, name: result.name, atMs: now },
+  });
+}
+/** Reopen an event that was closed by mistake: removes the published winner line. */
+export async function reopenSpecial(event: any) {
+  await deleteDoc(doc(db, 'gameWinners', `special_${event.id}`)).catch(() => {});
+  await updateDoc(doc(db, 'specialEvents', event.id), { status: 'paused', winner: null });
+}
+export async function removeWinnerLine(id: string) {
+  await deleteDoc(doc(db, 'gameWinners', id));
+}
+/** Credit for a Special 1v1 prize. Only the admin issues it, after checking the matches. Opens now and lasts 48 hours. */
+export async function issueSpecialCredit(event: any, gid: string, name: string, phone: string, value: number, reason: string) {
+  const p = normalizePhone(phone || '');
+  if (!p) throw new Error('No phone number saved for this player.');
+  const pk = await phoneKey(p);
+  const now = Date.now();
+  const id = `${event.id}_${gid}_m${now}`;
+  await setDoc(doc(db, 'credits', id), {
+    pk,
+    gid,
+    name,
+    game: event.game,
+    weekKey: event.id,
+    seasonId: event.seasonId || '',
+    kind: 'special',
+    reason: String(reason || 'Special 1v1').slice(0, 120),
+    rank: 0,
+    value: Number(value),
+    issuedAtMs: now,
+    validFromMs: now,
+    expiresAtMs: now + CREDIT_HOURS * HOUR,
+    status: 'active',
+    usedOrderId: '',
+    usedAtMs: 0,
+    manual: true,
+  });
+  await setDoc(doc(db, 'creditIndex', pk), { ids: arrayUnion(id) }, { merge: true });
+}
+export async function removeBooking(id: string) {
+  await deleteDoc(doc(db, 'specialBookings', id));
+}
+/** Take back a points adjustment */
+export async function undoAdjust(id: string) {
+  await deleteDoc(doc(db, 'pointAdjust', id));
 }

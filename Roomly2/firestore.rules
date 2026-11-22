@@ -715,6 +715,35 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // Special 1v1: the admin sets one strong player (X) and one day for a game. Everyone can read the event.
+    match /specialEvents/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    // A player books a spot for a Special 1v1 (id = eventId_playerId). Optional: anyone can still challenge X on the day.
+    match /specialBookings/{id} {
+      allow read: if true;
+      allow create: if ownsGamer(request.resource.data.gid)
+        && gamerOk(request.resource.data.gid)
+        && id == request.resource.data.eventId + '_' + request.resource.data.gid
+        && exists(/databases/$(database)/documents/specialEvents/$(request.resource.data.eventId))
+        && get(/databases/$(database)/documents/specialEvents/$(request.resource.data.eventId)).data.status == 'on'
+        && request.time.toMillis() < get(/databases/$(database)/documents/specialEvents/$(request.resource.data.eventId)).data.endMs
+        && request.resource.data.gid != get(/databases/$(database)/documents/specialEvents/$(request.resource.data.eventId)).data.xId
+        && request.resource.data.game == get(/databases/$(database)/documents/specialEvents/$(request.resource.data.eventId)).data.game
+        && request.resource.data.game in get(/databases/$(database)/documents/gamers/$(request.resource.data.gid)).data.games
+        && request.resource.data.part in ['morning', 'afternoon', 'evening']
+        && request.resource.data.atMs > request.time.toMillis() - 600000
+        && request.resource.data.atMs < request.time.toMillis() + 600000;
+      allow update: if isAdmin();
+      allow delete: if isAdmin() || ownsGamer(resource.data.gid);
+    }
+    // The winner lines shown on a game page. Only the admin writes them (after checking the matches).
+    match /gameWinners/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // Every Challenge tap (who, whom, game, when). Only the admin reads the log.
     match /challengeTaps/{id} {
       allow read: if isAdmin();

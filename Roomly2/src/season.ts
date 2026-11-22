@@ -10,13 +10,14 @@ import {
   setDoc,
   addDoc,
   updateDoc,
+  deleteDoc,
   onSnapshot,
   query,
   where,
 } from 'firebase/firestore';
 import { hubDb, hubUid, gameLabel, waTo, isScored } from './hub.js';
 import { db } from './firebase.ts';
-import { rewardConfigFor, weekPhase, lagosDay } from './boardCore.js';
+import { rewardConfigFor, weekPhase, lagosDay, setSpecialEvents } from './boardCore.js';
 
 /* ------------------------------ rules text ------------------------------ */
 
@@ -63,12 +64,21 @@ export const GAME_RULES: { title: string; lines: string[] }[] = [
     ],
   },
   {
+    title: 'Special 1v1',
+    lines: [
+      'Now and then Roomly sets a Special 1v1: one strong player, X, takes on challengers for one day in one game. The card on that game\'s page shows who X is, the day, the prize and who has played.',
+      'On that day you can log up to 5 matches against X. Win 3 of your 5 matches to win the challenger prize. The first challenger to win ends the run. If X beats 5 different challengers, X wins the bigger prize.',
+      'Booking a spot is optional. Anyone in the game can still challenge X on the day. Matches against X count in the table like any other match, with screenshot proof.',
+      'Roomly checks the matches before any prize is paid and can pause or remove an event. Prizes are food credit, issued by Roomly, and last 48 hours.',
+    ],
+  },
+  {
     title: 'Credits',
     lines: [
       'The top 3 players with at least the minimum points each get one food credit. If a player in the top 3 is below the minimum, they get nothing, and credits are not passed down.',
-      'Credits are issued when the table closes. If all your counted matches are confirmed, your credit opens straight away. If any of them is still waiting or reported, it opens after that is settled or after 24 hours, so it can take up to 48 hours. A credit lasts 24 hours from when it opens. It counts if your order is placed before it expires.',
+      'Roomly checks the results and issues credits by hand after the table closes. If all your counted matches are confirmed, your credit opens straight away. If any of them is still waiting or reported, it opens after that is settled or after 24 hours, so it can take up to 48 hours to open. A credit lasts 48 hours from when it opens. It counts if your order is placed before it expires.',
       'A credit works on Outside Food and Canteen Items only, not on Outside Items and not on delivery. It is a fixed amount off your items. Whatever you do not use is lost. One credit per order.',
-      'If a credit order is refunded because it was late or failed, the credit is restored with a fresh 24 hours.',
+      'If a credit order is refunded because it was late or failed, the credit is restored with a fresh 48 hours.',
     ],
   },
   {
@@ -226,6 +236,50 @@ export function subscribePointAdjust(seasonId: string, cb: (list: any[]) => void
   );
 }
 
+/** Special 1v1 events (all games). The special windows are also handed to the board code, so every table lets matches against X count on the day. */
+export function subscribeSpecialEvents(cb: (list: any[]) => void) {
+  return onSnapshot(
+    collection(hubDb, 'specialEvents'),
+    (snap) => {
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => Number(b.startMs || 0) - Number(a.startMs || 0));
+      setSpecialEvents(list);
+      cb(list);
+    },
+    () => cb([])
+  );
+}
+export function subscribeSpecialBookings(cb: (list: any[]) => void) {
+  return onSnapshot(
+    collection(hubDb, 'specialBookings'),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => Number(a.atMs || 0) - Number(b.atMs || 0))),
+    () => cb([])
+  );
+}
+/** Latest winners shown on a game page (Roomly writes one when it confirms a result) */
+export function subscribeGameWinners(cb: (list: any[]) => void) {
+  return onSnapshot(
+    collection(hubDb, 'gameWinners'),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => Number(b.atMs || 0) - Number(a.atMs || 0))),
+    () => cb([])
+  );
+}
+/** Book a spot for a Special 1v1: one tap, with the part of the day the player expects to be free */
+export async function bookSpecial(event: any, me: any, part: 'morning' | 'afternoon' | 'evening') {
+  await hubUid();
+  await setDoc(doc(hubDb, 'specialBookings', `${event.id}_${me.id}`), {
+    eventId: event.id,
+    gid: me.id,
+    game: event.game,
+    name: me.name,
+    part,
+    atMs: Date.now(),
+  });
+}
+export async function cancelBooking(event: any, me: any) {
+  await hubUid();
+  await deleteDoc(doc(hubDb, 'specialBookings', `${event.id}_${me.id}`));
+}
+
 export function subscribeRewardWeeks(seasonId: string, cb: (list: any[]) => void) {
   if (!seasonId) {
     cb([]);
@@ -324,7 +378,7 @@ export function rewardShortRulesFor(cfg: { minPlayers: number }): string[] {
     'Register once and tick the rules. Reward matches count in the weekly reward table only, not in the league. A win is 3 points, a draw is 1 and a loss is 0.',
     'Schedule a match with your opponent. The winner logs the result with a screenshot, and the opponent can dispute it.',
     'You can play the same opponent twice a week: once at home and once away.',
-    'Your credit lasts 24 hours once it opens. It works on Outside Food and Canteen Items only, not on delivery.',
+    'Your credit lasts 48 hours once it opens. It works on Outside Food and Canteen Items only, not on delivery.',
     'A fake screenshot removes your points and blocks you from the next reward week of that game.',
   ];
 }
@@ -338,7 +392,7 @@ export function rewardRulesFor(game: string | null, cfg: { minPlayers: number; m
     'Log a reward match from the reward tab. Both players must be registered for this reward contest. Between the same two players, at most 2 matches count in the week (1 home and 1 away).',
     `Points: a win is 3, a draw is 1 and a loss is 0. Ties are broken by wins, then ${game && !isScored(game) ? 'damage' : 'goals or damage'}, then kills, then whoever reached the points first.`,
     `The top 3 players with at least ${cfg.minPoints} points each win a ${naira(cfg.creditValue)} food credit for ${label}. A player below ${cfg.minPoints} points gets nothing and the credit is not passed down.`,
-    'Credits are issued when the week closes. A credit opens straight away if all your counted matches are confirmed, otherwise after a reported or waiting match is settled or after 24 hours. It then lasts 24 hours. A credit works on Outside Food and Canteen Items, not on delivery.',
+    'Credits are issued when the week closes. A credit opens straight away if all your counted matches are confirmed, otherwise after a reported or waiting match is settled or after 24 hours. It then lasts 48 hours. A credit works on Outside Food and Canteen Items, not on delivery.',
     'Roomly settles disputes. A fake screenshot removes the points and blocks the player from the next reward week of that game.',
   ];
 }

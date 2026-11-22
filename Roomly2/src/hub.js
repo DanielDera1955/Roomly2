@@ -8,7 +8,7 @@
  * Needs: Firebase console > Authentication > Sign-in method > Anonymous switched ON.
  */
 import { getRef, getHeardFrom } from './tracking.js';
-import { matchCounts as coreMatchCounts, canDispute as coreCanDispute, computeRows, AUTO_CONFIRM_HOURS, DISPUTE_HOURS } from './boardCore.js';
+import { matchCounts as coreMatchCounts, canDispute as coreCanDispute, computeRows, setSpecialEvents, AUTO_CONFIRM_HOURS, DISPUTE_HOURS } from './boardCore.js';
 import { uploadProof } from './proof.js';
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
@@ -1100,6 +1100,8 @@ export async function fetchLeaders() {
         getDocs(query(collection(hubDb, 'matches'), where('seasonId', '==', season.id))),
         getDocs(query(collection(hubDb, 'seasonJoins'), where('seasonId', '==', season.id))),
         getDocs(query(collection(hubDb, 'pointAdjust'), where('seasonId', '==', season.id))).catch(() => null),
+        // Special 1v1 days lift the match limit against the special player, so the crown must know them
+        getDocs(collection(hubDb, 'specialEvents')).then((snap) => setSpecialEvents(snap.docs.map((d) => ({ id: d.id, ...d.data() })))).catch(() => null),
       ]);
       const adjusts = adjSnap ? adjSnap.docs.map((d) => ({ id: d.id, ...d.data() })) : [];
       const matches = matchesSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((m) => m.v === 2);

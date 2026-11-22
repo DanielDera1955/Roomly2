@@ -105,9 +105,39 @@ export const contestOf = (m) => (m && m.contest === 'reward' ? 'reward' : 'leagu
 /** Lagos week number, weeks start Monday 12:00AM */
 export const lagosWeek = (ms) => Math.floor((lagosDay(ms) + 3) / 7);
 
+/* ------------------------------ Special 1v1 ------------------------------ */
+
+/** On a Special 1v1 day, one challenger can log up to this many matches against the special player */
+export const SPECIAL_MAX_PAIR = 5;
+/** Special events the page has loaded (set by the subscriptions, so every board sees them without extra arguments) */
+let SPECIAL_EVENTS = [];
+export function setSpecialEvents(list) {
+  SPECIAL_EVENTS = Array.isArray(list) ? list : [];
+}
+/**
+ * The special event a match between a and b belongs to, if any: same game, one of them is the special player,
+ * and the match was entered inside the event's day. Paused events stop new logging but keep what was already played.
+ * onlyOn: only an event that is switched on (used when logging a new match).
+ */
+export function specialFor(game, aUid, bUid, atMs, onlyOn = false, events = SPECIAL_EVENTS) {
+  const at = Number(atMs || 0);
+  return (
+    (events || []).find(
+      (e) =>
+        e &&
+        e.game === game &&
+        (e.xId === aUid || e.xId === bUid) &&
+        at >= Number(e.startMs) &&
+        at < Number(e.endMs) &&
+        (!onlyOn || e.status === 'on')
+    ) || null
+  );
+}
+
 /**
  * Keep only the first counting matches between the same two players in one week, per contest:
  * 4 in the league, 2 in a reward week. Extra matches are ignored by every board, whatever was written.
+ * On a Special 1v1 day, league matches against the special player are counted on their own: up to 5 per challenger that day.
  */
 export function capPairs(matches) {
   const sorted = [...matches].filter(matchCounts).sort((a, b) => Number(a.loggedAtMs || 0) - Number(b.loggedAtMs || 0));
@@ -116,12 +146,60 @@ export function capPairs(matches) {
   sorted.forEach((m) => {
     const c = contestOf(m);
     const pair = [m.aUid, m.bUid].sort().join('|');
+    const sp = c === 'league' ? specialFor(m.game, m.aUid, m.bUid, m.loggedAtMs) : null;
+    if (sp) {
+      const k = `sp|${sp.id}|${pair}`;
+      seen[k] = (seen[k] || 0) + 1;
+      if (seen[k] <= SPECIAL_MAX_PAIR) keep.add(m.id || m);
+      return;
+    }
     const period = c === 'reward' ? m.weekKey || lagosWeek(m.loggedAtMs) : lagosWeek(m.loggedAtMs);
     const key = `${m.seasonId || ''}|${m.game}|${c}|${pair}|${period}`;
     seen[key] = (seen[key] || 0) + 1;
     if (seen[key] <= (c === 'reward' ? MAX_PAIR_REWARD_WEEK : MAX_PAIR_LEAGUE_WEEK)) keep.add(m.id || m);
   });
   return matches.filter((m) => keep.has(m.id || m));
+}
+
+/**
+ * How a special event stands: one row per challenger with the special player (X) first in the name.
+ * results: W = the challenger won that match, L = X won, D = draw. A challenger wins the series with 3 wins out of 5;
+ * X wins a series with 3 wins out of 5 as well. The run ends when a challenger wins. X wins the event by beating 5 different challengers.
+ * Only matches that count (waiting or confirmed) are used. A match is shown the moment it is logged, and Roomly confirms the winner.
+ */
+export function specialSeries(event, matches) {
+  const NEED = Number(event && event.needWins) || 3;
+  const OF = Number(event && event.ofMatches) || SPECIAL_MAX_PAIR;
+  const rows = {};
+  (matches || [])
+    .filter(
+      (m) =>
+        event &&
+        m.game === event.game &&
+        matchCounts(m) &&
+        contestOf(m) === 'league' &&
+        (m.aUid === event.xId || m.bUid === event.xId) &&
+        Number(m.loggedAtMs) >= Number(event.startMs) &&
+        Number(m.loggedAtMs) < Number(event.endMs)
+    )
+    .sort((a, b) => Number(a.loggedAtMs || 0) - Number(b.loggedAtMs || 0))
+    .forEach((m) => {
+      const cid = m.aUid === event.xId ? m.bUid : m.aUid;
+      const r = (rows[cid] = rows[cid] || { id: cid, name: m.aUid === event.xId ? m.bName : m.aName, results: [], firstMs: Number(m.loggedAtMs || 0) });
+      if (r.results.length >= OF) return;
+      const w = winnerOf(m);
+      r.results.push(!w ? 'D' : w === event.xId ? 'L' : 'W');
+    });
+  const list = Object.values(rows).map((r) => {
+    const cw = r.results.filter((x) => x === 'W').length;
+    const xw = r.results.filter((x) => x === 'L').length;
+    const state = cw >= NEED ? 'won' : xw >= NEED ? 'lost' : 'playing';
+    return { ...r, cw, xw, state };
+  });
+  list.sort((a, b) => a.firstMs - b.firstMs);
+  const challengerWon = list.find((r) => r.state === 'won') || null;
+  const xBeaten = list.filter((r) => r.state === 'lost').length;
+  return { rows: list, need: NEED, of: OF, challengerWon, xBeaten, xWon: !challengerWon && xBeaten >= 5 };
 }
 
 /**
@@ -239,8 +317,8 @@ export function weekPhase(w, nowMs = Date.now()) {
 
 /* ------------------------------ credits ------------------------------ */
 
-/** A credit lasts 24 hours from the moment it opens */
-export const CREDIT_HOURS = 24;
+/** A credit lasts 48 hours from the moment it opens */
+export const CREDIT_HOURS = 48;
 /**
  * When a winner's credit can first be spent. Right away when every match that gave them points is settled.
  * A match still inside its report window holds it until that window closes; a reported match (or a table where a

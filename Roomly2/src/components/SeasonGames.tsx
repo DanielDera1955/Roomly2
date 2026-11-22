@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Trophy, Crown, Loader2, Users, MessageCircle, X, Search, Flag, EyeOff, BookOpen, Check, ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-react';
 import { gameLabel, isScored } from '../hub.js';
-import { weekPhase, lagosWeek, contestOf, matchCounts, winnerOf, proofOf, MAX_PAIR_LEAGUE_WEEK, MAX_PAIR_REWARD_WEEK } from '../boardCore.js';
+import { weekPhase, lagosWeek, contestOf, matchCounts, winnerOf, proofOf, specialSeries, MAX_PAIR_LEAGUE_WEEK, MAX_PAIR_REWARD_WEEK } from '../boardCore.js';
 import ProofThumb from './ProofThumb';
 import {
   GAME_RULES,
@@ -17,6 +17,8 @@ import {
   rewardHeadlineFor,
   rewardShortRulesFor,
   tapChallenge,
+  bookSpecial,
+  cancelBooking,
   reportPlayer,
   hideFromPlayer,
   type Season,
@@ -640,6 +642,249 @@ export const ChallengeTable: React.FC<{
           stats={stats}
           onClose={() => setPicked(null)}
         />
+      )}
+    </div>
+  );
+};
+
+/* ------------------------------------------------------------------ */
+/* Special 1v1 card and Latest winner card (above the log button)       */
+/* ------------------------------------------------------------------ */
+
+const PARTS: { id: 'morning' | 'afternoon' | 'evening'; label: string }[] = [
+  { id: 'morning', label: 'Morning' },
+  { id: 'afternoon', label: 'Afternoon' },
+  { id: 'evening', label: 'Evening' },
+];
+const MAX_BOOKINGS = 8;
+const dateShort = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
+
+const Dots: React.FC<{ results: string[]; of: number }> = ({ results, of }) => (
+  <div className="flex gap-1 shrink-0">
+    {Array.from({ length: of }).map((_, i) => {
+      const r = results[i];
+      const cls = r === 'W' ? 'bg-[#0e9f55] text-white' : r === 'L' ? 'bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-slate-200' : r === 'D' ? 'bg-amber-300 text-amber-950' : 'border border-dashed border-slate-300 dark:border-slate-600 text-slate-400';
+      return (
+        <span key={i} className={`w-4 h-4 rounded-full text-[8px] font-black flex items-center justify-center ${cls}`}>
+          {r || i + 1}
+        </span>
+      );
+    })}
+  </div>
+);
+
+/** The card for a game's Special 1v1: before the day (book a spot), on the day (who played X), after it (waiting for Roomly's check) */
+export const SpecialCard: React.FC<{
+  game: string;
+  events: any[];
+  bookings: any[];
+  matches: any[];
+  me: any;
+  season: Season | null;
+  join: any;
+  board: any[];
+  hiddenFromMe: Set<string>;
+  isOpen: boolean;
+  nowMs: number;
+  onJoin: () => void;
+}> = ({ game, events, bookings, matches, me, season, join, board, hiddenFromMe, isOpen, nowMs, onJoin }) => {
+  const [busy, setBusy] = useState(false);
+  const [part, setPart] = useState<'morning' | 'afternoon' | 'evening'>('evening');
+  const [showAll, setShowAll] = useState(false);
+  const [picked, setPicked] = useState<any | null>(null);
+  const [err, setErr] = useState('');
+  // The next or current event for this game that is not closed; an event that ended a few hours ago still shows until Roomly closes it
+  const e = events
+    .filter((x) => x.game === game && x.status !== 'done' && nowMs < Number(x.endMs) + 12 * 3600000)
+    .sort((a, b) => Number(a.startMs) - Number(b.startMs))[0];
+  if (!e) return null;
+  const scored = isScored(game);
+  const stats: { k: string; h: string }[] = scored
+    ? [{ k: 'p', h: 'P' }, { k: 'w', h: 'W' }, { k: 'd', h: 'D' }, { k: 'l', h: 'L' }, { k: 'gf', h: 'GF' }]
+    : [{ k: 'p', h: 'P' }, { k: 'w', h: 'W' }, { k: 'l', h: 'L' }, { k: 'kills', h: 'K' }];
+  const plays = Boolean(me && (me.games || []).includes(game));
+  const member = Boolean(me && season && plays && rulesAccepted(join));
+  const paused = e.status === 'paused';
+  const before = nowMs < Number(e.startMs);
+  const live = !before && nowMs < Number(e.endMs);
+  const ended = nowMs >= Number(e.endMs);
+  const isX = Boolean(me && me.id === e.xId);
+  const xRow = board.find((r) => r.id === e.xId) || null;
+  const ser = specialSeries(e, matches);
+  const list = showAll ? ser.rows : ser.rows.slice(0, 5);
+  const booked = bookings.filter((b) => b.eventId === e.id);
+  const mine = me ? booked.find((b) => b.gid === me.id) : null;
+  const full = booked.length >= MAX_BOOKINGS;
+  const prizeC = naira(Number(e.prizeChallenger));
+  const prizeX = naira(Number(e.prizeX));
+
+  const book = async () => {
+    if (!me) return;
+    setBusy(true);
+    setErr('');
+    try {
+      await bookSpecial(e, me, part);
+    } catch (x: any) {
+      setErr(x?.message || 'Could not book. Try again.');
+    }
+    setBusy(false);
+  };
+  const unbook = async () => {
+    if (!me) return;
+    setBusy(true);
+    try {
+      await cancelBooking(e, me);
+    } catch {}
+    setBusy(false);
+  };
+
+  return (
+    <div className={`${card} overflow-hidden`}>
+      <div className="p-4 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[10px] font-black uppercase tracking-widest text-[#0e9f55]">Special 1v1</span>
+          <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${paused ? 'bg-amber-100 text-amber-800' : live ? 'bg-[#0e9f55] text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
+            {paused ? 'PAUSED' : live ? 'LIVE NOW' : ended ? 'ENDED' : dateShort(Number(e.startMs)).toUpperCase()}
+          </span>
+        </div>
+        <div>
+          <p className="text-lg font-black text-slate-900 dark:text-white leading-tight">Beat {e.xName}</p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {paused
+              ? 'Roomly has paused this for now. Check back soon.'
+              : live
+              ? `${dateShort(Number(e.startMs))}. Ends in ${countdown(Number(e.endMs) - nowMs)}.`
+              : ended
+              ? 'The day is over. Roomly is checking the matches before the winner is announced.'
+              : `${dateShort(Number(e.startMs))}. Starts in ${countdown(Number(e.startMs) - nowMs)}.`}
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950">
+            <p className="text-base font-black text-[#0e9f55]">{prizeC}</p>
+            <p className="text-[10px] text-slate-500">Win 3 of 5 matches against {e.xName}</p>
+          </div>
+          <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950">
+            <p className="text-base font-black text-amber-500">{prizeX}</p>
+            <p className="text-[10px] text-slate-500">{e.xName} beats 5 challengers</p>
+          </div>
+        </div>
+        <p className="text-[11px] text-slate-500">Play {e.xName} up to 5 times on the day and log every match with a screenshot. The first challenger to win ends the run.</p>
+
+        {before && !paused && (
+          <div className="space-y-2">
+            <p className="text-xs font-bold text-slate-900 dark:text-white">
+              {booked.length === 0 ? 'Nobody has booked yet.' : `${booked.length} booked: ${booked.slice(0, 4).map((b) => b.name).join(', ')}${booked.length > 4 ? ` and ${booked.length - 4} more` : ''}`}
+            </p>
+            {isX ? (
+              <p className="text-[11px] text-slate-500">You are the special player.</p>
+            ) : !me || !plays || !rulesAccepted(join) ? (
+              <button type="button" onClick={onJoin} className="w-full h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer">
+                Join {gameLabel(game)} to book a spot
+              </button>
+            ) : mine ? (
+              <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40">
+                <p className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1">
+                  <Check className="w-3.5 h-3.5" /> You are booked ({mine.part})
+                </p>
+                <button type="button" disabled={busy} onClick={unbook} className="text-[11px] font-bold text-slate-500 cursor-pointer">Cancel</button>
+              </div>
+            ) : full ? (
+              <p className="text-[11px] text-slate-500">Booking is full. You can still challenge {e.xName} on the day.</p>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex gap-1.5">
+                  {PARTS.map((p) => (
+                    <button key={p.id} type="button" onClick={() => setPart(p.id)} className={`flex-1 h-9 rounded-lg text-[11px] font-bold cursor-pointer ${part === p.id ? 'bg-[#0e9f55] text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+                <button type="button" disabled={busy} onClick={book} className="w-full h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer disabled:opacity-60">
+                  {busy ? 'Booking...' : 'Book my spot'}
+                </button>
+                <p className="text-[10px] text-slate-400">Booking is optional. Anyone can still challenge {e.xName} on the day.</p>
+              </div>
+            )}
+            {err && <p className="text-[11px] font-semibold text-rose-600">{err}</p>}
+          </div>
+        )}
+      </div>
+
+      {(live || ended) && (
+        <div className="border-t border-slate-100 dark:border-slate-800">
+          <p className="px-4 pt-3 pb-1 text-xs font-bold text-slate-900 dark:text-white">
+            {ser.rows.length === 0 ? `Nobody has played ${e.xName} yet.` : `${ser.rows.length} ${ser.rows.length === 1 ? 'player has' : 'players have'} challenged ${e.xName}`}
+          </p>
+          {list.map((r) => (
+            <div key={r.id} className={`px-4 py-2.5 border-t border-slate-100 dark:border-slate-800 ${me && r.id === me.id ? 'bg-emerald-50 dark:bg-emerald-950/40' : ''}`}>
+              <p className="text-[13px] font-bold text-slate-900 dark:text-white leading-tight">
+                {e.xName} vs {r.name}
+                {me && r.id === me.id && <span className="ml-1 px-1 rounded bg-[#0e9f55] text-white text-[8px] font-black align-middle">YOU</span>}
+              </p>
+              <div className="mt-1.5 flex items-center justify-between gap-2">
+                <p className="text-[10px] text-slate-400 min-w-0">{r.state === 'won' ? 'Challenger won' : r.state === 'lost' ? `${e.xName} won the series` : 'Series in progress'}</p>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Dots results={r.results} of={ser.of} />
+                  <span className="w-9 text-right text-sm font-black text-slate-900 dark:text-white tabular-nums">{r.xw}-{r.cw}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+          {ser.rows.length > 5 && (
+            <button type="button" onClick={() => setShowAll(!showAll)} className="w-full py-2 border-t border-slate-100 dark:border-slate-800 text-[11px] font-bold text-slate-500 cursor-pointer">
+              {showAll ? 'Show fewer' : `Show all ${ser.rows.length}`}
+            </button>
+          )}
+          {live && !paused && !isX && (
+            <div className="p-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+              {xRow && member && isOpen && !hiddenFromMe.has(e.xId) && xRow.ready !== false ? (
+                <button type="button" onClick={() => setPicked(xRow)} className="w-full h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer">
+                  Challenge {e.xName}
+                </button>
+              ) : !me || !plays || !rulesAccepted(join) ? (
+                <button type="button" onClick={onJoin} className="w-full h-11 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer">
+                  Join {gameLabel(game)} to challenge {e.xName}
+                </button>
+              ) : (
+                <p className="text-[11px] text-slate-500">{e.xName} is not open to challenges right now.</p>
+              )}
+              <p className="mt-2 text-[10px] text-slate-400">After the match, the winner logs it with the normal log button below.</p>
+            </div>
+          )}
+        </div>
+      )}
+      {picked && (
+        <PlayerSheet game={game} row={picked} me={me} season={season} member={member} isOpen={isOpen} hidden={hiddenFromMe.has(picked.id)} rewardRunning={false} matches={matches} stats={stats} onClose={() => setPicked(null)} />
+      )}
+    </div>
+  );
+};
+
+/** The latest winner of a game's Special 1v1 and of its weekly reward */
+export const WinnerCard: React.FC<{ game: string; winners: any[]; nowMs: number }> = ({ game, winners, nowMs }) => {
+  const mine = winners.filter((w) => w.game === game && nowMs - Number(w.atMs || 0) < 30 * 86400000);
+  const special = mine.find((w) => w.kind === 'special');
+  const weeklyAll = mine.filter((w) => w.kind === 'weekly');
+  const ref = weeklyAll[0]?.ref;
+  const weekly = weeklyAll.filter((w) => w.ref === ref).sort((a, b) => Number(a.rank) - Number(b.rank));
+  if (!special && weekly.length === 0) return null;
+  return (
+    <div className={`${card} p-4 space-y-2.5`}>
+      <span className="text-[10px] font-black uppercase tracking-widest text-amber-500">Latest winners</span>
+      {special && (
+        <div>
+          <p className="text-sm font-black text-slate-900 dark:text-white">{special.text}</p>
+          <p className="text-[11px] text-slate-500">Special 1v1, {dateShort(Number(special.atMs))}.{special.value ? ` ${naira(special.value)} food credit.` : ''}</p>
+        </div>
+      )}
+      {weekly.length > 0 && (
+        <div>
+          <p className="text-sm font-black text-slate-900 dark:text-white">{weekly.map((w) => w.name).join(', ')}</p>
+          <p className="text-[11px] text-slate-500">
+            Won the last weekly reward.{weekly[0].value ? ` ${naira(weekly[0].value)} food credit${weekly.length > 1 ? ' each' : ''}.` : ''}
+          </p>
+        </div>
       )}
     </div>
   );

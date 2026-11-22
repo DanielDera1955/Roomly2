@@ -32,7 +32,7 @@ import {
   markEntryPaid,
   leaveTournament,
 } from '../hub.js';
-import { computeRows, matchCounts, matchRecorded, canDispute, canTakeBack, proofOf, weekPhase, lagosDay, DISPUTE_HOURS, AUTO_CONFIRM_HOURS, TAKEBACK_MINUTES, rewardConfigFor, rewardRegsFor, qualifiedAtMs, contestOf, lagosWeek, MAX_PAIR_LEAGUE_WEEK, MAX_PAIR_REWARD_WEEK } from '../boardCore.js';
+import { computeRows, matchCounts, matchRecorded, canDispute, canTakeBack, proofOf, weekPhase, lagosDay, DISPUTE_HOURS, AUTO_CONFIRM_HOURS, TAKEBACK_MINUTES, rewardConfigFor, rewardRegsFor, qualifiedAtMs, contestOf, lagosWeek, specialFor, SPECIAL_MAX_PAIR, MAX_PAIR_LEAGUE_WEEK, MAX_PAIR_REWARD_WEEK } from '../boardCore.js';
 import ProofThumb from './ProofThumb';
 import {
   subscribeSeasons,
@@ -53,6 +53,9 @@ import {
   setChallengeable,
   tapChallenge,
   refreshContact,
+  subscribeSpecialEvents,
+  subscribeSpecialBookings,
+  subscribeGameWinners,
   joinSeason,
   acceptRules,
   registerReward,
@@ -63,7 +66,7 @@ import {
   rewardShortRulesFor,
   type Season,
 } from '../season';
-import { SeasonRulesCard, RewardCard, RewardIntro, GameRulesToggle, MainRulesDropdown, ChallengeTable, AnnouncementsCard, RulesBody } from './SeasonGames';
+import { SeasonRulesCard, RewardCard, RewardIntro, GameRulesToggle, MainRulesDropdown, ChallengeTable, AnnouncementsCard, RulesBody, SpecialCard, WinnerCard } from './SeasonGames';
 import { HistoryButton } from './GamesHistory';
 
 const card = 'bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800';
@@ -122,6 +125,9 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
   const [config, setConfig] = useState<any>({});
   const [hiddenFromMe, setHiddenFromMe] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState<'best' | 'reward'>('best');
+  const [specials, setSpecials] = useState<any[]>([]);
+  const [bookings, setBookings] = useState<any[]>([]);
+  const [winners, setWinners] = useState<any[]>([]);
 
   useEffect(() => {
     knownHubUid().then(setUid);
@@ -142,6 +148,9 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
   useEffect(() => subscribeHubSettings(setSettings), []);
   useEffect(() => subscribeSeasons(setSeasons), []);
   useEffect(() => subscribeGamesConfig(setConfig), []);
+  useEffect(() => subscribeSpecialEvents(setSpecials), []);
+  useEffect(() => subscribeSpecialBookings(setBookings), []);
+  useEffect(() => subscribeGameWinners(setWinners), []);
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 30000);
     return () => window.clearInterval(id);
@@ -287,6 +296,9 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
           registered={counts.byGame[game] || 0}
           acceptedCount={acceptedCount[game] || 0}
           rewardRegistered={rewardRegistered[game] || []}
+          specials={specials}
+          bookings={bookings}
+          winners={winners}
         />
       ) : (
         <GamesHome
@@ -710,7 +722,10 @@ const GamePage: React.FC<{
   registered: number;
   acceptedCount: number;
   rewardRegistered?: { id: string; name: string; atMs: number }[];
-}> = ({ game, me, board, matches, tournaments, isOpen, opensAt, nowMs, focusMatch, onFocusDone, onBack, onRegister, onRewardRegister, season, join, week, otherWeek, rewardRows, rewardJoined, acceptedGame, config, hiddenFromMe, mode, onMode, registered, acceptedCount , rewardRegistered = []}) => {
+  specials?: any[];
+  bookings?: any[];
+  winners?: any[];
+}> = ({ game, me, board, matches, tournaments, isOpen, opensAt, nowMs, focusMatch, onFocusDone, onBack, onRegister, onRewardRegister, season, join, week, otherWeek, rewardRows, rewardJoined, acceptedGame, config, hiddenFromMe, mode, onMode, registered, acceptedCount , rewardRegistered = [], specials = [], bookings = [], winners = []}) => {
   const [logging, setLogging] = useState(false);
   const [busy, setBusy] = useState(false);
   const plays = playsGame(me, game);
@@ -901,6 +916,13 @@ const GamePage: React.FC<{
           />
           <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">I have read the game rules and accept them. Other players can challenge me once I tick.</span>
         </label>
+      )}
+
+      {best && (
+        <>
+          <SpecialCard game={game} events={specials} bookings={bookings} matches={matches} me={me} season={season} join={join} board={board} hiddenFromMe={hiddenFromMe} isOpen={isOpen} nowMs={nowMs} onJoin={onRegister} />
+          <WinnerCard game={game} winners={winners} nowMs={nowMs} />
+        </>
       )}
 
       {/* Log a result: the only thing above the table. Everyone can see it, members can use it. */}
@@ -1425,8 +1447,19 @@ const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; matches: a
   }, [opp]);
 
   const thisWeek = lagosWeek(Date.now());
-  const cap = contest === 'reward' ? MAX_PAIR_REWARD_WEEK : MAX_PAIR_LEAGUE_WEEK;
-  const playedWeek = opp
+  // On a Special 1v1 day, matches against the special player have their own limit (5 for the day)
+  const sp = opp && contest === 'league' ? specialFor(game, me.id, opp, Date.now(), true) : null;
+  const cap = sp ? SPECIAL_MAX_PAIR : contest === 'reward' ? MAX_PAIR_REWARD_WEEK : MAX_PAIR_LEAGUE_WEEK;
+  const playedWeek = sp
+    ? matches.filter(
+        (m) =>
+          matchCounts(m) &&
+          contestOf(m) === 'league' &&
+          ((m.aUid === me.id && m.bUid === opp) || (m.aUid === opp && m.bUid === me.id)) &&
+          Number(m.loggedAtMs || 0) >= Number(sp.startMs) &&
+          Number(m.loggedAtMs || 0) < Number(sp.endMs)
+      ).length
+    : opp
     ? matches.filter(
         (m) =>
           matchCounts(m) &&
@@ -1440,7 +1473,7 @@ const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; matches: a
   const submit = async () => {
     setError('');
     if (!o) return setError('Pick your opponent.');
-    if (playedWeek >= cap) return setError(`You have already logged ${cap} ${contest} matches against this player this week. More will not count.`);
+    if (playedWeek >= cap) return setError(`You have already logged ${cap} ${contest} matches against this player ${sp ? 'in this Special 1v1' : 'this week'}. More will not count.`);
     let a = 1;
     let b = 0;
     if (scored) {

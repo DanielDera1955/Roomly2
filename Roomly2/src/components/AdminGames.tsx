@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { GAMES, gameLabel, playsGame, subscribeGamers, timeAgo, waTo } from '../hub.js';
-import { computeRows, matchCounts, weekPhase, creditState, rewardConfigFor, rewardSlots, rewardRegsFor, contestOf } from '../boardCore.js';
+import { computeRows, matchCounts, weekPhase, creditState, rewardConfigFor, rewardSlots, rewardRegsFor, contestOf, specialSeries, CREDIT_HOURS } from '../boardCore.js';
 import { farmSignals, opponentsOf, STREAK_FLAG, STREAK_REMOVE } from '../farmSignals.js';
 import {
   subscribeSeasons,
@@ -10,6 +10,9 @@ import {
   subscribePointAdjust,
   subscribeGamesConfig,
   subscribeSeasonMatches,
+  subscribeSpecialEvents,
+  subscribeSpecialBookings,
+  subscribeGameWinners,
   type Season,
 } from '../season';
 import {
@@ -31,6 +34,15 @@ import {
   saveGroupLink,
   saveSlots,
   postDailyNotice,
+  createSpecialEvent,
+  setSpecialStatus,
+  removeSpecialEvent,
+  confirmSpecialWinner,
+  reopenSpecial,
+  removeWinnerLine,
+  issueSpecialCredit,
+  removeBooking,
+  undoAdjust,
 } from '../adminGames';
 
 const card = 'p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-3';
@@ -44,9 +56,10 @@ const when = (ms: number) => (ms ? new Date(ms).toLocaleString('en-GB', { day: '
 const day = (ms: number) => (ms ? new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '');
 const open = (url: string) => window.open(url, '_blank', 'noopener');
 
-type Tab = 'players' | 'reports' | 'credits' | 'weeks' | 'taps' | 'settings' | 'announce';
+type Tab = 'players' | 'reports' | 'credits' | 'weeks' | 'taps' | 'settings' | 'announce' | 'special';
 const TABS_LEAGUE: [Tab, string][] = [
   ['players', 'Players'],
+  ['special', 'Special 1v1'],
   ['reports', 'Reports'],
   ['taps', 'Challenge log'],
   ['announce', 'Announcements'],
@@ -73,11 +86,17 @@ export const AdminGames: React.FC<{ section?: 'league' | 'contest' }> = ({ secti
   const [credits, setCredits] = useState<any[]>([]);
   const [taps, setTaps] = useState<any[]>([]);
   const [reports, setReports] = useState<any[]>([]);
+  const [events, setEvents] = useState<any[]>([]);
+  const [bookings, setBookings] = useState<any[]>([]);
+  const [winners, setWinners] = useState<any[]>([]);
   const [loadErr, setLoadErr] = useState('');
 
   useEffect(() => subscribeSeasons(setSeasons), []);
   useEffect(() => subscribeGamers(setGamers), []);
   useEffect(() => subscribeGamesConfig(setConfig), []);
+  useEffect(() => subscribeSpecialEvents(setEvents), []);
+  useEffect(() => subscribeSpecialBookings(setBookings), []);
+  useEffect(() => subscribeGameWinners(setWinners), []);
   const now = Date.now();
   const season = seasons.find((s) => s.id === seasonId) || seasons.find((s) => Number(s.startMs) <= now && now < Number(s.endMs)) || [...seasons].sort((a, b) => Number(b.startMs) - Number(a.startMs))[0] || null;
   const sid = season?.id || '';
@@ -133,6 +152,7 @@ export const AdminGames: React.FC<{ section?: 'league' | 'contest' }> = ({ secti
       {season && tab === 'players' && <PlayersTab {...shared} season={season} />}
       {season && tab === 'credits' && <CreditsTab {...shared} />}
       {season && tab === 'weeks' && <WeeksTab {...shared} season={season} />}
+      {season && tab === 'special' && <SpecialTab {...shared} season={season} events={events} bookings={bookings} winners={winners} />}
       {tab === 'reports' && <ReportsTab reports={reports} refresh={refresh} />}
       {season && tab === 'taps' && <TapsTab taps={taps} />}
       {tab === 'announce' && <AnnounceBox config={config} />}
@@ -484,11 +504,14 @@ const CreditsTab: React.FC<any> = ({ credits, phones, refresh }) => {
       {list.length === 0 && <p className="text-xs text-slate-400">No credits.</p>}
       {list.slice(0, 100).map(({ c, st }: any) => {
         const phone = phones.get(c.gid);
-        const text = `Congratulations ${c.name}. You finished #${c.rank} in the ${gameLabel(c.game)} reward week and won a ${naira(c.value)} food credit on Roomly Caritas. It opens ${when(Number(c.validFromMs))} and lasts 24 hours. Order before it expires and tick "Use my Games credit" at checkout.`;
+        const text =
+          c.kind === 'special'
+            ? `Congratulations ${c.name}. You won ${naira(c.value)} food credit in the ${gameLabel(c.game)} Special 1v1 on Roomly Caritas. It is open now and lasts ${CREDIT_HOURS} hours. Order before it expires and tick "Use my Games credit" at checkout.`
+            : `Congratulations ${c.name}. You finished #${c.rank} in the ${gameLabel(c.game)} reward week and won a ${naira(c.value)} food credit on Roomly Caritas. It opens ${when(Number(c.validFromMs))} and lasts ${CREDIT_HOURS} hours. Order before it expires and tick "Use my Games credit" at checkout.`;
         return (
           <div key={c.id} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs space-y-1.5">
             <p className="font-bold text-slate-900 dark:text-white">
-              {c.name} <span className="font-normal text-slate-400">{gameLabel(c.game)}, #{c.rank}, {naira(c.value)}</span>
+              {c.name} <span className="font-normal text-slate-400">{gameLabel(c.game)}, {c.kind === 'special' ? `Special 1v1${c.reason ? `: ${c.reason}` : ''}` : `#${c.rank}`}, {naira(c.value)}</span>
             </p>
             <p className="text-[11px] text-slate-500">
               {STATE_LABEL[st] || st} · Issued {when(Number(c.issuedAtMs))} · Opens {when(Number(c.validFromMs))} · Expires {when(Number(c.expiresAtMs))}
@@ -515,6 +538,236 @@ const CreditsTab: React.FC<any> = ({ credits, phones, refresh }) => {
           </div>
         );
       })}
+    </div>
+  );
+};
+
+/* ------------------------------ Special 1v1 ------------------------------ */
+
+/** A Lagos clock time on a date, as a timestamp (Lagos is always UTC+1) */
+const lagosMs = (date: string, time: string) => Date.parse(`${date}T${time}:00+01:00`);
+
+const SpecialTab: React.FC<any> = ({ season, gamers, matches, adjusts, phones, credits, events, bookings, winners, refresh }) => {
+  const [game, setGame] = useState<string>(GAMES[0].id);
+  const [xId, setXId] = useState('');
+  const [date, setDate] = useState('');
+  const [from, setFrom] = useState('00:00');
+  const [to, setTo] = useState('23:59');
+  const [prizeC, setPrizeC] = useState('3500');
+  const [prizeX, setPrizeX] = useState('5000');
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [adjGid, setAdjGid] = useState('');
+  const [adjPts, setAdjPts] = useState('');
+  const [adjWhy, setAdjWhy] = useState('');
+  const nowMs = Date.now();
+  const players = useMemo(
+    () => gamers.filter((g: any) => playsGame(g, game) && !g.banned).sort((a: any, b: any) => String(a.name).localeCompare(String(b.name))),
+    [gamers, game]
+  );
+  const run = async (fn: () => Promise<any>, ok = '') => {
+    setBusy(true);
+    setMsg('');
+    try {
+      await fn();
+      if (ok) setMsg(ok);
+      refresh();
+    } catch (e: any) {
+      setMsg(e?.message || 'Could not save.');
+    }
+    setBusy(false);
+  };
+  const create = () =>
+    run(async () => {
+      const x = players.find((g: any) => g.id === xId);
+      if (!x) throw new Error('Pick the special player.');
+      if (!date) throw new Error('Pick the day.');
+      await createSpecialEvent({
+        seasonId: season.id,
+        game,
+        xId: x.id,
+        xName: x.name,
+        startMs: lagosMs(date, from),
+        endMs: lagosMs(date, to) + 60000,
+        prizeChallenger: Number(prizeC),
+        prizeX: Number(prizeX),
+      });
+      setXId('');
+      setDate('');
+    }, 'Special 1v1 created. Its card now shows on that game page.');
+  const adjust = () =>
+    run(async () => {
+      const g = gamers.find((x: any) => x.id === adjGid);
+      if (!g) throw new Error('Pick the player.');
+      if (!adjWhy.trim()) throw new Error('Write a short reason.');
+      await adjustPoints({ seasonId: season.id, weekKey: '', game, gid: g.id, name: g.name, pts: Number(adjPts), reason: adjWhy.trim() });
+      setAdjPts('');
+      setAdjWhy('');
+    }, 'Points changed in the league table.');
+  const recentAdj = adjusts.filter((a: any) => !a.weekKey && a.game === game).sort((a: any, b: any) => Number(b.atMs) - Number(a.atMs)).slice(0, 8);
+
+  return (
+    <div className="space-y-4">
+      <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-2">
+        <p className={h}>New Special 1v1</p>
+        <div className="grid grid-cols-2 gap-2">
+          <select value={game} onChange={(e) => { setGame(e.target.value); setXId(''); }} className={input}>
+            {GAMES.map((g: { id: string }) => (
+              <option key={g.id} value={g.id}>{gameLabel(g.id)}</option>
+            ))}
+          </select>
+          <select value={xId} onChange={(e) => setXId(e.target.value)} className={input}>
+            <option value="">Special player (X)</option>
+            {players.map((g: any) => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={`${input} col-span-2`} />
+          <label className="text-[10px] text-slate-500">From (Lagos time)<input type="time" value={from} onChange={(e) => setFrom(e.target.value)} className={input} /></label>
+          <label className="text-[10px] text-slate-500">Until<input type="time" value={to} onChange={(e) => setTo(e.target.value)} className={input} /></label>
+          <label className="text-[10px] text-slate-500">Challenger prize (₦)<input inputMode="numeric" value={prizeC} onChange={(e) => setPrizeC(e.target.value.replace(/\D/g, ''))} className={input} /></label>
+          <label className="text-[10px] text-slate-500">X prize (₦)<input inputMode="numeric" value={prizeX} onChange={(e) => setPrizeX(e.target.value.replace(/\D/g, ''))} className={input} /></label>
+        </div>
+        <p className="text-[10px] text-slate-500">On that day a challenger can log up to 5 matches against X and wins with 3 of 5. The first challenger to win ends the run. X wins by beating 5 different challengers.</p>
+        <button type="button" disabled={busy} onClick={create} className={`${btn} bg-[#0e9f55] text-white`}>Create Special 1v1</button>
+        {msg && <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">{msg}</p>}
+      </div>
+
+      {events.length === 0 && <p className="text-xs text-slate-400">No Special 1v1 yet.</p>}
+      {events.map((e: any) => {
+        const ser = specialSeries(e, matches.filter((m: any) => m.game === e.game));
+        const phase = nowMs < Number(e.startMs) ? 'Scheduled' : nowMs < Number(e.endMs) ? 'Live' : 'Ended';
+        const bk = bookings.filter((b: any) => b.eventId === e.id);
+        const win = ser.challengerWon
+          ? { kind: 'challenger' as const, gid: ser.challengerWon.id, name: ser.challengerWon.name, value: Number(e.prizeChallenger), text: `${ser.challengerWon.name} beat ${e.xName} ${ser.challengerWon.cw}-${ser.challengerWon.xw}` }
+          : ser.xWon
+          ? { kind: 'x' as const, gid: e.xId, name: e.xName, value: Number(e.prizeX), text: `${e.xName} beat 5 challengers` }
+          : null;
+        const done = e.status === 'done';
+        const wphone = e.winner ? phones.get(e.winner.gid) : '';
+        const issued = credits.filter((c: any) => c.weekKey === e.id && c.status !== 'void');
+        return (
+          <div key={e.id} className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-black text-slate-900 dark:text-white">
+                {gameLabel(e.game)}: {e.xName} · {when(Number(e.startMs))} to {when(Number(e.endMs))}
+              </p>
+              <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-black ${e.status === 'paused' ? 'bg-amber-100 text-amber-800' : done ? 'bg-slate-200 text-slate-700' : phase === 'Live' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
+                {e.status === 'paused' ? 'Paused' : done ? 'Closed' : phase}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500">Prizes: challenger {naira(Number(e.prizeChallenger))}, X {naira(Number(e.prizeX))}. X has beaten {ser.xBeaten} of 5 challengers.</p>
+            {ser.rows.length === 0 ? (
+              <p className="text-[11px] text-slate-400">No matches against {e.xName} yet.</p>
+            ) : (
+              <div className="space-y-1">
+                {ser.rows.map((r: any) => (
+                  <p key={r.id} className="text-[11px] text-slate-700 dark:text-slate-200">
+                    <span className="font-bold">{e.xName} vs {r.name}</span> {r.xw}-{r.cw} ({r.results.join(' ')}) {r.state === 'won' ? '· challenger won' : r.state === 'lost' ? '· X won the series' : ''}
+                  </p>
+                ))}
+              </div>
+            )}
+            {win && !done && (
+              <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 space-y-1.5">
+                <p className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300">Won, pending your review: {win.text}</p>
+                <button type="button" disabled={busy} onClick={() => { if (window.confirm(`Check the matches first. Publish "${win.text}" as the winner?`)) run(() => confirmSpecialWinner(e, win)); }} className={`${btn} bg-[#0e9f55] text-white`}>
+                  Confirm winner
+                </button>
+              </div>
+            )}
+            {done && e.winner && (
+              <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 space-y-1.5">
+                <p className="text-[11px] font-bold text-slate-800 dark:text-slate-100">Winner: {e.winner.name} ({e.winner.kind === 'x' ? 'X' : 'challenger'})</p>
+                {issued.length > 0 && <p className="text-[11px] text-slate-500">Credit issued: {issued.map((c: any) => `${naira(c.value)} to ${c.name}`).join(', ')}. See it in Credits.</p>}
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      const v = e.winner.kind === 'x' ? Number(e.prizeX) : Number(e.prizeChallenger);
+                      if (!window.confirm(`Issue a ${naira(v)} credit to ${e.winner.name}? It opens now and lasts ${CREDIT_HOURS} hours.`)) return;
+                      run(() => issueSpecialCredit(e, e.winner.gid, e.winner.name, phones.get(e.winner.gid) || '', v, e.winner.kind === 'x' ? 'Beat 5 challengers' : `Beat ${e.xName}`), 'Credit issued.');
+                    }}
+                    className={`${btn} bg-[#0e9f55] text-white`}
+                  >
+                    Issue credit
+                  </button>
+                  <button type="button" disabled={!wphone} onClick={() => open(waTo(wphone, `Congratulations ${e.winner.name}. You won the ${gameLabel(e.game)} Special 1v1 on Roomly Caritas. Your food credit is on its way and lasts ${CREDIT_HOURS} hours once issued.`))} className={`${btn} text-[#0e9f55]`}>
+                    Message winner
+                  </button>
+                  <button type="button" disabled={busy} onClick={() => { if (window.confirm('Reopen this event and remove the published winner line?')) run(() => reopenSpecial(e)); }} className={`${btn} text-slate-500`}>
+                    Reopen
+                  </button>
+                </div>
+              </div>
+            )}
+            {bk.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200">Booked ({bk.length})</p>
+                {bk.map((b: any) => {
+                  const ph = phones.get(b.gid);
+                  return (
+                    <div key={b.id} className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] text-slate-600 dark:text-slate-300">{b.name} <span className="text-slate-400">({b.part})</span></p>
+                      <span className="flex gap-1.5">
+                        <button type="button" disabled={!ph} onClick={() => open(waTo(ph, `Hi ${b.name}. Your Special 1v1 against ${e.xName} on Roomly Caritas is on ${day(Number(e.startMs))}. Open Games and tap Challenge to play.`))} className={`${btn} text-[#0e9f55]`}>
+                          Remind
+                        </button>
+                        <button type="button" onClick={() => run(() => removeBooking(b.id))} className={`${btn} text-rose-600`}>Remove</button>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {!done && (
+                <button type="button" disabled={busy} onClick={() => run(() => setSpecialStatus(e.id, e.status === 'paused' ? 'on' : 'paused'))} className={`${btn} bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200`}>
+                  {e.status === 'paused' ? 'Resume' : 'Pause'}
+                </button>
+              )}
+              <button type="button" disabled={busy} onClick={() => { if (window.confirm('Remove this event? The card disappears. Matches already logged are not touched.')) run(() => removeSpecialEvent(e.id)); }} className={`${btn} text-rose-600`}>
+                Remove event
+              </button>
+            </div>
+          </div>
+        );
+      })}
+
+      {winners.length > 0 && (
+        <div className="space-y-1">
+          <p className={h}>Winner lines shown on game pages</p>
+          {winners.slice(0, 10).map((w: any) => (
+            <div key={w.id} className="flex items-center justify-between gap-2 text-[11px]">
+              <p className="text-slate-600 dark:text-slate-300 min-w-0 truncate">{gameLabel(w.game)}: {w.kind === 'special' ? w.text : `${w.name}, #${w.rank} weekly`}</p>
+              <button type="button" onClick={() => { if (window.confirm('Remove this line from the game page?')) run(() => removeWinnerLine(w.id)); }} className={`${btn} text-rose-600 shrink-0`}>Remove</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-2">
+        <p className={h}>Add or remove league points ({gameLabel(game)})</p>
+        <p className="text-[10px] text-slate-500">Changes the league table for the game above. Use a minus to remove points, like -3. Players do not see the change as a match.</p>
+        <div className="grid grid-cols-3 gap-2">
+          <select value={adjGid} onChange={(e) => setAdjGid(e.target.value)} className={`${input} col-span-2`}>
+            <option value="">Player</option>
+            {players.map((g: any) => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+          <input value={adjPts} onChange={(e) => setAdjPts(e.target.value.replace(/[^0-9-]/g, ''))} placeholder="-3" className={input} />
+          <input value={adjWhy} onChange={(e) => setAdjWhy(e.target.value)} placeholder="Reason" className={`${input} col-span-3`} />
+        </div>
+        <button type="button" disabled={busy} onClick={adjust} className={`${btn} bg-[#0e9f55] text-white`}>Apply</button>
+        {recentAdj.map((a: any) => (
+          <div key={a.id} className="flex items-center justify-between gap-2 text-[11px]">
+            <p className="text-slate-600 dark:text-slate-300 min-w-0">{a.name}: {a.pts > 0 ? '+' : ''}{a.pts} · {a.reason} · {when(Number(a.atMs))}</p>
+            <button type="button" onClick={() => { if (window.confirm('Undo this change?')) run(() => undoAdjust(a.id)); }} className={`${btn} text-rose-600 shrink-0`}>Undo</button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };
