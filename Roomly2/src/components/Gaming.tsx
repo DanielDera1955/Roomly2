@@ -682,7 +682,7 @@ const GamePage: React.FC<{
   const tiedTop = Boolean(champ && board[1] && board[1].pts === champ.pts);
   const best = mode === 'best';
   const weeklyPhase = week ? weekPhase(week, nowMs) : '';
-  const weeklyMap = week && weeklyPhase !== 'scheduled' ? new Map(weeklyRows.map((r: any) => [r.id, r])) : null;
+  const weeklyMap = week ? new Map(weeklyRows.map((r: any) => [r.id, r])) : null;
   const [rulesMoved, setRulesMoved] = useState(false);
   const [accepting, setAccepting] = useState(false);
   const canLog = Boolean(plays && accepted && season && isOpen);
