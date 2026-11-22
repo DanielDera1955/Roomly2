@@ -721,28 +721,28 @@ export const WeeklyBanner: React.FC<{
         {phase === 'closed' && <p className="text-xs text-slate-500">The week is over. Roomly is checking the matches before the credits go out.</p>}
 
         {/* Top 3 */}
-        {phase === 'running' && (
+        {(phase === 'running' || phase === 'scheduled') && (
           <>
             <div className="grid grid-cols-3 gap-2.5">
               {[0, 1, 2].map((i) => {
-                const r = top[i];
+                const r = phase === 'running' ? top[i] : null;
                 const has = Boolean(r && r.pts > 0);
                 const qualified = has && r.pts >= minPts;
                 const isMe = Boolean(has && me && r.id === me.id);
                 return (
-                  <div key={i} className={`min-w-0 ${has ? '' : 'opacity-60'}`}>
+                  <div key={i} className={`min-w-0 ${has || phase === 'scheduled' ? '' : 'opacity-60'}`}>
                     <div className={`rounded-xl py-2 px-1.5 text-center border ${isMe ? 'border-[#0e9f55]/70 bg-emerald-50 dark:bg-emerald-950/40' : 'border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950'}`}>
                       <span className={`mx-auto w-6 h-6 rounded-full text-[11px] font-bold flex items-center justify-center ${MEDAL[i]}`}>{i + 1}</span>
                       <p className={`mt-1.5 text-base font-semibold leading-none tabular-nums ${has ? 'text-slate-900 dark:text-white' : 'text-slate-300'}`}>{has ? r.pts : '-'}</p>
                       <p className="text-[9px] font-medium uppercase tracking-wider text-slate-400 mt-0.5">pts</p>
-                      <p className={`mt-1 text-[10px] font-medium min-h-[12px] ${qualified ? 'text-[#0e9f55]' : 'text-slate-500'}`}>{has ? (qualified ? 'Qualified' : `${minPts - r.pts} to qualify`) : ''}</p>
+                      <p className={`mt-1 text-[10px] font-medium min-h-[12px] ${qualified ? 'text-[#0e9f55]' : 'text-slate-500'}`}>{has ? (qualified ? 'Qualified' : `${minPts - r.pts} to qualify`) : phase === 'scheduled' ? `${minPts} pts to win` : ''}</p>
                     </div>
-                    <p className="mt-1 text-center text-[11px] font-semibold text-slate-800 dark:text-slate-200 truncate">{has ? r.name : 'Open spot'}</p>
+                    <p className="mt-1 text-center text-[11px] font-semibold text-slate-800 dark:text-slate-200 truncate">{has ? r.name : phase === 'scheduled' ? 'Could be you' : 'Open spot'}</p>
                   </div>
                 );
               })}
             </div>
-            {me && (
+            {me && phase === 'running' && (
               <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 text-center">
                 {mine && mine.pts > 0 ? `You have ${mine.pts} pts this week${mine.pts >= minPts ? '.' : `, ${minPts - mine.pts} more to qualify.`}` : 'You have no points yet this week. Win a match to get on the board.'}
               </p>
@@ -901,7 +901,7 @@ export const SpecialCard: React.FC<{
             <p className="text-[10px] text-slate-500">{e.xName} beats 5 challengers</p>
           </div>
         </div>
-        <p className="text-[11px] text-slate-500">Play {e.xName} up to 5 times on the day and log every match with a screenshot. The first challenger to win ends the run.</p>
+        <p className="text-[11px] text-slate-500">Play {e.xName} up to 5 times on that day and log every match with a screenshot. The first challenger to win 3 of 5 wins the {naira(Number(e.prizeChallenger) || 3500)} and ends the run. If 5 different challengers each fail to beat {e.xName} 3 times out of 5, {e.xName} wins {naira(Number(e.prizeX) || 5000)}.</p>
 
         {before && !paused && (
           <div className="space-y-2">
