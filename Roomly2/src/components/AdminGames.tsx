@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { GAMES, gameLabel, playsGame, subscribeGamers, timeAgo, waTo } from '../hub.js';
-import { computeRows, matchCounts, weekPhase, creditState, rewardConfigFor, rewardSlots, rewardRegsFor, contestOf, specialSeries, CREDIT_HOURS } from '../boardCore.js';
+import { computeRows, matchCounts, weekPhase, creditState, rewardConfigFor, rewardSlots, rewardRegsFor, contestOf, specialSeries, isV2Week, CREDIT_HOURS } from '../boardCore.js';
 import { farmSignals, opponentsOf, STREAK_FLAG, STREAK_REMOVE } from '../farmSignals.js';
 import {
   subscribeSeasons,
@@ -29,6 +29,8 @@ import {
   adjustPoints,
   voidCredit,
   issueCredit,
+  scheduleWeeks,
+  removeWeek,
   saveGameSettings,
   addAllToSeason,
   saveGroupLink,
@@ -774,17 +776,67 @@ const SpecialTab: React.FC<any> = ({ season, gamers, matches, adjusts, phones, c
 
 /* ------------------------------ Week review (disputes: points and credits) ------------------------------ */
 
-const WeeksTab: React.FC<any> = ({ season, gamers, matches, weeks, rewardJoins, adjusts, config, phones, credits, refresh }) => {
+/** Schedule weekly rewards: the first start day (12:00AM Lagos) and how many weeks in a row */
+const ScheduleWeeks: React.FC<{ seasonId: string; config: any; weeks: any[] }> = ({ seasonId, config, weeks }) => {
+  const [game, setGame] = useState<string>(GAMES[0].id);
+  const [date, setDate] = useState('');
+  const [count, setCount] = useState('4');
+  const cfg = rewardConfigFor(config, game);
+  const [pts, setPts] = useState('');
+  const [value, setValue] = useState('');
+  const [msg, setMsg] = useState('');
+  const upcoming = weeks.filter((w: any) => w.game === game && isV2Week(w) && Number(w.endMs) > Date.now()).length;
+  return (
+    <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
+      <p className="text-xs font-bold text-slate-900 dark:text-white">Schedule weekly rewards</p>
+      <p className="text-[11px] text-slate-500">Each week starts at 12:00AM Lagos and runs 7 days. Players need nothing extra: they are already in the league. {upcoming ? `${upcoming} upcoming for this game.` : ''}</p>
+      <select value={game} onChange={(e) => setGame(e.target.value)} className={input}>
+        {GAMES.map((g: { id: string; label: string }) => (
+          <option key={g.id} value={g.id}>{g.label}</option>
+        ))}
+      </select>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="text-[10px] text-slate-500">First start day<input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={input} /></label>
+        <label className="text-[10px] text-slate-500">Weeks in a row<input value={count} onChange={(e) => setCount(e.target.value.replace(/\D/g, ''))} inputMode="numeric" className={input} /></label>
+        <label className="text-[10px] text-slate-500">Minimum points<input value={pts} placeholder={String(cfg.minPoints)} onChange={(e) => setPts(e.target.value.replace(/\D/g, ''))} inputMode="numeric" className={input} /></label>
+        <label className="text-[10px] text-slate-500">Credit value<input value={value} placeholder={String(cfg.creditValue)} onChange={(e) => setValue(e.target.value.replace(/\D/g, ''))} inputMode="numeric" className={input} /></label>
+      </div>
+      <button
+        type="button"
+        disabled={!date}
+        onClick={async () => {
+          try {
+            const n = await scheduleWeeks({ seasonId, game, firstStartMs: lagosMs(date, '00:00'), count: Number(count) || 1, minPoints: Number(pts) || cfg.minPoints, creditValue: Number(value) || cfg.creditValue });
+            setMsg(n ? `${n} week${n === 1 ? '' : 's'} scheduled.` : 'Those weeks already exist.');
+          } catch (e: any) {
+            setMsg(e?.message || 'Could not schedule.');
+          }
+        }}
+        className={`${btn} bg-[#0e9f55] text-white`}
+      >
+        Schedule
+      </button>
+      {msg && <p className="text-[11px] text-slate-500">{msg}</p>}
+    </div>
+  );
+};
+
+const WeeksTab: React.FC<any> = ({ season, gamers, matches, joins, weeks, rewardJoins, adjusts, config, phones, credits, refresh }) => {
   const [weekId, setWeekId] = useState('');
   const list = [...weeks].sort((a: any, b: any) => Number(b.startMs) - Number(a.startMs));
   const week = list.find((w: any) => w.id === weekId) || list[0] || null;
   const nowMs = Date.now();
-  if (!week) return <p className="text-xs text-slate-400">No reward weeks yet. A week starts once a game has enough players.</p>;
+  const schedule = <ScheduleWeeks seasonId={season.id} config={config} weeks={weeks} />;
+  if (!week) return <div className="space-y-3">{schedule}<p className="text-xs text-slate-400">No weekly rewards scheduled yet. Schedule the first one above.</p></div>;
 
-  const joined = new Set(rewardJoins.filter((r: any) => r.game === week.game).map((r: any) => r.gid));
-  const base = { seasonId: season.id, contest: 'reward', joined, fromMs: Number(week.startMs), toMs: Number(week.endMs), weekKey: week.id };
+  // New weeks (v 2) count league matches inside the week. Old weeks keep their own registration and reward matches.
+  const v2 = isV2Week(week);
+  const joined = v2 ? new Set(joins.map((j: any) => j.gid)) : new Set(rewardJoins.filter((r: any) => r.game === week.game).map((r: any) => r.gid));
+  const base = v2
+    ? { seasonId: season.id, joined, fromMs: Number(week.startMs), toMs: Number(week.endMs), weekKey: week.id, weeklyCap: true }
+    : { seasonId: season.id, contest: 'reward', joined, fromMs: Number(week.startMs), toMs: Number(week.endMs), weekKey: week.id };
   const table = computeRows(week.game, gamers, matches, { ...base, adjusts });
-  const disputed = matches.filter((m: any) => m.game === week.game && m.seasonId === season.id && m.status === 'disputed' && m.contest === 'reward' && m.weekKey === week.id && Number(m.loggedAtMs) >= Number(week.startMs) && Number(m.loggedAtMs) < Number(week.endMs));
+  const disputed = matches.filter((m: any) => m.game === week.game && m.seasonId === season.id && m.status === 'disputed' && (v2 || (m.contest === 'reward' && m.weekKey === week.id)) && Number(m.loggedAtMs) >= Number(week.startMs) && Number(m.loggedAtMs) < Number(week.endMs));
   const minPoints = Number(week.minPoints) || rewardConfigFor(config, week.game).minPoints;
   const weekAdj = adjusts.filter((a: any) => a.weekKey === week.id);
   const credOf = (gid: string) => credits.filter((c: any) => c.weekKey === week.id && c.gid === gid && c.status !== 'void');
@@ -802,15 +854,29 @@ const WeeksTab: React.FC<any> = ({ season, gamers, matches, weeks, rewardJoins, 
 
   return (
     <div className="space-y-3">
+      {schedule}
       <select value={week.id} onChange={(e) => setWeekId(e.target.value)} className={input}>
         {list.map((w: any) => (
           <option key={w.id} value={w.id}>
-            {gameLabel(w.game)}: {day(Number(w.startMs))} to {day(Number(w.endMs) - 1)} ({weekPhase(w, nowMs)})
+            {gameLabel(w.game)}: {day(Number(w.startMs))} to {day(Number(w.endMs) - 1)} ({weekPhase(w, nowMs) === 'closed' && w.status === 'review' ? 'to review' : weekPhase(w, nowMs)})
           </option>
         ))}
       </select>
+      {weekPhase(week, nowMs) === 'scheduled' && (
+        <button
+          type="button"
+          onClick={async () => {
+            if (!window.confirm('Remove this scheduled week?')) return;
+            await removeWeek(week.id).catch((e: any) => window.alert(e?.message || 'Could not remove.'));
+            setWeekId('');
+          }}
+          className={`${btn} text-rose-600`}
+        >
+          Remove this scheduled week
+        </button>
+      )}
       <p className="text-[11px] text-slate-500">
-        Minimum points {minPoints}, credit {naira(Number(week.creditValue))}. {week.disputeFlag ? 'A report affected the top 3 when credits were issued. ' : ''}
+        {v2 ? 'Points from league matches inside the week, 2 per pair. ' : 'Old-style week (separate registration). '}Minimum points {minPoints}, credit {naira(Number(week.creditValue))}. Credits are issued by you only, from here. {week.disputeFlag ? 'A report affected the top 3 when credits were issued. ' : ''}
         {disputed.length > 0 ? `${disputed.length} open dispute(s) in this week: resolve them in Disputed results above, then check the table here.` : 'No open disputes in this week.'}
       </p>
       {table.slice(0, 5).map((r: any) => {
@@ -999,23 +1065,7 @@ const AnnounceBox: React.FC<{ config: any }> = ({ config }) => {
 
 const SettingsTab: React.FC<{ config: any }> = ({ config }) => (
   <div className="space-y-3">
-    <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-1.5">
-      <p className="text-xs font-bold text-slate-900 dark:text-white">Games per week</p>
-      <p className="text-[11px] text-slate-500">How many games run a reward week at the same time. Applies to weeks not yet scheduled.</p>
-      <div className="grid grid-cols-2 gap-2">
-        {[1, 2].map((n) => (
-          <button
-            key={n}
-            type="button"
-            onClick={() => saveSlots(n).catch((e: any) => window.alert(e?.message || 'Could not save.'))}
-            className={`h-10 rounded-xl text-xs font-bold cursor-pointer ${rewardSlots(config) === n ? 'bg-[#0e9f55] text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200'}`}
-          >
-            {n} {n === 1 ? 'game' : 'games'}
-          </button>
-        ))}
-      </div>
-    </div>
-    <p className="text-[11px] text-slate-500">Changes apply from the next reward week. A week that has already started keeps the settings it started with.</p>
+    <p className="text-[11px] text-slate-500">These are the defaults the Schedule form fills in (minimum points and credit value). A week that is already scheduled keeps what it was created with. Min players is only used by old-style weeks.</p>
     {GAMES.map((g: { id: string; label: string }) => (
       <GameSettingsRow key={g.id} game={g.id} label={g.label} cfg={rewardConfigFor(config, g.id)} />
     ))}

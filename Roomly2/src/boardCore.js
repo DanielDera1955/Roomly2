@@ -139,7 +139,7 @@ export function specialFor(game, aUid, bUid, atMs, onlyOn = false, events = SPEC
  * 4 in the league, 2 in a reward week. Extra matches are ignored by every board, whatever was written.
  * On a Special 1v1 day, league matches against the special player are counted on their own: up to 5 per challenger that day.
  */
-export function capPairs(matches) {
+export function capPairs(matches, weeklyId = '') {
   const sorted = [...matches].filter(matchCounts).sort((a, b) => Number(a.loggedAtMs || 0) - Number(b.loggedAtMs || 0));
   const seen = {};
   const keep = new Set();
@@ -153,10 +153,11 @@ export function capPairs(matches) {
       if (seen[k] <= SPECIAL_MAX_PAIR) keep.add(m.id || m);
       return;
     }
-    const period = c === 'reward' ? m.weekKey || lagosWeek(m.loggedAtMs) : lagosWeek(m.loggedAtMs);
+    // A weekly-reward table counts league matches inside the week with its own limit: 2 per pair (1 home, 1 away)
+    const period = weeklyId || (c === 'reward' ? m.weekKey || lagosWeek(m.loggedAtMs) : lagosWeek(m.loggedAtMs));
     const key = `${m.seasonId || ''}|${m.game}|${c}|${pair}|${period}`;
     seen[key] = (seen[key] || 0) + 1;
-    if (seen[key] <= (c === 'reward' ? MAX_PAIR_REWARD_WEEK : MAX_PAIR_LEAGUE_WEEK)) keep.add(m.id || m);
+    if (seen[key] <= (weeklyId || c === 'reward' ? MAX_PAIR_REWARD_WEEK : MAX_PAIR_LEAGUE_WEEK)) keep.add(m.id || m);
   });
   return matches.filter((m) => keep.has(m.id || m));
 }
@@ -247,8 +248,10 @@ export function computeRows(game, gamers, matches, opts = {}) {
   const counting = opts.includeDisputed
     ? pool.filter((m) => ['pending', 'confirmed', 'disputed'].includes(m.status)).map((m) => (m.status === 'disputed' ? { ...m, status: 'pending' } : m))
     : pool;
-  capPairs(counting)
-    .filter(inWindow)
+  // A weekly-reward table (opts.weeklyCap) counts the league matches entered inside the week, limited to 2 per pair.
+  // Matches against a special player on a Special 1v1 day keep their own limit and count here too.
+  const weekly = Boolean(opts.weeklyCap);
+  (weekly ? capPairs(counting.filter(inWindow), String(opts.weekKey || 'week')) : capPairs(counting).filter(inWindow))
     .forEach((m) => {
       const a = rows[m.aUid];
       const b = rows[m.bUid];
@@ -275,7 +278,8 @@ export function computeRows(game, gamers, matches, opts = {}) {
   (opts.adjusts || []).forEach((a) => {
     const r = rows[a.gid];
     if (!r || a.game !== game || (opts.seasonId && a.seasonId !== opts.seasonId)) return;
-    if (opts.weekKey ? a.weekKey !== opts.weekKey : opts.fromMs != null) return;
+    // A table only takes the adjustments made for it: a week its own, the season table those with no week
+    if (opts.weekKey ? a.weekKey !== opts.weekKey : opts.fromMs != null || a.weekKey) return;
     r.pts = Math.max(0, r.pts + Number(a.pts || 0));
     r.adj = (r.adj || 0) + Number(a.pts || 0);
   });
@@ -313,6 +317,25 @@ export function weekPhase(w, nowMs = Date.now()) {
   if (nowMs < Number(w.startMs)) return 'scheduled';
   if (nowMs < Number(w.endMs)) return 'running';
   return 'closed';
+}
+
+/** A weekly reward week that lives inside the league (v2): its table counts league matches inside the week */
+export const isV2Week = (w) => Boolean(w) && Number(w.v) === 2;
+/**
+ * The weekly reward to show for a game: the one running, else the next one scheduled,
+ * else the last one that closed in the past 3 days and has not had its credits issued yet.
+ */
+export function weeklyWeekFor(weeks, game, nowMs = Date.now()) {
+  const mine = (weeks || []).filter((w) => w.game === game && isV2Week(w));
+  const running = mine.find((w) => weekPhase(w, nowMs) === 'running');
+  if (running) return running;
+  const next = mine.filter((w) => weekPhase(w, nowMs) === 'scheduled').sort((a, b) => Number(a.startMs) - Number(b.startMs))[0];
+  if (next) return next;
+  return (
+    mine
+      .filter((w) => weekPhase(w, nowMs) === 'closed' && nowMs < Number(w.endMs) + 3 * DAY)
+      .sort((a, b) => Number(b.endMs) - Number(a.endMs))[0] || null
+  );
 }
 
 /* ------------------------------ credits ------------------------------ */

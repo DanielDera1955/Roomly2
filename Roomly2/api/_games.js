@@ -3,8 +3,11 @@
 //                           full run when something is due, so the database is not read in full every 10 minutes.
 //   api/games-daily.js      once a day (Vercel cron). It always does the full run, as a safety net.
 // The full run does four things:
-//   1. issue credits for reward weeks that have closed (at the close, within 10 minutes)
-//   2. schedule the next reward week when a game has enough players: it starts at the next 12:00AM and runs 7 days
+//   1. close the weekly reward weeks that have ended: write the top 3 into the week and mark it 'review'.
+//      Roomly issues every credit by hand from the admin Week review. Nothing is paid automatically unless
+//      settings/gamesConfig.autoIssue is set to true (it is off by default, and it only ever applies to old-style weeks).
+//   2. (off by default, settings/gamesConfig.autoSchedule) schedule old-style weeks from the separate registration.
+//      New weeks are scheduled by Roomly from the admin, and live inside the league.
 //   3. send the "week started" and "ends tonight" alerts
 //   4. record each game's champion when a season has ended (the Hall of fame)
 // Every step is safe to run twice: credits are created with fixed ids and a week is marked issued only after its
@@ -24,6 +27,8 @@ import {
   creditOpensAtMs,
   earnedPoints,
   contestOf,
+  setSpecialEvents,
+  isV2Week,
   GAME_IDS,
   WEEK_MS,
   CREDIT_HOURS,
@@ -42,6 +47,7 @@ const already = (e) => e && (e.code === 6 || /already exists/i.test(String(e.mes
  */
 export async function gamesNeedWork(db, now) {
   const state = ((await db.doc('settings/gamesJob').get()).data()) || {};
+  const cfg = ((await db.doc('settings/gamesConfig').get()).data()) || {};
   const seasons = rows(await db.collection('seasons').get()).filter((s) => Number(s.startMs) <= now);
   if (seasons.some((s) => now >= Number(s.endMs) && !s.championsAt)) return { need: true, why: 'champions' };
   const open = rows(await db.collection('rewardWeeks').where('status', '==', 'scheduled').get());
@@ -53,8 +59,10 @@ export async function gamesNeedWork(db, now) {
     if (!w.endAlertMs && now >= endMs - 20 * HOUR && now < endMs) return { need: true, why: `end alert ${w.id}` };
   }
   // A new reward registration may have filled a game. A count, not a time, so a phone with a wrong clock cannot hide one.
-  const total = (await db.collection('rewardRegs').count().get()).data().count;
-  if (total !== Number(state.regCount)) return { need: true, why: 'registrations', regCount: total };
+  if (cfg.autoSchedule === true) {
+    const total = (await db.collection('rewardRegs').count().get()).data().count;
+    if (total !== Number(state.regCount)) return { need: true, why: 'registrations', regCount: total };
+  }
   return { need: false };
 }
 
@@ -92,8 +100,7 @@ export async function gamesTick(db, now = Date.now()) {
   out.ran = true;
   out.why = need.why;
   await runGames(db, now, out);
-  const total = need.regCount != null ? need.regCount : (await db.collection('rewardRegs').count().get()).data().count;
-  await db.doc('settings/gamesJob').set({ regCount: total, atMs: now }, { merge: true });
+  await db.doc('settings/gamesJob').set({ ...(need.regCount != null ? { regCount: need.regCount } : {}), atMs: now }, { merge: true });
   return out;
 }
 
@@ -104,6 +111,12 @@ export async function runGames(db, now = Date.now(), out = { issued: [], schedul
   const dateKey = lagosDateKey();
   const gamers = rows(await db.collection('gamers').get()).filter((g) => g.ownerUid);
   const seasons = rows(await db.collection('seasons').get()).filter((s) => Number(s.startMs) <= now);
+  // Matches against a Special 1v1 player keep their own limit (5), so the weekly tables need to know the events
+  try {
+    setSpecialEvents(rows(await db.collection('specialEvents').get()));
+  } catch (e) {
+    out.errors.push(`special events: ${e.message}`);
+  }
 
   for (const season of seasons) {
     const matches = rows(await db.collection('matches').where('seasonId', '==', season.id).get());
@@ -116,8 +129,27 @@ export async function runGames(db, now = Date.now(), out = { issued: [], schedul
     /* 1. Issue credits for weeks that have closed. A credit opens at once when every match that gave the winner
           points is settled, otherwise it is held (see creditOpensAtMs). */
     for (const week of weeks) {
-      if (week.status === 'issued' || week.status === 'none' || now < Number(week.endMs)) continue;
+      if (week.status === 'issued' || week.status === 'none' || week.status === 'review' || now < Number(week.endMs)) continue;
       try {
+        if (isV2Week(week) || config.autoIssue !== true) {
+          // Close the week and leave the credits to Roomly. v2 weeks use the league tables; old weeks their own registrations.
+          const v2 = isV2Week(week);
+          const joined = v2 ? seasonJoined : new Set(rewardJoins.filter((j) => j.game === week.game).map((j) => j.gid));
+          const opts = v2
+            ? { seasonId: season.id, joined, fromMs: Number(week.startMs), toMs: Number(week.endMs), adjusts, weekKey: week.id, weeklyCap: true }
+            : { seasonId: season.id, contest: 'reward', joined, fromMs: Number(week.startMs), toMs: Number(week.endMs), adjusts, weekKey: week.id };
+          const table = computeRows(week.game, gamers, matches, opts);
+          const winners = rewardWinners(table, Number(week.minPoints)).filter((r) => {
+            const g = gamers.find((x) => x.id === r.id);
+            return g && !g.banned && !(g.rewardBlocked && g.rewardBlocked[week.game]);
+          });
+          await db.doc(`rewardWeeks/${week.id}`).update({
+            status: 'review',
+            closedAtMs: now,
+            results: table.slice(0, 3).map((r) => ({ gid: r.id, name: r.name, pts: r.pts, rank: r.rank, rewarded: winners.some((w) => w.id === r.id) })),
+          });
+          continue;
+        }
         const joined = new Set(rewardJoins.filter((j) => j.game === week.game).map((j) => j.gid));
         const opts = { seasonId: season.id, contest: 'reward', joined, fromMs: Number(week.startMs), toMs: Number(week.endMs), adjusts, weekKey: week.id };
         const table = computeRows(week.game, gamers, matches, opts);
@@ -190,7 +222,7 @@ export async function runGames(db, now = Date.now(), out = { issued: [], schedul
 
     /* 2. Rolling weeks. A game that has enough players starts at the next 12:00AM, or the moment the running week ends
           when the slot is busy. Games take turns: the game that has waited longest goes first. */
-    if (now < Number(season.endMs)) {
+    if (config.autoSchedule === true && now < Number(season.endMs)) {
       try {
         const slots = rewardSlots(config);
         const queued = new Set(weeks.filter((w) => Number(w.startMs) > now).map((w) => w.game));
@@ -239,8 +271,12 @@ export async function runGames(db, now = Date.now(), out = { issued: [], schedul
     /* 3. Reward week alerts: "has started" (once the week begins) and "ends tonight" (the day it ends) */
     try {
       for (const week of weeks) {
-        if (week.status === 'issued' || week.status === 'none') continue;
-        const regs = rewardJoins.filter((j) => j.game === week.game);
+        if (week.status === 'issued' || week.status === 'none' || week.status === 'review') continue;
+        const v2 = isV2Week(week);
+        // New weeks: everyone who joined the season and plays the game. Old weeks: their own registration list.
+        const regs = v2
+          ? gamers.filter((g) => seasonJoined.has(g.id) && Array.isArray(g.games) && g.games.includes(week.game)).map((g) => ({ gid: g.id }))
+          : rewardJoins.filter((j) => j.game === week.game);
         if (!regs.length) continue;
         const startMs = Number(week.startMs);
         const endMs = Number(week.endMs);
@@ -255,7 +291,14 @@ export async function runGames(db, now = Date.now(), out = { issued: [], schedul
         }
         if (alerts.rewardEnd.on !== false && !week.endAlertMs && now >= endMs - 20 * HOUR && now < endMs) {
           const joined = new Set(regs.map((r) => r.gid));
-          const table = computeRows(week.game, gamers, matches, { seasonId: season.id, contest: 'reward', joined, fromMs: startMs, toMs: endMs, adjusts, weekKey: week.id });
+          const table = computeRows(
+            week.game,
+            gamers,
+            matches,
+            v2
+              ? { seasonId: season.id, joined: seasonJoined, fromMs: startMs, toMs: endMs, adjusts, weekKey: week.id, weeklyCap: true }
+              : { seasonId: season.id, contest: 'reward', joined, fromMs: startMs, toMs: endMs, adjusts, weekKey: week.id }
+          );
           const pkMap = await pkByGid(db, regs.map((r) => r.gid));
           const docs = await tokenDocsForPks(db, Object.values(pkMap));
           const byPk = {};

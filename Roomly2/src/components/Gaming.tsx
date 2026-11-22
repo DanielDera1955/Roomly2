@@ -32,7 +32,7 @@ import {
   markEntryPaid,
   leaveTournament,
 } from '../hub.js';
-import { computeRows, matchCounts, matchRecorded, canDispute, canTakeBack, proofOf, weekPhase, lagosDay, DISPUTE_HOURS, AUTO_CONFIRM_HOURS, TAKEBACK_MINUTES, rewardConfigFor, rewardRegsFor, qualifiedAtMs, contestOf, lagosWeek, specialFor, SPECIAL_MAX_PAIR, MAX_PAIR_LEAGUE_WEEK, MAX_PAIR_REWARD_WEEK } from '../boardCore.js';
+import { computeRows, matchCounts, matchRecorded, canDispute, canTakeBack, proofOf, weekPhase, lagosDay, DISPUTE_HOURS, AUTO_CONFIRM_HOURS, TAKEBACK_MINUTES, rewardConfigFor, rewardRegsFor, qualifiedAtMs, contestOf, lagosWeek, specialFor, weeklyWeekFor, SPECIAL_MAX_PAIR, MAX_PAIR_LEAGUE_WEEK, MAX_PAIR_REWARD_WEEK } from '../boardCore.js';
 import ProofThumb from './ProofThumb';
 import {
   subscribeSeasons,
@@ -66,7 +66,7 @@ import {
   rewardShortRulesFor,
   type Season,
 } from '../season';
-import { SeasonRulesCard, RewardCard, RewardIntro, GameRulesToggle, MainRulesDropdown, ChallengeTable, AnnouncementsCard, RulesBody, SpecialCard, WinnerCard } from './SeasonGames';
+import { SeasonRulesCard, RewardIntro, GameRulesToggle, MainRulesDropdown, ChallengeTable, AnnouncementsCard, RulesBody, SpecialCard, WinnerCard, WeeklyBanner, SpecialStrip } from './SeasonGames';
 import { HistoryButton } from './GamesHistory';
 
 const card = 'bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800';
@@ -124,7 +124,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
   const [adjusts, setAdjusts] = useState<any[]>([]);
   const [config, setConfig] = useState<any>({});
   const [hiddenFromMe, setHiddenFromMe] = useState<Set<string>>(new Set());
-  const [mode, setMode] = useState<'best' | 'reward'>('best');
+  const [mode, setMode] = useState<'best' | 'special'>('best');
   const [specials, setSpecials] = useState<any[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
   const [winners, setWinners] = useState<any[]>([]);
@@ -217,6 +217,22 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
     return out;
   }, [gamers, matches, season?.id, weeks, rewardJoins, adjusts, nowMs]);
 
+  /** The weekly reward inside the league: points earned in the week from the same league matches, 2 per pair */
+  const weeklyWeeks = useMemo(() => {
+    const out: Record<string, any> = {};
+    GAMES.forEach((g: { id: string }) => (out[g.id] = weeklyWeekFor(weeks, g.id, nowMs)));
+    return out;
+  }, [weeks, nowMs]);
+  const weeklyBoards = useMemo(() => {
+    const out: Record<string, any[]> = {};
+    const joined = new Set(joins.map((j) => j.gid));
+    GAMES.forEach((g: { id: string }) => {
+      const w = weeklyWeeks[g.id];
+      out[g.id] = season && w ? computeRows(g.id, gamers, matches, { seasonId: season.id, joined, fromMs: Number(w.startMs), toMs: Number(w.endMs), adjusts, weekKey: w.id, weeklyCap: true }) : [];
+    });
+    return out;
+  }, [gamers, matches, joins, weeklyWeeks, season?.id, adjusts]);
+
   const [regGame, setRegGame] = useState('');
   const openRegister = () => {
     setRegGame('');
@@ -284,7 +300,8 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
           onRewardRegister={openRewardRegister}
           season={season}
           join={myJoin}
-          week={activeWeekFor(weeks, game, nowMs)}
+          week={weeklyWeeks[game] || null}
+          weeklyRows={weeklyBoards[game] || []}
           otherWeek={queuedWeek(weeks, nowMs)}
           rewardRows={rewardBoards[game] || []}
           rewardJoined={rewardJoinedFor(game)}
@@ -349,10 +366,10 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
 /* Games home                                                          */
 /* ================================================================== */
 
-const ModeToggle: React.FC<{ mode: 'best' | 'reward'; onMode: (m: 'best' | 'reward') => void }> = ({ mode, onMode }) => (
+const ModeToggle: React.FC<{ mode: 'best' | 'special'; onMode: (m: 'best' | 'special') => void }> = ({ mode, onMode }) => (
   <div>
     <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-slate-200/70 dark:bg-slate-800">
-      {([['best', 'Best in Caritas'], ['reward', 'Weekly Reward Contest']] as ['best' | 'reward', string][]).map(([id, label]) => (
+      {([['best', 'Best in Caritas'], ['special', 'Special 1v1']] as ['best' | 'special', string][]).map(([id, label]) => (
         <button
           key={id}
           type="button"
@@ -390,8 +407,8 @@ const GamesHome: React.FC<{
   weeks: any[];
   rewardJoins: any[];
   config: any;
-  mode: 'best' | 'reward';
-  onMode: (m: 'best' | 'reward') => void;
+  mode: 'best' | 'special';
+  onMode: (m: 'best' | 'special') => void;
   rewardBoards: Record<string, any[]>;
   counts: Counts;
   acceptedCount: Record<string, number>;
@@ -560,10 +577,7 @@ const GamesHome: React.FC<{
         </button>
       </div>
 
-      {/* Two contests, one tap apart */}
-      <ModeToggle mode={mode} onMode={onMode} />
-
-      {mode === 'best' && (
+      {true && (
         <>
           <SeasonRulesCard season={season} upcoming={upcoming} me={me} join={join} joinsCount={joinsCount} nowMs={nowMs} onRegister={onRegister} />
 
@@ -601,74 +615,6 @@ const GamesHome: React.FC<{
         </>
       )}
 
-      {mode === 'reward' && (
-        <>
-          <div className={`${card} overflow-hidden`}>
-            <RewardIntro cfg={rewardConfigFor(config, 'dls')} />
-          </div>
-          <div>
-            <h3 className="text-base font-black text-slate-900 dark:text-white">Reward weeks by game</h3>
-            <p className="text-[11px] text-slate-500">Games take turns. The first game to reach {rewardConfigFor(config, 'dls').minPlayers} registered players goes first. Tap a game to open it.</p>
-          </div>
-          <div className="grid grid-cols-1 gap-3">
-            {rewardOrder.map((it, idx) => {
-              const g = it.g;
-              const cfg = rewardConfigFor(config, g.id);
-              const w = it.week;
-              const ph = w ? weekPhase(w, nowMs) : '';
-              const count = acceptedCount[g.id] || 0;
-              const top = (rewardBoards[g.id] || [])[0];
-              const joinedN = count;
-              const tag = ph === 'running' ? 'This week' : ph === 'scheduled' ? 'Next week' : it.qualified ? `Waiting, ${ordinal(it.waitPos)} in line` : 'Filling up';
-              const tagCls =
-                ph === 'running'
-                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                  : ph === 'scheduled'
-                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-                  : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300';
-              return (
-                <div key={g.id} className={`${card} p-3.5`}>
-                  <button type="button" onClick={() => onPick(g.id)} className="w-full text-left cursor-pointer">
-                    <div className="flex items-center gap-3">
-                      <span className="w-7 h-7 rounded-full bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-xs font-black flex items-center justify-center shrink-0">{idx + 1}</span>
-                      <GameIcon game={g.id} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-black text-slate-900 dark:text-white">{g.label}</p>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${tagCls}`}>{tag}</span>
-                        </div>
-                        {ph === 'running' ? (
-                          <>
-                            <p className="text-[11px] font-bold text-[#0e9f55]">Closes in {countdown(Number(w.endMs) - nowMs)}</p>
-                            <p className="text-[11px] text-slate-500 truncate">
-                              {top && top.pts > 0 ? `${top.name} leads with ${top.pts} pts` : 'No points yet'} · {playersText(joinedN, 'registered')}
-                            </p>
-                          </>
-                        ) : ph === 'scheduled' ? (
-                          <p className="text-[11px] font-bold text-amber-600">Starts {openDay(Number(w.startMs))} · {playersText(joinedN, 'registered')}</p>
-                        ) : it.qualified ? (
-                          <p className="text-[11px] text-slate-500">{playersText(count, 'registered')}. Enough to start, waiting for its turn.</p>
-                        ) : (
-                          <>
-                            <p className="text-[11px] text-slate-500">
-                              {count} of {cfg.minPlayers} registered players, {Math.max(0, cfg.minPlayers - count)} more to start
-                            </p>
-                            <div className="mt-1 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                              <div className="h-full bg-[#0e9f55]" style={{ width: `${Math.min(100, Math.round((count / Math.max(1, cfg.minPlayers)) * 100))}%` }} />
-                            </div>
-                          </>
-                        )}
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
-                    </div>
-                  </button>
-                  <GameRulesToggle title={`${g.label} reward rules`} lines={[rewardHeadlineFor(cfg), ...rewardShortRulesFor(cfg)]} fullLines={rewardRulesFor(g.id, cfg)} className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800" />
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
       <AnnouncementsCard config={config} nowMs={nowMs} />
       <HistoryButton meId={me?.id} />
       <p className="text-center text-[10px] text-slate-400">Roomly is not affiliated with or endorsed by the makers of these games.</p>
@@ -717,15 +663,16 @@ const GamePage: React.FC<{
   acceptedGame: string;
   config: { minPlayers: number; minPoints: number; creditValue: number };
   hiddenFromMe: Set<string>;
-  mode: 'best' | 'reward';
-  onMode: (m: 'best' | 'reward') => void;
+  mode: 'best' | 'special';
+  onMode: (m: 'best' | 'special') => void;
+  weeklyRows?: any[];
   registered: number;
   acceptedCount: number;
   rewardRegistered?: { id: string; name: string; atMs: number }[];
   specials?: any[];
   bookings?: any[];
   winners?: any[];
-}> = ({ game, me, board, matches, tournaments, isOpen, opensAt, nowMs, focusMatch, onFocusDone, onBack, onRegister, onRewardRegister, season, join, week, otherWeek, rewardRows, rewardJoined, acceptedGame, config, hiddenFromMe, mode, onMode, registered, acceptedCount , rewardRegistered = [], specials = [], bookings = [], winners = []}) => {
+}> = ({ game, me, board, matches, tournaments, isOpen, opensAt, nowMs, focusMatch, onFocusDone, onBack, onRegister, onRewardRegister, season, join, week, otherWeek, rewardRows, rewardJoined, acceptedGame, config, hiddenFromMe, mode, onMode, registered, acceptedCount , rewardRegistered = [], specials = [], bookings = [], winners = [], weeklyRows = []}) => {
   const [logging, setLogging] = useState(false);
   const [busy, setBusy] = useState(false);
   const plays = playsGame(me, game);
@@ -734,11 +681,11 @@ const GamePage: React.FC<{
   const champ = board.find((r) => r.crown);
   const tiedTop = Boolean(champ && board[1] && board[1].pts === champ.pts);
   const best = mode === 'best';
-  const rewardRunning = Boolean(week && weekPhase(week, nowMs) === 'running');
+  const weeklyPhase = week ? weekPhase(week, nowMs) : '';
+  const weeklyMap = week && weeklyPhase !== 'scheduled' ? new Map(weeklyRows.map((r: any) => [r.id, r])) : null;
   const [rulesMoved, setRulesMoved] = useState(false);
   const [accepting, setAccepting] = useState(false);
-  const rewardOk = Boolean(rewardJoined && rewardRunning);
-  const canLog = Boolean(plays && accepted && season && isOpen && (best || rewardOk));
+  const canLog = Boolean(plays && accepted && season && isOpen);
   const toConfirm = me
     ? matches.filter((m) => m.bUid === me.id && m.status === 'pending' && canDispute(m, nowMs)).sort((a) => (a.id === focusMatch ? -1 : 0))
     : [];
@@ -746,7 +693,7 @@ const GamePage: React.FC<{
     ? matches.filter((m) => (m.aUid === me.id || m.bUid === me.id) && (m.status === 'disputed' || canTakeBack(m, matches, me.id, nowMs)))
     : [];
   const recent = matches
-    .filter((m) => matchCounts(m) && contestOf(m) === (best ? 'league' : 'reward'))
+    .filter((m) => matchCounts(m) && contestOf(m) === 'league')
     .sort((a, b) => (b.loggedAtMs || 0) - (a.loggedAtMs || 0))
     .slice(0, 8);
   const logLabel = !plays
@@ -757,17 +704,7 @@ const GamePage: React.FC<{
     ? 'Accept the league rules to log results'
     : !isOpen
     ? `Results open ${openDay(opensAt)}`
-    : best
-    ? 'I won: log my league match'
-    : !rewardRunning
-    ? week && weekPhase(week, nowMs) === 'scheduled'
-      ? 'Reward week starts at 12:00AM'
-      : rewardRegistered.length >= config.minPlayers
-      ? 'Reward week is waiting for its turn'
-      : `Reward week starts when ${config.minPlayers} players join`
-    : !rewardJoined
-    ? 'Join the reward contest to log reward matches'
-    : 'I won: log my reward match';
+    : 'I won: log my league match';
   const rulesNewMember = !accepted && !rulesMoved;
 
   return (
@@ -783,6 +720,8 @@ const GamePage: React.FC<{
           <h2 className="text-xl font-black text-slate-900 dark:text-white leading-tight">{gameLabel(game)}</h2>
         </div>
       </div>
+
+      <ModeToggle mode={mode} onMode={onMode} />
 
       {best ? (
         /* The leader, then where you stand, then your two buttons */
@@ -851,24 +790,7 @@ const GamePage: React.FC<{
             </div>
           </div>
         </div>
-      ) : (
-        <RewardCard
-          game={game}
-          week={week}
-          otherWeek={otherWeek}
-          rewardRows={rewardRows}
-          config={config}
-          me={me}
-          season={season}
-          join={join}
-          rewardJoined={rewardJoined}
-          acceptedGame={acceptedGame}
-          onNewPlayer={() => onRewardRegister(game)}
-          tableCount={acceptedCount}
-          registeredList={rewardRegistered}
-          nowMs={nowMs}
-        />
-      )}
+      ) : null}
 
       {/* Registration week */}
       {!isOpen && opensAt > 0 && (
@@ -918,9 +840,20 @@ const GamePage: React.FC<{
         </label>
       )}
 
-      {best && (
+      {best ? (
+        <>
+          <SpecialStrip game={game} events={specials} nowMs={nowMs} onOpen={() => onMode('special')} />
+          <WinnerCard game={game} winners={winners} nowMs={nowMs} />
+        </>
+      ) : (
         <>
           <SpecialCard game={game} events={specials} bookings={bookings} matches={matches} me={me} season={season} join={join} board={board} hiddenFromMe={hiddenFromMe} isOpen={isOpen} nowMs={nowMs} onJoin={onRegister} />
+          {!specials.some((e: any) => e.game === game && e.status !== 'done' && nowMs < Number(e.endMs)) && (
+            <div className={`${card} p-4 space-y-1`}>
+              <p className="text-sm font-black text-slate-900 dark:text-white">No Special 1v1 for {gameLabel(game)} right now</p>
+              <p className="text-xs text-slate-500">Roomly picks a strong player and a day. Anyone can challenge them up to 5 times that day, and winning 3 of the 5 wins {naira(3500)} food credit. Watch this tab and the WhatsApp group.</p>
+            </div>
+          )}
           <WinnerCard game={game} winners={winners} nowMs={nowMs} />
         </>
       )}
@@ -929,59 +862,31 @@ const GamePage: React.FC<{
       <button
         type="button"
         disabled={!canLog && !(season && !plays)}
-        onClick={() => (!plays ? (best ? onRegister() : onRewardRegister(game)) : setLogging(true))}
+        onClick={() => (!plays ? onRegister() : setLogging(true))}
         className="w-full h-12 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-500 dark:disabled:text-slate-400 disabled:cursor-default"
       >
         {canLog || !plays ? <Plus className="w-4 h-4" /> : <Lock className="w-4 h-4" />} {logLabel}
       </button>
 
       {/* The table, with a Challenge button on every row */}
-      {best ? (
-        <ChallengeTable
-          game={game}
-          rows={board}
-          me={me}
-          season={season}
-          join={join}
-          hiddenFromMe={hiddenFromMe}
-          rewardRunning={false}
-          isOpen={isOpen}
-          matches={matches}
-          title={season ? `${season.name} Standing` : 'League standing'}
-          note="The top player is the Best in Caritas. Tap a player to schedule a 1v1."
-        />
-      ) : rewardRunning ? (
-        <ChallengeTable
-          game={game}
-          rows={rewardRows}
-          me={me}
-          season={season}
-          join={join}
-          hiddenFromMe={hiddenFromMe}
-          rewardRunning
-          isOpen={isOpen}
-          matches={matches}
-          title="Weekly reward table"
-          note={`The top 3 win the ${naira((week && Number(week.creditValue)) || config.creditValue)} food credit. Tap a player to schedule a 1v1.`}
-          emptyText="Nobody has joined this week's reward yet."
-        />
-      ) : rewardRegistered.length > 0 ? (
-        <ChallengeTable
-          game={game}
-          rows={rewardRegistered.map((r, i) => ({ id: r.id, name: r.name, rank: i + 1, pts: 0, lastActiveMs: r.atMs }))}
-          me={me}
-          season={season}
-          join={join}
-          hiddenFromMe={hiddenFromMe}
-          rewardRunning={false}
-          isOpen={isOpen}
-          matches={matches}
-          preStart
-          title="Registered for the reward week"
-          note="Points start from zero when the week begins."
-        />
-      ) : (
-        <div className={`${card} p-5 text-center text-xs text-slate-400`}>No reward week is running for this game right now. The table appears here when one starts.</div>
+      {best && (
+        <>
+          <WeeklyBanner game={game} week={week} rows={weeklyRows} me={me} playersReady={board.filter((r: any) => r.ready).length || registered} nowMs={nowMs} onInvite={() => go(gameInviteLink(game, plays && myRow ? myRow.rank : 0))} />
+          <ChallengeTable
+            game={game}
+            rows={board}
+            me={me}
+            season={season}
+            join={join}
+            hiddenFromMe={hiddenFromMe}
+            rewardRunning={false}
+            isOpen={isOpen}
+            matches={matches}
+            weekly={weeklyMap}
+            title={season ? `${season.name} Standing` : 'League standing'}
+            note="The top player is the Best in Caritas. Tap a player to schedule a 1v1."
+          />
+        </>
       )}
 
       {best && !rulesNewMember && (
@@ -1039,7 +944,7 @@ const GamePage: React.FC<{
         </div>
       )}
 
-      {logging && season && <LogResultSheet game={game} me={me} board={best ? board : rewardRows} matches={matches} season={season} contest={best ? 'league' : 'reward'} weekKey={best ? '' : week?.id || ''} onClose={() => setLogging(false)} />}
+      {logging && season && <LogResultSheet game={game} me={me} board={board} matches={matches} season={season} contest="league" weekKey="" onClose={() => setLogging(false)} />}
     </>
   );
 };

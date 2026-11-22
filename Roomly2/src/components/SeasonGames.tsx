@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Trophy, Crown, Loader2, Users, MessageCircle, X, Search, Flag, EyeOff, BookOpen, Check, ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-react';
+import { Trophy, Crown, Loader2, Users, MessageCircle, X, Search, Flag, EyeOff, BookOpen, Check, ChevronDown, ChevronUp, ChevronRight, MoreHorizontal } from 'lucide-react';
 import { gameLabel, isScored } from '../hub.js';
 import { weekPhase, lagosWeek, contestOf, matchCounts, winnerOf, proofOf, specialSeries, MAX_PAIR_LEAGUE_WEEK, MAX_PAIR_REWARD_WEEK } from '../boardCore.js';
 import ProofThumb from './ProofThumb';
@@ -541,7 +541,9 @@ export const ChallengeTable: React.FC<{
   matches?: any[];
   /** Before the week starts: join order, no medals, rows are not tappable */
   preStart?: boolean;
-}> = ({ game, rows, me, season, join, hiddenFromMe, rewardRunning, isOpen, title, note, emptyText, matches = [], preStart = false }) => {
+  /** Points earned inside the running weekly reward, by player id. When given, a Wk column shows next to Pts. */
+  weekly?: Map<string, any> | null;
+}> = ({ game, rows, me, season, join, hiddenFromMe, rewardRunning, isOpen, title, note, emptyText, matches = [], preStart = false, weekly = null }) => {
   const [q, setQ] = useState('');
   const [limit, setLimit] = useState(30);
   const [picked, setPicked] = useState<any | null>(null);
@@ -580,6 +582,7 @@ export const ChallengeTable: React.FC<{
                 <span className={`${nameW} py-2`}>Player</span>
                 <span className="w-10 py-2 text-center text-slate-500">Pts</span>
               </div>
+              {weekly && <span className="w-10 py-2 text-center text-[#0e9f55]">Wk</span>}
               {stats.map((c) => (
                 <span key={c.k} className="w-10 py-2 text-center">{c.h}</span>
               ))}
@@ -613,6 +616,7 @@ export const ChallengeTable: React.FC<{
                     </div>
                     <span className="w-10 text-center text-sm font-black text-[#0e9f55] tabular-nums">{r.pts}</span>
                   </div>
+                  {weekly && <span className="w-10 flex items-center justify-center text-xs font-black tabular-nums text-[#0e9f55]">{Number(weekly.get(r.id)?.pts || 0)}</span>}
                   {stats.map((c) => (
                     <span key={c.k} className="w-10 flex items-center justify-center text-xs tabular-nums text-slate-600 dark:text-slate-300">{r[c.k] || 0}</span>
                   ))}
@@ -644,6 +648,103 @@ export const ChallengeTable: React.FC<{
         />
       )}
     </div>
+  );
+};
+
+/* ------------------------------------------------------------------ */
+/* Weekly reward banner (inside the league page)                        */
+/* ------------------------------------------------------------------ */
+
+/** The weekly reward for a game: countdown before it starts, the top 3 while it runs, a short note after it ends */
+export const WeeklyBanner: React.FC<{
+  game: string;
+  week: any | null;
+  rows: any[];
+  me: any;
+  playersReady: number;
+  nowMs: number;
+  onInvite?: () => void;
+}> = ({ game, week, rows, me, playersReady, nowMs, onInvite }) => {
+  if (!week) return null;
+  const phase = weekPhase(week, nowMs);
+  const minPts = Number(week.minPoints) || 25;
+  const credit = naira(Number(week.creditValue) || 3500);
+  const top = rows.slice(0, 3);
+  const mine = me ? rows.find((r) => r.id === me.id) : null;
+  return (
+    <div className={`${card} overflow-hidden`}>
+      <div className="p-4 space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[10px] font-black uppercase tracking-widest text-[#0e9f55]">Weekly reward</span>
+          <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${phase === 'running' ? 'bg-[#0e9f55] text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
+            {phase === 'running' ? `ENDS IN ${countdown(Number(week.endMs) - nowMs).toUpperCase()}` : phase === 'scheduled' ? 'STARTS SOON' : 'ENDED'}
+          </span>
+        </div>
+        <p className="text-base font-black text-slate-900 dark:text-white leading-tight">
+          Top 3 with {minPts}+ points this week win {credit} food credit
+        </p>
+        {phase === 'scheduled' && (
+          <p className="text-xs text-slate-500">
+            Starts {dayText(Number(week.startMs))} at 12:00AM, in {countdown(Number(week.startMs) - nowMs)}. {playersReady} {playersReady === 1 ? 'player is' : 'players are'} ready. Everything you play counts as normal, and from the start your points for the week are counted from zero.
+          </p>
+        )}
+        {phase === 'closed' && <p className="text-xs text-slate-500">The week is over. Roomly is checking the matches before the credits go out.</p>}
+        {phase === 'running' && (
+          <div className="space-y-1.5">
+            {[0, 1, 2].map((i) => {
+              const r = top[i];
+              return (
+                <div key={i} className={`flex items-center gap-2.5 p-2 rounded-xl ${r && me && r.id === me.id ? 'bg-emerald-50 dark:bg-emerald-950/40' : 'bg-slate-50 dark:bg-slate-950'}`}>
+                  <span className="w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 text-[11px] font-black flex items-center justify-center shrink-0">{i + 1}</span>
+                  {r && r.pts > 0 ? (
+                    <>
+                      <span className="min-w-0 flex-1 text-[13px] font-bold text-slate-900 dark:text-white truncate">{r.name}</span>
+                      <span className="text-xs font-black text-[#0e9f55] tabular-nums">{r.pts} pts</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${r.pts >= minPts ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
+                        {r.pts >= minPts ? 'Winning' : `Needs ${minPts - r.pts}`}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-xs text-slate-400">Open spot</span>
+                  )}
+                </div>
+              );
+            })}
+            {me && (
+              <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                You: {mine ? `${mine.pts} pts this week${mine.pts >= minPts ? '' : `, ${minPts - mine.pts} more to qualify`}` : 'no points yet this week'}
+              </p>
+            )}
+          </div>
+        )}
+        <p className="text-[11px] text-slate-500">
+          Only 2 matches against the same player count for the weekly reward (home and away), so invite friends to play more people. All your matches still count in the table.
+        </p>
+        {onInvite && phase !== 'closed' && (
+          <button type="button" onClick={onInvite} className="w-full h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
+            Invite friends
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/** One line on the league page when a Special 1v1 exists for this game */
+export const SpecialStrip: React.FC<{ game: string; events: any[]; nowMs: number; onOpen: () => void }> = ({ game, events, nowMs, onOpen }) => {
+  const e = events
+    .filter((x) => x.game === game && x.status !== 'done' && nowMs < Number(x.endMs))
+    .sort((a, b) => Number(a.startMs) - Number(b.startMs))[0];
+  if (!e) return null;
+  const live = nowMs >= Number(e.startMs);
+  return (
+    <button type="button" onClick={onOpen} className={`${card} w-full p-3.5 flex items-center gap-3 text-left cursor-pointer`}>
+      <span className="text-[10px] font-black uppercase tracking-widest text-[#0e9f55] shrink-0">Special 1v1</span>
+      <span className="min-w-0 flex-1 text-sm font-bold text-slate-900 dark:text-white truncate">
+        {live ? `Live now: beat ${e.xName}` : `${dateShort(Number(e.startMs))}: beat ${e.xName}`}
+      </span>
+      <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+    </button>
   );
 };
 

@@ -43,8 +43,8 @@ export const GAME_RULES: { title: string; lines: string[] }[] = [
     lines: [
       'The winner enters the result: the opponent, the score, the stats (goals, kills and damage where the game has them) and a screenshot of the final score. A draw can be entered by either player. A screenshot is required. Screenshots you upload are shown to other players.',
       'Anyone can report an account they believe is farming or faking points. Roomly checks it and can remove points or ban the account.',
-      'Each match counts in one contest only: the league table or a reward week, depending on where you log it. League matches never add to a reward table and reward matches never add to the league.',
-      'Between the same two players, at most 4 league matches count per week (2 home and 2 away) and at most 2 reward matches count per week (1 home and 1 away). The player who challenged is home in the first match and the rematch reverses it. Extra matches do not count.',
+      'One log button, one table. Every match you log counts in the league table, and also in the weekly reward table when it is entered during a reward week.',
+      'Between the same two players, at most 4 matches count in the league per week (2 home and 2 away). For the weekly reward only 2 of them count (1 home and 1 away). The player who challenged is home in the first match and the rematch reverses it. Extra matches do not count. A Special 1v1 has its own limit, see below.',
       'Your opponent confirms the result or reports it. If nobody answers for 24 hours it is confirmed automatically. Reports are allowed for 24 hours after the result was entered. After that it is locked, even if it was wrong. You can take back a result you entered within 10 minutes, if you have not entered a newer one.',
     ],
   },
@@ -56,11 +56,12 @@ export const GAME_RULES: { title: string; lines: string[] }[] = [
     ],
   },
   {
-    title: 'Reward weeks',
+    title: 'Weekly reward',
     lines: [
-      'Reward weeks go one game at a time. When enough players have registered for a game\'s reward contest, its week starts at the next 12:00AM and runs 7 days to 12:00AM. If another game\'s week is running, it starts when that one ends. Roomly sets the minimum number of players and points for each game. A change applies from the next reward week.',
-      'Tap Join the reward contest on a game and tick its rules to register once for the semester. You can register late. The reward table counts only reward matches entered in that week, starting from zero. League points are not affected.',
-      'The table closes at 12:00AM when the 7 days end. After that no result can be entered and the ranking is decided.',
+      'Roomly schedules weekly rewards for a game. A week starts at 12:00AM on a day Roomly announces and runs 7 days. You do not register for it: if you are in the league you are in. Your weekly points start from zero at the start, and only the matches you enter during the week count.',
+      'The league table shows a Wk column next to Pts. That is what you earned in the week. All your matches still count in the league as normal.',
+      'The top 3 on the weekly table who also reach the minimum points for that week each win a food credit. Roomly sets the minimum and the credit for every week and shows them on the banner above the table.',
+      'The week closes at 12:00AM when the 7 days end. After that no result can be entered for it.',
     ],
   },
   {
@@ -75,7 +76,7 @@ export const GAME_RULES: { title: string; lines: string[] }[] = [
   {
     title: 'Credits',
     lines: [
-      'The top 3 players with at least the minimum points each get one food credit. If a player in the top 3 is below the minimum, they get nothing, and credits are not passed down.',
+      'The top 3 players on the weekly table with at least the minimum points each get one food credit. If a player in the top 3 is below the minimum, they get nothing, and credits are not passed down.',
       'Roomly checks the results and issues credits by hand after the table closes. If all your counted matches are confirmed, your credit opens straight away. If any of them is still waiting or reported, it opens after that is settled or after 24 hours, so it can take up to 48 hours to open. A credit lasts 48 hours from when it opens. It counts if your order is placed before it expires.',
       'A credit works on Outside Food and Canteen Items only, not on Outside Items and not on delivery. It is a fixed amount off your items. Whatever you do not use is lost. One credit per order.',
       'If a credit order is refunded because it was late or failed, the credit is restored with a fresh 48 hours.',
@@ -85,7 +86,7 @@ export const GAME_RULES: { title: string; lines: string[] }[] = [
     title: 'Disputes and cheating',
     lines: [
       'Roomly settles disputes and can add or remove points to correct a result. If a report could change the top 3, Roomly holds the payout until it is settled.',
-      'Honest mistakes are corrected with no penalty. A fake screenshot or a false claim removes the points and makes the player ineligible for the next reward week of that game. A second offence removes the player from Games and blocks the number.',
+      'Honest mistakes are corrected with no penalty. A fake screenshot or a false claim removes the points and makes the player ineligible for the next weekly reward of that game. A second offence removes the player from Games and blocks the number.',
       'Use a WhatsApp number that works, so Roomly can reach you. An account whose number is not on WhatsApp and that keeps losing to the same few players can be removed. The points other players earned against a removed account are removed too.',
     ],
   },
@@ -363,8 +364,8 @@ export function leagueMainRulesFor(game: string): string[] {
   return [
     `A win is 3 points${isScored(game) ? ', a draw is 1' : ''} and a loss is 0. The player at the top of the league table is the Best in Caritas for ${gameLabel(game)}.`,
     'Schedule a match with your opponent. The winner logs the result with a screenshot, and the opponent can dispute it within 24 hours.',
-    'You can play the same opponent up to 4 times a week: 2 at home and 2 away.',
-    'Matches played for the weekly food credit are separate. They do not add points to the league.',
+    'You can play the same opponent up to 4 times a week: 2 at home and 2 away. For the weekly reward only 2 of them count.',
+    'During a weekly reward week, the same matches also build your weekly points (the Wk column). The top 3 with enough points win a food credit.',
   ];
 }
 /** The one-line headline of the weekly food credit contest */

@@ -2,10 +2,10 @@
  * Games admin: reads and writes for the Players tab, credits, week review, challenge log and per-game settings.
  * Runs with the staff (admin) login, so the security rules decide who can use it.
  */
-import { collection, doc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, query, where, limit, arrayUnion, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, query, where, limit, arrayUnion, writeBatch } from 'firebase/firestore';
 import { db } from './firebase.ts';
 import { phoneKey, normalizePhone } from './api.js';
-import { CREDIT_HOURS, matchCounts } from './boardCore.js';
+import { CREDIT_HOURS, matchCounts, WEEK_MS, weekKeyOf } from './boardCore.js';
 
 const HOUR = 3600000;
 
@@ -67,6 +67,41 @@ export async function removeFarmAccount(gid: string, seasonId: string, matches: 
 }
 export async function setRewardBlocked(gid: string, game: string, on: boolean) {
   await updateDoc(doc(db, 'gamers', gid), { [`rewardBlocked.${game}`]: on });
+}
+
+/**
+ * Schedule weekly rewards that live inside the league: each runs 7 days from the start (12:00AM Lagos) and its table is
+ * counted from the same league matches. Weeks that already exist are left alone. Returns how many were created.
+ */
+export async function scheduleWeeks(a: { seasonId: string; game: string; firstStartMs: number; count: number; minPoints: number; creditValue: number }) {
+  const count = Math.max(1, Math.min(12, Math.round(Number(a.count))));
+  if (!Number.isFinite(a.firstStartMs) || a.firstStartMs < Date.now() - 6 * 3600000) throw new Error('Pick a start day that has not passed.');
+  if (!(Number(a.minPoints) > 0) || !(Number(a.creditValue) > 0)) throw new Error('Minimum points and credit value must be numbers above zero.');
+  let made = 0;
+  for (let i = 0; i < count; i++) {
+    const startMs = a.firstStartMs + i * WEEK_MS;
+    const id = weekKeyOf(a.seasonId, a.game, startMs);
+    const ref = doc(db, 'rewardWeeks', id);
+    if ((await getDoc(ref)).exists()) continue;
+    await setDoc(ref, {
+      seasonId: a.seasonId,
+      game: a.game,
+      startMs,
+      endMs: startMs + WEEK_MS,
+      minPlayers: 0,
+      minPoints: Number(a.minPoints),
+      creditValue: Number(a.creditValue),
+      status: 'scheduled',
+      v: 2,
+      createdAtMs: Date.now(),
+    });
+    made++;
+  }
+  return made;
+}
+/** Remove a week that has not started yet */
+export async function removeWeek(id: string) {
+  await deleteDoc(doc(db, 'rewardWeeks', id));
 }
 
 /** Add or remove points for one player. With a week, it only changes that week's table (and the season table too). */
