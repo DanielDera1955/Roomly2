@@ -44,7 +44,7 @@ export const GAME_RULES: { title: string; lines: string[] }[] = [
       'The winner enters the result: the opponent, the score, the stats (goals, kills and damage where the game has them) and a screenshot of the final score. A draw can be entered by either player. A screenshot is required. Screenshots you upload are shown to other players.',
       'Anyone can report an account they believe is farming or faking points. Roomly checks it and can remove points or ban the account.',
       'One log button, one table. Every match you log counts in the league table, and also in the weekly reward table when it is entered during a reward week.',
-      'Between the same two players, at most 4 matches count in the league per week (2 home and 2 away). For the weekly reward only 2 of them count (1 home and 1 away). The player who challenged is home in the first match and the rematch reverses it. Extra matches do not count. A Special 1v1 has its own limit, see below.',
+      'Between the same two players there is no limit in the league: every match you log counts in the league table. For the weekly reward only 2 of them count (1 home and 1 away). The player who challenged is home in the first match and the rematch reverses it. Matches beyond the weekly limit still count in the league. A Special 1v1 has its own limit, see below.',
       'Your opponent confirms the result or reports it. If nobody answers for 24 hours it is confirmed automatically. Reports are allowed for 24 hours after the result was entered. After that it is locked, even if it was wrong. You can take back a result you entered within 10 minutes, if you have not entered a newer one.',
     ],
   },
@@ -71,6 +71,17 @@ export const GAME_RULES: { title: string; lines: string[] }[] = [
       'On that day you can log up to 5 matches against X. Win 3 of your 5 matches to win the challenger prize. The first challenger to win ends the run. If X beats 5 different challengers, X wins the bigger prize.',
       'Booking a spot is optional. Anyone in the game can still challenge X on the day. Matches against X count in the table like any other match, with screenshot proof.',
       'Roomly checks the matches before any prize is paid and can pause or remove an event. Prizes are food credit, issued by Roomly, and last 48 hours.',
+    ],
+  },
+  {
+    title: 'Challenge events',
+    lines: [
+      'The Challenges tab on a game page lists contests Roomly sets, for example win 3 of 5 different players, or win 20 different players. Each card shows the prize, what to do, the window, the spots left and how many players are in. The green number on the tab is how many you can still join.',
+      'Tap Apply to join. If the card asks you to pick a day, your count starts on that day. You can be in one challenge per game at a time and you can change your day once before it starts.',
+      'You do not log anything extra. Log your matches the normal way. After you apply, the matches you log in that game inside your window also show on your challenge card, in order. Only your first matches up to the limit on the card count, and a match against the same opponent twice counts once when the card says different opponents.',
+      'Your opponent must confirm each win, or it is confirmed automatically after 24 hours. Opponents must have registered before the challenge started.',
+      'When someone reaches the target the challenge shows Winner found, under review, and new applications close. Roomly checks the matches before any prize is paid. If a result is rejected, the challenge reopens and the next player to finish is checked. When the winners are approved the challenge ends and the winner is announced.',
+      'The prize is food credit issued by Roomly after the check. It lasts 48 hours. Challenge matches also count in the league as normal and in the weekly reward under its own limit, and the challenge itself gives no extra points. A fake result removes the points and the player can be removed from the challenge.',
     ],
   },
   {
@@ -354,7 +365,7 @@ export function leagueRulesFor(game: string): string[] {
     scored
       ? 'The winner enters the result with the score and a screenshot of the final score. A draw can be entered by either player.'
       : 'The winner enters the result with their kills, damage and a screenshot of the final result.',
-    'League matches only count in the league table. Between the same two players, at most 4 count per week (2 home and 2 away). Extra matches do not count.',
+    'League matches only count in the league table. There is no limit on how many you can play against the same player. For the weekly reward only 2 per opponent count each week (1 home and 1 away), and the rest still count in the league.',
     'Your opponent confirms the result or reports it within 24 hours. If nobody answers for 24 hours it is confirmed automatically.',
     'Tap a player on the table, then Schedule 1v1, to message them on WhatsApp. Use Report if someone behaves badly.',
   ];
@@ -364,7 +375,7 @@ export function leagueMainRulesFor(game: string): string[] {
   return [
     `A win is 3 points${isScored(game) ? ', a draw is 1' : ''} and a loss is 0. The player at the top of the league table is the Best in Caritas for ${gameLabel(game)}.`,
     'Schedule a match with your opponent. The winner logs the result with a screenshot, and the opponent can dispute it within 24 hours.',
-    'You can play the same opponent up to 4 times a week: 2 at home and 2 away. For the weekly reward only 2 of them count.',
+    'You can play the same opponent as often as you like. Every match counts in the league. For the weekly reward only 2 per opponent count each week.',
     'During a weekly reward week, the same matches also build your weekly points (the Wk column). The top 3 with enough points win a food credit.',
   ];
 }

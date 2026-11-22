@@ -993,14 +993,15 @@ export const SpecialCard: React.FC<{
   );
 };
 
-/** The latest winner of a game's Special 1v1 and of its weekly reward */
+/** The latest winner of a game's Special 1v1, challenge and weekly reward */
 export const WinnerCard: React.FC<{ game: string; winners: any[]; nowMs: number }> = ({ game, winners, nowMs }) => {
   const mine = winners.filter((w) => w.game === game && nowMs - Number(w.atMs || 0) < 30 * 86400000);
   const special = mine.find((w) => w.kind === 'special');
+  const challenge = mine.find((w) => w.kind === 'challenge');
   const weeklyAll = mine.filter((w) => w.kind === 'weekly');
   const ref = weeklyAll[0]?.ref;
   const weekly = weeklyAll.filter((w) => w.ref === ref).sort((a, b) => Number(a.rank) - Number(b.rank));
-  if (!special && weekly.length === 0) return null;
+  if (!special && !challenge && weekly.length === 0) return null;
   return (
     <div className={`${card} p-4 space-y-2.5`}>
       <span className="text-[10px] font-black uppercase tracking-widest text-amber-500">Latest winners</span>
@@ -1008,6 +1009,12 @@ export const WinnerCard: React.FC<{ game: string; winners: any[]; nowMs: number 
         <div>
           <p className="text-sm font-black text-slate-900 dark:text-white">{special.text}</p>
           <p className="text-[11px] text-slate-500">Special 1v1, {dateShort(Number(special.atMs))}.{special.value ? ` ${naira(special.value)} food credit.` : ''}</p>
+        </div>
+      )}
+      {challenge && (
+        <div>
+          <p className="text-sm font-black text-slate-900 dark:text-white">{challenge.text}</p>
+          <p className="text-[11px] text-slate-500">Challenge, {dateShort(Number(challenge.atMs))}.{challenge.value ? ` ${naira(challenge.value)} food credit.` : ''}</p>
         </div>
       )}
       {weekly.length > 0 && (
@@ -1098,7 +1105,9 @@ const PlayerSheet: React.FC<{
 
       {member && (
         <p className="text-[11px] text-slate-500">
-          You vs {row.name} this week: {vsMe} of {cap} matches count.
+          {Number.isFinite(cap)
+            ? `You vs ${row.name} this week: ${Math.min(vsMe, cap)} of ${cap} matches count.`
+            : `You vs ${row.name} this week: ${vsMe} ${vsMe === 1 ? 'match' : 'matches'}. All count in the league. For the weekly reward only the first ${MAX_PAIR_REWARD_WEEK} per opponent count.`}
         </p>
       )}
       {canTap ? (

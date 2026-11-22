@@ -738,6 +738,39 @@ service cloud.firestore {
       allow update: if isAdmin();
       allow delete: if isAdmin() || ownsGamer(resource.data.gid);
     }
+    // Challenges: contests the admin sets for a game (win N different players, win X of N). Everyone can read them.
+    match /challenges/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    // A player applies to a challenge (id = challengeId_playerId). The counting is worked out from the matches the player logs normally.
+    // The player may change the day once before it starts, or withdraw before it starts. Only the admin reviews, voids matches and pays.
+    match /challengeApps/{id} {
+      function cdoc() { return get(/databases/$(database)/documents/challenges/$(request.resource.data.challengeId)).data; }
+      allow read: if true;
+      allow create: if ownsGamer(request.resource.data.gid)
+        && gamerOk(request.resource.data.gid)
+        && id == request.resource.data.challengeId + '_' + request.resource.data.gid
+        && exists(/databases/$(database)/documents/challenges/$(request.resource.data.challengeId))
+        && cdoc().status == 'on'
+        && request.time.toMillis() < cdoc().endMs
+        && request.resource.data.game == cdoc().game
+        && request.resource.data.game in get(/databases/$(database)/documents/gamers/$(request.resource.data.gid)).data.games
+        && request.resource.data.get('review', '') == ''
+        && request.resource.data.get('rescheduled', false) == false
+        && request.resource.data.get('voided', []).size() == 0
+        && request.resource.data.keys().hasOnly(['challengeId', 'gid', 'ownerUid', 'game', 'name', 'dayMs', 'startCountMs', 'appliedAtMs', 'rescheduled', 'review', 'voided'])
+        && request.resource.data.appliedAtMs > request.time.toMillis() - 600000
+        && request.resource.data.appliedAtMs < request.time.toMillis() + 600000;
+      allow update: if isAdmin()
+        || (ownsGamer(resource.data.gid)
+            && resource.data.rescheduled == false
+            && request.time.toMillis() < resource.data.startCountMs
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dayMs', 'startCountMs', 'rescheduled'])
+            && request.resource.data.rescheduled == true);
+      allow delete: if isAdmin()
+        || (ownsGamer(resource.data.gid) && request.time.toMillis() < resource.data.startCountMs);
+    }
     // The winner lines shown on a game page. Only the admin writes them (after checking the matches).
     match /gameWinners/{id} {
       allow read: if true;

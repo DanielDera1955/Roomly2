@@ -14,8 +14,8 @@ export const AUTO_CONFIRM_HOURS = 24;
 export const TAKEBACK_MINUTES = 10;
 /** The opponent can report a result for this long after it was entered, then it locks */
 export const DISPUTE_HOURS = 24;
-/** At most this many matches count between the same two players in one week: league 4 (2 home, 2 away), reward 2 (1 home, 1 away) */
-export const MAX_PAIR_LEAGUE_WEEK = 4;
+/** League matches between the same two players are unlimited. Only the weekly reward limits a pair: 2 per week (1 home, 1 away). */
+export const MAX_PAIR_LEAGUE_WEEK = Infinity;
 export const MAX_PAIR_REWARD_WEEK = 2;
 
 const HOUR = 3600000;
@@ -135,8 +135,8 @@ export function specialFor(game, aUid, bUid, atMs, onlyOn = false, events = SPEC
 }
 
 /**
- * Keep only the first counting matches between the same two players in one week, per contest:
- * 4 in the league, 2 in a reward week. Extra matches are ignored by every board, whatever was written.
+ * Keep only the first counting matches between the same two players in one week for a reward table:
+ * 2 per pair (1 home, 1 away). League matches are unlimited. Extra weekly matches are ignored by the weekly board, whatever was written.
  * On a Special 1v1 day, league matches against the special player are counted on their own: up to 5 per challenger that day.
  */
 export function capPairs(matches, weeklyId = '') {
@@ -146,6 +146,11 @@ export function capPairs(matches, weeklyId = '') {
   sorted.forEach((m) => {
     const c = contestOf(m);
     const pair = [m.aUid, m.bUid].sort().join('|');
+    // The league table has no pair limit: every counting match is kept (only a weekly table limits a pair)
+    if (c === 'league' && !weeklyId) {
+      keep.add(m.id || m);
+      return;
+    }
     const sp = c === 'league' ? specialFor(m.game, m.aUid, m.bUid, m.loggedAtMs) : null;
     if (sp) {
       const k = `sp|${sp.id}|${pair}`;

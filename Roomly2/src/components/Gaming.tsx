@@ -32,7 +32,7 @@ import {
   markEntryPaid,
   leaveTournament,
 } from '../hub.js';
-import { computeRows, matchCounts, matchRecorded, canDispute, canTakeBack, proofOf, weekPhase, lagosDay, DISPUTE_HOURS, AUTO_CONFIRM_HOURS, TAKEBACK_MINUTES, rewardConfigFor, rewardRegsFor, qualifiedAtMs, contestOf, lagosWeek, specialFor, weeklyWeekFor, SPECIAL_MAX_PAIR, MAX_PAIR_LEAGUE_WEEK, MAX_PAIR_REWARD_WEEK } from '../boardCore.js';
+import { computeRows, matchCounts, matchRecorded, canDispute, canTakeBack, proofOf, weekPhase, lagosDay, DISPUTE_HOURS, AUTO_CONFIRM_HOURS, TAKEBACK_MINUTES, rewardConfigFor, rewardRegsFor, qualifiedAtMs, contestOf, lagosWeek, specialFor, weeklyWeekFor, capPairs, SPECIAL_MAX_PAIR, MAX_PAIR_LEAGUE_WEEK, MAX_PAIR_REWARD_WEEK } from '../boardCore.js';
 import ProofThumb from './ProofThumb';
 import {
   subscribeSeasons,
@@ -68,6 +68,8 @@ import {
 } from '../season';
 import { SeasonRulesCard, RewardIntro, GameRulesToggle, MainRulesDropdown, ChallengeTable, AnnouncementsCard, RulesBody, SpecialCard, WinnerCard, WeeklyBanner, SpecialStrip } from './SeasonGames';
 import { HistoryButton } from './GamesHistory';
+import { ChallengesSection, GreenBadge } from './Challenges';
+import { subscribeChallenges, subscribeChallengeApps, viewChallenge, badgeCount, type Challenge, type ChallengeView } from '../challenges';
 
 const card = 'bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800';
 const input =
@@ -128,6 +130,8 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
   const [specials, setSpecials] = useState<any[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
   const [winners, setWinners] = useState<any[]>([]);
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [challengeApps, setChallengeApps] = useState<any[]>([]);
 
   useEffect(() => {
     knownHubUid().then(setUid);
@@ -151,6 +155,8 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
   useEffect(() => subscribeSpecialEvents(setSpecials), []);
   useEffect(() => subscribeSpecialBookings(setBookings), []);
   useEffect(() => subscribeGameWinners(setWinners), []);
+  useEffect(() => subscribeChallenges(setChallenges), []);
+  useEffect(() => subscribeChallengeApps(setChallengeApps), []);
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 30000);
     return () => window.clearInterval(id);
@@ -176,6 +182,17 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
   useEffect(() => subscribeSeasonMatches(season?.id || '', setMatches), [season?.id]);
   useEffect(() => subscribeHiddenFromMe(me?.id || '', setHiddenFromMe), [me?.id]);
   const myJoin = me ? joins.find((j) => j.gid === me.id) || null : null;
+  /** Challenges: each one worked out from the matches players already logged */
+  const challengeViews: ChallengeView[] = useMemo(
+    () => challenges.map((c) => viewChallenge(c, challengeApps, matches, gamers, nowMs)),
+    [challenges, challengeApps, matches, gamers, Math.floor(nowMs / 30000)]
+  );
+  /** The green number per game: challenges the player can still join */
+  const challengeBadges: Record<string, number> = useMemo(() => {
+    const out: Record<string, number> = {};
+    GAMES.forEach((g: { id: string }) => (out[g.id] = badgeCount(challengeViews, g.id, me ? me.id : null, nowMs)));
+    return out;
+  }, [challengeViews, me?.id, Math.floor(nowMs / 30000)]);
   useEffect(() => {
     if (me && target && myJoin) refreshContact(me, target, myJoin).catch(() => {});
   }, [me?.id, target?.id, myJoin?.rulesVersion]);
@@ -316,6 +333,8 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
           specials={specials}
           bookings={bookings}
           winners={winners}
+          challengeViews={challengeViews}
+          challengeBadge={challengeBadges[game] || 0}
         />
       ) : (
         <GamesHome
@@ -340,6 +359,7 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
           counts={counts}
           acceptedCount={acceptedCount}
           qualAt={qualAt}
+          challengeBadges={challengeBadges}
         />
       )}
       {registering && (
@@ -366,17 +386,18 @@ export const Gaming: React.FC<{ session: { name?: string; phone?: string; pin?: 
 /* Games home                                                          */
 /* ================================================================== */
 
-const ModeToggle: React.FC<{ mode: 'best' | 'special'; onMode: (m: 'best' | 'special') => void }> = ({ mode, onMode }) => (
+const ModeToggle: React.FC<{ mode: 'best' | 'special'; onMode: (m: 'best' | 'special') => void; badge?: number }> = ({ mode, onMode, badge = 0 }) => (
   <div>
     <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-slate-200/70 dark:bg-slate-800">
-      {([['best', 'Best in Caritas'], ['special', 'Special 1v1']] as ['best' | 'special', string][]).map(([id, label]) => (
+      {([['best', 'Best in Caritas'], ['special', 'Challenges']] as ['best' | 'special', string][]).map(([id, label]) => (
         <button
           key={id}
           type="button"
           onClick={() => onMode(id)}
-          className={`h-11 rounded-xl text-sm font-bold cursor-pointer ${mode === id ? 'bg-white dark:bg-slate-950 text-[#0e9f55] shadow-sm' : 'text-slate-500'}`}
+          className={`h-11 rounded-xl text-sm font-bold cursor-pointer flex items-center justify-center gap-1.5 ${mode === id ? 'bg-white dark:bg-slate-950 text-[#0e9f55] shadow-sm' : 'text-slate-500'}`}
         >
           {label}
+          {id === 'special' && <GreenBadge n={badge} />}
         </button>
       ))}
     </div>
@@ -413,7 +434,8 @@ const GamesHome: React.FC<{
   counts: Counts;
   acceptedCount: Record<string, number>;
   qualAt: Record<string, number>;
-}> = ({ me, isCustomer = false, boards, isOpen, opensAt, nowMs, onPick, onRegister, season, upcoming, join, joinsCount, weeks, rewardJoins, config, mode, onMode, rewardBoards, counts, acceptedCount, qualAt }) => {
+  challengeBadges?: Record<string, number>;
+}> = ({ me, isCustomer = false, boards, isOpen, opensAt, nowMs, onPick, onRegister, season, upcoming, join, joinsCount, weeks, rewardJoins, config, mode, onMode, rewardBoards, counts, acceptedCount, qualAt, challengeBadges = {} }) => {
   const myGames = me ? GAMES.filter((g: { id: string }) => playsGame(me, g.id)) : [];
   const hasAccount = myGames.length > 0;
   const myBest = hasAccount
@@ -596,7 +618,10 @@ const GamesHome: React.FC<{
                   <button type="button" onClick={() => onPick(g.id)} className="w-full text-left cursor-pointer">
                   <div className="flex items-start justify-between">
                     <GameIcon game={g.id} />
-                    <ChevronRight className="w-4 h-4 text-slate-300" />
+                    <span className="flex items-center gap-1.5">
+                      <GreenBadge n={challengeBadges[g.id] || 0} />
+                      <ChevronRight className="w-4 h-4 text-slate-300" />
+                    </span>
                   </div>
                   <p className="mt-3 text-sm font-black text-slate-900 dark:text-white">{g.label}</p>
                   <p className="mt-0.5 text-[11px] text-slate-500 flex items-center gap-1 truncate">
@@ -672,7 +697,9 @@ const GamePage: React.FC<{
   specials?: any[];
   bookings?: any[];
   winners?: any[];
-}> = ({ game, me, board, matches, tournaments, isOpen, opensAt, nowMs, focusMatch, onFocusDone, onBack, onRegister, onRewardRegister, season, join, week, otherWeek, rewardRows, rewardJoined, acceptedGame, config, hiddenFromMe, mode, onMode, registered, acceptedCount , rewardRegistered = [], specials = [], bookings = [], winners = [], weeklyRows = []}) => {
+  challengeViews?: ChallengeView[];
+  challengeBadge?: number;
+}> = ({ game, me, board, matches, tournaments, isOpen, opensAt, nowMs, focusMatch, onFocusDone, onBack, onRegister, onRewardRegister, season, join, week, otherWeek, rewardRows, rewardJoined, acceptedGame, config, hiddenFromMe, mode, onMode, registered, acceptedCount , rewardRegistered = [], specials = [], bookings = [], winners = [], weeklyRows = [], challengeViews = [], challengeBadge = 0}) => {
   const [logging, setLogging] = useState(false);
   const [busy, setBusy] = useState(false);
   const plays = playsGame(me, game);
@@ -721,7 +748,7 @@ const GamePage: React.FC<{
         </div>
       </div>
 
-      <ModeToggle mode={mode} onMode={onMode} />
+      <ModeToggle mode={mode} onMode={onMode} badge={challengeBadge} />
 
       {best ? (
         /* The leader, then where you stand, then your two buttons */
@@ -847,14 +874,16 @@ const GamePage: React.FC<{
         </>
       ) : (
         <>
-          <SpecialCard game={game} events={specials} bookings={bookings} matches={matches} me={me} season={season} join={join} board={board} hiddenFromMe={hiddenFromMe} isOpen={isOpen} nowMs={nowMs} onJoin={onRegister} />
-          {!specials.some((e: any) => e.game === game && e.status !== 'done' && nowMs < Number(e.endMs)) && (
-            <div className={`${card} p-4 space-y-1`}>
-              <p className="text-sm font-black text-slate-900 dark:text-white">No Special 1v1 for {gameLabel(game)} right now</p>
-              <p className="text-xs text-slate-500">Roomly picks a strong player and a day. Anyone can challenge them up to 5 times that day, and winning 3 of the 5 wins {naira(3500)} food credit. Watch this tab and the WhatsApp group.</p>
-            </div>
-          )}
           <WinnerCard game={game} winners={winners} nowMs={nowMs} />
+          <ChallengesSection game={game} views={challengeViews} me={me} season={season} member={plays && accepted} isOpen={isOpen} nowMs={nowMs} onJoin={onRegister} />
+          <SpecialCard game={game} events={specials} bookings={bookings} matches={matches} me={me} season={season} join={join} board={board} hiddenFromMe={hiddenFromMe} isOpen={isOpen} nowMs={nowMs} onJoin={onRegister} />
+          {!specials.some((e: any) => e.game === game && e.status !== 'done' && nowMs < Number(e.endMs)) &&
+            !challengeViews.some((v) => v.challenge.game === game && ['upcoming', 'running', 'closed'].includes(v.phase)) && (
+              <div className={`${card} p-4 space-y-1`}>
+                <p className="text-sm font-black text-slate-900 dark:text-white">No challenges for {gameLabel(game)} right now</p>
+                <p className="text-xs text-slate-500">Roomly sets challenges with big food credit prizes, like winning 3 of 5 different players or beating a strong player. Watch this tab for a green number and the WhatsApp group.</p>
+              </div>
+            )}
         </>
       )}
 
@@ -944,7 +973,7 @@ const GamePage: React.FC<{
         </div>
       )}
 
-      {logging && season && <LogResultSheet game={game} me={me} board={board} matches={matches} season={season} contest="league" weekKey="" onClose={() => setLogging(false)} />}
+      {logging && season && <LogResultSheet game={game} me={me} board={board} matches={matches} season={season} contest="league" weekKey="" weeklyWeek={week} onClose={() => setLogging(false)} />}
     </>
   );
 };
@@ -1328,7 +1357,7 @@ const RegisterSheet: React.FC<{ me: any; season: Season | null; session: { name?
   );
 };
 
-const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; matches: any[]; season: Season; contest: 'league' | 'reward'; weekKey: string; onClose: () => void }> = ({ game, me, board, matches, season, contest, weekKey, onClose }) => {
+const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; matches: any[]; season: Season; contest: 'league' | 'reward'; weekKey: string; weeklyWeek?: any | null; onClose: () => void }> = ({ game, me, board, matches, season, contest, weekKey, weeklyWeek = null, onClose }) => {
   const [opps, setOpps] = useState<any[] | null>(null);
   const [opp, setOpp] = useState('');
   const [mine, setMine] = useState('');
@@ -1374,6 +1403,23 @@ const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; matches: a
       ).length
     : 0;
   const o = board.find((r) => r.id === opp);
+  /** The weekly reward counts only the first 2 matches per opponent inside the week. Everything else still counts in the league. */
+  const weeklyRunning = Boolean(weeklyWeek && contest === 'league' && weekPhase(weeklyWeek, Date.now()) === 'running');
+  const weeklyUsed =
+    weeklyRunning && opp
+      ? capPairs(
+          matches.filter(
+            (m) =>
+              m.game === game &&
+              matchCounts(m) &&
+              contestOf(m) === 'league' &&
+              ((m.aUid === me.id && m.bUid === opp) || (m.aUid === opp && m.bUid === me.id)) &&
+              Number(m.loggedAtMs || 0) >= Number(weeklyWeek.startMs) &&
+              Number(m.loggedAtMs || 0) < Number(weeklyWeek.endMs)
+          ),
+          String(weeklyWeek.id)
+        ).length
+      : 0;
 
   const submit = async () => {
     setError('');
@@ -1456,6 +1502,13 @@ const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; matches: a
             </div>
           )}
           {playedWeek >= cap && <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">You already logged {cap} {contest} matches against this player this week. More will not count.</p>}
+          {o && weeklyRunning && (
+            <p className={`text-[11px] font-semibold ${weeklyUsed < MAX_PAIR_REWARD_WEEK ? 'text-[#0e9f55]' : 'text-amber-700 dark:text-amber-300'}`}>
+              {weeklyUsed < MAX_PAIR_REWARD_WEEK
+                ? `Counts in the league and in this week's reward points (${weeklyUsed + 1} of ${MAX_PAIR_REWARD_WEEK} with ${o.name}).`
+                : `League only: the weekly limit of ${MAX_PAIR_REWARD_WEEK} with ${o.name} is already used. It still counts in the league.`}
+            </p>
+          )}
           <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300 cursor-pointer">
             <Camera className="w-4 h-4 text-[#0e9f55]" />
             <span>{file ? file.name : 'Screenshot of the final score (required)'}</span>

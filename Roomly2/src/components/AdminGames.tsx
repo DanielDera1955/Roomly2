@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { GAMES, gameLabel, playsGame, subscribeGamers, timeAgo, waTo } from '../hub.js';
 import { computeRows, matchCounts, weekPhase, creditState, rewardConfigFor, rewardSlots, rewardRegsFor, contestOf, specialSeries, isV2Week, CREDIT_HOURS } from '../boardCore.js';
 import { farmSignals, opponentsOf, STREAK_FLAG, STREAK_REMOVE } from '../farmSignals.js';
+import { AdminChallenges } from './AdminChallenges';
 import {
   subscribeSeasons,
   subscribeSeasonJoins,
@@ -58,9 +59,10 @@ const when = (ms: number) => (ms ? new Date(ms).toLocaleString('en-GB', { day: '
 const day = (ms: number) => (ms ? new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '');
 const open = (url: string) => window.open(url, '_blank', 'noopener');
 
-type Tab = 'players' | 'reports' | 'credits' | 'weeks' | 'taps' | 'settings' | 'announce' | 'special';
+type Tab = 'players' | 'reports' | 'credits' | 'weeks' | 'taps' | 'settings' | 'announce' | 'special' | 'challenges';
 const TABS_LEAGUE: [Tab, string][] = [
   ['players', 'Players'],
+  ['challenges', 'Challenges'],
   ['special', 'Special 1v1'],
   ['reports', 'Reports'],
   ['taps', 'Challenge log'],
@@ -154,6 +156,7 @@ export const AdminGames: React.FC<{ section?: 'league' | 'contest' }> = ({ secti
       {season && tab === 'players' && <PlayersTab {...shared} season={season} />}
       {season && tab === 'credits' && <CreditsTab {...shared} />}
       {season && tab === 'weeks' && <WeeksTab {...shared} season={season} />}
+      {season && tab === 'challenges' && <AdminChallenges season={season} gamers={gamers} matches={matches} phones={phones} />}
       {season && tab === 'special' && <SpecialTab {...shared} season={season} events={events} bookings={bookings} winners={winners} />}
       {tab === 'reports' && <ReportsTab reports={reports} refresh={refresh} />}
       {season && tab === 'taps' && <TapsTab taps={taps} />}
