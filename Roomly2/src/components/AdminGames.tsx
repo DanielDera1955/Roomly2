@@ -729,8 +729,8 @@ const SpecialTab: React.FC<any> = ({ season, gamers, matches, adjusts, phones, c
                   {e.status === 'paused' ? 'Resume' : 'Pause'}
                 </button>
               )}
-              <button type="button" disabled={busy} onClick={() => { if (window.confirm('Remove this event? The card disappears. Matches already logged are not touched.')) run(() => removeSpecialEvent(e.id)); }} className={`${btn} text-rose-600`}>
-                Remove event
+              <button type="button" disabled={busy} onClick={() => { if (window.confirm(done ? 'Remove this closed event from the page? The published winner line stays until you remove it below.' : 'Cancel this Special 1v1? The card disappears for players. Matches already logged are not touched and still count in the league.')) run(() => removeSpecialEvent(e.id)); }} className={`${btn} text-rose-600`}>
+                {done ? 'Remove event' : 'Cancel event'}
               </button>
             </div>
           </div>
@@ -862,17 +862,23 @@ const WeeksTab: React.FC<any> = ({ season, gamers, matches, joins, weeks, reward
           </option>
         ))}
       </select>
-      {weekPhase(week, nowMs) === 'scheduled' && (
+      {week.status !== 'issued' && (
         <button
           type="button"
           onClick={async () => {
-            if (!window.confirm('Remove this scheduled week?')) return;
-            await removeWeek(week.id).catch((e: any) => window.alert(e?.message || 'Could not remove.'));
+            const ph = weekPhase(week, nowMs);
+            const issued = credits.some((c: any) => c.weekKey === week.id && c.status !== 'void');
+            const msg =
+              ph === 'scheduled'
+                ? 'Cancel this scheduled weekly reward? The banner will not show.'
+                : `Cancel this weekly reward${ph === 'running' ? ' while it is running' : ''}? The banner and the Wk points disappear. Everyone keeps their league points, because those matches still count in the league.${issued ? ' Credits already issued are not removed: void them below if needed.' : ''}`;
+            if (!window.confirm(msg)) return;
+            await removeWeek(week.id).catch((e: any) => window.alert(e?.message || 'Could not cancel.'));
             setWeekId('');
           }}
           className={`${btn} text-rose-600`}
         >
-          Remove this scheduled week
+          Cancel this weekly reward
         </button>
       )}
       <p className="text-[11px] text-slate-500">
