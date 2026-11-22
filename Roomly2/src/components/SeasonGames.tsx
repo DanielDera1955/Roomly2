@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Trophy, Crown, Loader2, Users, MessageCircle, X, Search, Flag, EyeOff, BookOpen, Check, ChevronDown, ChevronUp, ChevronRight, MoreHorizontal } from 'lucide-react';
+import { Trophy, Crown, Loader2, Users, MessageCircle, X, Search, Flag, EyeOff, BookOpen, Check, ChevronDown, ChevronUp, ChevronRight, MoreHorizontal, UtensilsCrossed } from 'lucide-react';
 import { gameLabel, isScored } from '../hub.js';
 import { weekPhase, lagosWeek, contestOf, matchCounts, winnerOf, proofOf, specialSeries, MAX_PAIR_LEAGUE_WEEK, MAX_PAIR_REWARD_WEEK } from '../boardCore.js';
 import ProofThumb from './ProofThumb';
@@ -656,6 +656,8 @@ export const ChallengeTable: React.FC<{
 /* ------------------------------------------------------------------ */
 
 /** The weekly reward for a game: countdown before it starts, the top 3 while it runs, a short note after it ends */
+const whenText = (ms: number) => `${new Date(ms).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Africa/Lagos' })}, 12:00AM`;
+
 export const WeeklyBanner: React.FC<{
   game: string;
   week: any | null;
@@ -680,12 +682,31 @@ export const WeeklyBanner: React.FC<{
             {phase === 'running' ? `ENDS IN ${countdown(Number(week.endMs) - nowMs).toUpperCase()}` : phase === 'scheduled' ? 'STARTS SOON' : 'ENDED'}
           </span>
         </div>
-        <p className="text-base font-black text-slate-900 dark:text-white leading-tight">
-          Top 3 with {minPts}+ points this week win {credit} food credit
+        <div className="flex items-center gap-3 p-3 rounded-2xl bg-gradient-to-br from-[#0e9f55] to-emerald-700 text-white">
+          <span className="w-12 h-12 rounded-2xl bg-white/15 flex items-center justify-center shrink-0">
+            <UtensilsCrossed className="w-6 h-6" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-2xl font-black leading-none">{credit}</p>
+            <p className="text-[11px] font-bold text-emerald-50 mt-1">FOOD CREDIT for each of the top 3</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950">
+            <p className="text-[10px] font-bold text-slate-500">STARTS</p>
+            <p className="text-xs font-black text-slate-900 dark:text-white">{whenText(Number(week.startMs))}</p>
+          </div>
+          <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950">
+            <p className="text-[10px] font-bold text-slate-500">ENDS</p>
+            <p className="text-xs font-black text-slate-900 dark:text-white">{whenText(Number(week.endMs))}</p>
+          </div>
+        </div>
+        <p className="text-sm font-black text-slate-900 dark:text-white leading-tight">
+          Finish top 3 this week with {minPts}+ points to win it. {me ? `You're in as ${me.name}.` : 'Join the league to take part.'}
         </p>
         {phase === 'scheduled' && (
           <p className="text-xs text-slate-500">
-            Starts {dayText(Number(week.startMs))} at 12:00AM, in {countdown(Number(week.startMs) - nowMs)}. {playersReady} {playersReady === 1 ? 'player is' : 'players are'} ready. Everything you play counts as normal, and from the start your points for the week are counted from zero.
+            Starts in {countdown(Number(week.startMs) - nowMs)}. {playersReady} {playersReady === 1 ? 'player is' : 'players are'} ready. Everything you play counts as normal, and from the start your points for the week are counted from zero.
           </p>
         )}
         {phase === 'closed' && <p className="text-xs text-slate-500">The week is over. Roomly is checking the matches before the credits go out.</p>}
