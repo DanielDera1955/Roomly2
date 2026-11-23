@@ -878,7 +878,7 @@ const GamePage: React.FC<{
           <ChallengesSection game={game} views={challengeViews} me={me} season={season} member={plays && accepted} isOpen={isOpen} nowMs={nowMs} onJoin={onRegister} />
           <SpecialCard game={game} events={specials} bookings={bookings} matches={matches} me={me} season={season} join={join} board={board} hiddenFromMe={hiddenFromMe} isOpen={isOpen} nowMs={nowMs} onJoin={onRegister} />
           {!specials.some((e: any) => e.game === game && e.status !== 'done' && nowMs < Number(e.endMs)) &&
-            !challengeViews.some((v) => v.challenge.game === game && ['upcoming', 'running', 'closed'].includes(v.phase)) && (
+            !challengeViews.some((v) => (v.challenge.game === game || v.challenge.game === 'all') && ['upcoming', 'running', 'closed', 'over'].includes(v.phase)) && (
               <div className={`${card} p-4 space-y-1`}>
                 <p className="text-sm font-black text-slate-900 dark:text-white">No challenges for {gameLabel(game)} right now</p>
                 <p className="text-xs text-slate-500">Roomly sets challenges with big food credit prizes, like winning 3 of 5 different players or beating a strong player. Watch this tab for a green number and the WhatsApp group.</p>

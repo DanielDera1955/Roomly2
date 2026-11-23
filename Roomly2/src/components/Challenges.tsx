@@ -120,15 +120,55 @@ const Bar: React.FC<{ title: string; color: string; count: number; target: numbe
 };
 
 /** One bar for each game when the challenge covers all games (all five, even with no leader yet), otherwise one bar */
-const LeaderBars: React.FC<{ c: Challenge; leaders: Leader[]; myCount: number | null }> = ({ c, leaders, myCount }) => {
+const LeaderBars: React.FC<{ c: Challenge; leaders: Leader[]; myCount: number | null; meId?: string }> = ({ c, leaders, myCount, meId }) => {
+  // Who is shown as the leader: "You" when the player leads or is level with the leader, so they can see they are in
+  const whoOf = (l?: Leader) => {
+    if (!l) return undefined;
+    if (meId && l.gid === meId) return l.tiedNames.length ? `You, tied with ${l.tiedNames.join(', ')}` : 'You lead';
+    if (meId && l.tiedGids.includes(meId)) return `You, tied with ${l.name}`;
+    return l.tiedNames.length ? `${l.name} +${l.tiedNames.length} tied` : l.name;
+  };
   const target = targetOf(c);
   const rows = c.game === 'all' ? (GAMES as any[]).map((g: any) => ({ game: g.id as string, leader: leaders.find((l) => l.game === g.id) })) : [{ game: c.game, leader: leaders[0] }];
   return (
     <div className="space-y-2">
       {myCount !== null && <Bar title="You" color="#0e9f55" count={myCount} target={target} who={c.game === 'all' ? 'Your total, all games' : 'Your progress'} strong />}
       {rows.map((r) => (
-        <Bar key={r.game} title={gameLabel(r.game)} color={GAME_COLORS[r.game] || '#0e9f55'} count={r.leader ? r.leader.count : 0} target={target} who={r.leader?.name} crown={Boolean(r.leader)} />
+        <Bar key={r.game} title={gameLabel(r.game)} color={GAME_COLORS[r.game] || '#0e9f55'} count={r.leader ? r.leader.count : 0} target={target} who={whoOf(r.leader)} crown={Boolean(r.leader)} />
       ))}
+    </div>
+  );
+};
+
+/** The player's own place in the play challenge: that they are in, who they are level with or behind, and what they still need */
+const MyStatus: React.FC<{ view: ChallengeView; me: any; inLeague: boolean; nowMs: number }> = ({ view, me, inLeague, nowMs }) => {
+  const c = view.challenge;
+  if (!['upcoming', 'running', 'closed', 'over'].includes(view.phase)) return null;
+  if (!inLeague) {
+    return <p className="text-[12px] font-bold text-slate-600 dark:text-slate-300 px-1">Join a game with the green button below to enter. Everyone in the league is in automatically.</p>;
+  }
+  const target = targetOf(c);
+  const mine = view.entries.find((e) => e.app.gid === me.id) || null;
+  const mc = mine ? mine.progress.wins : 0;
+  const left = Math.max(0, target - mc);
+  const live = view.entries.filter((e) => e.app.review !== 'rejected');
+  const topN = live.reduce((m, e) => Math.max(m, e.progress.wins), 0);
+  const ahead = live.filter((e) => e.progress.wins === topN && e.app.gid !== me.id).map((e) => e.app.name);
+  let text: string;
+  if (view.phase === 'upcoming') text = `You are in. Counting starts ${dayName(c.startMs)}. Play ${target} different Caritas students to win ${naira(c.prize)}.`;
+  else if (mine && mc >= target) text = stateText(c, mine.progress.state);
+  else if (topN === 0) text = `You are in. Play ${target} different Caritas students to win ${naira(c.prize)}.`;
+  else if (mc >= topN) text = ahead.length ? `You are tied for the lead with ${ahead.join(', ')} on ${mc}/${target}. ${left} more different players to win.` : `You are leading on ${mc}/${target}. ${left} more different players to win.`;
+  else text = `${ahead[0]}${ahead.length > 1 ? ` and ${ahead.length - 1} more are` : ' is'} ahead on ${topN}/${target}. You have ${mc}. You need ${left} more different players to win ${naira(c.prize)}.`;
+  return (
+    <div className="flex items-start gap-3 rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/40 p-3">
+      <span className="w-10 h-10 shrink-0 rounded-full bg-[#0e9f55] text-white text-base font-black flex items-center justify-center">{String(me.name || '?').trim().charAt(0).toUpperCase()}</span>
+      <div className="min-w-0">
+        <p className="text-[13px] font-black text-slate-900 dark:text-white">
+          {me.name} <span className="text-[#0e9f55]">is in this challenge</span>
+        </p>
+        <p className="text-[11px] text-slate-600 dark:text-slate-300">{text}</p>
+      </div>
     </div>
   );
 };
@@ -225,13 +265,9 @@ const ChallengeCard: React.FC<{
         </div>
       </div>
 
-      {showBars && <LeaderBars c={c} leaders={view.leaders} myCount={myCount} />}
+      {isPlay && showBars && <MyStatus view={view} me={me} inLeague={inLeague} nowMs={nowMs} />}
 
-      {isPlay && !inLeague && ['upcoming', 'running'].includes(view.phase) && (
-        <button type="button" onClick={onJoin} className="w-full h-11 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer">
-          Join the league to enter
-        </button>
-      )}
+      {showBars && <LeaderBars c={c} leaders={view.leaders} myCount={myCount} meId={me?.id} />}
 
       {view.phase === 'ended' && c.winner && (
         <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900">

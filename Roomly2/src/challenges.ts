@@ -235,7 +235,7 @@ export function progressFor(c: Challenge, app: any, matches: any[], gamers: any[
 }
 
 /** The player furthest along: one per game for an all-games challenge, otherwise one for the challenge */
-export type Leader = { game: string; gid: string; name: string; count: number; target: number };
+export type Leader = { game: string; gid: string; name: string; count: number; target: number; tiedGids: string[]; tiedNames: string[] };
 
 export type ChallengeView = {
   challenge: Challenge;
@@ -283,17 +283,21 @@ export function viewChallenge(c: Challenge, apps: any[], matches: any[], gamers:
         bestN = n;
       }
     });
-    return best;
+    if (!best) return null;
+    // Anyone level with the leader on both counts is tied with them
+    const ties = live.filter((e) => e !== best && (g === '*' ? e.progress.wins : e.progress.rows.filter((r: any) => r.game === g).length) === bestN && e.progress.wins === best.progress.wins);
+    return { best, ties };
   };
+  const mk = (game: string, p: { best: any; ties: any[] }): Leader => ({ game, gid: p.best.app.gid, name: p.best.app.name, count: p.best.progress.wins, target, tiedGids: p.ties.map((e) => e.app.gid), tiedNames: p.ties.map((e) => e.app.name) });
   const leaders: Leader[] = [];
   if (c.game === 'all') {
     (GAMES as any[]).forEach((g: any) => {
       const b = pick(g.id);
-      if (b) leaders.push({ game: g.id, gid: b.app.gid, name: b.app.name, count: b.progress.wins, target });
+      if (b) leaders.push(mk(g.id, b));
     });
   } else {
     const b = pick('*');
-    if (b) leaders.push({ game: c.game, gid: b.app.gid, name: b.app.name, count: b.progress.wins, target });
+    if (b) leaders.push(mk(c.game, b));
   }
   let phase: ChallengeView['phase'] = 'running';
   if (c.status === 'cancelled') phase = 'cancelled';
