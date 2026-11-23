@@ -1,10 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { Loader2, Trophy, Clock, Users } from 'lucide-react';
+import { Loader2, Trophy, Clock, Users, ChevronDown } from 'lucide-react';
 import { gameLabel } from '../hub.js';
 import { type Season } from '../season';
 import {
   type ChallengeView,
+  type Challenge,
   settingsLine,
+  targetOf,
   canApply,
   activeEntryFor,
   pickableDays,
@@ -75,6 +77,13 @@ const STATE_TEXT: Record<string, string> = {
   out: 'You can no longer reach the target in this challenge.',
   over: 'Your time ran out before you reached the target.',
 };
+const PLAY_STATE_TEXT: Record<string, string> = {
+  ...STATE_TEXT,
+  playing: 'In progress. Play different Caritas players and log every match, win or lose.',
+  waiting: 'You met the number of players. Waiting for your opponents to confirm.',
+  finished: 'You met the number of players. Roomly is checking your matches.',
+};
+const stateText = (c: Challenge, state: string) => (c.template === 'play' ? PLAY_STATE_TEXT : STATE_TEXT)[state] || '';
 
 const ChallengeCard: React.FC<{
   view: ChallengeView;
@@ -83,14 +92,16 @@ const ChallengeCard: React.FC<{
   member: boolean;
   isOpen: boolean;
   nowMs: number;
+  tabGame: string;
   onJoin: () => void;
-}> = ({ view, all, me, member, isOpen, nowMs, onJoin }) => {
+}> = ({ view, all, me, member, isOpen, nowMs, tabGame, onJoin }) => {
   const c = view.challenge;
   const mine = me ? view.entries.find((e) => e.app.gid === me.id) || null : null;
   const [picking, setPicking] = useState(false);
   const [day, setDay] = useState<number>(0);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [openCard, setOpenCard] = useState(false); // the details stay closed until the player opens them
   const days = useMemo(() => pickableDays(c, nowMs), [c.id, c.startMs, c.endMs, Math.floor(nowMs / 3600000)]);
   const label = PHASE_LABEL[view.phase] || PHASE_LABEL.running;
   const others = view.entries.filter((e) => !me || e.app.gid !== me.id);
@@ -131,6 +142,8 @@ const ChallengeCard: React.FC<{
   const clash = me ? activeEntryFor(all, me.id, c.game) : null;
   const blocked = clash && clash.challenge.id !== c.id ? clash.challenge.title : '';
 
+  const showBars = !['ended', 'cancelled'].includes(view.phase);
+
   return (
     <div className={`${card} p-4 space-y-3`}>
       <div className="flex items-start justify-between gap-2">
@@ -143,24 +156,34 @@ const ChallengeCard: React.FC<{
         <span className={`shrink-0 px-2 py-1 rounded-lg text-[10px] font-black ${label.cls}`}>{label.text}</span>
       </div>
 
-      <div className="text-xs text-slate-600 dark:text-slate-300">
-        <RichText text={c.desc} />
+      <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-950 text-center">
+        <p className="text-[10px] text-slate-500">Prize</p>
+        <p className="text-sm font-black text-[#0e9f55]">{naira(c.prize)}</p>
       </div>
-      <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{settingsLine(c)}</p>
-      <div className="grid grid-cols-2 gap-2 text-center">
-        <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-950">
-          <p className="text-[10px] text-slate-500">Prize</p>
-          <p className="text-sm font-black text-[#0e9f55]">{naira(c.prize)}</p>
-        </div>
-        <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-950">
-          <p className="text-[10px] text-slate-500">{spotsLeft === null ? 'Players in' : 'Spots left'}</p>
-          <p className="text-sm font-black text-slate-900 dark:text-white">{spotsLeft === null ? view.entries.length : spotsLeft}</p>
-        </div>
-      </div>
-      <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
-        <Clock className="w-3.5 h-3.5 shrink-0" />
-        {c.dayMode === 'fixed' && c.fixedDayMs ? `Everyone plays on ${dayName(lagosDayStart(c.fixedDayMs))}` : `${whenFull(c.startMs)} to ${whenFull(c.endMs)}`}
-      </p>
+
+      {showBars &&
+        (view.leaders.length > 0 ? (
+          <div className="space-y-2">
+            {view.leaders.map((l) => (
+              <div key={l.game} className="space-y-1">
+                <div className="flex items-center justify-between gap-2 text-[11px]">
+                  <span className="font-bold text-slate-700 dark:text-slate-200 truncate">
+                    {c.game === 'all' ? `${gameLabel(l.game)}: ` : 'Leading: '}
+                    {l.name}
+                  </span>
+                  <span className="font-black text-slate-500 shrink-0">
+                    {l.count}/{l.target}
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                  <div className="h-full rounded-full bg-[#0e9f55] transition-all" style={{ width: `${Math.min(100, Math.round((l.count / Math.max(1, l.target)) * 100))}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[11px] text-slate-500">Nobody has a counted match yet.</p>
+        ))}
 
       {view.phase === 'ended' && c.winner && (
         <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900">
@@ -169,98 +192,123 @@ const ChallengeCard: React.FC<{
         </div>
       )}
 
-      {mine && (
-        <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 space-y-2">
-          <p className="text-xs font-black text-slate-900 dark:text-white">My application</p>
-          <p className="text-[11px] text-slate-600 dark:text-slate-300">
-            {c.dayMode === 'pick' && mine.app.dayMs ? `Your day: ${dayName(mine.app.dayMs)}. ` : ''}
-            {mine.app.review === 'rejected' ? 'Roomly could not approve this attempt.' : mine.app.review === 'approved' ? 'Approved. Roomly issues the credit.' : STATE_TEXT[mine.progress.state]}
-          </p>
-          {mine.progress.rows.length > 0 && (
-            <ul className="space-y-1">
-              {mine.progress.rows.map((r, i) => (
-                <li key={r.id} className="flex items-center justify-between text-[11px] text-slate-700 dark:text-slate-200">
-                  <span>
-                    Match {i + 1}: {r.oppName}
-                  </span>
-                  <span className="font-bold">
-                    {r.result} {r.score}
-                    {r.recorded ? '' : ' (waiting)'}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <p className="text-[11px] font-bold text-slate-500">
-            {mine.progress.wins} of {c.winsReq} wins
-          </p>
-          <div className="flex gap-2">
-            {canReschedule && (
-              <button type="button" onClick={() => setPicking((x) => !x)} className="px-3 h-8 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] font-bold cursor-pointer">
-                Change my day (once)
-              </button>
-            )}
-            {!started && (
-              <button type="button" onClick={withdraw} className="px-3 h-8 rounded-lg text-[11px] font-bold text-rose-600 cursor-pointer">
-                Withdraw
-              </button>
-            )}
+      <button
+        type="button"
+        onClick={() => setOpenCard((x) => !x)}
+        aria-expanded={openCard}
+        className="w-full h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+      >
+        {openCard ? 'Hide details' : 'Read details'}
+        <ChevronDown className={`w-4 h-4 transition-transform ${openCard ? 'rotate-180' : ''}`} />
+      </button>
+
+      {openCard && (
+        <div className="space-y-3">
+          <div className="text-xs text-slate-600 dark:text-slate-300">
+            <RichText text={c.desc} />
           </div>
-          {picking && canReschedule && (
-            <div className="space-y-2">
-              <div className="flex flex-wrap gap-1.5">
-                {days.map((d) => (
-                  <button key={d} type="button" onClick={() => setDay(d)} className={`px-2.5 h-8 rounded-lg text-[11px] font-bold cursor-pointer ${day === d ? 'bg-[#0e9f55] text-white' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700'}`}>
-                    {dayName(d)}
+          <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{settingsLine(c)}</p>
+          {spotsLeft !== null && <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Spots left: {spotsLeft}</p>}
+          <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5 shrink-0" />
+            {c.dayMode === 'fixed' && c.fixedDayMs ? `Everyone plays on ${dayName(lagosDayStart(c.fixedDayMs))}` : `${whenFull(c.startMs)} to ${whenFull(c.endMs)}`}
+          </p>
+
+          {mine && (
+            <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 space-y-2">
+              <p className="text-xs font-black text-slate-900 dark:text-white">My application</p>
+              <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                {c.dayMode === 'pick' && mine.app.dayMs ? `Your day: ${dayName(mine.app.dayMs)}. ` : ''}
+                {mine.app.review === 'rejected' ? 'Roomly could not approve this attempt.' : mine.app.review === 'approved' ? 'Approved. Roomly issues the credit.' : stateText(c, mine.progress.state)}
+              </p>
+              {mine.progress.rows.length > 0 && (
+                <ul className="space-y-1">
+                  {mine.progress.rows.map((r, i) => (
+                    <li key={r.id} className="flex items-center justify-between text-[11px] text-slate-700 dark:text-slate-200">
+                      <span>
+                        Match {i + 1}: {r.oppName}
+                        {c.game === 'all' ? ` (${gameLabel(r.game)})` : ''}
+                      </span>
+                      <span className="font-bold">
+                        {r.result} {r.score}
+                        {r.recorded ? '' : ' (waiting)'}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="text-[11px] font-bold text-slate-500">
+                {mine.progress.wins} of {targetOf(c)} {c.template === 'play' ? 'different players' : 'wins'}
+              </p>
+              <div className="flex gap-2">
+                {canReschedule && (
+                  <button type="button" onClick={() => setPicking((x) => !x)} className="px-3 h-8 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] font-bold cursor-pointer">
+                    Change my day (once)
                   </button>
-                ))}
+                )}
+                {!started && (
+                  <button type="button" onClick={withdraw} className="px-3 h-8 rounded-lg text-[11px] font-bold text-rose-600 cursor-pointer">
+                    Withdraw
+                  </button>
+                )}
               </div>
-              <button type="button" disabled={!day || busy} onClick={reschedule} className="w-full h-9 rounded-xl bg-[#0e9f55] text-white text-xs font-bold disabled:opacity-60 cursor-pointer">
-                Save the new day
+              {picking && canReschedule && (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    {days.map((d) => (
+                      <button key={d} type="button" onClick={() => setDay(d)} className={`px-2.5 h-8 rounded-lg text-[11px] font-bold cursor-pointer ${day === d ? 'bg-[#0e9f55] text-white' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700'}`}>
+                        {dayName(d)}
+                      </button>
+                    ))}
+                  </div>
+                  <button type="button" disabled={!day || busy} onClick={reschedule} className="w-full h-9 rounded-xl bg-[#0e9f55] text-white text-xs font-bold disabled:opacity-60 cursor-pointer">
+                    Save the new day
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!mine && canApply(view, nowMs) && (
+            <div className="space-y-2">
+              {blocked && <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">You are already in "{blocked}". Finish it before joining another challenge.</p>}
+              {picking && c.dayMode === 'pick' && (
+                <div className="space-y-2">
+                  <p className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Pick your day. Your count starts that day.</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {days.map((d) => (
+                      <button key={d} type="button" onClick={() => setDay(d)} className={`px-2.5 h-8 rounded-lg text-[11px] font-bold cursor-pointer ${day === d ? 'bg-[#0e9f55] text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200'}`}>
+                        {dayName(d)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <button
+                type="button"
+                disabled={busy || Boolean(blocked) || (picking && c.dayMode === 'pick' && !day)}
+                onClick={() => {
+                  if (!me || !member) return onJoin();
+                  if (c.dayMode === 'pick' && !picking) return setPicking(true);
+                  apply();
+                }}
+                className="w-full h-11 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
+              >
+                {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+                {!me || !member ? `Join ${gameLabel(tabGame)} to apply` : !isOpen ? 'Applications open when the league starts' : c.dayMode === 'pick' && !picking ? 'Apply and pick my day' : 'Confirm my application'}
               </button>
             </div>
           )}
-        </div>
-      )}
+          {!mine && !canApply(view, nowMs) && ['running', 'upcoming'].includes(view.phase) && <p className="text-[11px] font-semibold text-slate-500">No spots left.</p>}
+          {err && <p className="text-xs font-semibold text-rose-600">{err}</p>}
 
-      {!mine && canApply(view, nowMs) && (
-        <div className="space-y-2">
-          {blocked && <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">You are already in "{blocked}". Finish it before joining another {gameLabel(c.game)} challenge.</p>}
-          {picking && c.dayMode === 'pick' && (
-            <div className="space-y-2">
-              <p className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Pick your day. Your count starts that day.</p>
-              <div className="flex flex-wrap gap-1.5">
-                {days.map((d) => (
-                  <button key={d} type="button" onClick={() => setDay(d)} className={`px-2.5 h-8 rounded-lg text-[11px] font-bold cursor-pointer ${day === d ? 'bg-[#0e9f55] text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200'}`}>
-                    {dayName(d)}
-                  </button>
-                ))}
-              </div>
-            </div>
+          {others.length > 0 && (
+            <p className="text-[11px] text-slate-500 flex items-start gap-1.5">
+              <Users className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>Trying: {others.map((e) => e.app.name).join(', ')}</span>
+            </p>
           )}
-          <button
-            type="button"
-            disabled={busy || Boolean(blocked) || (picking && c.dayMode === 'pick' && !day)}
-            onClick={() => {
-              if (!me || !member) return onJoin();
-              if (c.dayMode === 'pick' && !picking) return setPicking(true);
-              apply();
-            }}
-            className="w-full h-11 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
-          >
-            {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-            {!me || !member ? `Join ${gameLabel(c.game)} to apply` : !isOpen ? 'Applications open when the league starts' : c.dayMode === 'pick' && !picking ? 'Apply and pick my day' : 'Confirm my application'}
-          </button>
         </div>
-      )}
-      {!mine && !canApply(view, nowMs) && ['running', 'upcoming'].includes(view.phase) && <p className="text-[11px] font-semibold text-slate-500">No spots left.</p>}
-      {err && <p className="text-xs font-semibold text-rose-600">{err}</p>}
-
-      {others.length > 0 && (
-        <p className="text-[11px] text-slate-500 flex items-start gap-1.5">
-          <Users className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          <span>Trying: {others.map((e) => e.app.name).join(', ')}</span>
-        </p>
       )}
     </div>
   );
@@ -278,7 +326,7 @@ export const ChallengesSection: React.FC<{
   onJoin: () => void;
 }> = ({ game, views, me, member, isOpen, nowMs, onJoin }) => {
   const mineViews = views
-    .filter((v) => v.challenge.game === game && v.phase !== 'cancelled' && !(v.phase === 'ended' && nowMs - Number(v.challenge.winner?.atMs || 0) > 14 * 86400000) && !(v.phase === 'over' && nowMs - Number(v.challenge.endMs) > 7 * 86400000))
+    .filter((v) => (v.challenge.game === game || v.challenge.game === 'all') && v.phase !== 'cancelled' && !(v.phase === 'ended' && nowMs - Number(v.challenge.winner?.atMs || 0) > 14 * 86400000) && !(v.phase === 'over' && nowMs - Number(v.challenge.endMs) > 7 * 86400000))
     .sort((a, b) => {
       const rank = (v: ChallengeView) => (['running', 'upcoming'].includes(v.phase) ? 0 : v.phase === 'closed' ? 1 : 2);
       return rank(a) - rank(b) || Number(b.challenge.startMs) - Number(a.challenge.startMs);
@@ -287,7 +335,7 @@ export const ChallengesSection: React.FC<{
   return (
     <div className="space-y-3">
       {mineViews.map((v) => (
-        <ChallengeCard key={v.challenge.id} view={v} all={views} me={me} member={member} isOpen={isOpen} nowMs={nowMs} onJoin={onJoin} />
+        <ChallengeCard key={v.challenge.id} view={v} all={views} me={me} member={member} isOpen={isOpen} nowMs={nowMs} tabGame={game} onJoin={onJoin} />
       ))}
     </div>
   );

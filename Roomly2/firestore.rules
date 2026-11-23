@@ -755,7 +755,8 @@ service cloud.firestore {
         && cdoc().status == 'on'
         && request.time.toMillis() < cdoc().endMs
         && request.resource.data.game == cdoc().game
-        && request.resource.data.game in get(/databases/$(database)/documents/gamers/$(request.resource.data.gid)).data.games
+        && ((cdoc().game == 'all' && get(/databases/$(database)/documents/gamers/$(request.resource.data.gid)).data.games.size() > 0)
+            || request.resource.data.game in get(/databases/$(database)/documents/gamers/$(request.resource.data.gid)).data.games)
         && request.resource.data.get('review', '') == ''
         && request.resource.data.get('rescheduled', false) == false
         && request.resource.data.get('voided', []).size() == 0

@@ -4,7 +4,10 @@ import { matchCounts, proofOf, winnerOf, contestOf } from '../boardCore.js';
 import {
   type Challenge,
   type ChallengeView,
+  type TemplateKey,
   TEMPLATES,
+  targetOf,
+  challengeGameLabel,
   numbersSig,
   autoDescription,
   settingsLine,
@@ -73,15 +76,21 @@ export const AdminChallenges: React.FC<{ season: any; gamers: any[]; matches: an
   const editing = form?.id ? list.find((c) => c.id === form.id) : null;
   const locked = Boolean(editing && apps.some((a) => a.challengeId === editing.id));
 
+  const isPlay = form?.template === 'play';
+  // Play template: Caritas players only, registered at any time. Other templates: registered before the start.
   const players = form?.game
-    ? gamers.filter((g) => playsGame(g, form.game as string) && (!g.createdAtMs || Number(g.createdAtMs) <= Number(form.startMs || now))).length
+    ? gamers.filter(
+        (g) =>
+          (form.game === 'all' ? (g.games || []).length > 0 : playsGame(g, form.game as string)) &&
+          (isPlay ? (g.school || 'caritas') === 'caritas' : !g.createdAtMs || Number(g.createdAtMs) <= Number(form.startMs || now))
+      ).length
     : 0;
   const needPlayers = (Number(form?.nOpp) || 0) + 1;
-  const tooFew = Boolean(form?.diffOpp && players < needPlayers);
+  const tooFew = Boolean((form?.diffOpp || isPlay) && players < needPlayers);
   const sigNow = form ? numbersSig(form) : '';
   const descStale = Boolean(form && form.desc && form.descSig && form.descSig !== sigNow && !descTouched);
 
-  const applyTemplate = (t: 'first' | 'xofn') => set({ ...TEMPLATES[t].defaults, template: t });
+  const applyTemplate = (t: TemplateKey) => set({ ...TEMPLATES[t].defaults, template: t });
   const wrap = (before: string, after = before) => {
     const el = document.getElementById('ch-desc') as HTMLTextAreaElement | null;
     if (!el || !form) return;
@@ -132,7 +141,7 @@ export const AdminChallenges: React.FC<{ season: any; gamers: any[]; matches: an
           <p className="text-xs font-black uppercase tracking-wider text-slate-500">{form.id ? 'Edit challenge' : 'New challenge'}</p>
           {!form.id && (
             <div className="flex flex-wrap gap-1.5">
-              {(Object.keys(TEMPLATES) as ('first' | 'xofn')[]).map((t) => (
+              {(Object.keys(TEMPLATES) as TemplateKey[]).map((t) => (
                 <button key={t} type="button" onClick={() => applyTemplate(t)} className={`${btn} ${form.template === t ? 'bg-[#0e9f55] text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>
                   {TEMPLATES[t].label}
                 </button>
@@ -147,6 +156,7 @@ export const AdminChallenges: React.FC<{ season: any; gamers: any[]; matches: an
             <div>
               <label className={lab}>Game</label>
               <select className={input} value={form.game} disabled={locked} onChange={(e) => set({ game: e.target.value })}>
+                <option value="all">All games</option>
                 {GAMES.map((g: { id: string; label: string }) => (
                   <option key={g.id} value={g.id}>
                     {g.label}
@@ -159,17 +169,21 @@ export const AdminChallenges: React.FC<{ season: any; gamers: any[]; matches: an
               <input className={input} inputMode="numeric" value={form.prize ?? ''} onChange={(e) => set({ prize: Number(e.target.value.replace(/\D/g, '')) })} />
             </div>
             <div>
-              <label className={lab}>Opponents to play (N)</label>
+              <label className={lab}>{isPlay ? 'Different players to play (N)' : 'Opponents to play (N)'}</label>
               <input className={input} inputMode="numeric" disabled={locked} value={form.nOpp ?? ''} onChange={(e) => set({ nOpp: Number(e.target.value.replace(/\D/g, '')) })} />
             </div>
-            <div>
-              <label className={lab}>Wins required</label>
-              <input className={input} inputMode="numeric" disabled={locked} value={form.winsReq ?? ''} onChange={(e) => set({ winsReq: Number(e.target.value.replace(/\D/g, '')) })} />
-            </div>
-            <div>
-              <label className={lab}>Matches that count (0 = all)</label>
-              <input className={input} inputMode="numeric" disabled={locked} value={form.matchesCounted ?? ''} onChange={(e) => set({ matchesCounted: Number(e.target.value.replace(/\D/g, '')) })} />
-            </div>
+            {!isPlay && (
+              <div>
+                <label className={lab}>Wins required</label>
+                <input className={input} inputMode="numeric" disabled={locked} value={form.winsReq ?? ''} onChange={(e) => set({ winsReq: Number(e.target.value.replace(/\D/g, '')) })} />
+              </div>
+            )}
+            {!isPlay && (
+              <div>
+                <label className={lab}>Matches that count (0 = all)</label>
+                <input className={input} inputMode="numeric" disabled={locked} value={form.matchesCounted ?? ''} onChange={(e) => set({ matchesCounted: Number(e.target.value.replace(/\D/g, '')) })} />
+              </div>
+            )}
             <div>
               <label className={lab}>Winners</label>
               <input className={input} inputMode="numeric" value={form.winners ?? ''} onChange={(e) => set({ winners: Number(e.target.value.replace(/\D/g, '')) })} />
@@ -201,15 +215,20 @@ export const AdminChallenges: React.FC<{ season: any; gamers: any[]; matches: an
               <input type="date" className={input} value={form.fixedDayMs ? toInput(Number(form.fixedDayMs)).slice(0, 10) : ''} onChange={(e) => set({ fixedDayMs: e.target.value ? new Date(`${e.target.value}T12:00`).getTime() : 0 })} />
             </div>
           )}
-          <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer">
-            <input type="checkbox" disabled={locked} checked={Boolean(form.diffOpp)} onChange={(e) => set({ diffOpp: e.target.checked })} className="h-4 w-4 accent-[#0e9f55]" />
-            Different opponents required (a repeat opponent does not count)
-          </label>
+          {!isPlay && (
+            <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer">
+              <input type="checkbox" disabled={locked} checked={Boolean(form.diffOpp)} onChange={(e) => set({ diffOpp: e.target.checked })} className="h-4 w-4 accent-[#0e9f55]" />
+              Different opponents required (a repeat opponent does not count)
+            </label>
+          )}
+          {isPlay && <p className="text-[11px] text-slate-500 dark:text-slate-400">Every match counts, win or lose, once per opponent. Only Caritas players count. Opponents may register at any time, and late ones are flagged in the review list.</p>}
+          {form.game === 'all' && <p className="text-[11px] text-slate-500 dark:text-slate-400">All games: this challenge shows in every game, matches in any game count, and each opponent counts once overall.</p>}
           {locked && <p className="text-[11px] text-amber-700 dark:text-amber-300">Players have applied, so game, opponents, wins, matches counted and different opponents are locked. You can still change the title, description, prize, winners, spots and times.</p>}
-          {Number(form.winsReq) > Number(form.nOpp) && <p className="text-[11px] font-semibold text-rose-600">Wins required is more than the opponents to play.</p>}
+          {!isPlay && Number(form.winsReq) > Number(form.nOpp) && <p className="text-[11px] font-semibold text-rose-600">Wins required is more than the opponents to play.</p>}
           {tooFew && (
             <p className="text-[11px] font-semibold text-rose-600">
-              {gameLabel(form.game as string)} has {players} registered player{players === 1 ? '' : 's'} from before the start. This challenge needs at least {needPlayers} so a player can meet {form.nOpp} different opponents.
+              {form.game === 'all' ? 'All games' : gameLabel(form.game as string)} has {players} registered {isPlay ? 'Caritas ' : ''}player{players === 1 ? '' : 's'}
+              {isPlay ? '' : ' from before the start'}. This challenge needs at least {needPlayers} so a player can meet {form.nOpp} different opponents.
             </p>
           )}
           <div>
@@ -303,7 +322,7 @@ const ChallengeAdminCard: React.FC<{
     const others = matches
       .filter(
         (m) =>
-          m.game === c.game &&
+          (c.game === 'all' || m.game === c.game) &&
           matchCounts(m) &&
           contestOf(m) === 'league' &&
           (m.aUid === e.app.gid || m.bUid === e.app.gid) &&
@@ -320,13 +339,18 @@ const ChallengeAdminCard: React.FC<{
             {e.app.name} <span className="text-[11px] font-semibold text-slate-500">{role}</span>
           </p>
           <span className="text-[11px] font-bold text-slate-500">
-            {e.progress.wins}/{c.winsReq} wins{e.progress.finishAtMs ? `, finished ${when(e.progress.finishAtMs)}` : ''}
+            {e.progress.wins}/{targetOf(c)} {c.template === 'play' ? 'players' : 'wins'}{e.progress.finishAtMs ? `, finished ${when(e.progress.finishAtMs)}` : ''}
           </span>
         </div>
         <p className="text-[11px] text-slate-500">
           Window {when(e.progress.from)} to {when(e.progress.to)}
-          {e.progress.skipped ? `. ${e.progress.skipped} match${e.progress.skipped === 1 ? '' : 'es'} did not count (repeat opponent, over the limit, or opponent registered after the start).` : ''}
+          {e.progress.skipped ? `. ${e.progress.skipped} match${e.progress.skipped === 1 ? '' : 'es'} did not count (${c.template === 'play' ? 'repeat opponent, not a Caritas player, or over the limit' : 'repeat opponent, over the limit, or opponent registered after the start'}).` : ''}
         </p>
+        {c.template === 'play' && e.progress.late > 0 && (
+          <p className="text-[11px] font-black text-amber-700 dark:text-amber-300">
+            Check: {e.progress.late} counted opponent{e.progress.late === 1 ? '' : 's'} registered after the challenge started.
+          </p>
+        )}
         {e.progress.rows.map((r: any, i: number) => {
           const m = matchById.get(r.id);
           const reg = regAt.get(r.oppId) || 0;
@@ -337,7 +361,7 @@ const ChallengeAdminCard: React.FC<{
                 {i + 1}. {r.result} {r.score} vs {r.oppName}
               </span>
               <span className={r.recorded ? 'text-emerald-600' : 'text-amber-600'}>{r.status === 'confirmed' ? 'confirmed' : r.recorded ? 'auto-confirmed' : 'waiting'}</span>
-              <span className={before ? 'text-slate-500' : 'text-rose-600'}>{before ? 'registered in time' : 'registered late'}</span>
+              <span className={before ? 'text-slate-500' : c.template === 'play' ? 'px-1.5 rounded bg-amber-100 text-amber-800 font-black' : 'text-rose-600'}>{before ? 'registered in time' : c.template === 'play' ? 'LATE REGISTERED' : 'registered late'}</span>
               {m && proofOf(m) && (
                 <a href={proofOf(m)} target="_blank" rel="noreferrer" className="text-[#0e9f55] font-bold underline">
                   screenshot
@@ -420,7 +444,7 @@ const ChallengeAdminCard: React.FC<{
         <div className="min-w-0">
           <p className="text-sm font-black text-slate-900 dark:text-white">{c.title}</p>
           <p className="text-[11px] text-slate-500">
-            {gameLabel(c.game)} · {phase} · {v.entries.length} applied
+            {challengeGameLabel(c.game)} · {phase} · {v.entries.length} applied
           </p>
           <p className="text-[11px] text-slate-500">{settingsLine(c)}</p>
           <p className="text-[11px] text-slate-500">

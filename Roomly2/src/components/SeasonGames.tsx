@@ -995,7 +995,7 @@ export const SpecialCard: React.FC<{
 
 /** The latest winner of a game's Special 1v1, challenge and weekly reward */
 export const WinnerCard: React.FC<{ game: string; winners: any[]; nowMs: number }> = ({ game, winners, nowMs }) => {
-  const mine = winners.filter((w) => w.game === game && nowMs - Number(w.atMs || 0) < 30 * 86400000);
+  const mine = winners.filter((w) => (w.game === game || w.game === 'all') && nowMs - Number(w.atMs || 0) < 30 * 86400000);
   const special = mine.find((w) => w.kind === 'special');
   const challenge = mine.find((w) => w.kind === 'challenge');
   const weeklyAll = mine.filter((w) => w.kind === 'weekly');

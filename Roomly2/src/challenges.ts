@@ -4,7 +4,7 @@
  * Credits are issued by hand by Roomly after a review. Nothing here pays anyone automatically.
  */
 import { collection, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, arrayUnion } from 'firebase/firestore';
-import { hubDb, hubUid, gameLabel } from './hub.js';
+import { hubDb, hubUid, gameLabel, GAMES } from './hub.js';
 import { db } from './firebase.ts';
 import { matchCounts, matchRecorded, winnerOf, contestOf, AUTO_CONFIRM_HOURS, CREDIT_HOURS } from './boardCore.js';
 import { normalizePhone, phoneKey } from './api.js';
@@ -16,13 +16,16 @@ const LAGOS = HOUR;
 /** Midnight (Lagos) at the start of the day that contains ms */
 export const lagosDayStart = (ms: number) => Math.floor((Number(ms) + LAGOS) / DAY) * DAY - LAGOS;
 
+/** The challenge templates. 'play' = play N different Caritas players, any result. */
+export type TemplateKey = 'first' | 'xofn' | 'play';
+
 export type Challenge = {
   id: string;
   title: string;
   desc: string;
   descSig?: string;
-  game: string;
-  template: 'first' | 'xofn';
+  game: string; // a game id, or 'all' = matches in any game count and the challenge shows in every game
+  template: TemplateKey;
   nOpp: number;
   winsReq: number;
   diffOpp: boolean;
@@ -40,7 +43,7 @@ export type Challenge = {
   winner?: any;
 };
 
-export const TEMPLATES: Record<'first' | 'xofn', { label: string; blurb: string; defaults: Partial<Challenge> }> = {
+export const TEMPLATES: Record<TemplateKey, { label: string; blurb: string; defaults: Partial<Challenge> }> = {
   first: {
     label: 'Win N different players, first to finish',
     blurb: 'Win a set number of different players inside the window. The first player to finish wins.',
@@ -51,31 +54,47 @@ export const TEMPLATES: Record<'first' | 'xofn', { label: string; blurb: string;
     blurb: 'Play N different players on your day and win X of them. The first player to finish wins.',
     defaults: { template: 'xofn', nOpp: 5, winsReq: 3, diffOpp: true, prize: 5000, winners: 1, matchesCounted: 5, spots: 0, dayMode: 'pick' },
   },
+  play: {
+    label: 'Play N different players, any result',
+    blurb: 'Play a set number of different Caritas players. Wins and losses both count. The first player to finish wins.',
+    defaults: { template: 'play', nOpp: 20, winsReq: 20, diffOpp: true, prize: 20000, winners: 1, matchesCounted: 0, spots: 0, dayMode: 'window' },
+  },
 };
+
+/** 'All games' for a challenge that counts every game, otherwise the game's name */
+export const challengeGameLabel = (game?: string) => (game === 'all' ? 'All games' : game ? gameLabel(game) : '');
+/** How many wins (or, for the play template, different players) a player needs */
+export const targetOf = (c: Partial<Challenge>) => (c.template === 'play' ? Number(c.nOpp) || 1 : Number(c.winsReq) || 1);
 
 const naira = (n: number) => `₦${Math.round(Number(n) || 0).toLocaleString()}`;
 
 /** The numbers that the rules depend on. A description written for other numbers is flagged. */
 export const numbersSig = (c: Partial<Challenge>) =>
-  [c.nOpp, c.winsReq, c.diffOpp ? 1 : 0, c.prize, c.winners, c.matchesCounted, c.dayMode].join('|');
+  [c.nOpp, c.winsReq, c.diffOpp ? 1 : 0, c.prize, c.winners, c.matchesCounted, c.dayMode].join('|') + (c.template === 'play' ? `|play|${c.game}` : '');
 
 /** The words players read, built from the settings (the admin can rewrite them) */
 export function autoDescription(c: Partial<Challenge>): string {
   const n = Number(c.nOpp) || 0;
   const w = Number(c.winsReq) || 0;
-  const label = c.game ? gameLabel(c.game) : 'the game';
+  const label = c.game === 'all' ? 'any game' : c.game ? gameLabel(c.game) : 'the game';
   const who = c.diffOpp ? 'different players' : 'players';
   const head = n === w ? `Win ${w} ${who} in ${label}` : `Win ${w} of ${n} ${who} in ${label}`;
   const prize = `${naira(Number(c.prize))} Roomly credit`;
   const winners = Number(c.winners) || 1;
   const first = winners === 1 ? 'The first player to finish wins it, and the challenge ends.' : `The first ${winners} players to finish win it.`;
   const day = c.dayMode === 'pick' ? 'Apply, then pick your day. Your count starts on that day.' : c.dayMode === 'fixed' ? 'Everyone plays on the same day.' : 'Apply, then play any time inside the window.';
+  if (c.template === 'play') {
+    return `Play ${n} different Caritas players in ${label} and win ${prize}.\nWin or lose, every match counts once per opponent.\n${first}\n${day}\nLog your matches the normal way. Only matches after you apply count. Only Caritas players count, so guests and other schools do not. All your counted matches must be recorded (confirmed by your opponent, or confirmed automatically) before you can finish.`;
+  }
   return `${head} and win ${prize}.\n${first}\n${day}\nLog your matches the normal way. Only matches after you apply count, and your opponent must confirm each win.`;
 }
 
 /** The short factual line under the description. The settings are the source of truth. */
 export function settingsLine(c: Challenge): string {
-  const parts = [`${c.winsReq} win${c.winsReq === 1 ? '' : 's'} needed`, c.nOpp === c.winsReq ? '' : `${c.nOpp} opponents`, c.diffOpp ? 'different opponents' : '', naira(c.prize), `${c.winners} winner${c.winners === 1 ? '' : 's'}`];
+  if (c.template === 'play') {
+    return [`${c.nOpp} different Caritas players`, 'any result', c.game === 'all' ? 'all games' : '', naira(c.prize), `${c.winners} winner${c.winners === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
+  }
+  const parts = [`${c.winsReq} win${c.winsReq === 1 ? '' : 's'} needed`, c.nOpp === c.winsReq ? '' : `${c.nOpp} opponents`, c.diffOpp ? 'different opponents' : '', c.game === 'all' ? 'all games' : '', naira(c.prize), `${c.winners} winner${c.winners === 1 ? '' : 's'}`];
   if (c.matchesCounted > 0) parts.splice(2, 0, `first ${c.matchesCounted} matches count`);
   return parts.filter(Boolean).join(' · ');
 }
@@ -98,6 +117,8 @@ export type ChallengeRow = {
   id: string;
   oppId: string;
   oppName: string;
+  game: string;
+  late: boolean; // the opponent registered after the challenge started (flagged for review, still counts in the play template)
   result: 'W' | 'L' | 'D';
   score: string;
   loggedAtMs: number;
@@ -113,19 +134,25 @@ export type Progress = {
   from: number;
   to: number;
   skipped: number; // matches in the window that did not count (repeat opponent, over the limit, opponent registered late)
+  late: number; // counted opponents who registered after the start
 };
 
 const confirmedAt = (m: any) => (m.status === 'confirmed' ? Number(m.confirmedAtMs || m.loggedAtMs || 0) : Number(m.loggedAtMs || 0) + AUTO_CONFIRM_HOURS * HOUR);
 
-/** How one player stands in one challenge. Only normally logged league matches count, in the order they were logged. */
+/** How one player stands in one challenge. Only normally logged league matches count, in the order they were logged.
+ *  Play template: every result counts, once per opponent, and only Caritas opponents count.
+ *  Game 'all': matches in any game count and each opponent counts once overall. */
 export function progressFor(c: Challenge, app: any, matches: any[], gamers: any[], nowMs = Date.now()): Progress {
   const { from, to } = countingWindow(c, app);
+  const isPlay = c.template === 'play';
+  const anyGame = c.game === 'all';
   const voided = new Set<string>(app?.voided || []);
-  const regAt = new Map<string, number>(gamers.map((g: any) => [g.id, Number(g.createdAtMs || 0)]));
+  const gamerById = new Map<string, any>(gamers.map((g: any) => [g.id, g]));
+  const regOf = (id: string) => Number(gamerById.get(id)?.createdAtMs || 0);
   const mine = (matches || [])
     .filter(
       (m) =>
-        m.game === c.game &&
+        (anyGame || m.game === c.game) &&
         matchCounts(m) &&
         contestOf(m) === 'league' &&
         (m.aUid === app.gid || m.bUid === app.gid) &&
@@ -139,28 +166,40 @@ export function progressFor(c: Challenge, app: any, matches: any[], gamers: any[
   const kept: any[] = [];
   mine.forEach((m) => {
     const oppId = m.aUid === app.gid ? m.bUid : m.aUid;
-    // The opponent must have registered before the challenge started
-    const reg = regAt.get(oppId) || 0;
-    if (reg && reg > Number(c.startMs)) {
-      skipped++;
-      return;
+    if (isPlay) {
+      // Only Caritas opponents count. Profiles saved before schools were recorded count as Caritas. Guests and other schools do not.
+      const opp = gamerById.get(oppId);
+      if (!opp || (opp.school || 'caritas') !== 'caritas') {
+        skipped++;
+        return;
+      }
+    } else {
+      // The opponent must have registered before the challenge started
+      const reg = regOf(oppId);
+      if (reg && reg > Number(c.startMs)) {
+        skipped++;
+        return;
+      }
     }
-    if (c.diffOpp && seen.has(oppId)) {
+    if ((c.diffOpp || isPlay) && seen.has(oppId)) {
       skipped++;
       return;
     }
     seen.add(oppId);
     kept.push(m);
   });
-  const counted = c.matchesCounted > 0 ? kept.slice(0, c.matchesCounted) : kept;
+  const counted = isPlay ? kept.slice(0, Number(c.nOpp) || 1) : c.matchesCounted > 0 ? kept.slice(0, c.matchesCounted) : kept;
   skipped += kept.length - counted.length;
   const rows: ChallengeRow[] = counted.map((m) => {
     const w = winnerOf(m);
     const oppId = m.aUid === app.gid ? m.bUid : m.aUid;
+    const reg = regOf(oppId);
     return {
       id: m.id,
       oppId,
       oppName: m.aUid === app.gid ? m.bName : m.aName,
+      game: m.game,
+      late: reg > 0 && reg > Number(c.startMs),
       result: !w ? 'D' : w === app.gid ? 'W' : 'L',
       score: m.aUid === app.gid ? `${m.scoreA}-${m.scoreB}` : `${m.scoreB}-${m.scoreA}`,
       loggedAtMs: Number(m.loggedAtMs || 0),
@@ -170,27 +209,33 @@ export function progressFor(c: Challenge, app: any, matches: any[], gamers: any[
     };
   });
   const winRows = rows.filter((r) => r.result === 'W');
-  const need = Number(c.winsReq) || 1;
-  const winning = winRows.slice(0, need);
+  const need = targetOf(c);
+  // What counts toward the target: wins, or in the play template every counted match (any result)
+  const pool = isPlay ? rows : winRows;
+  const winning = pool.slice(0, need);
   let state: Progress['state'] = 'playing';
   let finishAtMs = 0;
-  if (winRows.length >= need) {
+  if (pool.length >= need) {
     if (winning.every((r) => r.recorded)) {
       state = 'finished';
       finishAtMs = Math.max(...winning.map((r) => r.confirmedMs));
     } else state = 'waiting';
-  } else if (c.matchesCounted > 0 && winRows.length + (c.matchesCounted - rows.length) < need) {
+  } else if (!isPlay && c.matchesCounted > 0 && winRows.length + (c.matchesCounted - rows.length) < need) {
     state = 'out';
   } else if (nowMs >= to) {
     state = 'over';
   } else if (nowMs < from) {
     state = 'notstarted';
   }
-  return { rows, wins: winRows.length, state, finishAtMs, from, to, skipped };
+  return { rows, wins: pool.length, state, finishAtMs, from, to, skipped, late: rows.filter((r) => r.late).length };
 }
+
+/** The player furthest along: one per game for an all-games challenge, otherwise one for the challenge */
+export type Leader = { game: string; gid: string; name: string; count: number; target: number };
 
 export type ChallengeView = {
   challenge: Challenge;
+  leaders: Leader[];
   entries: { app: any; progress: Progress }[];
   finishers: { app: any; progress: Progress }[]; // finished and not rejected, first to finish first
   winnerSlots: { app: any; progress: Progress; approved: boolean }[];
@@ -209,6 +254,33 @@ export function viewChallenge(c: Challenge, apps: any[], matches: any[], gamers:
   const slots = finishers.slice(0, Math.max(1, Number(c.winners) || 1)).map((e) => ({ ...e, approved: e.app.review === 'approved' }));
   const found = finishers.length >= Math.max(1, Number(c.winners) || 1);
   const done = found && slots.every((s) => s.approved);
+  // Leaders for the progress bars: most counted so far (wins, or players met). For all games: the most matches in each game.
+  const target = targetOf(c);
+  const live = entries.filter((e) => e.app.review !== 'rejected' && e.progress.wins > 0);
+  const lastMs = (e: any) => Number(e.progress.rows[e.progress.rows.length - 1]?.loggedAtMs || 0);
+  const pick = (g: string) => {
+    let best: any = null;
+    let bestN = 0;
+    live.forEach((e) => {
+      const n = g === '*' ? e.progress.wins : e.progress.rows.filter((r: any) => r.game === g).length;
+      if (n <= 0) return;
+      if (!best || n > bestN || (n === bestN && (e.progress.wins > best.progress.wins || (e.progress.wins === best.progress.wins && lastMs(e) < lastMs(best))))) {
+        best = e;
+        bestN = n;
+      }
+    });
+    return best;
+  };
+  const leaders: Leader[] = [];
+  if (c.game === 'all') {
+    (GAMES as any[]).forEach((g: any) => {
+      const b = pick(g.id);
+      if (b) leaders.push({ game: g.id, gid: b.app.gid, name: b.app.name, count: b.progress.wins, target });
+    });
+  } else {
+    const b = pick('*');
+    if (b) leaders.push({ game: c.game, gid: b.app.gid, name: b.app.name, count: b.progress.wins, target });
+  }
   let phase: ChallengeView['phase'] = 'running';
   if (c.status === 'cancelled') phase = 'cancelled';
   else if (c.status === 'paused') phase = 'paused';
@@ -216,16 +288,16 @@ export function viewChallenge(c: Challenge, apps: any[], matches: any[], gamers:
   else if (found) phase = 'closed';
   else if (nowMs >= Number(c.endMs)) phase = 'over';
   else if (nowMs < Number(c.startMs)) phase = 'upcoming';
-  return { challenge: c, entries, finishers, winnerSlots: slots, found, done, phase };
+  return { challenge: c, leaders, entries, finishers, winnerSlots: slots, found, done, phase };
 }
 
 /** Can a new player still apply? */
 export const canApply = (v: ChallengeView, nowMs = Date.now()) =>
   ['upcoming', 'running'].includes(v.phase) && nowMs < Number(v.challenge.endMs) && (v.challenge.spots <= 0 || v.entries.length < v.challenge.spots);
 
-/** The challenge a player is in for a game right now (one at a time per game) */
+/** The challenge a player is in for a game right now (one at a time per game; an all-games challenge counts for every game) */
 export const activeEntryFor = (views: ChallengeView[], gid: string, game: string) =>
-  views.find((v) => v.challenge.game === game && ['upcoming', 'running', 'closed'].includes(v.phase) && v.entries.some((e) => e.app.gid === gid)) || null;
+  views.find((v) => (v.challenge.game === game || v.challenge.game === 'all' || game === 'all') && ['upcoming', 'running', 'closed'].includes(v.phase) && v.entries.some((e) => e.app.gid === gid)) || null;
 
 /** The days a player can pick inside the window (Lagos days, today first, up to 7) */
 export function pickableDays(c: Challenge, nowMs = Date.now()): number[] {
@@ -237,7 +309,7 @@ export function pickableDays(c: Challenge, nowMs = Date.now()): number[] {
 
 /** Number shown on the green badge: challenges the player can still join (or all open ones when not signed in) */
 export function badgeCount(views: ChallengeView[], game: string, gid: string | null, nowMs = Date.now()): number {
-  return views.filter((v) => v.challenge.game === game && canApply(v, nowMs) && !(gid && v.entries.some((e) => e.app.gid === gid))).length;
+  return views.filter((v) => (v.challenge.game === game || v.challenge.game === 'all') && canApply(v, nowMs) && !(gid && v.entries.some((e) => e.app.gid === gid))).length;
 }
 
 /* ------------------------------ player side ------------------------------ */
@@ -263,9 +335,10 @@ export async function applyChallenge(view: ChallengeView, all: ChallengeView[], 
   const uid = await hubUid();
   if (!me || !me.id) throw new Error('Register as a player first.');
   if (!canApply(view)) throw new Error('This challenge is closed.');
+  if (c.game === 'all' && !(me.games || []).length) throw new Error('Join a game first.');
   if (c.dayMode === 'pick' && !(dayMs >= lagosDayStart(Date.now()) && dayMs < Number(c.endMs))) throw new Error('Pick a day inside the challenge window.');
   const mine = activeEntryFor(all, me.id, c.game);
-  if (mine && mine.challenge.id !== c.id) throw new Error(`You are already in "${mine.challenge.title}". Finish it before joining another ${gameLabel(c.game)} challenge.`);
+  if (mine && mine.challenge.id !== c.id) throw new Error(`You are already in "${mine.challenge.title}". Finish it before joining another challenge.`);
   const now = Date.now();
   const w = countingWindow(c, { appliedAtMs: now, dayMs });
   await setDoc(doc(hubDb, 'challengeApps', `${c.id}_${me.id}`), {
@@ -298,8 +371,11 @@ export async function saveChallenge(data: Partial<Challenge>, id?: string) {
   const title = String(data.title || '').trim().slice(0, 80);
   if (!title) throw new Error('Give the challenge a title.');
   if (!data.game) throw new Error('Pick a game.');
+  const template = (['first', 'xofn', 'play'].includes(String(data.template)) ? data.template : 'first') as TemplateKey;
+  const isPlay = template === 'play';
   const nOpp = Math.round(Number(data.nOpp));
-  const winsReq = Math.round(Number(data.winsReq));
+  // Play template: the target is the number of different players, so wins required is not used
+  const winsReq = isPlay ? nOpp : Math.round(Number(data.winsReq));
   if (!(nOpp >= 1) || !(winsReq >= 1)) throw new Error('Opponents and wins must be at least 1.');
   if (winsReq > nOpp) throw new Error('Wins required cannot be more than the opponents to play.');
   const prize = Math.round(Number(data.prize));
@@ -308,17 +384,17 @@ export async function saveChallenge(data: Partial<Challenge>, id?: string) {
   const startMs = Number(data.startMs);
   const endMs = Number(data.endMs);
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) throw new Error('The end must be after the start.');
-  const matchesCounted = Math.max(0, Math.round(Number(data.matchesCounted) || 0));
+  const matchesCounted = isPlay ? 0 : Math.max(0, Math.round(Number(data.matchesCounted) || 0));
   if (matchesCounted > 0 && matchesCounted < winsReq) throw new Error('Matches that count cannot be fewer than the wins required.');
   const clean: any = {
     title,
     desc: String(data.desc || '').slice(0, 1500),
     descSig: String(data.descSig || ''),
     game: data.game,
-    template: data.template === 'xofn' ? 'xofn' : 'first',
+    template,
     nOpp,
     winsReq,
-    diffOpp: Boolean(data.diffOpp),
+    diffOpp: isPlay ? true : Boolean(data.diffOpp),
     prize,
     winners,
     startMs,

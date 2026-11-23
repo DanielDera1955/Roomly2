@@ -6,6 +6,7 @@ import { collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc,
 import { db } from './firebase.ts';
 import { phoneKey, normalizePhone } from './api.js';
 import { CREDIT_HOURS, matchCounts, WEEK_MS, weekKeyOf } from './boardCore.js';
+import { RULES_VERSION } from './season';
 
 const HOUR = 3600000;
 
@@ -154,25 +155,50 @@ export async function issueCredit(week: any, gid: string, name: string, rank: nu
   });
 }
 
-/** Put every registered player on the season. Their own games decide which tables they appear in. They tick the rules on first open. */
-export async function addAllToSeason(season: { id: string }, gamers: any[], existing: Set<string>) {
+/** Put every registered player on the season. Their own games decide which tables they appear in.
+ *  A player who already accepted the current rules in an earlier season keeps that acceptance (also fixed for players added earlier
+ *  with the rules unticked). Everyone else ticks the rules on first open. */
+export async function addAllToSeason(season: { id: string }, gamers: any[], _existing?: Set<string>) {
+  const snap = await getDocs(collection(db, 'seasonJoins'));
+  const accepted = new Set<string>();
+  const here = new Map<string, any>();
+  snap.docs.forEach((d) => {
+    const j: any = { id: d.id, ...(d.data() as any) };
+    if (j.seasonId === season.id) here.set(j.gid, j);
+    else if (Number(j.rulesVersion || 0) >= RULES_VERSION) accepted.add(j.gid);
+  });
   let added = 0;
+  let carried = 0;
+  let pending = 0;
   for (const g of gamers) {
-    if (!g.ownerUid || g.banned || !(g.games || []).length || existing.has(g.id)) continue;
+    if (!g.ownerUid || g.banned || !(g.games || []).length) continue;
+    const cur = here.get(g.id);
+    if (cur) {
+      if (Number(cur.rulesVersion || 0) >= RULES_VERSION) continue;
+      if (accepted.has(g.id)) {
+        await updateDoc(doc(db, 'seasonJoins', cur.id), { rulesVersion: RULES_VERSION, rulesAtMs: Date.now(), rulesCarriedOver: true });
+        carried++;
+      } else pending++;
+      continue;
+    }
+    const carry = accepted.has(g.id);
     await setDoc(doc(db, 'seasonJoins', `${season.id}_${g.id}`), {
       seasonId: season.id,
       gid: g.id,
       ownerUid: g.ownerUid,
       name: g.name,
       off: {},
-      rulesVersion: 0,
-      rulesAtMs: 0,
+      rulesVersion: carry ? RULES_VERSION : 0,
+      rulesAtMs: carry ? Date.now() : 0,
+      ...(carry ? { rulesCarriedOver: true } : {}),
       joinedAtMs: Date.now(),
       addedByAdmin: true,
     });
     added++;
+    if (carry) carried++;
+    else pending++;
   }
-  return added;
+  return { added, carried, pending };
 }
 
 /** Per-game reward settings. They apply from the next reward week. */

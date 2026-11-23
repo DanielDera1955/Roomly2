@@ -357,14 +357,14 @@ const PlayersTab: React.FC<any> = ({ season, gamers, matches, joins, taps, phone
       </div>
       {view === 'league' && (
         <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 space-y-1.5">
-          <p className="text-[11px] text-slate-600 dark:text-slate-300">Put everyone already registered on {season.name}. They appear in the tables of their own games and tick the rules the first time they open Games.</p>
+          <p className="text-[11px] text-slate-600 dark:text-slate-300">Put everyone already registered on {season.name}. They appear in the tables of their own games. Players who accepted the rules in an earlier season keep that acceptance; the rest tick the rules the first time they open Games.</p>
           <button
             type="button"
             onClick={async () => {
               if (!window.confirm(`Add all registered players to ${season.name}?`)) return;
               try {
-                const n = await addAllToSeason(season, gamers, new Set(joins.map((j: any) => j.gid)));
-                window.alert(`${n} players added.`);
+                const r = await addAllToSeason(season, gamers, new Set(joins.map((j: any) => j.gid)));
+                window.alert(`${r.added} added. ${r.carried} had their earlier rules acceptance carried over. ${r.pending} still need to tick the rules.`);
               } catch (e: any) {
                 window.alert(e?.message || 'Could not add them.');
               }
