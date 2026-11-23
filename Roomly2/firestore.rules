@@ -748,7 +748,7 @@ service cloud.firestore {
     match /challengeApps/{id} {
       function cdoc() { return get(/databases/$(database)/documents/challenges/$(request.resource.data.challengeId)).data; }
       allow read: if true;
-      allow create: if ownsGamer(request.resource.data.gid)
+      allow create: if isAdmin() || (ownsGamer(request.resource.data.gid)
         && gamerOk(request.resource.data.gid)
         && id == request.resource.data.challengeId + '_' + request.resource.data.gid
         && exists(/databases/$(database)/documents/challenges/$(request.resource.data.challengeId))
@@ -762,7 +762,7 @@ service cloud.firestore {
         && request.resource.data.get('voided', []).size() == 0
         && request.resource.data.keys().hasOnly(['challengeId', 'gid', 'ownerUid', 'game', 'name', 'dayMs', 'startCountMs', 'appliedAtMs', 'rescheduled', 'review', 'voided'])
         && request.resource.data.appliedAtMs > request.time.toMillis() - 600000
-        && request.resource.data.appliedAtMs < request.time.toMillis() + 600000;
+        && request.resource.data.appliedAtMs < request.time.toMillis() + 600000);
       allow update: if isAdmin()
         || (ownsGamer(resource.data.gid)
             && resource.data.rescheduled == false

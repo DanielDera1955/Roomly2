@@ -196,20 +196,24 @@ export const AdminChallenges: React.FC<{ season: any; gamers: any[]; matches: an
               <label className={lab}>End</label>
               <input type="datetime-local" className={input} value={toInput(Number(form.endMs))} onChange={(e) => set({ endMs: fromInput(e.target.value) })} />
             </div>
-            <div>
-              <label className={lab}>Spot limit (0 = none)</label>
-              <input className={input} inputMode="numeric" value={form.spots ?? ''} onChange={(e) => set({ spots: Number(e.target.value.replace(/\D/g, '')) })} />
-            </div>
-            <div>
-              <label className={lab}>Who picks the day</label>
-              <select className={input} value={form.dayMode} onChange={(e) => set({ dayMode: e.target.value as any })}>
-                <option value="window">Play any time in the window</option>
-                <option value="pick">Player picks a day in the window</option>
-                <option value="fixed">I fix one day for everyone</option>
-              </select>
-            </div>
+            {!isPlay && (
+              <div>
+                <label className={lab}>Spot limit (0 = none)</label>
+                <input className={input} inputMode="numeric" value={form.spots ?? ''} onChange={(e) => set({ spots: Number(e.target.value.replace(/\D/g, '')) })} />
+              </div>
+            )}
+            {!isPlay && (
+              <div>
+                <label className={lab}>Who picks the day</label>
+                <select className={input} value={form.dayMode} onChange={(e) => set({ dayMode: e.target.value as any })}>
+                  <option value="window">Play any time in the window</option>
+                  <option value="pick">Player picks a day in the window</option>
+                  <option value="fixed">I fix one day for everyone</option>
+                </select>
+              </div>
+            )}
           </div>
-          {form.dayMode === 'fixed' && (
+          {!isPlay && form.dayMode === 'fixed' && (
             <div>
               <label className={lab}>The day for everyone</label>
               <input type="date" className={input} value={form.fixedDayMs ? toInput(Number(form.fixedDayMs)).slice(0, 10) : ''} onChange={(e) => set({ fixedDayMs: e.target.value ? new Date(`${e.target.value}T12:00`).getTime() : 0 })} />
@@ -221,7 +225,7 @@ export const AdminChallenges: React.FC<{ season: any; gamers: any[]; matches: an
               Different opponents required (a repeat opponent does not count)
             </label>
           )}
-          {isPlay && <p className="text-[11px] text-slate-500 dark:text-slate-400">Every match counts, win or lose, once per opponent. Only Caritas players count. Opponents may register at any time, and late ones are flagged in the review list.</p>}
+          {isPlay && <p className="text-[11px] text-slate-500 dark:text-slate-400">No sign-up: every Caritas player in the league is in from the Start time. Every match counts, win or lose, once per opponent. Opponents may register at any time, and late ones are flagged in the review list. Set Start earlier (for example the season start) if matches already played should count.</p>}
           {form.game === 'all' && <p className="text-[11px] text-slate-500 dark:text-slate-400">All games: this challenge shows in every game, matches in any game count, and each opponent counts once overall.</p>}
           {locked && <p className="text-[11px] text-amber-700 dark:text-amber-300">Players have applied, so game, opponents, wins, matches counted and different opponents are locked. You can still change the title, description, prize, winners, spots and times.</p>}
           {!isPlay && Number(form.winsReq) > Number(form.nOpp) && <p className="text-[11px] font-semibold text-rose-600">Wins required is more than the opponents to play.</p>}

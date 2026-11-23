@@ -84,7 +84,9 @@ export function autoDescription(c: Partial<Challenge>): string {
   const first = winners === 1 ? 'The first player to finish wins it, and the challenge ends.' : `The first ${winners} players to finish win it.`;
   const day = c.dayMode === 'pick' ? 'Apply, then pick your day. Your count starts on that day.' : c.dayMode === 'fixed' ? 'Everyone plays on the same day.' : 'Apply, then play any time inside the window.';
   if (c.template === 'play') {
-    return `Play ${n} different Caritas players in ${label} and win ${prize}.\nWin or lose, every match counts once per opponent.\n${first}\n${day}\nLog your matches the normal way. Only matches after you apply count. Only Caritas players count, so guests and other schools do not. All your counted matches must be recorded (confirmed by your opponent, or confirmed automatically) before you can finish.`;
+    const where = c.game === 'all' ? 'Counts in every game on Roomly.' : `Counts in ${label}.`;
+    const win = winners === 1 ? `The first player to finish wins ${naira(Number(c.prize))}.` : `The first ${winners} players to finish win ${naira(Number(c.prize))} each.`;
+    return `**Play ${n} different Caritas students, win or lose.**\n- ${where}\n- ${win}`;
   }
   return `${head} and win ${prize}.\n${first}\n${day}\nLog your matches the normal way. Only matches after you apply count, and your opponent must confirm each win.`;
 }
@@ -101,6 +103,8 @@ export function settingsLine(c: Challenge): string {
 
 /** When one player's count runs: from the later of applying and the start, to the end of their day or the challenge */
 export function countingWindow(c: Challenge, app: { appliedAtMs?: number; dayMs?: number } | null) {
+  // Play template: everyone in the league is in from the start, there is no sign-up or day to pick
+  if (c.template === 'play') return { from: Number(c.startMs), to: Number(c.endMs) };
   const applied = Number(app?.appliedAtMs || 0);
   if (c.dayMode === 'pick' && app?.dayMs) {
     const d = lagosDayStart(Number(app.dayMs));
@@ -248,6 +252,16 @@ export type ChallengeView = {
 export function viewChallenge(c: Challenge, apps: any[], matches: any[], gamers: any[], nowMs = Date.now()): ChallengeView {
   const mineApps = apps.filter((a) => a.challengeId === c.id);
   const entries = mineApps.map((app) => ({ app, progress: progressFor(c, app, matches, gamers, nowMs) }));
+  if (c.template === 'play') {
+    // No sign-up: every Caritas player in the league is a contestant. They appear once they have a counted match.
+    const have = new Set(mineApps.map((a) => a.gid));
+    gamers.forEach((g: any) => {
+      if (have.has(g.id) || g.banned || (g.school || 'caritas') !== 'caritas' || !(g.games || []).length) return;
+      const app = { id: `${c.id}_${g.id}`, challengeId: c.id, gid: g.id, ownerUid: g.ownerUid || '', game: c.game, name: g.name, appliedAtMs: Number(c.startMs), review: '', voided: [] as string[], virtual: true };
+      const progress = progressFor(c, app, matches, gamers, nowMs);
+      if (progress.rows.length > 0) entries.push({ app, progress });
+    });
+  }
   const finishers = entries
     .filter((e) => e.progress.state === 'finished' && e.app.review !== 'rejected')
     .sort((a, b) => a.progress.finishAtMs - b.progress.finishAtMs);
@@ -293,11 +307,11 @@ export function viewChallenge(c: Challenge, apps: any[], matches: any[], gamers:
 
 /** Can a new player still apply? */
 export const canApply = (v: ChallengeView, nowMs = Date.now()) =>
-  ['upcoming', 'running'].includes(v.phase) && nowMs < Number(v.challenge.endMs) && (v.challenge.spots <= 0 || v.entries.length < v.challenge.spots);
+  v.challenge.template !== 'play' && ['upcoming', 'running'].includes(v.phase) && nowMs < Number(v.challenge.endMs) && (v.challenge.spots <= 0 || v.entries.length < v.challenge.spots);
 
 /** The challenge a player is in for a game right now (one at a time per game; an all-games challenge counts for every game) */
 export const activeEntryFor = (views: ChallengeView[], gid: string, game: string) =>
-  views.find((v) => (v.challenge.game === game || v.challenge.game === 'all' || game === 'all') && ['upcoming', 'running', 'closed'].includes(v.phase) && v.entries.some((e) => e.app.gid === gid)) || null;
+  views.find((v) => v.challenge.template !== 'play' && (v.challenge.game === game || v.challenge.game === 'all' || game === 'all') && ['upcoming', 'running', 'closed'].includes(v.phase) && v.entries.some((e) => e.app.gid === gid)) || null;
 
 /** The days a player can pick inside the window (Lagos days, today first, up to 7) */
 export function pickableDays(c: Challenge, nowMs = Date.now()): number[] {
@@ -309,7 +323,12 @@ export function pickableDays(c: Challenge, nowMs = Date.now()): number[] {
 
 /** Number shown on the green badge: challenges the player can still join (or all open ones when not signed in) */
 export function badgeCount(views: ChallengeView[], game: string, gid: string | null, nowMs = Date.now()): number {
-  return views.filter((v) => (v.challenge.game === game || v.challenge.game === 'all') && canApply(v, nowMs) && !(gid && v.entries.some((e) => e.app.gid === gid))).length;
+  return views.filter((v) => {
+    if (!(v.challenge.game === game || v.challenge.game === 'all')) return false;
+    // The play challenge has no sign-up: it counts while it is open
+    if (v.challenge.template === 'play') return ['upcoming', 'running'].includes(v.phase);
+    return canApply(v, nowMs) && !(gid && v.entries.some((e) => e.app.gid === gid));
+  }).length;
 }
 
 /* ------------------------------ player side ------------------------------ */
@@ -332,6 +351,7 @@ export function subscribeChallengeApps(cb: (list: any[]) => void) {
 /** Apply to a challenge. One challenge at a time per game, and the spot limit, are checked here before saving. */
 export async function applyChallenge(view: ChallengeView, all: ChallengeView[], me: any, dayMs: number) {
   const c = view.challenge;
+  if (c.template === 'play') throw new Error('No sign-up needed. Everyone in the league is already in this challenge.');
   const uid = await hubUid();
   if (!me || !me.id) throw new Error('Register as a player first.');
   if (!canApply(view)) throw new Error('This challenge is closed.');
@@ -400,9 +420,9 @@ export async function saveChallenge(data: Partial<Challenge>, id?: string) {
     startMs,
     endMs,
     matchesCounted,
-    spots: Math.max(0, Math.round(Number(data.spots) || 0)),
-    dayMode: ['window', 'pick', 'fixed'].includes(String(data.dayMode)) ? data.dayMode : 'window',
-    fixedDayMs: data.dayMode === 'fixed' ? lagosDayStart(Number(data.fixedDayMs || startMs)) : 0,
+    spots: isPlay ? 0 : Math.max(0, Math.round(Number(data.spots) || 0)),
+    dayMode: isPlay ? 'window' : ['window', 'pick', 'fixed'].includes(String(data.dayMode)) ? data.dayMode : 'window',
+    fixedDayMs: !isPlay && data.dayMode === 'fixed' ? lagosDayStart(Number(data.fixedDayMs || startMs)) : 0,
     seasonId: data.seasonId || '',
   };
   if (id) {
@@ -420,10 +440,20 @@ export async function removeChallenge(c: Challenge, apps: any[]) {
   await deleteDoc(doc(db, 'gameWinners', `challenge_${c.id}`)).catch(() => {});
   await deleteDoc(doc(db, 'challenges', c.id));
 }
+/** Write to a contestant's record. A play-template contestant has no record until Roomly first acts on it, so it is created then. */
+async function writeApp(app: any, data: any) {
+  const ref = doc(db, 'challengeApps', app.id);
+  if (!app.virtual) return updateDoc(ref, data);
+  await setDoc(
+    ref,
+    { challengeId: app.challengeId, gid: app.gid, ownerUid: app.ownerUid || '', game: app.game, name: app.name, appliedAtMs: Number(app.appliedAtMs || 0), review: '', voided: [], ...data },
+    { merge: true }
+  );
+}
 /** Approve or reject a finisher. When every winner slot is approved the challenge ends and the winner line is published. */
 export async function reviewApp(view: ChallengeView, app: any, decision: 'approved' | 'rejected' | '', note = '') {
   const c = view.challenge;
-  await updateDoc(doc(db, 'challengeApps', app.id), { review: decision, reviewNote: String(note || '').slice(0, 200), reviewedAtMs: Date.now() });
+  await writeApp(app, { review: decision, reviewNote: String(note || '').slice(0, 200), reviewedAtMs: Date.now() });
   if (decision === 'approved') {
     const slotIds = view.winnerSlots.map((s) => s.app.id);
     const approvedAfter = view.winnerSlots.every((s) => s.app.id === app.id || s.app.review === 'approved');
@@ -451,11 +481,11 @@ export async function reviewApp(view: ChallengeView, app: any, decision: 'approv
 }
 /** Take a match out of one player's challenge only (it still counts in the league) */
 export async function voidFromChallenge(app: any, matchId: string) {
-  await updateDoc(doc(db, 'challengeApps', app.id), { voided: arrayUnion(matchId) });
+  await writeApp(app, { voided: arrayUnion(matchId) });
 }
 export async function unvoidFromChallenge(app: any, matchId: string) {
   const left = (app.voided || []).filter((x: string) => x !== matchId);
-  await updateDoc(doc(db, 'challengeApps', app.id), { voided: left });
+  await writeApp(app, { voided: left });
 }
 /** Void the match everywhere: its points leave the league and the weekly table too */
 export async function voidMatch(matchId: string) {
@@ -488,7 +518,7 @@ export async function issueChallengeCredit(c: Challenge, app: any, phone: string
     manual: true,
   });
   await setDoc(doc(db, 'creditIndex', pk), { ids: arrayUnion(id) }, { merge: true });
-  await updateDoc(doc(db, 'challengeApps', app.id), { paidAtMs: now, paidValue: Number(c.prize) });
+  await writeApp(app, { paidAtMs: now, paidValue: Number(c.prize) });
 }
 export async function getChallengeApp(id: string) {
   const s = await getDoc(doc(hubDb, 'challengeApps', id));

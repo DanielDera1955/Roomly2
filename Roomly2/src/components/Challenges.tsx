@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { Loader2, Trophy, Clock, Users, ChevronDown } from 'lucide-react';
-import { gameLabel } from '../hub.js';
+import { Loader2, Trophy, Clock, Users, ChevronDown, Crown } from 'lucide-react';
+import { gameLabel, GAMES } from '../hub.js';
 import { type Season } from '../season';
 import {
   type ChallengeView,
   type Challenge,
+  type Leader,
   settingsLine,
   targetOf,
   canApply,
@@ -85,6 +86,53 @@ const PLAY_STATE_TEXT: Record<string, string> = {
 };
 const stateText = (c: Challenge, state: string) => (c.template === 'play' ? PLAY_STATE_TEXT : STATE_TEXT)[state] || '';
 
+const GAME_COLORS: Record<string, string> = { efootball: '#0e9f55', fifa: '#3b82f6', dls: '#f59e0b', freefire: '#ef4444', codm: '#8b5cf6' };
+
+/** One progress bar. Always drawn, even at 0, so players see how far the target is. */
+const Bar: React.FC<{ title: string; color: string; count: number; target: number; who?: string; strong?: boolean; crown?: boolean }> = ({ title, color, count, target, who, strong, crown }) => {
+  const left = Math.max(0, target - count);
+  const pct = count <= 0 ? 0 : Math.min(100, Math.max(4, Math.round((count / Math.max(1, target)) * 100)));
+  return (
+    <div className={`rounded-xl p-2.5 ${strong ? 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900' : 'bg-slate-50 dark:bg-slate-950/60'}`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 min-w-0 text-[12px] font-black text-slate-900 dark:text-white">
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+          <span className="truncate">{title}</span>
+        </span>
+        <span className="text-[11px] font-black text-slate-600 dark:text-slate-300 shrink-0">
+          {count}/{target}
+        </span>
+      </div>
+      <div className="mt-1.5 h-2.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${color}, ${color}bb)`, boxShadow: pct > 0 ? `0 0 8px ${color}88` : 'none' }} />
+      </div>
+      <div className="mt-1 flex items-center justify-between gap-2 text-[10px]">
+        <span className="flex items-center gap-1 min-w-0 text-slate-500 dark:text-slate-400">
+          {crown && <Crown className="w-3 h-3 shrink-0 text-amber-500" />}
+          <span className="truncate">{who || 'No one yet'}</span>
+        </span>
+        <span className="font-black shrink-0" style={{ color }}>
+          {count >= target ? 'Target reached' : `${left} to go`}
+        </span>
+      </div>
+    </div>
+  );
+};
+
+/** One bar for each game when the challenge covers all games (all five, even with no leader yet), otherwise one bar */
+const LeaderBars: React.FC<{ c: Challenge; leaders: Leader[]; myCount: number | null }> = ({ c, leaders, myCount }) => {
+  const target = targetOf(c);
+  const rows = c.game === 'all' ? (GAMES as any[]).map((g: any) => ({ game: g.id as string, leader: leaders.find((l) => l.game === g.id) })) : [{ game: c.game, leader: leaders[0] }];
+  return (
+    <div className="space-y-2">
+      {myCount !== null && <Bar title="You" color="#0e9f55" count={myCount} target={target} who={c.game === 'all' ? 'Your total, all games' : 'Your progress'} strong />}
+      {rows.map((r) => (
+        <Bar key={r.game} title={gameLabel(r.game)} color={GAME_COLORS[r.game] || '#0e9f55'} count={r.leader ? r.leader.count : 0} target={target} who={r.leader?.name} crown={Boolean(r.leader)} />
+      ))}
+    </div>
+  );
+};
+
 const ChallengeCard: React.FC<{
   view: ChallengeView;
   all: ChallengeView[];
@@ -143,47 +191,47 @@ const ChallengeCard: React.FC<{
   const blocked = clash && clash.challenge.id !== c.id ? clash.challenge.title : '';
 
   const showBars = !['ended', 'cancelled'].includes(view.phase);
+  const isPlay = c.template === 'play';
+  // The play challenge has no sign-up: a registered player is in as soon as they play (any game for an all-games challenge)
+  const inLeague = Boolean(me && (c.game === 'all' ? (me.games || []).length > 0 : (me.games || []).includes(c.game)));
+  const winnersN = Math.max(1, Number(c.winners) || 1);
+  const firstLine = winnersN === 1 ? 'First to finish wins' : `First ${winnersN} to finish win`;
+  const daysLeft = Math.max(0, Math.ceil((Number(c.endMs) - nowMs) / 86400000));
+  const timeChip = view.phase === 'upcoming' ? `Starts ${dayName(c.startMs)}` : view.phase === 'running' ? `${daysLeft} day${daysLeft === 1 ? '' : 's'} left` : '';
+  const myCount = isPlay && inLeague ? (mine ? mine.progress.wins : 0) : mine ? mine.progress.wins : null;
 
   return (
-    <div className={`${card} p-4 space-y-3`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <span className="text-[10px] font-black uppercase tracking-widest text-[#0e9f55] flex items-center gap-1">
+    <div className={`${card} p-3 space-y-3`}>
+      <div className="relative overflow-hidden rounded-xl p-4 text-white" style={{ background: 'linear-gradient(135deg, #0e9f55 0%, #0b7a4a 55%, #0f766e 100%)' }}>
+        <Trophy className="absolute -right-4 -top-4 w-28 h-28 opacity-10" />
+        <div className="relative flex items-start justify-between gap-2">
+          <span className="text-[10px] font-black uppercase tracking-widest text-emerald-100 flex items-center gap-1">
             <Trophy className="w-3 h-3" /> Challenge
           </span>
-          <p className="text-base font-black text-slate-900 dark:text-white leading-snug">{c.title}</p>
+          <span className={`shrink-0 px-2 py-1 rounded-lg text-[10px] font-black ${label.cls}`}>{label.text}</span>
         </div>
-        <span className={`shrink-0 px-2 py-1 rounded-lg text-[10px] font-black ${label.cls}`}>{label.text}</span>
-      </div>
-
-      <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-950 text-center">
-        <p className="text-[10px] text-slate-500">Prize</p>
-        <p className="text-sm font-black text-[#0e9f55]">{naira(c.prize)}</p>
-      </div>
-
-      {showBars &&
-        (view.leaders.length > 0 ? (
-          <div className="space-y-2">
-            {view.leaders.map((l) => (
-              <div key={l.game} className="space-y-1">
-                <div className="flex items-center justify-between gap-2 text-[11px]">
-                  <span className="font-bold text-slate-700 dark:text-slate-200 truncate">
-                    {c.game === 'all' ? `${gameLabel(l.game)}: ` : 'Leading: '}
-                    {l.name}
-                  </span>
-                  <span className="font-black text-slate-500 shrink-0">
-                    {l.count}/{l.target}
-                  </span>
-                </div>
-                <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                  <div className="h-full rounded-full bg-[#0e9f55] transition-all" style={{ width: `${Math.min(100, Math.round((l.count / Math.max(1, l.target)) * 100))}%` }} />
-                </div>
-              </div>
-            ))}
+        <p className="relative mt-1.5 text-[15px] font-black leading-snug">{c.title}</p>
+        <div className="relative mt-3 flex items-end justify-between gap-3">
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-emerald-100/80">Prize</p>
+            <p className="text-3xl font-black leading-none">{naira(c.prize)}</p>
+            <p className="mt-1.5 text-[11px] font-bold text-emerald-50">{firstLine}</p>
           </div>
-        ) : (
-          <p className="text-[11px] text-slate-500">Nobody has a counted match yet.</p>
-        ))}
+          {timeChip && (
+            <span className="shrink-0 px-2.5 py-1 rounded-full bg-black/20 text-[10px] font-black flex items-center gap-1">
+              <Clock className="w-3 h-3" /> {timeChip}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {showBars && <LeaderBars c={c} leaders={view.leaders} myCount={myCount} />}
+
+      {isPlay && !inLeague && ['upcoming', 'running'].includes(view.phase) && (
+        <button type="button" onClick={onJoin} className="w-full h-11 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer">
+          Join the league to enter
+        </button>
+      )}
 
       {view.phase === 'ended' && c.winner && (
         <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900">
@@ -207,8 +255,8 @@ const ChallengeCard: React.FC<{
           <div className="text-xs text-slate-600 dark:text-slate-300">
             <RichText text={c.desc} />
           </div>
-          <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{settingsLine(c)}</p>
-          {spotsLeft !== null && <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Spots left: {spotsLeft}</p>}
+          {!isPlay && <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{settingsLine(c)}</p>}
+          {spotsLeft !== null && !isPlay && <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Spots left: {spotsLeft}</p>}
           <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
             <Clock className="w-3.5 h-3.5 shrink-0" />
             {c.dayMode === 'fixed' && c.fixedDayMs ? `Everyone plays on ${dayName(lagosDayStart(c.fixedDayMs))}` : `${whenFull(c.startMs)} to ${whenFull(c.endMs)}`}
@@ -216,9 +264,9 @@ const ChallengeCard: React.FC<{
 
           {mine && (
             <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 space-y-2">
-              <p className="text-xs font-black text-slate-900 dark:text-white">My application</p>
+              <p className="text-xs font-black text-slate-900 dark:text-white">{isPlay ? 'My matches' : 'My application'}</p>
               <p className="text-[11px] text-slate-600 dark:text-slate-300">
-                {c.dayMode === 'pick' && mine.app.dayMs ? `Your day: ${dayName(mine.app.dayMs)}. ` : ''}
+                {!isPlay && c.dayMode === 'pick' && mine.app.dayMs ? `Your day: ${dayName(mine.app.dayMs)}. ` : ''}
                 {mine.app.review === 'rejected' ? 'Roomly could not approve this attempt.' : mine.app.review === 'approved' ? 'Approved. Roomly issues the credit.' : stateText(c, mine.progress.state)}
               </p>
               {mine.progress.rows.length > 0 && (
@@ -237,22 +285,21 @@ const ChallengeCard: React.FC<{
                   ))}
                 </ul>
               )}
-              <p className="text-[11px] font-bold text-slate-500">
-                {mine.progress.wins} of {targetOf(c)} {c.template === 'play' ? 'different players' : 'wins'}
-              </p>
-              <div className="flex gap-2">
-                {canReschedule && (
-                  <button type="button" onClick={() => setPicking((x) => !x)} className="px-3 h-8 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] font-bold cursor-pointer">
-                    Change my day (once)
-                  </button>
-                )}
-                {!started && (
-                  <button type="button" onClick={withdraw} className="px-3 h-8 rounded-lg text-[11px] font-bold text-rose-600 cursor-pointer">
-                    Withdraw
-                  </button>
-                )}
-              </div>
-              {picking && canReschedule && (
+              {!isPlay && (
+                <div className="flex gap-2">
+                  {canReschedule && (
+                    <button type="button" onClick={() => setPicking((x) => !x)} className="px-3 h-8 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] font-bold cursor-pointer">
+                      Change my day (once)
+                    </button>
+                  )}
+                  {!started && (
+                    <button type="button" onClick={withdraw} className="px-3 h-8 rounded-lg text-[11px] font-bold text-rose-600 cursor-pointer">
+                      Withdraw
+                    </button>
+                  )}
+                </div>
+              )}
+              {!isPlay && picking && canReschedule && (
                 <div className="space-y-2">
                   <div className="flex flex-wrap gap-1.5">
                     {days.map((d) => (
@@ -269,7 +316,7 @@ const ChallengeCard: React.FC<{
             </div>
           )}
 
-          {!mine && canApply(view, nowMs) && (
+          {!isPlay && !mine && canApply(view, nowMs) && (
             <div className="space-y-2">
               {blocked && <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">You are already in "{blocked}". Finish it before joining another challenge.</p>}
               {picking && c.dayMode === 'pick' && (
@@ -299,10 +346,10 @@ const ChallengeCard: React.FC<{
               </button>
             </div>
           )}
-          {!mine && !canApply(view, nowMs) && ['running', 'upcoming'].includes(view.phase) && <p className="text-[11px] font-semibold text-slate-500">No spots left.</p>}
+          {!isPlay && !mine && !canApply(view, nowMs) && ['running', 'upcoming'].includes(view.phase) && <p className="text-[11px] font-semibold text-slate-500">No spots left.</p>}
           {err && <p className="text-xs font-semibold text-rose-600">{err}</p>}
 
-          {others.length > 0 && (
+          {!isPlay && others.length > 0 && (
             <p className="text-[11px] text-slate-500 flex items-start gap-1.5">
               <Users className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>Trying: {others.map((e) => e.app.name).join(', ')}</span>
