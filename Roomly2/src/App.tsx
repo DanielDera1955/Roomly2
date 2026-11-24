@@ -27,7 +27,7 @@ import {
   touchCustomerSeen,
 } from './api.js';
 import { onFoodMenu, FOOD_BATCH_LABEL, dayWord, timeLabelFull, openDateText, INSIDE_LAUNCH_MS, caritasLineFor, liveStatusFor, SCHOOL_NAME, ShopGroup, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
-import { MessageCircle, Info } from 'lucide-react';
+import { MessageCircle, Info, ChevronRight } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
 import { notify } from './notify';
@@ -51,7 +51,7 @@ import { FeedbackBox } from './components/FeedbackBox';
 import { ProfileSettings } from './components/ProfileSettings';
 import { HomeQuickCards, QuickTarget, LastOrderStrip, BehindEveryOrder } from './components/HomeQuickCards';
 import { subscribeHubSettings, outsideStoreOpensAt } from './hub.js';
-import { getLinkTarget, linkOpensGames } from './links.js';
+import { getLinkTarget, linkOpensGames, setHubSection } from './links.js';
 import { ProductCard } from './components/ProductCard';
 import { FoodCustomizerSheet } from './components/FoodCustomizerSheet';
 import { ProductSheet, OrderAgainRow, FeaturedRow, PairingsBar } from './components/ShopExtras';
@@ -61,7 +61,6 @@ import { FloatingCartBar } from './components/FloatingCartBar';
 import { CartSheet } from './components/CartSheet';
 import { OrderTrackerModal } from './components/OrderTrackerModal';
 import { InstallBanner } from './components/InstallPrompt';
-import { NotifyBanner } from './components/NotifyBanner';
 import { OrderHistoryModal } from './components/OrderHistoryModal';
 import { RunnerPortal } from './components/RunnerPortal';
 import { AdminView } from './components/AdminView';
@@ -99,6 +98,7 @@ export default function App() {
     return 'customer';
   });
   // "Become a Roomly Runner" page: yourlink/#join
+  const [hubKey, setHubKey] = useState(0);
   const [joinOpen, setJoinOpen] = useState(() => typeof window !== 'undefined' && window.location.hash.toLowerCase() === '#join');
 
   // Store status (6am - 11pm)
@@ -1357,13 +1357,16 @@ export default function App() {
             products={products}
             showBehind={!signedInCustomer}
             between={showHowItWorks ? <HowRoomlyWorks /> : null}
-            onOpen={(t: QuickTarget) => {
+            onOpen={(t: QuickTarget, hubSection?: string) => {
               setSearchQuery('');
               setSelectedFilter('All');
               if (t === 'room') {
                 setSourceMode('inside');
                 setSelectedTab('store');
               } else if (t === 'hub') {
+                // A hostel tile asks the Hub to open on its own tab (a new key re-reads it if the Hub is already open)
+                setHubSection(hubSection || '');
+                setHubKey((k) => k + 1);
                 setSourceMode('inside');
                 setSelectedTab('hub');
               } else {
@@ -1452,8 +1455,8 @@ export default function App() {
             </div>
           )}
 
-          {!searchQuery && <InstallBanner variant="home" />}
-          {!searchQuery && <NotifyBanner />}
+          {/* New visitors see the install bar here; signed-in students get it at the bottom of the page instead */}
+          {!searchQuery && !signedInCustomer && <InstallBanner variant="home" />}
 
           {!searchQuery && (
             <FeaturedRow
@@ -1495,6 +1498,7 @@ export default function App() {
           {/* Request Tab vs Product Grid */}
           {!searchQuery && selectedTab === 'hub' ? (
             <HostelHub
+              key={hubKey}
               productNames={sideProducts.map((p) => p.name)}
               session={{ name: customer?.name || localName, phone, pin }}
               startHostel={customer?.building || ''}
@@ -1604,6 +1608,16 @@ export default function App() {
 
           {/* Lower on the page so the menu comes first: trust strip (returning students) and the how-to + runner link */}
           {signedInCustomer && <BehindEveryOrder />}
+          {/* Signed-in students: the install bar stays here on every visit until Roomly is installed */}
+          {signedInCustomer && <InstallBanner variant="home" persistent />}
+          {/* Runner sign-up, next to feedback */}
+          <a
+            href="#join"
+            className="cursor-pointer w-full flex items-center justify-between gap-2 px-4 py-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-xs font-bold text-[#0b8044] dark:text-[#0e9f55]"
+          >
+            <span>Earn ₦500 per delivery. Become a Roomly runner</span>
+            <ChevronRight className="w-4 h-4 shrink-0" />
+          </a>
           {/* Feedback: a short form that lands in Admin > Feedback */}
           <button
             type="button"

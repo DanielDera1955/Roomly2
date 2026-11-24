@@ -108,9 +108,10 @@ const openInChrome = () => {
  * Shows on any device where Roomly isn't installed. Disappears for good once installed;
  * × or a cancelled install hides it for this visit only; it shows again next visit.
  */
-export const InstallBanner: React.FC<{ variant?: 'home' | 'order'; className?: string }> = ({ variant = 'home', className = '' }) => {
+export const InstallBanner: React.FC<{ variant?: 'home' | 'order'; className?: string; persistent?: boolean }> = ({ variant = 'home', className = '', persistent = false }) => {
   const [, setTick] = useState(0);
-  const [hidden, setHidden] = useState(() => hiddenNow(variant));
+  // persistent: no × and never hidden, so it shows on every reload until Roomly is installed
+  const [hidden, setHidden] = useState(() => (persistent ? false : hiddenNow(variant)));
   const [steps, setSteps] = useState(false);
   useEffect(() => {
     const off = onInstallChange(() => setTick((n) => n + 1));
@@ -124,6 +125,7 @@ export const InstallBanner: React.FC<{ variant?: 'home' | 'order'; className?: s
   if (!mode) return null; // Chrome that isn't offering install (usually already installed)
 
   const dismiss = () => {
+    if (persistent) return;
     hideForVisit(variant);
     setHidden(true);
   };
@@ -134,19 +136,21 @@ export const InstallBanner: React.FC<{ variant?: 'home' | 'order'; className?: s
   };
   const text =
     variant === 'order'
-      ? 'Install Roomly to get notified when your order is on the way.'
-      : 'Install Roomly: order in 2 taps and get updates on your order.';
+      ? 'Install Roomly to track your order from your home screen.'
+      : 'Install Roomly: open it from your home screen and order in 2 taps.';
 
   return (
-    <div className={`relative p-3 pr-9 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 text-xs text-emerald-950 dark:text-emerald-50 space-y-2 ${className}`}>
-      <button
-        type="button"
-        aria-label="Hide for now"
-        onClick={dismiss}
-        className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/80 dark:bg-slate-900/80 text-slate-500 flex items-center justify-center cursor-pointer"
-      >
-        <X className="w-3.5 h-3.5" />
-      </button>
+    <div className={`relative p-3 ${persistent ? 'pr-3' : 'pr-9'} rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 text-xs text-emerald-950 dark:text-emerald-50 space-y-2 ${className}`}>
+      {!persistent && (
+        <button
+          type="button"
+          aria-label="Hide for now"
+          onClick={dismiss}
+          className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/80 dark:bg-slate-900/80 text-slate-500 flex items-center justify-center cursor-pointer"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      )}
       <div className="flex items-center gap-2.5">
         <span className="w-8 h-8 rounded-xl bg-[#0e9f55] text-white flex items-center justify-center shrink-0">
           <Smartphone className="w-4 h-4" />

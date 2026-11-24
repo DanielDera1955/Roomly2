@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { RotateCcw, ChevronDown, ChevronRight, Users, UtensilsCrossed, ShoppingBasket, Store, Crown, Wrench, Tag, Search, Gamepad2, Trophy } from 'lucide-react';
+import { RotateCcw, ChevronDown, ChevronRight, Users, UtensilsCrossed, ShoppingBasket, Store, Crown, Wrench, Repeat, Search, Gamepad2, Trophy, MapPin } from 'lucide-react';
 import { GAMES, fetchLeaders, isRegisteredGamer, restoreGamerFromLogin } from '../hub.js';
 import { getNextBatch, getOutsideChoices, storeGraceOpen, storeRunLeftToday } from '../api.js';
 import { dayWord, timeLabel, timeLabelFull, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, openDateText, BEHIND_EVERY_ORDER, OUTSIDE_STORE_GRACE_END_MIN, isOutsideSource, foodLateOrderByMin, OUTSIDE_STORE_GRACE_END_MIN as STORE_LATE_MIN } from '../config';
@@ -119,34 +119,6 @@ function productPhotoFor(id: QuickTarget, products: any[]): string {
   return (list.find((p) => p.featured) || list[0])?.imageUrl || '';
 }
 
-/** Hostel Hub's tile: a green scene with the four sections as little icon tiles (Games has its own card below) */
-const HubTile: React.FC = () => {
-  const chips = [
-    { Icon: Store, tilt: '-rotate-6', lift: 'translate-y-1' },
-    { Icon: Wrench, tilt: 'rotate-3', lift: '-translate-y-1.5' },
-    { Icon: Tag, tilt: '-rotate-3', lift: 'translate-y-1' },
-    { Icon: Search, tilt: 'rotate-6', lift: '-translate-y-1' },
-  ];
-  return (
-    <div className="relative w-full h-24 overflow-hidden flex items-center justify-center bg-gradient-to-br from-[#12a45b] via-[#0e8a4a] to-[#0a5f35]">
-      <span className="absolute -top-8 -left-6 w-24 h-24 rounded-full bg-white/10" />
-      <span className="absolute -bottom-10 -right-4 w-28 h-28 rounded-full bg-white/10" />
-      <span className="absolute top-2 right-3 w-1.5 h-1.5 rounded-full bg-white/70" />
-      <span className="absolute bottom-3 left-4 w-1 h-1 rounded-full bg-white/60" />
-      <div className="relative flex items-center -space-x-1.5">
-        {chips.map(({ Icon, tilt, lift }, i) => (
-          <span
-            key={i}
-            className={`w-10 h-10 rounded-xl bg-white/95 shadow-md shadow-black/20 flex items-center justify-center ${tilt} ${lift}`}
-          >
-            <Icon className="w-5 h-5 text-[#0a7a41]" />
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-};
-
 const FALLBACK_ICON: Record<QuickTarget, React.FC<{ className?: string }>> = {
   food: UtensilsCrossed,
   store: ShoppingBasket,
@@ -154,11 +126,26 @@ const FALLBACK_ICON: Record<QuickTarget, React.FC<{ className?: string }>> = {
   hub: Users,
 };
 
-/** Home: four photo cards (everyone): photo, name with an arrow, and one short status line */
+/** What each delivery row says under its name */
+const ROW_COPY: Record<'food' | 'store' | 'room', { title: string; sub: string }> = {
+  food: { title: 'Food Outside School', sub: 'Fried rice, jollof, soup and more, delivered at the gate' },
+  store: { title: 'Store Items Outside School', sub: 'Provisions and gadgets from Oye, delivered at the gate' },
+  room: { title: 'School Canteen Items', sub: 'Brought from the school canteen to your room' },
+};
+
+/** The four Hostel Hub sections, each opening the Hub on its own tab */
+const HUB_TILES: { section: string; title: string; sub: string; Icon: React.FC<{ className?: string }> }[] = [
+  { section: 'vendors', title: 'Buy from sellers', sub: 'Students selling in your hostel', Icon: Store },
+  { section: 'services', title: 'Get a service', sub: 'Laundry, barbing, printing', Icon: Wrench },
+  { section: 'buysell', title: 'Buy & Sell', sub: 'Sell what you no longer need', Icon: Repeat },
+  { section: 'lostfound', title: 'Lost & Found', sub: 'Lost or found something?', Icon: Search },
+];
+
+/** Home: a tagline, three delivery rows (live status), the how-it-works slot, then four Hostel Hub tiles */
 export const HomeQuickCards: React.FC<{
-  onOpen: (t: QuickTarget) => void;
+  onOpen: (t: QuickTarget, hubSection?: string) => void;
   storeOpensAtMs?: number;
-  /** Products, for each card's photo */
+  /** Products, for each row's backup photo */
   products?: any[];
   /** New visitors see the trust strip under the cards; returning students see it at the bottom of the page */
   showBehind?: boolean;
@@ -166,7 +153,7 @@ export const HomeQuickCards: React.FC<{
   onOpenGames: (game?: string) => void;
   /** The logged-in Roomly customer, so their player profile can be found on this browser */
   session?: { phone?: string; pin?: string };
-  /** Shown between the four cards and the game card (the "How you get your order" section) */
+  /** Shown under the three delivery rows (the "How you get your order" section) */
   between?: React.ReactNode;
 }> = ({ onOpen, storeOpensAtMs = 0, products = [], showBehind = true, onOpenGames, session, between }) => {
   const [, setTick] = useState(0);
@@ -181,24 +168,23 @@ export const HomeQuickCards: React.FC<{
     };
   }, []);
   const now = new Date();
-  const cards: { id: QuickTarget; title: string }[] = [
-    { id: 'food', title: 'Outside Food' },
-    { id: 'store', title: 'Outside Items' },
-    { id: 'room', title: 'Canteen Items' },
-    { id: 'hub', title: 'Hostel Hub' },
-  ];
+  const rows: ('food' | 'store' | 'room')[] = ['food', 'store', 'room'];
 
   return (
     <div className="space-y-3">
-      {/* Tells first-timers these four cards are the whole app */}
-      <div className="flex items-center gap-3 px-1">
-        <span className="h-px flex-1 bg-gradient-to-r from-transparent to-emerald-300 dark:to-emerald-700" />
-        <span className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#0b8044] dark:text-emerald-400">Everything on Roomly</span>
-        <span className="h-px flex-1 bg-gradient-to-l from-transparent to-emerald-300 dark:to-emerald-700" />
+      <div className="px-1 pt-1">
+        <p className="flex items-center gap-1 text-[11px] font-bold text-[#0b8044] dark:text-emerald-400">
+          <MapPin className="w-3 h-3" />
+          Caritas University
+        </p>
+        <h2 className="mt-1 text-xl font-extrabold leading-tight tracking-tight text-slate-900 dark:text-white">Need something in Caritas? Check Roomly</h2>
+        <p className="mt-1 text-[13px] leading-snug text-slate-500 dark:text-slate-400">Pick what you need and we take you straight there.</p>
       </div>
-      <div className="grid grid-cols-2 gap-2.5">
-        {cards.map(({ id, title }) => {
-          const { pill, tone, lines } = shortStatus(id, now, storeOpensAtMs);
+
+      <p className="px-1 pt-2 text-xs font-semibold tracking-wide text-slate-400 dark:text-slate-500">Delivered to you</p>
+      <div className="space-y-2.5">
+        {rows.map((id) => {
+          const { pill, tone } = shortStatus(id, now, storeOpensAtMs);
           const photo = broken[id] ? productPhotoFor(id, products) : CARD_PHOTO[id];
           const Icon = FALLBACK_ICON[id];
           return (
@@ -206,64 +192,71 @@ export const HomeQuickCards: React.FC<{
               key={id}
               type="button"
               onClick={() => onOpen(id)}
-              className="h-full flex flex-col items-stretch rounded-2xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-left cursor-pointer active:scale-[0.98] transition-transform"
+              className="w-full flex items-center gap-3 p-2.5 pr-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-left cursor-pointer active:scale-[0.99] transition-transform"
             >
-              {id === 'hub' ? (
-                <HubTile />
-              ) : photo && !broken[id + '_backup'] ? (
+              {photo && !broken[id + '_backup'] ? (
                 <img
                   src={photo}
                   alt=""
                   loading="lazy"
                   referrerPolicy="no-referrer"
                   onError={() => setBroken((b) => (b[id] ? { ...b, [id + '_backup']: true } : { ...b, [id]: true }))}
-                  className="w-full h-24 object-cover bg-slate-100 dark:bg-slate-800"
+                  className="w-14 h-14 shrink-0 rounded-xl object-cover bg-slate-100 dark:bg-slate-800"
                 />
               ) : (
-                <div className="w-full h-24 flex items-center justify-center bg-emerald-50 dark:bg-emerald-950/40">
-                  <Icon className="w-9 h-9 text-[#0e9f55]" />
-                </div>
-              )}
-              <span className="flex flex-col px-3 py-2.5">
-                <span className="flex items-center gap-1 text-sm font-extrabold text-slate-900 dark:text-white">
-                  <span className="min-w-0 truncate">{title}</span>
-                  <ChevronRight className="w-4 h-4 shrink-0 text-slate-400" />
+                <span className="w-14 h-14 shrink-0 rounded-xl flex items-center justify-center bg-emerald-50 dark:bg-emerald-950/40">
+                  <Icon className="w-6 h-6 text-[#0e9f55]" />
                 </span>
-                {tone === 'info' ? (
-                  <span className="mt-1 text-[11px] leading-snug font-semibold text-slate-500 dark:text-slate-400">{lines[0]}</span>
-                ) : (
-                  <>
-                    <span
-                      className={`mt-1.5 self-start inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-extrabold whitespace-nowrap ${
-                        tone === 'open'
-                          ? 'bg-emerald-100 text-[#0b6b39] dark:bg-emerald-950/60 dark:text-emerald-300'
-                          : tone === 'late'
-                          ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-                      }`}
-                    >
-                      <span className="relative flex w-1.5 h-1.5 shrink-0" aria-hidden="true">
-                        {tone !== 'next' && (
-                          <span className={`absolute inline-flex w-full h-full rounded-full opacity-75 animate-ping ${tone === 'open' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-                        )}
-                        <span className={`relative inline-flex w-1.5 h-1.5 rounded-full ${tone === 'open' ? 'bg-[#0e9f55]' : tone === 'late' ? 'bg-amber-500' : 'bg-slate-400'}`} />
-                      </span>
-                      {pill}
+              )}
+              <span className="min-w-0 flex-1">
+                <span className="block text-[15px] font-extrabold leading-tight text-slate-900 dark:text-white">{ROW_COPY[id].title}</span>
+                <span className="mt-0.5 block text-xs leading-snug text-slate-500 dark:text-slate-400">{ROW_COPY[id].sub}</span>
+                {pill && (
+                  <span
+                    className={`mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap ${
+                      tone === 'open'
+                        ? 'bg-emerald-100 text-[#0b6b39] dark:bg-emerald-950/60 dark:text-emerald-300'
+                        : tone === 'late'
+                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                    }`}
+                  >
+                    <span className="relative flex w-1.5 h-1.5 shrink-0" aria-hidden="true">
+                      {tone !== 'next' && (
+                        <span className={`absolute inline-flex w-full h-full rounded-full opacity-75 animate-ping ${tone === 'open' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                      )}
+                      <span className={`relative inline-flex w-1.5 h-1.5 rounded-full ${tone === 'open' ? 'bg-[#0e9f55]' : tone === 'late' ? 'bg-amber-500' : 'bg-slate-400'}`} />
                     </span>
-                    {lines.map((l) => (
-                      <span key={l} className="mt-1 block text-[10.5px] leading-snug font-semibold tracking-tight text-slate-600 dark:text-slate-300">
-                        {l}
-                      </span>
-                    ))}
-                  </>
+                    {pill}
+                  </span>
                 )}
               </span>
+              <ChevronRight className="w-[18px] h-[18px] shrink-0 text-slate-300 dark:text-slate-600" />
             </button>
           );
         })}
       </div>
 
       {between}
+
+      <p className="px-1 pt-2 text-xs font-semibold tracking-wide text-slate-400 dark:text-slate-500">Inside the hostel</p>
+      <div className="grid grid-cols-2 gap-2.5">
+        {HUB_TILES.map(({ section, title, sub, Icon }) => (
+          <button
+            key={section}
+            type="button"
+            onClick={() => onOpen('hub', section)}
+            className="flex flex-col items-start p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-left cursor-pointer active:scale-[0.98] transition-transform"
+          >
+            <span className="w-9 h-9 rounded-full flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100">
+              <Icon className="w-[18px] h-[18px]" />
+            </span>
+            <span className="mt-2.5 text-sm font-extrabold leading-tight text-slate-900 dark:text-white">{title}</span>
+            <span className="mt-0.5 text-xs leading-snug text-slate-500 dark:text-slate-400">{sub}</span>
+          </button>
+        ))}
+      </div>
+
       <HostelLeagueCard onOpen={onOpenGames} session={session} />
 
       {showBehind && <BehindEveryOrder />}

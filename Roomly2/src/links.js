@@ -99,6 +99,11 @@ export function linkOpensGames() {
   }
 }
 
+/** Hostel Hub: a home tile asks for one section, used once by the Hub when it opens */
+export function setHubSection(id) {
+  hubPending = id || '';
+}
+
 /** Hostel Hub: the section the link asked for, used once */
 export function takeHubSection() {
   const s = hubPending;
