@@ -724,14 +724,14 @@ const GamePage: React.FC<{
     .sort((a, b) => (b.loggedAtMs || 0) - (a.loggedAtMs || 0))
     .slice(0, 8);
   const logLabel = !plays
-    ? `Join ${gameLabel(game)} League to log results`
+    ? `Join ${gameLabel(game)} League`
     : !season
     ? 'No season is running yet'
     : !accepted
     ? 'Accept the league rules to log results'
     : !isOpen
     ? `Results open ${openDay(opensAt)}`
-    : 'I won: log my league match';
+    : "I've played a match, log your result";
   const rulesNewMember = !accepted && !rulesMoved;
 
   return (
@@ -875,7 +875,7 @@ const GamePage: React.FC<{
       ) : (
         <>
           <WinnerCard game={game} winners={winners} nowMs={nowMs} />
-          <ChallengesSection game={game} views={challengeViews} me={me} season={season} member={plays && accepted} isOpen={isOpen} nowMs={nowMs} onJoin={onRegister} />
+          <ChallengesSection game={game} views={challengeViews} me={me} season={season} member={plays && accepted} isOpen={isOpen} nowMs={nowMs} onJoin={onRegister} action={{ label: logLabel, disabled: !canLog && !(season && !plays), join: !plays, onClick: () => (!plays ? onRegister() : setLogging(true)) }} />
           <SpecialCard game={game} events={specials} bookings={bookings} matches={matches} me={me} season={season} join={join} board={board} hiddenFromMe={hiddenFromMe} isOpen={isOpen} nowMs={nowMs} onJoin={onRegister} />
           {!specials.some((e: any) => e.game === game && e.status !== 'done' && nowMs < Number(e.endMs)) &&
             !challengeViews.some((v) => (v.challenge.game === game || v.challenge.game === 'all') && ['upcoming', 'running', 'closed', 'over'].includes(v.phase)) && (
@@ -888,14 +888,17 @@ const GamePage: React.FC<{
       )}
 
       {/* Log a result: the only thing above the table. Everyone can see it, members can use it. */}
-      <button
-        type="button"
-        disabled={!canLog && !(season && !plays)}
-        onClick={() => (!plays ? onRegister() : setLogging(true))}
-        className="w-full h-12 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-500 dark:disabled:text-slate-400 disabled:cursor-default"
-      >
-        {canLog || !plays ? <Plus className="w-4 h-4" /> : <Lock className="w-4 h-4" />} {logLabel}
-      </button>
+      {/* On the Challenges tab the play challenge card carries this same button, so only one is shown */}
+      {!(!best && challengeViews.some((v) => v.challenge.template === 'play' && (v.challenge.game === game || v.challenge.game === 'all') && ['upcoming', 'running'].includes(v.phase))) && (
+        <button
+          type="button"
+          disabled={!canLog && !(season && !plays)}
+          onClick={() => (!plays ? onRegister() : setLogging(true))}
+          className="w-full h-12 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-500 dark:disabled:text-slate-400 disabled:cursor-default"
+        >
+          {canLog || !plays ? <Plus className="w-4 h-4" /> : <Lock className="w-4 h-4" />} {logLabel}
+        </button>
+      )}
 
       {/* The table, with a Challenge button on every row */}
       {best && (
@@ -1358,7 +1361,9 @@ const RegisterSheet: React.FC<{ me: any; season: Season | null; session: { name?
 };
 
 const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; matches: any[]; season: Season; contest: 'league' | 'reward'; weekKey: string; weeklyWeek?: any | null; onClose: () => void }> = ({ game, me, board, matches, season, contest, weekKey, weeklyWeek = null, onClose }) => {
-  const [opps, setOpps] = useState<any[] | null>(null);
+  const [recentIds, setRecentIds] = useState<string[] | null>(null); // players challenged through Roomly in the last 3 days
+  const [tapped, setTapped] = useState(0);
+  const [challenging, setChallenging] = useState(false);
   const [opp, setOpp] = useState('');
   const [mine, setMine] = useState('');
   const [theirs, setTheirs] = useState('');
@@ -1372,13 +1377,18 @@ const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; matches: a
 
   useEffect(() => {
     getRecentOpponents(me, game)
-      .then((ids: string[]) => setOpps(board.filter((r) => ids.includes(r.id))))
-      .catch(() => setOpps([]));
+      .then((ids: string[]) => setRecentIds(ids))
+      .catch(() => setRecentIds([]));
   }, [game]);
   useEffect(() => {
     setCtx(null);
     if (opp) pairContext(me, opp, game).then(setCtx).catch(() => setCtx(null));
-  }, [opp]);
+  }, [opp, tapped]);
+  // Everyone in the league, the players challenged in the last 3 days first
+  const everyone = board.filter((r) => r.id !== me.id);
+  const recentList = recentIds ? everyone.filter((r) => recentIds.includes(r.id)) : [];
+  const otherList = recentIds ? everyone.filter((r) => !recentIds.includes(r.id)) : [];
+  const needsChallenge = Boolean(opp && recentIds && !recentIds.includes(opp));
 
   const thisWeek = lagosWeek(Date.now());
   // On a Special 1v1 day, matches against the special player have their own limit (5 for the day)
@@ -1424,6 +1434,7 @@ const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; matches: a
   const submit = async () => {
     setError('');
     if (!o) return setError('Pick your opponent.');
+    if (needsChallenge) return setError('Challenge this player on WhatsApp first.');
     if (playedWeek >= cap) return setError(`You have already logged ${cap} ${contest} matches against this player ${sp ? 'in this Special 1v1' : 'this week'}. More will not count.`);
     let a = 1;
     let b = 0;
@@ -1454,26 +1465,66 @@ const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; matches: a
 
   return (
     <Sheet title={`Log a ${gameLabel(game)} ${contest} win`} onClose={onClose}>
-      {opps === null ? (
+      {recentIds === null ? (
         <p className="text-sm text-slate-400">Loading...</p>
-      ) : opps.length === 0 ? (
-        <p className="text-sm text-slate-500">You can log a result against players you challenged through Roomly (or who challenged you) in the last 3 days.</p>
+      ) : everyone.length === 0 ? (
+        <p className="text-sm text-slate-500">No other player is in this league yet. Invite friends to join, then log your match.</p>
       ) : (
         <>
           <p className="text-[11px] text-slate-500">
-            {contest === 'reward' ? 'This match counts in the reward table only, not the league.' : 'This match counts in the league standing only, not a reward week.'} Only the winner logs the result. A screenshot of the final score is required.
+            {contest === 'reward' ? 'This match counts in the reward table only, not the league.' : 'This match counts in the league standing only, not a reward week.'} Only the winner logs the result. If you lost, ask your opponent to log it. A screenshot of the final score is required.
           </p>
           <div>
             <label className={label}>Opponent</label>
             <select value={opp} onChange={(e) => setOpp(e.target.value)} className={input}>
               <option value="">Choose your opponent</option>
-              {opps.map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.name} ({x.school === 'guest' ? 'Guest' : x.school === 'other' ? x.schoolName || 'Other school' : x.hostel})
-                </option>
-              ))}
+              {recentList.length > 0 && (
+                <optgroup label="Challenged in the last 3 days">
+                  {recentList.map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.name} ({x.school === 'guest' ? 'Guest' : x.school === 'other' ? x.schoolName || 'Other school' : x.hostel})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {otherList.length > 0 && (
+                <optgroup label="Everyone in the league">
+                  {otherList.map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.name} ({x.school === 'guest' ? 'Guest' : x.school === 'other' ? x.schoolName || 'Other school' : x.hostel})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
+          {needsChallenge && o && (
+            <div className="rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-2">
+              <p className="text-[11px] text-slate-700 dark:text-slate-200">You have not challenged {o.name} in the last 3 days. Send the usual WhatsApp challenge first, then come back here to log the result.</p>
+              <button
+                type="button"
+                disabled={challenging}
+                onClick={async () => {
+                  setError('');
+                  setChallenging(true);
+                  try {
+                    const link = await tapChallenge(game, me, o, season.id, weeklyRunning);
+                    setRecentIds((ids) => [...(ids || []), o.id]);
+                    setTapped((n) => n + 1);
+                    go(link);
+                  } catch (e: any) {
+                    setError(e?.message || 'Could not open WhatsApp.');
+                  }
+                  setChallenging(false);
+                }}
+                className="w-full h-10 rounded-xl bg-[#0e9f55] text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+              >
+                {challenging && <Loader2 className="w-4 h-4 animate-spin" />} Challenge {o.name} on WhatsApp
+              </button>
+            </div>
+          )}
+          {!needsChallenge && (
+            <>
           {scored ? (
             <>
               {o && ctx && <p className="text-[11px] text-slate-500">Home team: {ctx.challengerId === me.id ? o.name : 'you'} (the player who was challenged).</p>}
@@ -1519,6 +1570,8 @@ const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; matches: a
             {busy && <Loader2 className="w-4 h-4 animate-spin" />} Save and send on WhatsApp
           </button>
           <p className="text-[11px] text-slate-400 text-center">It counts now. Your opponent can report it within {DISPUTE_HOURS} hours.</p>
+            </>
+          )}
         </>
       )}
     </Sheet>

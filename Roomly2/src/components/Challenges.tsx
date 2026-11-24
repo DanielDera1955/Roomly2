@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Loader2, Trophy, Clock, Users, ChevronDown, Crown } from 'lucide-react';
+import { Loader2, Trophy, Clock, Users, ChevronDown, Crown, Plus, Lock } from 'lucide-react';
 import { gameLabel, GAMES } from '../hub.js';
 import { type Season } from '../season';
 import {
@@ -86,6 +86,9 @@ const PLAY_STATE_TEXT: Record<string, string> = {
 };
 const stateText = (c: Challenge, state: string) => (c.template === 'play' ? PLAY_STATE_TEXT : STATE_TEXT)[state] || '';
 
+/** The one button of the page: join the game, or log a result. The page decides which. */
+export type PageAction = { label: string; disabled: boolean; join: boolean; onClick: () => void };
+
 const GAME_COLORS: Record<string, string> = { efootball: '#0e9f55', fifa: '#3b82f6', dls: '#f59e0b', freefire: '#ef4444', codm: '#8b5cf6' };
 
 /** One progress bar. Always drawn, even at 0, so players see how far the target is. */
@@ -140,39 +143,6 @@ const LeaderBars: React.FC<{ c: Challenge; leaders: Leader[]; myCount: number | 
   );
 };
 
-/** The player's own place in the play challenge: that they are in, who they are level with or behind, and what they still need */
-const MyStatus: React.FC<{ view: ChallengeView; me: any; inLeague: boolean; nowMs: number }> = ({ view, me, inLeague, nowMs }) => {
-  const c = view.challenge;
-  if (!['upcoming', 'running', 'closed', 'over'].includes(view.phase)) return null;
-  if (!inLeague) {
-    return <p className="text-[12px] font-bold text-slate-600 dark:text-slate-300 px-1">Join a game with the green button below to enter. Everyone in the league is in automatically.</p>;
-  }
-  const target = targetOf(c);
-  const mine = view.entries.find((e) => e.app.gid === me.id) || null;
-  const mc = mine ? mine.progress.wins : 0;
-  const left = Math.max(0, target - mc);
-  const live = view.entries.filter((e) => e.app.review !== 'rejected');
-  const topN = live.reduce((m, e) => Math.max(m, e.progress.wins), 0);
-  const ahead = live.filter((e) => e.progress.wins === topN && e.app.gid !== me.id).map((e) => e.app.name);
-  let text: string;
-  if (view.phase === 'upcoming') text = `You are in. Counting starts ${dayName(c.startMs)}. Play ${target} different Caritas students to win ${naira(c.prize)}.`;
-  else if (mine && mc >= target) text = stateText(c, mine.progress.state);
-  else if (topN === 0) text = `You are in. Play ${target} different Caritas students to win ${naira(c.prize)}.`;
-  else if (mc >= topN) text = ahead.length ? `You are tied for the lead with ${ahead.join(', ')} on ${mc}/${target}. ${left} more different players to win.` : `You are leading on ${mc}/${target}. ${left} more different players to win.`;
-  else text = `${ahead[0]}${ahead.length > 1 ? ` and ${ahead.length - 1} more are` : ' is'} ahead on ${topN}/${target}. You have ${mc}. You need ${left} more different players to win ${naira(c.prize)}.`;
-  return (
-    <div className="flex items-start gap-3 rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/40 p-3">
-      <span className="w-10 h-10 shrink-0 rounded-full bg-[#0e9f55] text-white text-base font-black flex items-center justify-center">{String(me.name || '?').trim().charAt(0).toUpperCase()}</span>
-      <div className="min-w-0">
-        <p className="text-[13px] font-black text-slate-900 dark:text-white">
-          {me.name} <span className="text-[#0e9f55]">is in this challenge</span>
-        </p>
-        <p className="text-[11px] text-slate-600 dark:text-slate-300">{text}</p>
-      </div>
-    </div>
-  );
-};
-
 const ChallengeCard: React.FC<{
   view: ChallengeView;
   all: ChallengeView[];
@@ -182,7 +152,8 @@ const ChallengeCard: React.FC<{
   nowMs: number;
   tabGame: string;
   onJoin: () => void;
-}> = ({ view, all, me, member, isOpen, nowMs, tabGame, onJoin }) => {
+  action?: PageAction;
+}> = ({ view, all, me, member, isOpen, nowMs, tabGame, onJoin, action }) => {
   const c = view.challenge;
   const mine = me ? view.entries.find((e) => e.app.gid === me.id) || null : null;
   const [picking, setPicking] = useState(false);
@@ -232,13 +203,13 @@ const ChallengeCard: React.FC<{
 
   const showBars = !['ended', 'cancelled'].includes(view.phase);
   const isPlay = c.template === 'play';
-  // The play challenge has no sign-up: a registered player is in as soon as they play (any game for an all-games challenge)
-  const inLeague = Boolean(me && (c.game === 'all' ? (me.games || []).length > 0 : (me.games || []).includes(c.game)));
+  // The "You" bar is for players who joined the game they are looking at
+  const playsTab = Boolean(me && (me.games || []).includes(tabGame));
   const winnersN = Math.max(1, Number(c.winners) || 1);
   const firstLine = winnersN === 1 ? 'First to finish wins' : `First ${winnersN} to finish win`;
   const daysLeft = Math.max(0, Math.ceil((Number(c.endMs) - nowMs) / 86400000));
   const timeChip = view.phase === 'upcoming' ? `Starts ${dayName(c.startMs)}` : view.phase === 'running' ? `${daysLeft} day${daysLeft === 1 ? '' : 's'} left` : '';
-  const myCount = isPlay && inLeague ? (mine ? mine.progress.wins : 0) : mine ? mine.progress.wins : null;
+  const myCount = isPlay ? (playsTab ? (mine ? mine.progress.wins : 0) : null) : mine ? mine.progress.wins : null;
 
   return (
     <div className={`${card} p-3 space-y-3`}>
@@ -265,7 +236,16 @@ const ChallengeCard: React.FC<{
         </div>
       </div>
 
-      {isPlay && showBars && <MyStatus view={view} me={me} inLeague={inLeague} nowMs={nowMs} />}
+      {isPlay && action && ['upcoming', 'running'].includes(view.phase) && (
+        <button
+          type="button"
+          disabled={action.disabled}
+          onClick={action.onClick}
+          className="w-full h-12 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-500 dark:disabled:text-slate-400 disabled:cursor-default"
+        >
+          {action.disabled && !action.join ? <Lock className="w-4 h-4" /> : <Plus className="w-4 h-4" />} {action.label}
+        </button>
+      )}
 
       {showBars && <LeaderBars c={c} leaders={view.leaders} myCount={myCount} meId={me?.id} />}
 
@@ -407,7 +387,8 @@ export const ChallengesSection: React.FC<{
   isOpen: boolean;
   nowMs: number;
   onJoin: () => void;
-}> = ({ game, views, me, member, isOpen, nowMs, onJoin }) => {
+  action?: PageAction;
+}> = ({ game, views, me, member, isOpen, nowMs, onJoin, action }) => {
   const mineViews = views
     .filter((v) => (v.challenge.game === game || v.challenge.game === 'all') && v.phase !== 'cancelled' && !(v.phase === 'ended' && nowMs - Number(v.challenge.winner?.atMs || 0) > 14 * 86400000) && !(v.phase === 'over' && nowMs - Number(v.challenge.endMs) > 7 * 86400000))
     .sort((a, b) => {
@@ -418,7 +399,7 @@ export const ChallengesSection: React.FC<{
   return (
     <div className="space-y-3">
       {mineViews.map((v) => (
-        <ChallengeCard key={v.challenge.id} view={v} all={views} me={me} member={member} isOpen={isOpen} nowMs={nowMs} tabGame={game} onJoin={onJoin} />
+        <ChallengeCard key={v.challenge.id} view={v} all={views} me={me} member={member} isOpen={isOpen} nowMs={nowMs} tabGame={game} onJoin={onJoin} action={action} />
       ))}
     </div>
   );
