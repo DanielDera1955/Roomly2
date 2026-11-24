@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { RotateCcw, ChevronDown, ChevronRight, Users, UtensilsCrossed, ShoppingBasket, Store, Crown, Wrench, Repeat, Search, Gamepad2, Trophy, MapPin } from 'lucide-react';
+import { RotateCcw, ChevronDown, ChevronRight, Users, UtensilsCrossed, ShoppingBasket, Store, Crown, Wrench, Repeat, Search, Gamepad2, Trophy } from 'lucide-react';
 import { GAMES, fetchLeaders, isRegisteredGamer, restoreGamerFromLogin } from '../hub.js';
 import { getNextBatch, getOutsideChoices, storeGraceOpen, storeRunLeftToday } from '../api.js';
 import { dayWord, timeLabel, timeLabelFull, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, openDateText, BEHIND_EVERY_ORDER, OUTSIDE_STORE_GRACE_END_MIN, isOutsideSource, foodLateOrderByMin, OUTSIDE_STORE_GRACE_END_MIN as STORE_LATE_MIN } from '../config';
@@ -155,7 +155,9 @@ export const HomeQuickCards: React.FC<{
   session?: { phone?: string; pin?: string };
   /** Shown under the three delivery rows (the "How you get your order" section) */
   between?: React.ReactNode;
-}> = ({ onOpen, storeOpensAtMs = 0, products = [], showBehind = true, onOpenGames, session, between }) => {
+  /** Shown right after the Games card (the install bar for new visitors) */
+  afterGames?: React.ReactNode;
+}> = ({ onOpen, storeOpensAtMs = 0, products = [], showBehind = true, onOpenGames, session, between, afterGames }) => {
   const [, setTick] = useState(0);
   const [broken, setBroken] = useState<Record<string, boolean>>({});
   useEffect(() => {
@@ -173,12 +175,10 @@ export const HomeQuickCards: React.FC<{
   return (
     <div className="space-y-3">
       <div className="px-1 pt-1">
-        <p className="flex items-center gap-1 text-[11px] font-bold text-[#0b8044] dark:text-emerald-400">
-          <MapPin className="w-3 h-3" />
-          Caritas University
-        </p>
-        <h2 className="mt-1 text-xl font-extrabold leading-tight tracking-tight text-slate-900 dark:text-white">Need something in Caritas? Check Roomly</h2>
-        <p className="mt-1 text-[13px] leading-snug text-slate-500 dark:text-slate-400">Pick what you need and we take you straight there.</p>
+        <h2 className="text-lg font-semibold leading-snug tracking-tight text-slate-900 dark:text-white">
+          Need something in Caritas? <span className="text-[#0e9f55]">Check Roomly</span>
+        </h2>
+        <p className="mt-1.5 text-[13px] leading-snug text-slate-500 dark:text-slate-400">Pick what you need and we take you straight there.</p>
       </div>
 
       <p className="px-1 pt-2 text-xs font-semibold tracking-wide text-slate-400 dark:text-slate-500">Delivered to you</p>
@@ -258,6 +258,8 @@ export const HomeQuickCards: React.FC<{
       </div>
 
       <HostelLeagueCard onOpen={onOpenGames} session={session} />
+
+      {afterGames}
 
       {showBehind && <BehindEveryOrder />}
     </div>

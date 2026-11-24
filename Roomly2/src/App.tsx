@@ -27,7 +27,7 @@ import {
   touchCustomerSeen,
 } from './api.js';
 import { onFoodMenu, FOOD_BATCH_LABEL, dayWord, timeLabelFull, openDateText, INSIDE_LAUNCH_MS, caritasLineFor, liveStatusFor, SCHOOL_NAME, ShopGroup, Product, isOutsideSource, shopGroupOf, shopGroupLabel, ITEMS_PER_PAGE, STORE_CONFIG, cartOf, CartKind, categoriesForStore, Announcement, announcementActive, announcementKey } from './config';
-import { MessageCircle, Info, ChevronRight } from 'lucide-react';
+import { MessageCircle, Info, ChevronRight, ChevronLeft } from 'lucide-react';
 import { StaffGate } from './components/StaffGate';
 import { playChime } from './sound';
 import { notify } from './notify';
@@ -99,6 +99,44 @@ export default function App() {
   });
   // "Become a Roomly Runner" page: yourlink/#join
   const [hubKey, setHubKey] = useState(0);
+  // The page below the hero swaps: first the choice screen, then one section (batch card, search, featured, items).
+  // A post link (#outside-food etc.) opens its section straight away.
+  const [sectionOpen, setSectionOpen] = useState(() => Boolean(getLinkTarget()?.tab));
+  const sectionPushed = useRef(false);
+  const openSection = () => {
+    setSectionOpen(true);
+    // One history step, so the phone's Back button returns to the choice screen instead of leaving Roomly
+    if (!sectionPushed.current) {
+      try {
+        window.history.pushState({ roomlySection: 1 }, '');
+        sectionPushed.current = true;
+      } catch {
+        /* ignore */
+      }
+    }
+    window.setTimeout(() => document.getElementById('section-top')?.scrollIntoView({ block: 'start' }), 60);
+  };
+  const closeSection = () => {
+    if (sectionPushed.current) {
+      sectionPushed.current = false;
+      window.history.back(); // the popstate listener below shows the choice screen
+    } else {
+      setSectionOpen(false);
+    }
+    window.setTimeout(() => document.getElementById('home-choices')?.scrollIntoView({ block: 'start' }), 60);
+  };
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      if (e.state && e.state.roomlySection) return;
+      if (window.location.hash) return; // a #join or other link: leave the section as it is
+      if (sectionPushed.current) {
+        sectionPushed.current = false;
+        setSectionOpen(false);
+      }
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
   const [joinOpen, setJoinOpen] = useState(() => typeof window !== 'undefined' && window.location.hash.toLowerCase() === '#join');
 
   // Store status (6am - 11pm)
@@ -1317,19 +1355,19 @@ export default function App() {
                 dayPart={dayPart}
                 nowMs={clockMs}
                 storeOpensMs={storeOpensMs}
-                onStart={() => window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)}
+                onStart={() => window.setTimeout(() => document.getElementById(sectionOpen ? 'shop-sections' : 'home-choices')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)}
                 onOpenSection={(side, tab) => {
                   setSourceMode(side);
                   setSelectedTab(tab);
                   setSelectedFilter('All');
-                  window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+                  openSection();
                 }}
               />
             ) : (
               <HomeBanner
                 caritasLine={sourceMode === 'inside' && clockMs >= INSIDE_LAUNCH_MS ? caritasLineFor(new Date(clockMs)) : ''}
                 live={foodLive}
-                onStart={() => window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)}
+                onStart={() => window.setTimeout(() => document.getElementById(sectionOpen ? 'shop-sections' : 'home-choices')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)}
                 dayPart={dayPart as 'Good morning' | 'Good afternoon' | 'Good evening'}
                 name={firstName}
                 isNew={!hasCompletedOrder}
@@ -1349,7 +1387,9 @@ export default function App() {
             )}
           </div>
 
-          {/* Four quick cards for everyone */}
+          {/* Choice screen: the first thing under the hero. A card opens that section below. */}
+          {!sectionOpen && (
+          <div id="home-choices" className="scroll-mt-16">
           <HomeQuickCards
             session={{ phone, pin }}
             onOpenGames={(game?: string) => setGamesOpen({ game })}
@@ -1357,6 +1397,7 @@ export default function App() {
             products={products}
             showBehind={!signedInCustomer}
             between={showHowItWorks ? <HowRoomlyWorks /> : null}
+            afterGames={!signedInCustomer ? <InstallBanner variant="home" /> : null}
             onOpen={(t: QuickTarget, hubSection?: string) => {
               setSearchQuery('');
               setSelectedFilter('All');
@@ -1373,9 +1414,11 @@ export default function App() {
                 setSourceMode('outside');
                 setSelectedTab(t === 'store' && storeLocked ? 'food' : t);
               }
-              window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+              openSection();
             }}
           />
+          </div>
+          )}
 
           {/* No sign-in box on the home screen: new students give their details once, at checkout.
               Returning students on a new phone use "Sign in" in the header, which opens this popup. */}
@@ -1411,34 +1454,58 @@ export default function App() {
             </div>
           )}
 
-          {/* Inside school or outside school */}
-          <div>
-            <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/70">
-              {(['inside', 'outside'] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => {
-                    setSourceMode(m);
-                    // Until outside store items open, Outside school opens on Food
-                    if (m === 'outside' && storeLocked) {
-                      setSelectedTab('food');
+          {sectionOpen && (
+          <>
+          {/* Section view: back to the choices, plus chips to jump to another section */}
+          <div id="section-top" className="scroll-mt-16 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={closeSection}
+              aria-label="Back to all sections"
+              className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-700 dark:text-slate-200 cursor-pointer"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+              {(
+                [
+                  { id: 'food', label: 'Food', side: 'outside', tab: 'food' },
+                  { id: 'store', label: 'Store items', side: 'outside', tab: 'store' },
+                  { id: 'room', label: 'Canteen', side: 'inside', tab: 'store' },
+                  { id: 'hub', label: 'Hostel Hub', side: 'inside', tab: 'hub' },
+                ] as const
+              ).map((c) => {
+                const on =
+                  c.id === 'room'
+                    ? sourceMode === 'inside' && selectedTab !== 'hub'
+                    : c.id === 'hub'
+                    ? sourceMode === 'inside' && selectedTab === 'hub'
+                    : sourceMode === 'outside' && (selectedTab === c.tab || (c.tab === 'store' && selectedTab === 'Request'));
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => {
+                      setSearchQuery('');
                       setSelectedFilter('All');
-                    }
-                  }}
-                  className={`py-2.5 rounded-xl text-sm font-bold cursor-pointer transition-all ${
-                    sourceMode === m
-                      ? 'bg-white dark:bg-slate-900 text-[#0e9f55] shadow-xs'
-                      : 'text-slate-500 dark:text-slate-400'
-                  }`}
-                >
-                  {m === 'inside' ? 'Inside school' : 'Outside school'}
-                </button>
-              ))}
+                      setSourceMode(c.side);
+                      setSelectedTab(c.tab === 'store' && c.side === 'outside' && storeLocked ? 'food' : c.tab);
+                    }}
+                    className={`shrink-0 whitespace-nowrap h-10 px-4 rounded-full text-xs font-bold border cursor-pointer transition-colors ${
+                      on
+                        ? 'bg-[#0e9f55] border-[#0e9f55] text-white'
+                        : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    {c.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* Delivery bar: changes with the toggle above */}
+          {/* Batch card first: it tells the student if they can still order */}
           <DeliveryPromiseBanner mode={sourceMode} tab={lastGroup} storeOpensAtMs={storeLocked ? storeOpensMs : 0} />
 
           {/* Before inside delivery launches: say when it starts (Hostel Hub works already) */}
@@ -1455,33 +1522,33 @@ export default function App() {
             </div>
           )}
 
-          {/* New visitors see the install bar here; signed-in students get it at the bottom of the page instead */}
-          {!searchQuery && !signedInCustomer && <InstallBanner variant="home" />}
-
-          {!searchQuery && (
-            <FeaturedRow
-              items={featured}
-              qtyOf={(id) => productQuantityMap[id] || 0}
-              onAdd={(p) => (p.isFood ? setCustomizingFood(p) : handleAddSimpleProduct(p))}
-              onOpen={(p) => (p.isFood ? setCustomizingFood(p) : setDetailProduct(p))}
-            />
-          )}
-
-          {!searchQuery && signedInCustomer && lastPaidOrder && (
-            <LastOrderStrip
-              order={lastPaidOrder}
-              products={products}
-              onReorder={handleReorderOrder}
-              onAddOne={(p: Product) => (p.isFood ? setCustomizingFood(p) : handleAddSimpleProduct(p))}
-              storeOpensAtMs={storeLocked ? storeOpensMs : 0}
-            />
-          )}
-
           {/* "My usuals" row removed: the last order strip above covers it */}
 
           {/* Store Items / Food toggle, then search, then category chips and request */}
           <div id="shop-sections" className="scroll-mt-20" />
           <CategoryNav
+            hideTabs
+            afterSearch={
+              <>
+                {!searchQuery && (
+                  <FeaturedRow
+                    items={featured}
+                    qtyOf={(id) => productQuantityMap[id] || 0}
+                    onAdd={(p) => (p.isFood ? setCustomizingFood(p) : handleAddSimpleProduct(p))}
+                    onOpen={(p) => (p.isFood ? setCustomizingFood(p) : setDetailProduct(p))}
+                  />
+                )}
+                {!searchQuery && signedInCustomer && lastPaidOrder && (
+                  <LastOrderStrip
+                    order={lastPaidOrder}
+                    products={products}
+                    onReorder={handleReorderOrder}
+                    onAddOne={(p: Product) => (p.isFood ? setCustomizingFood(p) : handleAddSimpleProduct(p))}
+                    storeOpensAtMs={storeLocked ? storeOpensMs : 0}
+                  />
+                )}
+              </>
+            }
             side={sourceMode}
             selected={selectedTab}
             onSelect={(t) => {
@@ -1604,6 +1671,8 @@ export default function App() {
             </div>
           )}
           </CategoryNav>
+          </>
+          )}
 
 
           {/* Lower on the page so the menu comes first: trust strip (returning students) and the how-to + runner link */}
@@ -1700,6 +1769,7 @@ export default function App() {
             setSourceMode(food ? 'outside' : 'inside');
             setSelectedTab(food ? 'food' : 'store');
             setSelectedFilter(drinksCat);
+            setSectionOpen(true);
             window.setTimeout(() => document.getElementById('shop-sections')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
           }}
           onAddDrink={(p) => (p.isFood ? setCustomizingFood(p) : handleAddSimpleProduct(p))}

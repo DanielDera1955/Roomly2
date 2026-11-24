@@ -20,6 +20,10 @@ interface CategoryNavProps {
   searching?: boolean;
   /** The open section's content: shown inside the panel that hangs from the active tab */
   children?: React.ReactNode;
+  /** Hide the Store/Food/Hub tab bar (the page has its own section chips) */
+  hideTabs?: boolean;
+  /** Shown right under the search box (featured items, last order) */
+  afterSearch?: React.ReactNode;
 }
 
 /** Short tab names so three fit on one line on any phone */
@@ -37,6 +41,8 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
   searchSlot,
   searching = false,
   children,
+  hideTabs = false,
+  afterSearch,
 }) => {
   const tabs = [
     { id: 'store' as ShopTab, label: shortLabel('store', side), Icon: ShoppingBasket },
@@ -49,6 +55,8 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
 
   return (
     <div>
+      {!hideTabs && (
+      <>
       <p className="px-1 mb-2 text-[11px] font-black uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400">What do you need?</p>
 
       {/* Main sections: the "main door", in a green frame. The open one is solid green. */}
@@ -90,8 +98,12 @@ export const CategoryNav: React.FC<CategoryNavProps> = ({
         />
       </div>
 
+      </>
+      )}
+
       <div className="space-y-3">
       {selected !== 'hub' && searchSlot}
+      {selected !== 'hub' && afterSearch}
 
       {!searching && selected !== 'Request' && selected !== 'hub' && filters.length > 1 && (
         <div className="relative -mx-3">
