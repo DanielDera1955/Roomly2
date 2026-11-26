@@ -235,12 +235,25 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore, o
         <>
           {section === 'services' && <ShopHub kind="service" startHostel={startHostel} onOpen={(shop: Shop) => onOpenShop(shop.id)} onList={() => onListBusiness('service')} />}
           {/* Quick posts (charging, water, one-off services, Buy & Sell, Lost & Found): the existing post board */}
-          <div className="flex items-center justify-between gap-3">
-            {section === 'services' ? (
-              <p className="text-xs text-slate-500">Quick posts: phone charging, water and one-off services.</p>
-            ) : (
-              <span />
-            )}
+          {section === 'services' && <p className="text-xs text-slate-500">Quick posts: phone charging, water and one-off services.</p>}
+          {/* My listings and Post on one line */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowMine(!showMine);
+                setPosting(false);
+                setJustPosted(false);
+              }}
+              className={`flex-1 min-w-0 h-11 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer ${
+                showMine
+                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-white dark:text-slate-900 dark:border-white'
+                  : 'border-emerald-300 dark:border-emerald-800 text-[#0e9f55] bg-emerald-50/60 dark:bg-emerald-950/30'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{showMine ? 'Back to all listings' : `My listings${myCount ? ` (${myCount})` : ''}`}</span>
+            </button>
             {!posting && (
               <button
                 type="button"
@@ -249,29 +262,12 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore, o
                   setShowMine(false);
                   setJustPosted(false);
                 }}
-                className="shrink-0 h-11 px-4 rounded-xl bg-[#0e9f55] text-white text-sm font-bold flex items-center gap-1.5 cursor-pointer"
+                className="shrink-0 h-11 px-5 rounded-xl bg-[#0e9f55] text-white text-sm font-bold flex items-center gap-1.5 cursor-pointer"
               >
                 <Plus className="w-4 h-4" /> Post
               </button>
             )}
           </div>
-          {/* My listings: a clear button, not hidden at the end of the filters */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowMine(!showMine);
-              setPosting(false);
-              setJustPosted(false);
-            }}
-            className={`w-full h-10 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer ${
-              showMine
-                ? 'bg-slate-900 text-white border-slate-900 dark:bg-white dark:text-slate-900 dark:border-white'
-                : 'border-emerald-300 dark:border-emerald-800 text-[#0e9f55] bg-emerald-50/60 dark:bg-emerald-950/30'
-            }`}
-          >
-            <Users className="w-3.5 h-3.5" />
-            {showMine ? 'Back to all listings' : `My listings${myCount ? ` (${myCount})` : ''} · edit or remove your posts`}
-          </button>
           {justPosted && !posting && !showMine && (
             <p className="px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-xs font-semibold text-emerald-800 dark:text-emerald-200">
               Posted. Edit or remove it anytime from My listings.

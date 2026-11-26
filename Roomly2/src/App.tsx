@@ -65,6 +65,10 @@ import { OrderHistoryModal } from './components/OrderHistoryModal';
 import { RunnerPortal } from './components/RunnerPortal';
 import { AdminView } from './components/AdminView';
 
+/** The section's name, the way the home cards call it */
+const sectionTitle = (side: 'inside' | 'outside', tab: string) =>
+  side === 'inside' ? (tab === 'food' ? 'Cooked Food' : 'School Canteen Items') : tab === 'food' ? 'Food Outside School' : 'Store Items Outside School';
+
 export default function App() {
   // Theme state
   const [darkMode, setDarkMode] = useState<boolean>(() => {
@@ -1506,7 +1510,7 @@ export default function App() {
           </div>
 
           {/* Batch card first: it tells the student if they can still order */}
-          <DeliveryPromiseBanner mode={sourceMode} tab={lastGroup} storeOpensAtMs={storeLocked ? storeOpensMs : 0} />
+          {selectedTab !== 'hub' && <DeliveryPromiseBanner mode={sourceMode} tab={lastGroup} storeOpensAtMs={storeLocked ? storeOpensMs : 0} />}
 
           {/* Before inside delivery launches: say when it starts (Hostel Hub works already) */}
           {sourceMode === 'inside' && selectedTab !== 'hub' && clockMs < INSIDE_LAUNCH_MS && (
@@ -1609,8 +1613,8 @@ export default function App() {
                       : selectedTab === 'Request'
                       ? ''
                       : selectedFilter !== 'All'
-                      ? `${shopGroupLabel(selectedTab as ShopGroup, sourceMode)} › ${selectedFilter}`
-                      : shopGroupLabel(selectedTab as ShopGroup, sourceMode)}
+                      ? `${sectionTitle(sourceMode, selectedTab)} › ${selectedFilter}`
+                      : sectionTitle(sourceMode, selectedTab)}
                   </h2>
                   <p className="text-[11px] text-slate-400">
                     {filteredProducts.length} {filteredProducts.length === 1 ? 'item' : 'items'} available

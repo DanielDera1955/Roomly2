@@ -56,7 +56,7 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
   const label = side === 'inside' ? 'Room delivery' : side === 'food' ? 'Cooked Food' : 'Outside Store Items';
 
   // Which section the student is in, named the way the home cards name it
-  const section = side === 'inside' ? 'School Canteen Items' : side === 'food' ? 'Outside school foods' : 'Outside school store items';
+  const section = side === 'inside' ? 'School Canteen Items' : side === 'food' ? 'Food Outside School' : 'Store Items Outside School';
   type Tag = 'OPEN NOW' | 'NEXT' | 'CLOSED' | string;
   type Row = { name: string; orderEnd: string; from: string; arrive: string; tag: Tag; fee?: string; room?: boolean };
 
@@ -175,16 +175,16 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
       : 'bg-amber-300 text-amber-950';
 
   return (
+    <div>
+    {/* The section name sits above the card so it is clear which section the student is in */}
+    <p className="px-1 mb-2 text-sm font-semibold text-slate-900 dark:text-white">You're in: {section}</p>
     <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 via-teal-700 to-emerald-800 text-white px-3.5 py-3 shadow-md shadow-emerald-950/10">
       <div className="absolute -right-4 -bottom-4 w-28 h-28 bg-white/10 rounded-full blur-xl pointer-events-none" />
       <div className="relative z-10 space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <p className="min-w-0 text-[11px] font-bold uppercase tracking-wider text-emerald-200 flex items-center gap-1.5">
-            <span>You're in: {section}</span>
-          </p>
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="min-w-0 text-[15px] font-extrabold tracking-tight leading-snug">{headline}</h2>
           <span className="shrink-0 px-2 py-0.5 rounded-full bg-white/15 text-[10px] font-bold text-white whitespace-nowrap">{badge}</span>
         </div>
-        <h2 className="text-[15px] font-extrabold tracking-tight leading-snug">{headline}</h2>
         {rows.length > 0 && (
           <div className="space-y-1.5">
             {rows.map((r) => (
@@ -211,6 +211,7 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
           </p>
         ))}
       </div>
+    </div>
     </div>
   );
 };
