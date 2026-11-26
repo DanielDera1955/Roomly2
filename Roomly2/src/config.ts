@@ -138,7 +138,7 @@ export const ROOMLY_GROUP_LINK = 'https://chat.whatsapp.com/DxNn262Vgj3DAzQCzjTA
 export const BEHIND_EVERY_ORDER: { count: number; label: string }[] = [
   { count: 5, label: 'Oye stores' },
   { count: 3, label: 'Food vendors' },
-  { count: 4, label: 'Runners' },
+  { count: 4, label: 'Student Runners' },
   { count: 5, label: 'Keke riders' },
 ];
 
