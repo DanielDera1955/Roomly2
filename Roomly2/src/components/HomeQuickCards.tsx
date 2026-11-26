@@ -174,11 +174,13 @@ export const HomeQuickCards: React.FC<{
 
   return (
     <div className="space-y-3">
-      <div className="px-1 pt-1">
-        <h2 className="text-lg font-semibold leading-snug tracking-tight text-slate-900 dark:text-white">
-          Need something in Caritas? <span className="text-[#0e9f55]">Check Roomly</span>
+      <div className="px-1 pt-3 pb-1">
+        <span className="block h-1 w-10 rounded-full bg-gradient-to-r from-[#0e9f55] to-teal-400" aria-hidden="true" />
+        <h2 className="mt-3 text-[28px] font-extrabold leading-[1.08] tracking-tight text-slate-900 dark:text-white">
+          Need something in Caritas?
+          <span className="block bg-gradient-to-r from-[#0e9f55] via-emerald-400 to-teal-300 bg-clip-text text-transparent">Check Roomly.</span>
         </h2>
-        <p className="mt-1.5 text-[13px] leading-snug text-slate-500 dark:text-slate-400">Pick what you need and we take you straight there.</p>
+        <p className="mt-2.5 text-sm leading-snug text-slate-500 dark:text-slate-400">Pick what you need and we take you straight there.</p>
       </div>
 
       <p className="px-1 pt-2 text-xs font-semibold tracking-wide text-slate-400 dark:text-slate-500">Delivered to you</p>
@@ -213,12 +215,12 @@ export const HomeQuickCards: React.FC<{
                 {pill && (
                   <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span
-                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap ${
+                    className={`inline-flex items-center gap-1.5 text-[12px] font-bold whitespace-nowrap ${
                       tone === 'open'
-                        ? 'bg-emerald-100 text-[#0b6b39] dark:bg-emerald-950/60 dark:text-emerald-300'
+                        ? 'text-[#0b6b39] dark:text-emerald-300'
                         : tone === 'late'
-                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                        ? 'text-amber-700 dark:text-amber-300'
+                        : 'text-slate-600 dark:text-slate-300'
                     }`}
                   >
                     <span className="relative flex w-1.5 h-1.5 shrink-0" aria-hidden="true">
