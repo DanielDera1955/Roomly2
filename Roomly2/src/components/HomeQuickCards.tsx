@@ -126,11 +126,11 @@ const FALLBACK_ICON: Record<QuickTarget, React.FC<{ className?: string }>> = {
   hub: Users,
 };
 
-/** What each delivery row says under its name */
-const ROW_COPY: Record<'food' | 'store' | 'room', { title: string; sub: string }> = {
-  food: { title: 'Food Outside School', sub: 'Fried rice, jollof, soup and more, delivered at the gate' },
-  store: { title: 'Store Items Outside School', sub: 'Provisions and gadgets from Oye, delivered at the gate' },
-  room: { title: 'School Canteen Items', sub: 'Brought from the school canteen to your room' },
+/** Each delivery row: its name, and where the order is handed over (shown beside the live status) */
+const ROW_COPY: Record<'food' | 'store' | 'room', { title: string; where: string }> = {
+  food: { title: 'Food Outside School', where: 'at the gate' },
+  store: { title: 'Store Items Outside School', where: 'at the gate' },
+  room: { title: 'School Canteen Items', where: 'to your room' },
 };
 
 /** The four Hostel Hub sections, each opening the Hub on its own tab */
@@ -210,10 +210,10 @@ export const HomeQuickCards: React.FC<{
               )}
               <span className="min-w-0 flex-1">
                 <span className="block text-[15px] font-extrabold leading-tight text-slate-900 dark:text-white">{ROW_COPY[id].title}</span>
-                <span className="mt-0.5 block text-xs leading-snug text-slate-500 dark:text-slate-400">{ROW_COPY[id].sub}</span>
                 {pill && (
+                  <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span
-                    className={`mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap ${
+                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap ${
                       tone === 'open'
                         ? 'bg-emerald-100 text-[#0b6b39] dark:bg-emerald-950/60 dark:text-emerald-300'
                         : tone === 'late'
@@ -228,6 +228,8 @@ export const HomeQuickCards: React.FC<{
                       <span className={`relative inline-flex w-1.5 h-1.5 rounded-full ${tone === 'open' ? 'bg-[#0e9f55]' : tone === 'late' ? 'bg-amber-500' : 'bg-slate-400'}`} />
                     </span>
                     {pill}
+                  </span>
+                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">· {ROW_COPY[id].where}</span>
                   </span>
                 )}
               </span>
