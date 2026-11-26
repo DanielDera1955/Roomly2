@@ -176,8 +176,8 @@ export const HomeQuickCards: React.FC<{
     <div className="space-y-3">
       <div className="px-1 pt-3 pb-1">
         <span className="block h-1 w-10 rounded-full bg-gradient-to-r from-[#0e9f55] to-teal-400" aria-hidden="true" />
-        <h2 className="mt-3 text-[28px] font-extrabold leading-[1.08] tracking-tight text-slate-900 dark:text-white">
-          Need something in Caritas?
+        <h2 className="mt-3 text-[21px] font-semibold leading-tight tracking-tight text-slate-900 dark:text-white">
+          <span className="block whitespace-nowrap">Need something in Caritas?</span>
           <span className="block bg-gradient-to-r from-[#0e9f55] via-emerald-400 to-teal-300 bg-clip-text text-transparent">Check Roomly.</span>
         </h2>
         <p className="mt-2.5 text-sm leading-snug text-slate-500 dark:text-slate-400">Pick what you need and we take you straight there.</p>

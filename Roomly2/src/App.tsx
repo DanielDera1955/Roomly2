@@ -49,7 +49,7 @@ import { BecomeRunner } from './components/BecomeRunner';
 import { GuestHero } from './components/GuestHero';
 import { FeedbackBox } from './components/FeedbackBox';
 import { ProfileSettings } from './components/ProfileSettings';
-import { HomeQuickCards, QuickTarget, LastOrderStrip, BehindEveryOrder } from './components/HomeQuickCards';
+import { HomeQuickCards, QuickTarget, BehindEveryOrder } from './components/HomeQuickCards';
 import { subscribeHubSettings, outsideStoreOpensAt } from './hub.js';
 import { getLinkTarget, linkOpensGames, setHubSection } from './links.js';
 import { ProductCard } from './components/ProductCard';
@@ -1543,15 +1543,6 @@ export default function App() {
                     qtyOf={(id) => productQuantityMap[id] || 0}
                     onAdd={(p) => (p.isFood ? setCustomizingFood(p) : handleAddSimpleProduct(p))}
                     onOpen={(p) => (p.isFood ? setCustomizingFood(p) : setDetailProduct(p))}
-                  />
-                )}
-                {!searchQuery && signedInCustomer && lastPaidOrder && (
-                  <LastOrderStrip
-                    order={lastPaidOrder}
-                    products={products}
-                    onReorder={handleReorderOrder}
-                    onAddOne={(p: Product) => (p.isFood ? setCustomizingFood(p) : handleAddSimpleProduct(p))}
-                    storeOpensAtMs={storeLocked ? storeOpensMs : 0}
                   />
                 )}
               </>
