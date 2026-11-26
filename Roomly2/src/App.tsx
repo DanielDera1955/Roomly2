@@ -1391,6 +1391,9 @@ export default function App() {
             )}
           </div>
 
+          {/* Trust strip: always directly under the hero, for new and returning students */}
+          <BehindEveryOrder />
+
           {/* Choice screen: the first thing under the hero. A card opens that section below. */}
           {!sectionOpen && (
           <div id="home-choices" className="scroll-mt-16">
@@ -1399,7 +1402,7 @@ export default function App() {
             onOpenGames={(game?: string) => setGamesOpen({ game })}
             storeOpensAtMs={storeLocked ? storeOpensMs : 0}
             products={products}
-            showBehind={!signedInCustomer}
+            showBehind={false}
             between={showHowItWorks ? <HowRoomlyWorks /> : null}
             afterGames={!signedInCustomer ? <InstallBanner variant="home" /> : null}
             onOpen={(t: QuickTarget, hubSection?: string) => {
@@ -1679,8 +1682,8 @@ export default function App() {
           )}
 
 
-          {/* Lower on the page so the menu comes first: trust strip (returning students) and the how-to + runner link */}
-          {signedInCustomer && <BehindEveryOrder />}
+          {/* Bottom block: install bar, runner link and feedback, kept close together */}
+          <div className="space-y-2">
           {/* Signed-in students: the install bar stays here on every visit until Roomly is installed */}
           {signedInCustomer && <InstallBanner variant="home" persistent />}
           {/* Runner sign-up, next to feedback */}
@@ -1700,6 +1703,7 @@ export default function App() {
             <MessageCircle className="w-4 h-4" />
             <span>Suggest a feature or send a complaint</span>
           </button>
+          </div>
           {feedbackOpen && (
             <FeedbackBox
               onClose={() => setFeedbackOpen(false)}

@@ -83,7 +83,7 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
     } else {
       const today = next.batch.dayLabel === 'Today';
       const when = next.batch.dayLabel.toLowerCase();
-      headline = today ? 'Taking orders now' : `Closed for today. Order now for ${when}`;
+      headline = today ? 'Taking orders now' : 'Delivery Times';
       rows = [{ name: 'Night batch', room: true, orderEnd: orderBy, from, arrive, tag: today ? 'OPEN NOW' : when.toUpperCase() }];
       if (next.unconfirmed) notes.push('No runner has confirmed this batch yet. You pay once a runner confirms.');
       if (note) notes.push(note);
@@ -152,7 +152,7 @@ export const DeliveryPromiseBanner: React.FC<DeliveryPromiseBannerProps> = ({ mo
         return foodLateAvailable(o) ? [main, late] : [main];
       });
       if (!today) {
-        headline = `Closed for today. Order now for ${word.replace(/^on /, '')}`;
+        headline = 'Delivery Times';
         if (side === 'store' && storeRunLeftToday(now)) notes = ["Today's run has been sent."];
       } else if (side === 'store' && storeGraceOpen(now)) {
         headline = 'Late orders still open';
