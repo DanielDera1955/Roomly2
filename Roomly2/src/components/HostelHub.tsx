@@ -214,11 +214,6 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore, o
         })}
       </div>
 
-      {/* Every section: a small green label and a title */}
-      <h2 className="text-lg font-semibold leading-snug tracking-tight text-slate-900 dark:text-white">{SECTION_HEAD[section].title}</h2>
-
-      {!onManageShop && onVendorLink && (section === 'vendors' || section === 'services') && <VendorLinkBox onSave={onVendorLink} />}
-
       {onManageShop && (section === 'vendors' || section === 'services') && (
         <button
           type="button"
@@ -230,10 +225,14 @@ export const HostelHub: React.FC<Props> = ({ productNames, session, onGoStore, o
       )}
 
       {section === 'vendors' ? (
-        <ShopHub kind="vendor" startHostel={startHostel} onOpen={(shop: Shop) => onOpenShop(shop.id)} onList={() => onListBusiness('vendor')} />
+        <>
+          <ShopHub kind="vendor" startHostel={startHostel} onOpen={(shop: Shop) => onOpenShop(shop.id)} onList={() => onListBusiness('vendor')} />
+          {!onManageShop && onVendorLink && <VendorLinkBox onSave={onVendorLink} />}
+        </>
       ) : (
         <>
           {section === 'services' && <ShopHub kind="service" startHostel={startHostel} onOpen={(shop: Shop) => onOpenShop(shop.id)} onList={() => onListBusiness('service')} />}
+          {section === 'services' && !onManageShop && onVendorLink && <VendorLinkBox onSave={onVendorLink} />}
           {/* Quick posts (charging, water, one-off services, Buy & Sell, Lost & Found): the existing post board */}
           {section === 'services' && <p className="text-xs text-slate-500">Quick posts: phone charging, water and one-off services.</p>}
           {/* My listings and Post on one line */}
@@ -983,8 +982,13 @@ const VendorLinkBox: React.FC<{ onSave: (token: string) => void }> = ({ onSave }
   const [bad, setBad] = useState(false);
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="text-xs font-bold text-[#0b8044] dark:text-emerald-400 underline underline-offset-2 cursor-pointer self-start">
-        Already a vendor? Open your shop
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-[11px] font-bold text-[#0e9f55] border border-dashed border-emerald-300 dark:border-emerald-800 cursor-pointer"
+      >
+        <Pencil className="w-3.5 h-3.5" />
+        <span>Already a vendor? Edit your shop</span>
       </button>
     );
   }
