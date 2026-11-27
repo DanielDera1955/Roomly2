@@ -248,7 +248,7 @@ export const RequestTab: React.FC<RequestTabProps> = ({
                   </span>
                 ) : r.status === 'closed' ? (
                   <span className="flex items-center gap-1 text-[#0e9f55] font-bold text-[11px]">
-                    <Check className="w-3 h-3" /> Already in the store
+                    <Check className="w-3 h-3" /> {r.closedReason === 'dismissed' ? 'Request closed' : 'Already in the store'}
                   </span>
                 ) : (
                   <span className="flex items-center gap-1 text-[#0e9f55] font-bold text-[11px]">
@@ -266,7 +266,7 @@ export const RequestTab: React.FC<RequestTabProps> = ({
               ))}
               {r.status === 'open' && <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">{replyWaitText(r, now)}</p>}
               {r.status === 'quoted' && r.reply && <p className="text-[11px] text-slate-600 dark:text-slate-300">Roomly: {r.reply}</p>}
-              {r.status === 'closed' && <p className="text-[11px] text-slate-500">This is already in the store. Search for it to add it to your cart.</p>}
+              {r.status === 'closed' && r.closedReason !== 'dismissed' && <p className="text-[11px] text-slate-500">This is already in the store. Search for it to add it to your cart.</p>}
               {r.status === 'quoted' && r.quotes.some((q: any) => q.available) && !cartRequestIds.has(r.id) && (
                 <button
                   type="button"

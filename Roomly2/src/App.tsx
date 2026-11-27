@@ -792,7 +792,7 @@ export default function App() {
         notify('Your price is ready', text, 'roomly-price-' + id);
       }
       // Already in the store: the request is closed and the student is pointed to the product
-      if (fresh && r.status === 'closed') {
+      if (fresh && r.status === 'closed' && r.closedReason !== 'dismissed') {
         const names = (r.items || []).map((q: any) => q.name).filter(Boolean);
         const text = `${names.slice(0, 2).join(', ') || 'Your item'} is already in the store. Search for it to add it to your cart.`;
         setPriceReady(text);

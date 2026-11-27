@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { subscribeAllProductRequests, subscribeOpenRequestCount } from '../api.js';
+import { subscribeAllProductRequests, subscribeOpenRequestCount, dismissProductRequest } from '../api.js';
 import { waTo } from '../hub.js';
 
 /** The number of requests still waiting for a price, for the badge on the Requests tab */
@@ -11,9 +11,10 @@ export function useWaitingRequestCount(): number {
 
 const naira = (n: number) => `₦${Math.round(Number(n) || 0).toLocaleString()}`;
 const SIDE_NAME: Record<string, string> = { inside: 'School canteen', store: 'Outside store', food: 'Outside food' };
-type Status = 'open' | 'quoted' | 'closed';
-const STATUS_NAME: Record<Status, string> = { open: 'Waiting', quoted: 'Answered', closed: 'Already in store' };
-const statusOf = (r: any): Status => (r.status === 'quoted' ? 'quoted' : r.status === 'closed' ? 'closed' : 'open');
+type Status = 'open' | 'quoted' | 'closed' | 'dismissed';
+const STATUS_NAME: Record<Status, string> = { open: 'Waiting', quoted: 'Answered', closed: 'Already in store', dismissed: 'Dismissed' };
+const statusOf = (r: any): Status =>
+  r.status === 'quoted' ? 'quoted' : r.status === 'closed' ? (r.closedReason === 'dismissed' ? 'dismissed' : 'closed') : 'open';
 
 const when = (iso?: string) => {
   const d = new Date(iso || '');
@@ -50,8 +51,10 @@ export const AdminRequests: React.FC = () => {
   const [q, setQ] = useState('');
   useEffect(() => subscribeAllProductRequests(setList), []);
 
-  const all = list || [];
-  const count = (s: Status) => all.filter((r) => statusOf(r) === s).length;
+  const everything = list || [];
+  // Dismissed requests stay out of the main lists; they sit under their own chip
+  const all = status === 'dismissed' ? everything : everything.filter((r) => statusOf(r) !== 'dismissed');
+  const count = (s: Status) => everything.filter((r) => statusOf(r) === s).length;
   const shown = useMemo(() => {
     const term = q.trim().toLowerCase();
     return all.filter((r) => {
@@ -71,9 +74,9 @@ export const AdminRequests: React.FC = () => {
       </div>
       <div className="flex flex-wrap gap-1.5">
         <button type="button" onClick={() => setStatus('all')} className={chip(status === 'all')}>
-          All {all.length}
+          All {everything.length - count('dismissed')}
         </button>
-        {(['open', 'quoted', 'closed'] as Status[]).map((s) => (
+        {(['open', 'quoted', 'closed', 'dismissed'] as Status[]).map((s) => (
           <button key={s} type="button" onClick={() => setStatus(s)} className={chip(status === s)}>
             {STATUS_NAME[s]} {count(s)}
           </button>
@@ -139,6 +142,7 @@ export const AdminRequests: React.FC = () => {
               </p>
             )}
             {s === 'closed' && <p className="text-[11px] text-slate-500">Closed by {r.closedBy || 'staff'}: already in the store.</p>}
+            {s === 'dismissed' && <p className="text-[11px] text-slate-500">Dismissed by {r.closedBy || 'admin'} · {when(r.closedAt)}</p>}
             <div className="flex flex-wrap items-center gap-2">
               {r.phone ? (
                 <>
@@ -151,6 +155,22 @@ export const AdminRequests: React.FC = () => {
                 </>
               ) : (
                 <span className="text-[11px] text-slate-400">No number left</span>
+              )}
+              {s !== 'dismissed' && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!window.confirm('Remove this request? It leaves the list and the student is not told.')) return;
+                    try {
+                      await dismissProductRequest(r.id);
+                    } catch (e: any) {
+                      window.alert(e?.message || 'Could not dismiss. Try again.');
+                    }
+                  }}
+                  className="ml-auto px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-bold cursor-pointer"
+                >
+                  Dismiss
+                </button>
               )}
             </div>
           </div>
