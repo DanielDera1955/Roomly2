@@ -1,5 +1,14 @@
 {
   "crons": [
-    { "path": "/api/games-daily", "schedule": "0 6 * * *" }
+    {
+      "path": "/api/games-daily",
+      "schedule": "0 6 * * *"
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/s/:id",
+      "destination": "/api/shop-page?shop=:id"
+    }
   ]
 }

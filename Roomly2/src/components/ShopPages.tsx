@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, MapPin, Loader2, Check, Share2 } from 'lucide-react';
+import { ArrowLeft, MapPin, Loader2, Check, Share2, X, MessageCircle } from 'lucide-react';
 import { NoPhoto } from './NoPhoto';
 import { HOSTELS } from '../config';
 import { REPORT_REASONS } from '../hub.js';
@@ -30,6 +30,14 @@ import {
   reportShop,
   countShopVisit,
   shopLink,
+  imgW,
+  collectionsOf,
+  itemCollection,
+  parseLine,
+  lineKey,
+  updatedText,
+  askMessage,
+  isVisualShop,
 } from '../shops.js';
 import type { Shop } from './ShopHub';
 
@@ -93,7 +101,7 @@ const shareShop = async (shop: Shop) => {
 
 const Cover: React.FC<{ shop: Shop; onBack: () => void }> = ({ shop, onBack }) => (
   <div className="relative h-[130px] bg-slate-200 dark:bg-slate-800 overflow-hidden">
-    {shop.cover || shop.photo ? <img src={shop.cover || shop.photo} alt="" className="w-full h-full object-cover" /> : null}
+    {shop.cover || shop.photo ? <img src={imgW(shop.cover || shop.photo, 900)} alt="" className="w-full h-full object-cover" /> : null}
     <BackButton onClick={onBack} floating />
     <button
       type="button"
@@ -113,7 +121,8 @@ const Heading: React.FC<{ shop: Shop; line: string }> = ({ shop, line }) => (
       <MapPin className="w-4 h-4 shrink-0" />
       {placeLine(shop)}
     </p>
-    <p className="mt-2 text-sm text-slate-700 dark:text-slate-300">{line}</p>
+    {shop.kind !== 'service' && <p className="mt-0.5 text-xs text-slate-400">{updatedText(shop)}</p>}
+    <p className="mt-2 text-sm text-slate-700 dark:text-slate-300">{shop.bio || line}</p>
   </div>
 );
 
@@ -200,6 +209,146 @@ const Preview: React.FC<{ text: string }> = ({ text }) => (
 );
 
 /* ------------------------------------------------------------------ */
+/* Item sheet: bigger photos, size and colour, ask the seller          */
+/* ------------------------------------------------------------------ */
+
+const OptionRow: React.FC<{ label: string; options: string[]; value: string; onPick: (v: string) => void }> = ({ label, options, value, onPick }) => (
+  <div>
+    <p className="text-xs font-bold text-slate-700 dark:text-slate-200 mb-1.5">{label}</p>
+    <div className="flex flex-wrap gap-2">
+      {options.map((o) => (
+        <button
+          key={o}
+          type="button"
+          onClick={() => onPick(value === o ? '' : o)}
+          className={`h-10 min-w-[44px] px-3.5 rounded-full text-sm font-bold border cursor-pointer ${
+            value === o
+              ? 'bg-emerald-50 dark:bg-emerald-950/50 border-[#0e9f55] text-[#0e9f55]'
+              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+          }`}
+        >
+          {o}
+        </button>
+      ))}
+    </div>
+  </div>
+);
+
+const ItemSheet: React.FC<{
+  shop: Shop;
+  item: Shop['items'][number];
+  qty: Record<string, number>;
+  setQty: React.Dispatch<React.SetStateAction<Record<string, number>>>;
+  phoneRef: React.MutableRefObject<string>;
+  onClose: () => void;
+}> = ({ shop, item, qty, setQty, phoneRef, onClose }) => {
+  const photos = [item.photo, ...(item.photos || [])].filter(Boolean) as string[];
+  const sizes = item.sizes || [];
+  const colors = item.colors || [];
+  const [idx, setIdx] = useState(0);
+  const [size, setSize] = useState('');
+  const [color, setColor] = useState('');
+  const [askError, setAskError] = useState('');
+  const key = lineKey(item.id, size, color);
+  const missing = sizes.length > 0 && !size ? 'Pick a size' : colors.length > 0 && !color ? 'Pick a colour' : '';
+  const bump = (k: string, d: number) => setQty((q) => ({ ...q, [k]: Math.max(0, (Number(q[k]) || 0) + d) }));
+  const lines = Object.keys(qty).filter((k) => parseLine(k).id === String(item.id) && Number(qty[k]) > 0);
+  const lineLabel = (k: string) => {
+    const p = parseLine(k);
+    return [p.size && `Size ${p.size}`, p.color].filter(Boolean).join(', ') || item.name;
+  };
+
+  const ask = async () => {
+    setAskError('');
+    try {
+      const phone = phoneRef.current || (await getShopWhatsApp(shop.id));
+      phoneRef.current = phone;
+      const url = whatsappUrl(phone, askMessage(shop, item));
+      const w = window.open(url, '_blank');
+      if (!w) window.location.href = url;
+    } catch (e: any) {
+      setAskError(e?.message || 'Could not open WhatsApp. Try again.');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[65] bg-black/50 flex items-end" onClick={onClose}>
+      <div className="w-full max-w-[480px] mx-auto max-h-[92vh] overflow-y-auto rounded-t-3xl bg-white dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+        <div className="relative">
+          {photos.length > 0 ? (
+            <img src={imgW(photos[Math.min(idx, photos.length - 1)], 900)} alt="" className="w-full aspect-square object-cover bg-slate-100 dark:bg-slate-800 rounded-t-3xl" />
+          ) : (
+            <div className="h-6" />
+          )}
+          <button type="button" onClick={onClose} aria-label="Close" className="absolute top-3 right-3 w-10 h-10 rounded-full bg-slate-900/80 text-white flex items-center justify-center cursor-pointer">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        {photos.length > 1 && (
+          <div className="flex gap-2 px-4 pt-3 overflow-x-auto no-scrollbar">
+            {photos.map((p, n) => (
+              <button
+                key={`${p}${n}`}
+                type="button"
+                onClick={() => setIdx(n)}
+                className={`shrink-0 w-14 h-14 rounded-xl overflow-hidden border-2 cursor-pointer ${n === idx ? 'border-[#0e9f55]' : 'border-transparent'}`}
+              >
+                <img src={imgW(p, 160)} alt="" className="w-full h-full object-cover" />
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="px-4 pt-4 pb-6 space-y-4">
+          <div>
+            <h2 className="text-xl font-black text-slate-900 dark:text-white">{item.name}</h2>
+            <p className="text-lg font-black text-[#0e9f55]">{priceText(item)}</p>
+            {item.note && <p className="mt-1.5 text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap">{item.note}</p>}
+          </div>
+          {sizes.length > 0 && <OptionRow label="Size" options={sizes} value={size} onPick={setSize} />}
+          {colors.length > 0 && <OptionRow label="Colour" options={colors} value={color} onPick={setColor} />}
+
+          {item.soldOut ? (
+            <div className="h-12 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-sm font-semibold flex items-center justify-center">Finished for today</div>
+          ) : (
+            <button type="button" disabled={Boolean(missing)} onClick={() => bump(key, 1)} className={primary}>
+              {missing || 'Add to order'}
+            </button>
+          )}
+
+          {lines.length > 0 && (
+            <div className={`${card} px-3.5 py-1`}>
+              <p className="pt-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">In your order</p>
+              {lines.map((k) => (
+                <div key={k} className="flex items-center justify-between gap-3 py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-b-0">
+                  <span className="text-sm text-slate-800 dark:text-slate-100">{lineLabel(k)}</span>
+                  <span className="flex items-center gap-1">
+                    <button type="button" aria-label="Less" onClick={() => bump(k, -1)} className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-lg font-black cursor-pointer">
+                      -
+                    </button>
+                    <span className="w-7 text-center text-sm font-black">{qty[k]}</span>
+                    <button type="button" aria-label="More" onClick={() => bump(k, 1)} className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-lg font-black cursor-pointer">
+                      +
+                    </button>
+                  </span>
+                </div>
+              ))}
+              <button type="button" onClick={onClose} className="my-2 w-full h-11 rounded-xl text-sm font-bold text-[#0e9f55] cursor-pointer">
+                Done, keep browsing
+              </button>
+            </div>
+          )}
+
+          <button type="button" onClick={ask} className="w-full h-11 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-sm font-bold flex items-center justify-center gap-2 cursor-pointer">
+            <MessageCircle className="w-4 h-4" /> Ask about this item
+          </button>
+          {askError && <p className="text-xs text-rose-600">{askError}</p>}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ------------------------------------------------------------------ */
 /* The flow: page > order / request > sent                             */
 /* ------------------------------------------------------------------ */
 
@@ -216,6 +365,8 @@ export const ShopFlow: React.FC<{
   const [ready, setReady] = useState(false);
   const [clearedNote, setClearedNote] = useState(false);
   const [service, setService] = useState<any>(null);
+  const [view, setView] = useState('All');
+  const [detail, setDetail] = useState<string | null>(null);
   const [sent, setSent] = useState<{ url: string; kind: 'order' | 'request' } | null>(null);
   const [loc, setLoc] = useState<Loc>(() => savedLocation(customer));
   // The vendor's number is fetched when the page opens and kept out of sight. It is only used to build the WhatsApp link.
@@ -345,6 +496,14 @@ export const ShopFlow: React.FC<{
 
   /* ---------------- shop page ---------------- */
   const setItemQty = (id: string, n: number) => setQty((q) => ({ ...q, [id]: Math.max(0, n) }));
+  // Collections (Shoes, Perfume...) show as chips when the seller grouped their items into two or more
+  const cols = isService ? [] : collectionsOf(shop);
+  const showChips = cols.length >= 2;
+  const activeView = cols.includes(view) ? view : 'All';
+  const visibleItems = showChips && activeView !== 'All' ? shop.items.filter((i) => itemCollection(i) === activeView) : shop.items;
+  const square = isVisualShop(shop);
+  const lineTotal = (id: string) => Object.keys(qty).reduce((n, k) => (parseLine(k).id === id ? n + (Number(qty[k]) || 0) : n), 0);
+  const detailItem = detail ? shop.items.find((i) => i.id === detail) : null;
   return (
     <Frame>
       <Cover shop={shop} onBack={onClose} />
@@ -377,11 +536,40 @@ export const ShopFlow: React.FC<{
           {shop.items.length === 0 && <p className="py-8 text-center text-xs text-slate-400">No services listed yet.</p>}
         </div>
       ) : (
+        <>
+        {showChips && (
+          <div className="px-4 pt-4 flex gap-2 overflow-x-auto no-scrollbar">
+            {['All', ...cols].map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setView(c)}
+                className={`shrink-0 whitespace-nowrap h-10 px-4 rounded-full text-xs font-bold border cursor-pointer ${
+                  activeView === c
+                    ? 'bg-emerald-50 dark:bg-emerald-950/50 border-[#0e9f55] text-[#0e9f55]'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                }`}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="px-4 pt-4 grid grid-cols-2 gap-3">
-          {shop.items.map((i) => {
+          {visibleItems.map((i) => {
             const n = Number(qty[i.id]) || 0;
+            const hasOptions = Boolean((i.sizes && i.sizes.length) || (i.colors && i.colors.length));
+            const inOrder = lineTotal(i.id);
             const control = i.soldOut ? (
               <div className="h-11 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-sm font-semibold flex items-center justify-center">Finished for today</div>
+            ) : hasOptions ? (
+              <button
+                type="button"
+                onClick={() => setDetail(i.id)}
+                className="w-full h-11 rounded-xl border-2 border-[#0e9f55] text-[#0e9f55] text-sm font-bold cursor-pointer"
+              >
+                {inOrder > 0 ? `Edit (${inOrder})` : 'Choose'}
+              </button>
             ) : n > 0 ? (
               <div className="h-11 rounded-xl bg-[#0e9f55] text-white flex items-center justify-between px-1">
                 <button type="button" aria-label="Less" onClick={() => setItemQty(i.id, n - 1)} className="w-10 h-10 text-xl font-black cursor-pointer">
@@ -415,7 +603,11 @@ export const ShopFlow: React.FC<{
             }
             return (
               <div key={i.id} className={`${card} overflow-hidden flex flex-col`}>
-                <img src={i.photo} alt="" loading="lazy" className="w-full h-24 object-cover bg-slate-100 dark:bg-slate-800" />
+                <button type="button" onClick={() => setDetail(i.id)} aria-label={`View ${i.name}`} className="relative block w-full cursor-pointer">
+                  <img src={imgW(i.photo, 400)} alt="" loading="lazy" className={`w-full ${square ? 'aspect-square' : 'h-24'} object-cover bg-slate-100 dark:bg-slate-800`} />
+                  {inOrder > 0 && <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-[#0e9f55] text-white text-[10px] font-extrabold">{inOrder} in order</span>}
+                  {i.photos && i.photos.length > 0 && <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full bg-black/60 text-white text-[10px] font-bold">+{i.photos.length}</span>}
+                </button>
                 <div className="p-3 flex-1 flex flex-col gap-1.5">
                   <p className="text-sm font-bold text-slate-900 dark:text-white leading-snug">{i.name}</p>
                   <p className="text-sm font-black text-[#0e9f55]">{priceText(i)}</p>
@@ -426,7 +618,10 @@ export const ShopFlow: React.FC<{
           })}
           {shop.items.length === 0 && <p className="col-span-2 py-8 text-center text-xs text-slate-400">No items listed yet.</p>}
         </div>
+        </>
       )}
+
+      {detailItem && <ItemSheet key={detailItem.id} shop={shop} item={detailItem} qty={qty} setQty={setQty} phoneRef={phoneRef} onClose={() => setDetail(null)} />}
 
       <ReportLink shop={shop} />
       <div className="h-24" />

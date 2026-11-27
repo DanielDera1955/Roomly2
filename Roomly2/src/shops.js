@@ -17,6 +17,37 @@ import { normalizePhone, isValidNigerianPhone, isBannedFromRoomly, BANNED_MESSAG
 export { BOYS_HOSTELS, GIRLS_HOSTELS };
 
 export const naira = (n) => `₦${Math.round(Number(n) || 0).toLocaleString()}`;
+
+/** Most items one shop can list */
+export const MAX_ITEMS = 50;
+/** What a vendor sells (used for the filter chips in Hostel Hub) */
+export const SHOP_TYPES = ['Food', 'Fashion', 'Shoes', 'Perfume', 'Gadgets', 'Beauty', 'Other'];
+/** Fashion, shoes, perfume and other non-food shops get big square photos */
+export const isVisualShop = (shop) => Boolean(shop && shop.shopType) && shop.shopType !== 'Food';
+
+/** Photos are hosted on Cloudinary: ask for a smaller or larger copy of the same photo (other links stay as they are) */
+export const imgW = (url, w) => String(url || '').replace(/\/upload\/[^/]*\bw_\d+[^/]*\//, `/upload/w_${w},c_limit,q_auto,f_auto/`);
+
+/** A cart line is "itemId", or "itemId|M|Black" when the buyer chose a size or colour */
+export const lineKey = (id, size = '', color = '') => (size || color ? `${id}|${size}|${color}` : String(id));
+export const parseLine = (key) => {
+  const [id, size = '', color = ''] = String(key).split('|');
+  return { id, size, color };
+};
+
+/** Collection names for the chips on a shop page. Empty unless there are at least two groups. */
+export function collectionsOf(shop) {
+  const names = [];
+  let other = false;
+  shop.items.forEach((i) => {
+    const c = String(i.category || '').trim();
+    if (!c) other = true;
+    else if (!names.includes(c)) names.push(c);
+  });
+  const all = other && names.length ? [...names, 'Other'] : names;
+  return all.length >= 2 ? all : [];
+}
+export const itemCollection = (i) => String(i.category || '').trim() || 'Other';
 const DAY = 86400000;
 export const NEW_DAYS = 3;
 
@@ -165,9 +196,19 @@ export function saveVendorCart(shopId, qty) {
 
 /** Picked items: [{ id, name, price, qty }] in the shop's own order (sold-out items never count) */
 export function pickedItems(shop, qty) {
-  return shop.items
-    .map((i) => ({ id: i.id, name: i.name, price: Number(i.price) || 0, priceFrom: Boolean(i.priceFrom), soldOut: Boolean(i.soldOut), qty: Number(qty[i.id]) || 0 }))
-    .filter((i) => i.qty > 0 && !i.soldOut);
+  const out = [];
+  const keys = Object.keys(qty);
+  shop.items.forEach((i) => {
+    keys.forEach((key) => {
+      const n = Number(qty[key]) || 0;
+      if (n <= 0) return;
+      const p = parseLine(key);
+      if (p.id !== String(i.id) || i.soldOut) return;
+      const opts = [p.size && `Size ${p.size}`, p.color].filter(Boolean).join(', ');
+      out.push({ id: key, name: opts ? `${i.name} (${opts})` : i.name, price: Number(i.price) || 0, priceFrom: Boolean(i.priceFrom), soldOut: false, qty: n });
+    });
+  });
+  return out;
 }
 export const itemsTotal = (picked) => picked.reduce((s, i) => s + i.price * i.qty, 0);
 
@@ -211,6 +252,17 @@ export function buildRequestMessage({ shop, service, when, loc }) {
   else lines.push(`Customer is in ${loc.hostel} (${sideLabel(sideOf(loc.hostel))}). Please agree where to meet.`);
   lines.push('', 'I will pay after the service is done.');
   return lines.join('\n');
+}
+
+/** "Is this still available?" message about one item (sent from the item sheet) */
+export function askMessage(shop, item) {
+  return `Hello ${firstName(shop.name)}, is this still available?\n${item.name} (${priceText(item)})\n${shopLink(shop.id)}`;
+}
+
+/** "Updated today", "Updated 3 days ago" */
+export function updatedText(shop) {
+  const d = daysSince(shopFreshAtMs(shop));
+  return d <= 0 ? 'Updated today' : d === 1 ? 'Updated yesterday' : `Updated ${d} days ago`;
 }
 
 export const whatsappUrl = (phone, text) => `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
@@ -304,7 +356,7 @@ export async function reportShop(shop, reason, note = '') {
 /* ------------------------------------------------------------------ */
 
 /** Every vendor and service has its own link that opens its page */
-export const shopLink = (id) => `${window.location.origin}/?shop=${encodeURIComponent(id)}`;
+export const shopLink = (id) => `${window.location.origin}/s/${encodeURIComponent(id)}`;
 
 /* ------------------------------------------------------------------ */
 /* Visits and orders (Phase 5)                                         */

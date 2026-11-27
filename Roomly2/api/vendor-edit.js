@@ -48,9 +48,18 @@ function nameProblem(name) {
   return '';
 }
 
+const MAX_ITEMS = 50;
+const SHOP_TYPES = ['Food', 'Fashion', 'Shoes', 'Perfume', 'Gadgets', 'Beauty', 'Other'];
+// A short list of options such as sizes or colours: trimmed, no repeats, no "|" (it is used to join a choice to an item)
+const optionList = (v, maxCount, maxLen) =>
+  (Array.isArray(v) ? v : [])
+    .map((x) => str(x, maxLen).replace(/\|/g, ''))
+    .filter((x, n, all) => x && all.indexOf(x) === n)
+    .slice(0, maxCount);
+
 function cleanItems(list) {
   if (!Array.isArray(list)) throw new Error('Items must be a list.');
-  if (list.length > 60) throw new Error('You can list up to 60 items.');
+  if (list.length > MAX_ITEMS) throw new Error(`You can list up to ${MAX_ITEMS} items.`);
   const seen = new Set();
   return list
     .map((i) => {
@@ -64,6 +73,11 @@ function cleanItems(list) {
         priceFrom: Boolean(i && i.priceFrom),
         soldOut: Boolean(i && i.soldOut),
         photo: photoUrl(i && i.photo),
+        category: str(i && i.category, 24).replace(/\|/g, ''),
+        photos: (Array.isArray(i && i.photos) ? i.photos : []).map(photoUrl).filter(Boolean).slice(0, 3),
+        sizes: optionList(i && i.sizes, 12, 10),
+        colors: optionList(i && i.colors, 10, 16),
+        note: str(i && i.note, 200),
       };
     })
     .filter((i) => i.name);
@@ -86,6 +100,8 @@ function cleanPatch(patch, shop) {
     if (!side || !side.includes(next)) throw new Error('You can only move to another hostel on the same side.');
     out.hostel = next;
   }
+  if ('bio' in p) out.bio = str(p.bio, 100);
+  if (shop.kind === 'vendor' && 'shopType' in p) out.shopType = SHOP_TYPES.includes(str(p.shopType, 20)) ? str(p.shopType, 20) : '';
   if ('photo' in p) out.photo = photoUrl(p.photo);
   if ('cover' in p) out.cover = photoUrl(p.cover);
   if (shop.kind === 'vendor') {
@@ -105,6 +121,8 @@ const view = (id, d) => ({
   showRoom: Boolean(d.showRoom),
   photo: d.photo || '',
   cover: d.cover || '',
+  bio: d.bio || '',
+  shopType: d.shopType || '',
   deliveryOn: Boolean(d.deliveryOn),
   deliveryFee: Number(d.deliveryFee) || 0,
   items: Array.isArray(d.items) ? d.items : [],

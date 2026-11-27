@@ -12,6 +12,9 @@ import {
   placeLine,
   priceText,
   sideOf,
+  SHOP_TYPES,
+  isVisualShop,
+  imgW,
 } from '../shops.js';
 
 export type ShopKind = 'vendor' | 'service';
@@ -25,11 +28,15 @@ export interface Shop {
   photo?: string;
   cover?: string;
   tag?: string;
+  bio?: string;
+  shopType?: string;
+  confirmedAtMs?: number;
+  lastEditedAtMs?: number;
   deliveryOn?: boolean;
   deliveryFee?: number;
   approvedAtMs?: number;
   createdAtMs?: number;
-  items: { id: string; name: string; price: number; priceFrom?: boolean; photo?: string; soldOut?: boolean }[];
+  items: { id: string; name: string; price: number; priceFrom?: boolean; photo?: string; soldOut?: boolean; category?: string; photos?: string[]; sizes?: string[]; colors?: string[]; note?: string }[];
 }
 
 const chip = (on: boolean) =>
@@ -47,6 +54,8 @@ export const ShopCard: React.FC<{ shop: Shop; onOpen: () => void; top?: boolean 
   const isService = shop.kind === 'service';
   const rows = shop.items.slice(0, 3);
   const photo = shop.photo || shop.cover || '';
+  // Fashion, shoes and similar shops show a strip of real photos with prices instead of a plain list
+  const thumbs = isVisualShop(shop) ? shop.items.filter((i) => i.photo && !i.soldOut).slice(0, 4) : [];
   return (
     <button
       type="button"
@@ -55,7 +64,7 @@ export const ShopCard: React.FC<{ shop: Shop; onOpen: () => void; top?: boolean 
     >
       <div className="flex gap-3">
         <div className="w-[84px] h-[84px] shrink-0 rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-          {photo ? <img src={photo} alt="" loading="lazy" className="w-full h-full object-cover" /> : <NoPhoto name={shop.name} className="text-3xl" />}
+          {photo ? <img src={imgW(photo, 300)} alt="" loading="lazy" className="w-full h-full object-cover" /> : <NoPhoto name={shop.name} className="text-3xl" />}
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="text-base font-black text-slate-900 dark:text-white truncate">{shopTitle(shop)}</h3>
@@ -77,14 +86,25 @@ export const ShopCard: React.FC<{ shop: Shop; onOpen: () => void; top?: boolean 
           )}
         </div>
       </div>
-      <div className="mt-3 border-t border-slate-100 dark:border-slate-800">
-        {rows.map((i) => (
-          <div key={i.id} className="flex items-center justify-between gap-3 py-2 border-b border-slate-100 dark:border-slate-800 last:border-b-0">
-            <span className="text-sm text-slate-800 dark:text-slate-100 truncate">{i.name}</span>
-            <span className="shrink-0 text-sm font-bold text-[#0e9f55]">{priceText(i)}</span>
-          </div>
-        ))}
-      </div>
+      {thumbs.length >= 2 ? (
+        <div className="mt-3 grid grid-cols-4 gap-1.5">
+          {thumbs.map((i) => (
+            <div key={i.id} className="relative aspect-square rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800">
+              <img src={imgW(i.photo, 220)} alt="" loading="lazy" className="w-full h-full object-cover" />
+              <span className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[10px] font-bold text-center py-0.5 truncate">{priceText(i)}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-3 border-t border-slate-100 dark:border-slate-800">
+          {rows.map((i) => (
+            <div key={i.id} className="flex items-center justify-between gap-3 py-2 border-b border-slate-100 dark:border-slate-800 last:border-b-0">
+              <span className="text-sm text-slate-800 dark:text-slate-100 truncate">{i.name}</span>
+              <span className="shrink-0 text-sm font-bold text-[#0e9f55]">{priceText(i)}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="mt-2 flex items-center justify-between rounded-xl px-3.5 h-11 bg-slate-50 dark:bg-slate-800/60">
         <span className="text-sm text-slate-500 dark:text-slate-400">
           {shop.items.length} {isService ? (shop.items.length === 1 ? 'service' : 'services') : shop.items.length === 1 ? 'item' : 'items'}
@@ -106,6 +126,7 @@ export const ShopHub: React.FC<{ kind: ShopKind; startHostel?: string; onOpen: (
   const [loaded, setLoaded] = useState(false);
   const [side, setSide] = useState<'boys' | 'girls'>(startHostel && sideOf(startHostel) === 'girls' ? 'girls' : 'boys');
   const [hostel, setHostel] = useState('All');
+  const [type, setType] = useState('All');
   // Visits in the last 7 days decide the order. The numbers are never shown here (admin only).
   const [stats, setStats] = useState<Record<string, { visits: number; orders: number }>>({});
 
@@ -117,7 +138,10 @@ export const ShopHub: React.FC<{ kind: ShopKind; startHostel?: string; onOpen: (
       }),
     [kind]
   );
-  useEffect(() => setHostel('All'), [side]);
+  useEffect(() => {
+    setHostel('All');
+    setType('All');
+  }, [side]);
   useEffect(() => {
     getShopStats()
       .then(setStats)
@@ -133,7 +157,12 @@ export const ShopHub: React.FC<{ kind: ShopKind; startHostel?: string; onOpen: (
     [shops]
   );
   const chips = ['All', ...(side === 'boys' ? BOYS_HOSTELS : GIRLS_HOSTELS)];
-  const shown = ranked.list.filter((s: Shop) => sideOf(s.hostel) === side && (hostel === 'All' || s.hostel === hostel));
+  // What-they-sell chips (Fashion, Shoes, Perfume...): only for vendors, and only the types that exist on this side
+  const typeList = kind === 'vendor' ? SHOP_TYPES.filter((t: string) => shops.some((s: Shop) => sideOf(s.hostel) === side && s.shopType === t)) : [];
+  const activeType = typeList.includes(type) ? type : 'All';
+  const shown = ranked.list.filter(
+    (s: Shop) => sideOf(s.hostel) === side && (hostel === 'All' || s.hostel === hostel) && (activeType === 'All' || s.shopType === activeType)
+  );
 
   return (
     <div className="space-y-3">
@@ -167,6 +196,16 @@ export const ShopHub: React.FC<{ kind: ShopKind; startHostel?: string; onOpen: (
           </button>
         ))}
       </div>
+
+      {typeList.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-3 px-3 pb-0.5">
+          {['All', ...typeList].map((t) => (
+            <button key={t} type="button" onClick={() => setType(t)} className={chip(activeType === t)}>
+              {t === 'All' ? 'All types' : t}
+            </button>
+          ))}
+        </div>
+      )}
 
       {!loaded ? (
         <div className="py-10 text-center text-xs text-slate-400">Loading...</div>

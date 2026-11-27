@@ -2862,6 +2862,36 @@ function compressToDataUrl(file, maxSide = 320, quality = 0.6) {
   });
 }
 
+/** Shrinks a phone photo to about 1000px wide (JPEG) before it is uploaded. If anything fails, the original is used. */
+function shrinkForUpload(file, maxSide = 1000, quality = 0.82) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        canvas.toBlob((b) => resolve(b && b.size < file.size ? b : file), 'image/jpeg', quality);
+      } catch {
+        URL.revokeObjectURL(url);
+        resolve(file);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(file);
+    };
+    img.src = url;
+  });
+}
+
 /**
  * Uploads a product photo and returns its address.
  * With Cloudinary set up (src/cloudinary.ts) the photo is hosted for free and only a link is saved.
@@ -2871,7 +2901,8 @@ function compressToDataUrl(file, maxSide = 320, quality = 0.6) {
 export async function uploadProductImage(file) {
   if (CLOUDINARY.cloudName && CLOUDINARY.uploadPreset) {
     const fd = new FormData();
-    fd.append('file', file);
+    // The photo is shrunk on the phone first (about 1000px wide), so uploads are fast and storage stays small
+    fd.append('file', await shrinkForUpload(file), 'photo.jpg');
     fd.append('upload_preset', CLOUDINARY.uploadPreset);
     const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY.cloudName}/image/upload`, {
       method: 'POST',
@@ -3808,10 +3839,7 @@ export async function createProductRequest({ side, items, note, category, phone,
     .filter((i) => i.name);
   if (!clean.length) throw new Error('Add at least one product name');
   if (clean.length > 15) throw new Error('Up to 15 products per request');
-  // Accept +234 / 234 forms too, then insist on a number so every request can be answered on WhatsApp
-  let p = normalizePhone(phone || '');
-  if (/^\+?234[789]/.test(p)) p = '0' + p.replace(/^\+?234/, '');
-  if (!isValidNigerianPhone(p)) throw new Error('Enter your WhatsApp number (e.g. 08012345678) so we can reach you about your request.');
+  const p = normalizePhone(phone || '');
   const ref = await addDoc(
     collection(db, 'productRequests'),
     slim({
@@ -3819,7 +3847,7 @@ export async function createProductRequest({ side, items, note, category, phone,
       items: clean,
       note: String(note || '').trim().slice(0, 300),
       category: String(category || '').slice(0, 60),
-      phone: p,
+      phone: isValidNigerianPhone(p) ? p : '',
       name: String(name || '').trim().slice(0, 60),
       status: 'open',
       createdAt: new Date().toISOString(),
@@ -4948,21 +4976,6 @@ export async function closeProductRequestListed(reqId) {
   const by = staff?.role === 'admin' ? 'Roomly admin' : staff?.name || 'Staff';
   await updateDoc(ref, { status: 'closed', closedReason: 'listed', closedBy: by, closedAt: new Date().toISOString() });
   logActivity('request', `closed a request (${(r.items || []).map((i) => i.name).join(', ')}): already in the store`, reqId);
-}
-
-/**
- * Admin: dismiss a request nobody can answer (no number, gone, duplicate). It is closed, not deleted,
- * so it leaves the waiting list and the action board but stays under Dismissed in Requests.
- */
-export async function dismissProductRequest(reqId) {
-  const staff = getCurrentStaff();
-  if (staff?.role !== 'admin') throw new Error('Only the admin can dismiss a request.');
-  const ref = doc(db, 'productRequests', reqId);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) throw new Error('Request not found');
-  const r = snap.data();
-  await updateDoc(ref, { status: 'closed', closedReason: 'dismissed', closedBy: 'Roomly admin', closedAt: new Date().toISOString() });
-  logActivity('request', `dismissed a request (${(r.items || []).map((i) => i.name).join(', ')})`, reqId);
 }
 
 export async function quoteProductRequest(reqId, costs, category, reply = '') {
