@@ -15,7 +15,7 @@ import {
   query,
   where,
 } from 'firebase/firestore';
-import { hubDb, hubUid, gameLabel, waTo, isScored } from './hub.js';
+import { hubDb, hubUid, gameLabel, waTo, isScored, appLink } from './hub.js';
 import { db } from './firebase.ts';
 import { rewardConfigFor, weekPhase, lagosDay, setSpecialEvents } from './boardCore.js';
 
@@ -457,7 +457,7 @@ export async function tapChallenge(game: string, me: any, opp: any, seasonId: st
     throw new Error(`Could not record the challenge (${e?.code || 'error'}). Check your connection, or reopen Games and try again.`);
   }
   updateDoc(doc(hubDb, 'gamers', me.id), { lastActiveMs: now }).catch(() => {});
-  const text = `How far ${opp.name}, it's ${me.name}. Let's schedule a ${gameLabel(game)} 1v1 for the Roomly league ${rewardRunning ? 'reward table' : 'table'}. When will you be free?`;
+  const text = `How far ${opp.name}, it's ${me.name}. Let's schedule a ${gameLabel(game)} 1v1 for the Roomly league ${rewardRunning ? 'reward table' : 'table'}. When will you be free? Open the ${gameLabel(game)} table on Roomly here: ${appLink({ game })}`;
   return waTo(c.data().phone, text);
 }
 

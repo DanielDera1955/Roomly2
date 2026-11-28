@@ -66,6 +66,7 @@ import {
   rewardShortRulesFor,
   type Season,
 } from '../season';
+import { RaceBars } from './RaceBars';
 import { SeasonRulesCard, RewardIntro, GameRulesToggle, MainRulesDropdown, ChallengeTable, AnnouncementsCard, RulesBody, SpecialCard, WinnerCard, WeeklyBanner, SpecialStrip } from './SeasonGames';
 import { HistoryButton } from './GamesHistory';
 import { ChallengesSection, GreenBadge } from './Challenges';
@@ -733,6 +734,19 @@ const GamePage: React.FC<{
     ? `Results open ${openDay(opensAt)}`
     : "I've played a match, log your result";
   const rulesNewMember = !accepted && !rulesMoved;
+  const playChallengeOn = challengeViews.some(
+    (v) => v.challenge.template === 'play' && (v.challenge.game === game || v.challenge.game === 'all') && ['upcoming', 'running'].includes(v.phase)
+  );
+  const logButton = (
+    <button
+      type="button"
+      disabled={!canLog && !(season && !plays)}
+      onClick={() => (!plays ? onRegister() : setLogging(true))}
+      className="w-full h-12 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-500 dark:disabled:text-slate-400 disabled:cursor-default"
+    >
+      {canLog || !plays ? <Plus className="w-4 h-4" /> : <Lock className="w-4 h-4" />} {logLabel}
+    </button>
+  );
 
   return (
     <>
@@ -887,23 +901,15 @@ const GamePage: React.FC<{
         </>
       )}
 
-      {/* Log a result: the only thing above the table. Everyone can see it, members can use it. */}
-      {/* On the Challenges tab the play challenge card carries this same button, so only one is shown */}
-      {!(!best && challengeViews.some((v) => v.challenge.template === 'play' && (v.challenge.game === game || v.challenge.game === 'all') && ['upcoming', 'running'].includes(v.phase))) && (
-        <button
-          type="button"
-          disabled={!canLog && !(season && !plays)}
-          onClick={() => (!plays ? onRegister() : setLogging(true))}
-          className="w-full h-12 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-500 dark:disabled:text-slate-400 disabled:cursor-default"
-        >
-          {canLog || !plays ? <Plus className="w-4 h-4" /> : <Lock className="w-4 h-4" />} {logLabel}
-        </button>
-      )}
+      {/* Log a result. On the League tab it sits directly above the table (see below). On the Challenges tab the play challenge card carries this same button, so only one is shown. */}
+      {!best && !playChallengeOn && logButton}
 
       {/* The table, with a Challenge button on every row */}
       {best && (
         <>
           <WeeklyBanner game={game} week={week} rows={weeklyRows} me={me} playersReady={board.filter((r: any) => r.ready).length || registered} nowMs={nowMs} onInvite={() => go(gameInviteLink(game, plays && myRow ? myRow.rank : 0))} />
+          <RaceBars week={week} weeklyRows={weeklyRows} challengeViews={challengeViews} game={game} me={me} member={plays && accepted} nowMs={nowMs} />
+          {logButton}
           <ChallengeTable
             game={game}
             rows={board}
@@ -1567,7 +1573,7 @@ const LogResultSheet: React.FC<{ game: string; me: any; board: any[]; matches: a
           </label>
           {error && <p className="text-xs font-semibold text-rose-600">{error}</p>}
           <button type="button" disabled={busy} onClick={submit} className="w-full h-12 rounded-2xl bg-[#0e9f55] text-white text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60">
-            {busy && <Loader2 className="w-4 h-4 animate-spin" />} Save and send on WhatsApp
+            {busy && <Loader2 className="w-4 h-4 animate-spin" />} Save to table and share
           </button>
           <p className="text-[11px] text-slate-400 text-center">It counts now. Your opponent can report it within {DISPUTE_HOURS} hours.</p>
             </>
