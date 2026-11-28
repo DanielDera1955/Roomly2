@@ -3839,7 +3839,10 @@ export async function createProductRequest({ side, items, note, category, phone,
     .filter((i) => i.name);
   if (!clean.length) throw new Error('Add at least one product name');
   if (clean.length > 15) throw new Error('Up to 15 products per request');
-  const p = normalizePhone(phone || '');
+  // Accept +234 / 234 forms too, then insist on a number so every request can be answered on WhatsApp
+  let p = normalizePhone(phone || '');
+  if (/^\+?234[789]/.test(p)) p = '0' + p.replace(/^\+?234/, '');
+  if (!isValidNigerianPhone(p)) throw new Error('Enter your WhatsApp number (e.g. 08012345678) so we can reach you about your request.');
   const ref = await addDoc(
     collection(db, 'productRequests'),
     slim({
@@ -3847,7 +3850,7 @@ export async function createProductRequest({ side, items, note, category, phone,
       items: clean,
       note: String(note || '').trim().slice(0, 300),
       category: String(category || '').slice(0, 60),
-      phone: isValidNigerianPhone(p) ? p : '',
+      phone: p,
       name: String(name || '').trim().slice(0, 60),
       status: 'open',
       createdAt: new Date().toISOString(),
@@ -4976,6 +4979,21 @@ export async function closeProductRequestListed(reqId) {
   const by = staff?.role === 'admin' ? 'Roomly admin' : staff?.name || 'Staff';
   await updateDoc(ref, { status: 'closed', closedReason: 'listed', closedBy: by, closedAt: new Date().toISOString() });
   logActivity('request', `closed a request (${(r.items || []).map((i) => i.name).join(', ')}): already in the store`, reqId);
+}
+
+/**
+ * Admin: dismiss a request nobody can answer (no number, gone, duplicate). It is closed, not deleted,
+ * so it leaves the waiting list and the action board but stays under Dismissed in Requests.
+ */
+export async function dismissProductRequest(reqId) {
+  const staff = getCurrentStaff();
+  if (staff?.role !== 'admin') throw new Error('Only the admin can dismiss a request.');
+  const ref = doc(db, 'productRequests', reqId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('Request not found');
+  const r = snap.data();
+  await updateDoc(ref, { status: 'closed', closedReason: 'dismissed', closedBy: 'Roomly admin', closedAt: new Date().toISOString() });
+  logActivity('request', `dismissed a request (${(r.items || []).map((i) => i.name).join(', ')})`, reqId);
 }
 
 export async function quoteProductRequest(reqId, costs, category, reply = '') {
