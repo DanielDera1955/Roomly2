@@ -2863,7 +2863,7 @@ function compressToDataUrl(file, maxSide = 320, quality = 0.6) {
 }
 
 /** Shrinks a phone photo to about 1000px wide (JPEG) before it is uploaded. If anything fails, the original is used. */
-function shrinkForUpload(file, maxSide = 1000, quality = 0.82) {
+function shrinkForUpload(file, maxSide = 1600, quality = 0.85) {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
@@ -2901,7 +2901,7 @@ function shrinkForUpload(file, maxSide = 1000, quality = 0.82) {
 export async function uploadProductImage(file) {
   if (CLOUDINARY.cloudName && CLOUDINARY.uploadPreset) {
     const fd = new FormData();
-    // The photo is shrunk on the phone first (about 1000px wide), so uploads are fast and storage stays small
+    // The photo is shrunk on the phone first (up to 1600px wide), so uploads are fast and storage stays small
     fd.append('file', await shrinkForUpload(file), 'photo.jpg');
     fd.append('upload_preset', CLOUDINARY.uploadPreset);
     const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY.cloudName}/image/upload`, {

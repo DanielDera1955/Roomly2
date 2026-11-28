@@ -31,8 +31,7 @@ import {
   countShopVisit,
   shopLink,
   imgW,
-  collectionsOf,
-  itemCollection,
+  groupsOf,
   parseLine,
   lineKey,
   updatedText,
@@ -240,8 +239,10 @@ const ItemSheet: React.FC<{
   qty: Record<string, number>;
   setQty: React.Dispatch<React.SetStateAction<Record<string, number>>>;
   phoneRef: React.MutableRefObject<string>;
+  similar: Shop['items'];
+  onSwitch: (id: string) => void;
   onClose: () => void;
-}> = ({ shop, item, qty, setQty, phoneRef, onClose }) => {
+}> = ({ shop, item, qty, setQty, phoneRef, similar, onSwitch, onClose }) => {
   const photos = [item.photo, ...(item.photos || [])].filter(Boolean) as string[];
   const sizes = item.sizes || [];
   const colors = item.colors || [];
@@ -276,7 +277,7 @@ const ItemSheet: React.FC<{
       <div className="w-full max-w-[480px] mx-auto max-h-[92vh] overflow-y-auto rounded-t-3xl bg-white dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
         <div className="relative">
           {photos.length > 0 ? (
-            <img src={imgW(photos[Math.min(idx, photos.length - 1)], 900)} alt="" className="w-full aspect-square object-cover bg-slate-100 dark:bg-slate-800 rounded-t-3xl" />
+            <img src={imgW(photos[Math.min(idx, photos.length - 1)], 1200)} alt="" className="w-full max-h-[62vh] object-contain bg-slate-100 dark:bg-slate-800 rounded-t-3xl" />
           ) : (
             <div className="h-6" />
           )}
@@ -342,6 +343,23 @@ const ItemSheet: React.FC<{
             <MessageCircle className="w-4 h-4" /> Ask about this item
           </button>
           {askError && <p className="text-xs text-rose-600">{askError}</p>}
+
+          {similar.length > 0 && (
+            <div className="pt-2">
+              <p className="text-sm font-black text-slate-900 dark:text-white mb-2">{String(item.category || '').trim() ? `More in ${String(item.category).trim()}` : 'More from this shop'}</p>
+              <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+                {similar.map((s) => (
+                  <button key={s.id} type="button" onClick={() => onSwitch(s.id)} className="shrink-0 w-28 text-left cursor-pointer">
+                    <div className="w-28 h-32 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800">
+                      {s.photo && <img src={imgW(s.photo, 300)} alt="" loading="lazy" className="w-full h-full object-contain" />}
+                    </div>
+                    <p className="mt-1 text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{s.name}</p>
+                    <p className="text-xs font-black text-[#0e9f55]">{priceText(s)}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -365,7 +383,6 @@ export const ShopFlow: React.FC<{
   const [ready, setReady] = useState(false);
   const [clearedNote, setClearedNote] = useState(false);
   const [service, setService] = useState<any>(null);
-  const [view, setView] = useState('All');
   const [detail, setDetail] = useState<string | null>(null);
   const [sent, setSent] = useState<{ url: string; kind: 'order' | 'request' } | null>(null);
   const [loc, setLoc] = useState<Loc>(() => savedLocation(customer));
@@ -497,69 +514,39 @@ export const ShopFlow: React.FC<{
   /* ---------------- shop page ---------------- */
   const setItemQty = (id: string, n: number) => setQty((q) => ({ ...q, [id]: Math.max(0, n) }));
   // Collections (Shoes, Perfume...) show as chips when the seller grouped their items into two or more
-  const cols = isService ? [] : collectionsOf(shop);
-  const showChips = cols.length >= 2;
-  const activeView = cols.includes(view) ? view : 'All';
-  const visibleItems = showChips && activeView !== 'All' ? shop.items.filter((i) => itemCollection(i) === activeView) : shop.items;
+  const groups = isService ? [] : groupsOf(shop);
+  const showSections = groups.length >= 2;
   const square = isVisualShop(shop);
   const lineTotal = (id: string) => Object.keys(qty).reduce((n, k) => (parseLine(k).id === id ? n + (Number(qty[k]) || 0) : n), 0);
   const detailItem = detail ? shop.items.find((i) => i.id === detail) : null;
-  return (
-    <Frame>
-      <Cover shop={shop} onBack={onClose} />
-      <Heading shop={shop} line={isService ? 'Pick the service you want and send me your request.' : 'Pick what you want and send me your order.'} />
-      {clearedNote && !isService && (
-        <p className="mx-4 mt-3 text-xs text-slate-500">Your earlier items from another vendor were cleared. One order can only go to one vendor.</p>
-      )}
-
-      {isService ? (
-        <div className="px-4 pt-4 space-y-3">
-          {shop.items.map((s) => (
-            <div key={s.id} className={`${card} p-3 flex items-center gap-3`}>
-              {s.photo && <img src={s.photo} alt="" loading="lazy" className="w-[72px] h-[72px] shrink-0 rounded-xl object-cover" />}
-              <div className="min-w-0 flex-1">
-                <p className="text-base font-black text-slate-900 dark:text-white truncate">{s.name}</p>
-                <p className="text-base font-black text-[#0e9f55]">{priceText(s)}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setService(s);
-                  setScreen('request');
-                }}
-                className="shrink-0 h-11 px-5 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer"
-              >
-                Request
-              </button>
-            </div>
-          ))}
-          {shop.items.length === 0 && <p className="py-8 text-center text-xs text-slate-400">No services listed yet.</p>}
-        </div>
-      ) : (
-        <>
-        {showChips && (
-          <div className="px-4 pt-4 flex gap-2 overflow-x-auto no-scrollbar">
-            {['All', ...cols].map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setView(c)}
-                className={`shrink-0 whitespace-nowrap h-10 px-4 rounded-full text-xs font-bold border cursor-pointer ${
-                  activeView === c
-                    ? 'bg-emerald-50 dark:bg-emerald-950/50 border-[#0e9f55] text-[#0e9f55]'
-                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
-                }`}
-              >
-                {c}
-              </button>
-            ))}
+  const detailCat = detailItem ? String(detailItem.category || '').trim() : '';
+  const similar = detailItem ? shop.items.filter((s) => s.id !== detailItem.id && !s.soldOut && String(s.category || '').trim() === detailCat).slice(0, 12) : [];
+  // One item card. Fashion, shoes and other non-food shops show the whole photo and open the full view; food keeps the quick Add.
+  const renderItem = (i: Shop['items'][number]) => {
+    const n = Number(qty[i.id]) || 0;
+    const hasOptions = Boolean((i.sizes && i.sizes.length) || (i.colors && i.colors.length));
+    const inOrder = lineTotal(i.id);
+    if (square) {
+      return (
+        <button key={i.id} type="button" onClick={() => setDetail(i.id)} className={`${card} overflow-hidden flex flex-col text-left cursor-pointer active:scale-[0.99] transition-transform`}>
+          <div className="relative w-full aspect-[4/5] bg-slate-100 dark:bg-slate-800">
+            {i.photo ? (
+              <img src={imgW(i.photo, 600)} alt="" loading="lazy" className="w-full h-full object-contain" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">No photo</div>
+            )}
+            {inOrder > 0 && <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-[#0e9f55] text-white text-[10px] font-extrabold">{inOrder} in order</span>}
+            {i.photos && i.photos.length > 0 && <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full bg-black/60 text-white text-[10px] font-bold">+{i.photos.length}</span>}
+            {i.soldOut && <span className="absolute inset-x-0 bottom-0 bg-black/70 text-white text-[11px] font-bold text-center py-1">Finished</span>}
           </div>
-        )}
-        <div className="px-4 pt-4 grid grid-cols-2 gap-3">
-          {visibleItems.map((i) => {
-            const n = Number(qty[i.id]) || 0;
-            const hasOptions = Boolean((i.sizes && i.sizes.length) || (i.colors && i.colors.length));
-            const inOrder = lineTotal(i.id);
+          <div className="p-3 space-y-0.5">
+            <p className="text-sm font-bold text-slate-900 dark:text-white leading-snug">{i.name}</p>
+            <p className="text-sm font-black text-[#0e9f55]">{priceText(i)}</p>
+            <span className="block pt-1 text-xs font-bold text-[#0e9f55]">{inOrder > 0 ? `Edit (${inOrder})` : 'View'}</span>
+          </div>
+        </button>
+      );
+    }
             const control = i.soldOut ? (
               <div className="h-11 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-sm font-semibold flex items-center justify-center">Finished for today</div>
             ) : hasOptions ? (
@@ -615,13 +602,69 @@ export const ShopFlow: React.FC<{
                 </div>
               </div>
             );
-          })}
-          {shop.items.length === 0 && <p className="col-span-2 py-8 text-center text-xs text-slate-400">No items listed yet.</p>}
+  };
+  return (
+    <Frame>
+      <Cover shop={shop} onBack={onClose} />
+      <Heading shop={shop} line={isService ? 'Pick the service you want and send me your request.' : 'Pick what you want and send me your order.'} />
+      {clearedNote && !isService && (
+        <p className="mx-4 mt-3 text-xs text-slate-500">Your earlier items from another vendor were cleared. One order can only go to one vendor.</p>
+      )}
+
+      {isService ? (
+        <div className="px-4 pt-4 space-y-3">
+          {shop.items.map((s) => (
+            <div key={s.id} className={`${card} p-3 flex items-center gap-3`}>
+              {s.photo && <img src={s.photo} alt="" loading="lazy" className="w-[72px] h-[72px] shrink-0 rounded-xl object-cover" />}
+              <div className="min-w-0 flex-1">
+                <p className="text-base font-black text-slate-900 dark:text-white truncate">{s.name}</p>
+                <p className="text-base font-black text-[#0e9f55]">{priceText(s)}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setService(s);
+                  setScreen('request');
+                }}
+                className="shrink-0 h-11 px-5 rounded-xl bg-[#0e9f55] text-white text-sm font-bold cursor-pointer"
+              >
+                Request
+              </button>
+            </div>
+          ))}
+          {shop.items.length === 0 && <p className="py-8 text-center text-xs text-slate-400">No services listed yet.</p>}
         </div>
+      ) : (
+        <>
+          {showSections && (
+            <div className="px-4 pt-4 flex gap-2 overflow-x-auto no-scrollbar">
+              {groups.map((g, n) => (
+                <button
+                  key={g.name || n}
+                  type="button"
+                  onClick={() => document.getElementById(`sec-${n}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                  className="shrink-0 whitespace-nowrap h-10 px-4 rounded-full text-xs font-bold border cursor-pointer bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200"
+                >
+                  {g.name} ({g.items.length})
+                </button>
+              ))}
+            </div>
+          )}
+          {groups.map((g, n) => (
+            <div key={g.name || n} id={`sec-${n}`}>
+              {showSections && (
+                <h2 className="px-4 pt-5 text-base font-black text-slate-900 dark:text-white">
+                  {g.name} <span className="text-sm font-semibold text-slate-400">{g.items.length}</span>
+                </h2>
+              )}
+              <div className="px-4 pt-3 grid grid-cols-2 gap-3">{g.items.map(renderItem)}</div>
+            </div>
+          ))}
+          {shop.items.length === 0 && <p className="py-8 text-center text-xs text-slate-400">No items listed yet.</p>}
         </>
       )}
 
-      {detailItem && <ItemSheet key={detailItem.id} shop={shop} item={detailItem} qty={qty} setQty={setQty} phoneRef={phoneRef} onClose={() => setDetail(null)} />}
+      {detailItem && <ItemSheet key={detailItem.id} shop={shop} item={detailItem} qty={qty} setQty={setQty} phoneRef={phoneRef} similar={similar} onSwitch={setDetail} onClose={() => setDetail(null)} />}
 
       <ReportLink shop={shop} />
       <div className="h-24" />

@@ -75,7 +75,7 @@ function cleanItems(list) {
         photo: photoUrl(i && i.photo),
         category: str(i && i.category, 24).replace(/\|/g, ''),
         photos: (Array.isArray(i && i.photos) ? i.photos : []).map(photoUrl).filter(Boolean).slice(0, 3),
-        sizes: optionList(i && i.sizes, 12, 10),
+        sizes: optionList(i && i.sizes, 16, 10),
         colors: optionList(i && i.colors, 10, 16),
         note: str(i && i.note, 200),
       };
@@ -101,6 +101,7 @@ function cleanPatch(patch, shop) {
     out.hostel = next;
   }
   if ('bio' in p) out.bio = str(p.bio, 100);
+  if (shop.kind === 'vendor' && 'categories' in p) out.categories = optionList(p.categories, 8, 24);
   if (shop.kind === 'vendor' && 'shopType' in p) out.shopType = SHOP_TYPES.includes(str(p.shopType, 20)) ? str(p.shopType, 20) : '';
   if ('photo' in p) out.photo = photoUrl(p.photo);
   if ('cover' in p) out.cover = photoUrl(p.cover);
@@ -123,6 +124,7 @@ const view = (id, d) => ({
   cover: d.cover || '',
   bio: d.bio || '',
   shopType: d.shopType || '',
+  categories: Array.isArray(d.categories) ? d.categories : [],
   deliveryOn: Boolean(d.deliveryOn),
   deliveryFee: Number(d.deliveryFee) || 0,
   items: Array.isArray(d.items) ? d.items : [],

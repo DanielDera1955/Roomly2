@@ -83,6 +83,7 @@ const CreateShopForm: React.FC<{ onCreated: (id: string, link: string, name: str
   const [room, setRoom] = useState('');
   const [showRoom, setShowRoom] = useState(true);
   const [itemsText, setItemsText] = useState('');
+  const [shopType, setShopType] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -93,7 +94,7 @@ const CreateShopForm: React.FC<{ onCreated: (id: string, link: string, name: str
     setError('');
     setBusy(true);
     try {
-      const res = await createShopDirect({ kind, name, phone, hostel, room, showRoom, items: parseItems(itemsText), photoFile: photo, consent });
+      const res = await createShopDirect({ kind, name, phone, hostel, room, showRoom, items: parseItems(itemsText), photoFile: photo, consent, shopType });
       onCreated(res.id, res.link, name);
       // Keep the type and hostel for the next one
       setName('');
@@ -148,6 +149,16 @@ const CreateShopForm: React.FC<{ onCreated: (id: string, link: string, name: str
         </select>
         <input value={room} onChange={(e) => setRoom(e.target.value)} maxLength={20} className={field} placeholder="Room (optional)" />
       </div>
+      {kind === 'vendor' && (
+        <select className={field} value={shopType} onChange={(e) => setShopType(e.target.value)}>
+          <option value="">What do they sell? (decides how items show)</option>
+          {['Food', 'Fashion', 'Shoes', 'Perfume', 'Gadgets', 'Beauty', 'Other'].map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+      )}
       <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
         <input type="checkbox" checked={showRoom} onChange={(e) => setShowRoom(e.target.checked)} />
         Show the room number on the listing

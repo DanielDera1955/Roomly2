@@ -30,6 +30,7 @@ export interface Shop {
   tag?: string;
   bio?: string;
   shopType?: string;
+  categories?: string[];
   confirmedAtMs?: number;
   lastEditedAtMs?: number;
   deliveryOn?: boolean;

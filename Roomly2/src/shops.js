@@ -26,7 +26,7 @@ export const SHOP_TYPES = ['Food', 'Fashion', 'Shoes', 'Perfume', 'Gadgets', 'Be
 export const isVisualShop = (shop) => Boolean(shop && shop.shopType) && shop.shopType !== 'Food';
 
 /** Photos are hosted on Cloudinary: ask for a smaller or larger copy of the same photo (other links stay as they are) */
-export const imgW = (url, w) => String(url || '').replace(/\/upload\/[^/]*\bw_\d+[^/]*\//, `/upload/w_${w},c_limit,q_auto,f_auto/`);
+export const imgW = (url, w) => String(url || '').replace(/\/upload\/[^/]*\bw_\d+[^/]*\//, `/upload/w_${w},c_limit,q_auto:good,f_auto/`);
 
 /** A cart line is "itemId", or "itemId|M|Black" when the buyer chose a size or colour */
 export const lineKey = (id, size = '', color = '') => (size || color ? `${id}|${size}|${color}` : String(id));
@@ -48,6 +48,22 @@ export function collectionsOf(shop) {
   return all.length >= 2 ? all : [];
 }
 export const itemCollection = (i) => String(i.category || '').trim() || 'Other';
+
+/**
+ * Items grouped into the seller's categories, in the order the seller set them. Items with no category come last under "Other"
+ * (or on their own with no heading when the seller never used categories).
+ */
+export function groupsOf(shop) {
+  const order = [...(Array.isArray(shop.categories) ? shop.categories : [])].filter(Boolean);
+  shop.items.forEach((i) => {
+    const c = String(i.category || '').trim();
+    if (c && !order.includes(c)) order.push(c);
+  });
+  const groups = order.map((name) => ({ name, items: shop.items.filter((i) => String(i.category || '').trim() === name) })).filter((g) => g.items.length);
+  const rest = shop.items.filter((i) => !String(i.category || '').trim());
+  if (rest.length) groups.push({ name: groups.length ? 'Other' : '', items: rest });
+  return groups;
+}
 const DAY = 86400000;
 export const NEW_DAYS = 3;
 

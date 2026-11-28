@@ -184,6 +184,7 @@ export async function createShopDirect(input) {
     showRoom: Boolean(input.showRoom),
     photo,
     cover: photo,
+    shopType: kind === 'vendor' && ['Food', 'Fashion', 'Shoes', 'Perfume', 'Gadgets', 'Beauty', 'Other'].includes(input.shopType) ? input.shopType : '',
     deliveryOn: false,
     deliveryFee: 0,
     items,
