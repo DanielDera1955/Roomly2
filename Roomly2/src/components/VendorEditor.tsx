@@ -114,7 +114,6 @@ export const VendorEditor: React.FC<{ token: string; onClose: () => void; onForg
   const [shop, setShop] = useState<any>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'denied' | 'post'>('loading');
   const [post, setPost] = useState<any>(null);
-  const [confirmMsg, setConfirmMsg] = useState('');
   const [items, setItems] = useState<EditItem[]>([]);
   const [showRoom, setShowRoom] = useState(false);
   const [hostel, setHostel] = useState('');
@@ -227,19 +226,6 @@ export const VendorEditor: React.FC<{ token: string; onClose: () => void; onForg
     setBusy(false);
   };
 
-  const confirmStillAvailable = async () => {
-    setBusy(true);
-    setConfirmMsg('');
-    try {
-      const d: any = await vendorEditApi(token, 'confirm');
-      setShop((x: any) => ({ ...x, confirmedAtMs: d.shop?.confirmedAtMs || Date.now() }));
-      setConfirmMsg('Thanks. Students will keep seeing your page.');
-    } catch (e: any) {
-      setConfirmMsg(e?.message || 'Could not confirm. Try again.');
-    }
-    setBusy(false);
-  };
-
   if (state === 'loading') {
     return (
       <Page onClose={onClose}>
@@ -285,18 +271,9 @@ export const VendorEditor: React.FC<{ token: string; onClose: () => void; onForg
           <p className="mt-1 text-xs text-slate-500 break-all">Your page: {shopLink(shop.id)}</p>
         </div>
 
-        <div className={`${card} p-4 space-y-2`}>
-          <p className="text-sm font-black text-slate-900 dark:text-white">Are you still available?</p>
-          <p className="text-[11px] text-slate-500">
-            Last confirmed {(() => {
-              const d = daysSince(shopFreshAtMs(shop));
-              return d <= 0 ? 'today' : `${d} ${d === 1 ? 'day' : 'days'} ago`;
-            })()}. If you don't confirm or save changes for {SHOP_CONFIRM_DAYS} days, students stop seeing your page until you confirm again.
-          </p>
-          <button type="button" disabled={busy} onClick={confirmStillAvailable} className="h-10 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-800 dark:text-slate-100 cursor-pointer disabled:opacity-50">
-            Still available
-          </button>
-          {confirmMsg && <p className="text-[11px] font-semibold text-[#0e9f55]">{confirmMsg}</p>}
+        <div className={`${card} px-4 py-3`}>
+          <p className="text-sm font-black text-slate-900 dark:text-white">Your page is live</p>
+          <p className="mt-0.5 text-[11px] text-slate-500">Opening this page keeps you listed. If you don't open or save it for {SHOP_CONFIRM_DAYS} days, students stop seeing your page until you open it again.</p>
         </div>
 
         <div className={`${card} p-4 space-y-4`}>

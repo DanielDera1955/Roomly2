@@ -236,7 +236,15 @@ export async function POST(request) {
     if (!snap.exists) return json({ error: DENIED }, 403);
     const shop = snap.data();
 
-    if (body.action === 'get') return json({ shop: view(snap.id, shop) });
+    if (body.action === 'get') {
+      // Opening the editor counts as "still available", so a vendor never has to tap anything to stay listed
+      const now = Date.now();
+      if (now - (Number(shop.confirmedAtMs) || 0) > 6 * 3600 * 1000) {
+        await ref.update({ confirmedAtMs: now });
+        shop.confirmedAtMs = now;
+      }
+      return json({ shop: view(snap.id, shop) });
+    }
 
     // "Still available": tells Roomly this page is active, so students keep seeing it
     if (body.action === 'confirm') {

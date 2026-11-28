@@ -41,6 +41,7 @@ import { DeliveryPromiseBanner } from './components/DeliveryPromiseBanner';
 import { CategoryNav, ShopTab } from './components/CategoryNav';
 import { HostelHub } from './components/HostelHub';
 import { GamesPage } from './components/GamesPage';
+import { ContactsPage } from './components/ContactsPage';
 import { ShopFlow } from './components/ShopPages';
 import { ListBusiness } from './components/ListBusiness';
 import { VendorEditor } from './components/VendorEditor';
@@ -207,6 +208,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   // Games has its own page (Home > Roomly Hostel League). A #games link or a WhatsApp ?game= / ?match= link opens it straight away.
   const [gamesOpen, setGamesOpen] = useState<{ game?: string } | null>(() => (linkOpensGames() ? {} : null));
+  const [contactsOpen, setContactsOpen] = useState(false);
   // A Hostel Hub vendor or service page (with items to start from when reordering)
   // A shared vendor or service link (?shop=ID) opens that page straight away
   const [shopOpen, setShopOpen] = useState<{ id: string; prefill?: Record<string, number> } | null>(() => {
@@ -1400,6 +1402,7 @@ export default function App() {
           <HomeQuickCards
             session={{ phone, pin }}
             onOpenGames={(game?: string) => setGamesOpen({ game })}
+            onOpenContacts={() => setContactsOpen(true)}
             storeOpensAtMs={storeLocked ? storeOpensMs : 0}
             products={products}
             showBehind={false}
@@ -1811,6 +1814,9 @@ export default function App() {
         {gamesOpen && (
           <GamesPage session={{ name: customer?.name || localName, phone, pin }} initialGame={gamesOpen.game} onClose={() => setGamesOpen(null)} />
         )}
+
+        {/* Campus contacts: its own page */}
+        {contactsOpen && <ContactsPage onClose={() => setContactsOpen(false)} />}
 
         {/* A Hostel Hub vendor or service: page, order or request, then WhatsApp */}
         {listOpen && <ListBusiness startKind={listOpen} startHostel={customer?.building || ''} onClose={() => setListOpen(null)} />}

@@ -116,12 +116,12 @@ const Cover: React.FC<{ shop: Shop; onBack: () => void }> = ({ shop, onBack }) =
 const Heading: React.FC<{ shop: Shop; line: string }> = ({ shop, line }) => (
   <div className="px-4 pt-4">
     <h1 className="text-2xl font-black text-slate-900 dark:text-white">{shopTitle(shop)}</h1>
-    <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400">
+    <p className="mt-1 text-sm text-slate-700 dark:text-slate-300">{shop.bio || line}</p>
+    <p className="mt-2 flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400">
       <MapPin className="w-4 h-4 shrink-0" />
       {placeLine(shop)}
     </p>
     {shop.kind !== 'service' && <p className="mt-0.5 text-xs text-slate-400">{updatedText(shop)}</p>}
-    <p className="mt-2 text-sm text-slate-700 dark:text-slate-300">{shop.bio || line}</p>
   </div>
 );
 
@@ -254,6 +254,8 @@ const ItemSheet: React.FC<{
   const missing = sizes.length > 0 && !size ? 'Pick a size' : colors.length > 0 && !color ? 'Pick a colour' : '';
   const bump = (k: string, d: number) => setQty((q) => ({ ...q, [k]: Math.max(0, (Number(q[k]) || 0) + d) }));
   const lines = Object.keys(qty).filter((k) => parseLine(k).id === String(item.id) && Number(qty[k]) > 0);
+  const selectedQty = Number(qty[key]) || 0;
+  const otherLines = lines.filter((k) => k !== key);
   const lineLabel = (k: string) => {
     const p = parseLine(k);
     return [p.size && `Size ${p.size}`, p.color].filter(Boolean).join(', ') || item.name;
@@ -277,7 +279,7 @@ const ItemSheet: React.FC<{
       <div className="w-full max-w-[480px] mx-auto max-h-[92vh] overflow-y-auto rounded-t-3xl bg-white dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
         <div className="relative">
           {photos.length > 0 ? (
-            <img src={imgW(photos[Math.min(idx, photos.length - 1)], 1200)} alt="" className="w-full max-h-[62vh] object-contain bg-slate-100 dark:bg-slate-800 rounded-t-3xl" />
+            <img src={imgW(photos[Math.min(idx, photos.length - 1)], 1200)} alt="" className="w-full max-h-[46vh] object-contain bg-slate-100 dark:bg-slate-800 rounded-t-3xl" />
           ) : (
             <div className="h-6" />
           )}
@@ -310,34 +312,22 @@ const ItemSheet: React.FC<{
 
           {item.soldOut ? (
             <div className="h-12 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-sm font-semibold flex items-center justify-center">Finished for today</div>
+          ) : selectedQty > 0 ? (
+            <div className="h-12 rounded-xl bg-[#0e9f55] text-white flex items-center justify-between px-1">
+              <button type="button" aria-label="Less" onClick={() => bump(key, -1)} className="w-14 h-10 text-xl font-black cursor-pointer">
+                -
+              </button>
+              <span className="text-base font-black">{selectedQty}</span>
+              <button type="button" aria-label="More" onClick={() => bump(key, 1)} className="w-14 h-10 text-xl font-black cursor-pointer">
+                +
+              </button>
+            </div>
           ) : (
             <button type="button" disabled={Boolean(missing)} onClick={() => bump(key, 1)} className={primary}>
               {missing || 'Add to order'}
             </button>
           )}
-
-          {lines.length > 0 && (
-            <div className={`${card} px-3.5 py-1`}>
-              <p className="pt-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">In your order</p>
-              {lines.map((k) => (
-                <div key={k} className="flex items-center justify-between gap-3 py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-b-0">
-                  <span className="text-sm text-slate-800 dark:text-slate-100">{lineLabel(k)}</span>
-                  <span className="flex items-center gap-1">
-                    <button type="button" aria-label="Less" onClick={() => bump(k, -1)} className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-lg font-black cursor-pointer">
-                      -
-                    </button>
-                    <span className="w-7 text-center text-sm font-black">{qty[k]}</span>
-                    <button type="button" aria-label="More" onClick={() => bump(k, 1)} className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 text-lg font-black cursor-pointer">
-                      +
-                    </button>
-                  </span>
-                </div>
-              ))}
-              <button type="button" onClick={onClose} className="my-2 w-full h-11 rounded-xl text-sm font-bold text-[#0e9f55] cursor-pointer">
-                Done, keep browsing
-              </button>
-            </div>
-          )}
+          {otherLines.length > 0 && <p className="text-xs text-slate-500 dark:text-slate-400">Also in your order: {otherLines.map((k) => `${lineLabel(k)} x${qty[k]}`).join(', ')}</p>}
 
           <button type="button" onClick={ask} className="w-full h-11 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-sm font-bold flex items-center justify-center gap-2 cursor-pointer">
             <MessageCircle className="w-4 h-4" /> Ask about this item
@@ -529,11 +519,11 @@ export const ShopFlow: React.FC<{
     if (square) {
       return (
         <button key={i.id} type="button" onClick={() => setDetail(i.id)} className={`${card} overflow-hidden flex flex-col text-left cursor-pointer active:scale-[0.99] transition-transform`}>
-          <div className="relative w-full aspect-[4/5] bg-slate-100 dark:bg-slate-800">
+          <div className="relative w-full bg-slate-100 dark:bg-slate-800">
             {i.photo ? (
-              <img src={imgW(i.photo, 600)} alt="" loading="lazy" className="w-full h-full object-contain" />
+              <img src={imgW(i.photo, 600)} alt="" loading="lazy" className="block w-full h-auto max-h-[340px] object-contain" />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">No photo</div>
+              <div className="h-40 flex items-center justify-center text-xs text-slate-400">No photo</div>
             )}
             {inOrder > 0 && <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-[#0e9f55] text-white text-[10px] font-extrabold">{inOrder} in order</span>}
             {i.photos && i.photos.length > 0 && <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full bg-black/60 text-white text-[10px] font-bold">+{i.photos.length}</span>}
@@ -657,7 +647,7 @@ export const ShopFlow: React.FC<{
                   {g.name} <span className="text-sm font-semibold text-slate-400">{g.items.length}</span>
                 </h2>
               )}
-              <div className="px-4 pt-3 grid grid-cols-2 gap-3">{g.items.map(renderItem)}</div>
+              <div className={`px-4 pt-3 grid grid-cols-2 gap-3 ${square ? 'items-start' : ''}`}>{g.items.map(renderItem)}</div>
             </div>
           ))}
           {shop.items.length === 0 && <p className="py-8 text-center text-xs text-slate-400">No items listed yet.</p>}

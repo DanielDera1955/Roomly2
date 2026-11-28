@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { RotateCcw, ChevronDown, ChevronRight, Users, UtensilsCrossed, ShoppingBasket, Store, Crown, Wrench, Repeat, Search, Gamepad2, Trophy } from 'lucide-react';
+import { RotateCcw, ChevronDown, ChevronRight, Users, UtensilsCrossed, ShoppingBasket, Store, Crown, Wrench, Repeat, Search, Gamepad2, Trophy, Phone } from 'lucide-react';
+import { subscribeCampusContacts, visibleGroups } from '../contacts.js';
 import { GAMES, fetchLeaders, isRegisteredGamer, restoreGamerFromLogin } from '../hub.js';
 import { getNextBatch, getOutsideChoices, storeGraceOpen, storeRunLeftToday } from '../api.js';
 import { dayWord, timeLabel, timeLabelFull, outsideArriveByFor, INSIDE_ORDER_BY_MIN, INSIDE_ARRIVE_BY_MIN, openDateText, BEHIND_EVERY_ORDER, OUTSIDE_STORE_GRACE_END_MIN, isOutsideSource, foodLateOrderByMin, OUTSIDE_STORE_GRACE_END_MIN as STORE_LATE_MIN } from '../config';
@@ -141,7 +142,7 @@ const HUB_TILES: { section: string; title: string; sub: string; Icon: React.FC<{
   { section: 'lostfound', title: 'Lost & Found', sub: 'Lost or found something?', Icon: Search },
 ];
 
-/** Home: a tagline, three delivery rows (live status), the how-it-works slot, then four Hostel Hub tiles */
+/** Home: a tagline, three delivery rows (live status), the how-it-works slot, then the Hostel Hub tiles and the Campus contacts card */
 export const HomeQuickCards: React.FC<{
   onOpen: (t: QuickTarget, hubSection?: string) => void;
   storeOpensAtMs?: number;
@@ -157,7 +158,11 @@ export const HomeQuickCards: React.FC<{
   between?: React.ReactNode;
   /** Shown right after the Games card (the install bar for new visitors) */
   afterGames?: React.ReactNode;
-}> = ({ onOpen, storeOpensAtMs = 0, products = [], showBehind = true, onOpenGames, session, between, afterGames }) => {
+  /** Open the Campus contacts page (the fifth card shows once the admin has added contacts) */
+  onOpenContacts?: () => void;
+}> = ({ onOpen, storeOpensAtMs = 0, products = [], showBehind = true, onOpenGames, session, between, afterGames, onOpenContacts }) => {
+  const [contactGroups, setContactGroups] = useState<string[]>([]);
+  useEffect(() => subscribeCampusContacts((d: any) => setContactGroups(visibleGroups(d).map((g: any) => g.name))), []);
   const [, setTick] = useState(0);
   const [broken, setBroken] = useState<Record<string, boolean>>({});
   useEffect(() => {
@@ -259,6 +264,22 @@ export const HomeQuickCards: React.FC<{
             <span className="mt-0.5 text-xs leading-snug text-slate-500 dark:text-slate-400">{sub}</span>
           </button>
         ))}
+        {contactGroups.length > 0 && onOpenContacts && (
+          <button
+            type="button"
+            onClick={onOpenContacts}
+            className="col-span-2 flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-left cursor-pointer active:scale-[0.98] transition-transform"
+          >
+            <span className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100">
+              <Phone className="w-[18px] h-[18px]" />
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-extrabold leading-tight text-slate-900 dark:text-white">Campus contacts</span>
+              <span className="block mt-0.5 text-xs leading-snug text-slate-500 dark:text-slate-400 truncate">{contactGroups.slice(0, 4).join(', ')}</span>
+            </span>
+            <ChevronRight className="w-[18px] h-[18px] shrink-0 text-slate-300 dark:text-slate-600" />
+          </button>
+        )}
       </div>
 
       <HostelLeagueCard onOpen={onOpenGames} session={session} />

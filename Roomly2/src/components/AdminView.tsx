@@ -46,6 +46,7 @@ import { AdminHub } from './AdminHub';
 import { AdminLeague } from './AdminLeague';
 import { AdminAlerts } from './AdminAlerts';
 import { AdminShops, useNewShopApplications } from './AdminShops';
+import { AdminContacts } from './AdminContacts';
 import { AdminPriceLists } from './AdminPriceLists';
 import { AdminDispatch, AdminTeam, AdminMoney, useOpenSettlements, needsAction } from './AdminDispatch';
 import { AdminInsights } from './AdminInsights';
@@ -161,7 +162,7 @@ const FoodOptionsEditor: React.FC<{ value: FoodOptions; source: Product['source'
   );
 };
 
-type AdminTab = 'posts' | 'dashboard' | 'orders' | 'team' | 'applications' | 'money' | 'feedback' | 'products' | 'requests' | 'categories' | 'customers' | 'activity' | 'hub' | 'league' | 'alerts';
+type AdminTab = 'posts' | 'dashboard' | 'orders' | 'team' | 'applications' | 'money' | 'feedback' | 'products' | 'requests' | 'categories' | 'customers' | 'activity' | 'hub' | 'league' | 'alerts' | 'contacts';
 
 export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpdated }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -709,6 +710,19 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
           <button
             type="button"
+            onClick={() => setCurrentTab('contacts')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+              currentTab === 'contacts'
+                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <PhoneIcon className="w-3.5 h-3.5" />
+            <span>Contacts</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setCurrentTab('customers')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
               currentTab === 'customers'
@@ -812,6 +826,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onBackToStore, onOrderUpda
 
         {/* ================= HOSTEL HUB & GAMING ================= */}
         {currentTab === 'hub' && <AdminHub />}
+        {currentTab === 'contacts' && <AdminContacts />}
         {currentTab === 'league' && <AdminLeague />}
         {currentTab === 'alerts' && <AdminAlerts />}
 
